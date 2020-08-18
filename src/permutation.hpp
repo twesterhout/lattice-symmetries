@@ -29,44 +29,25 @@
 #pragma once
 
 #include "bits.hpp"
-#include "error_handling.hpp"
-#include <optional>
+#include <outcome.hpp>
+#include <span.hpp>
 #include <vector>
-
-#define LATTICE_SYMMETRIES_UNREACHABLE __builtin_unreachable()
 
 namespace lattice_symmetries {
 
-enum class status_t { success, invalid_argument, no_solution };
-
+/// Benes network IR (Intermediate Representation).
+///
+/// This is the product of compilation of permutations.
 struct fat_benes_network_t {
-    std::vector<bits512> fwd_masks;
-    std::vector<bits512> bwd_masks;
-    std::vector<int>     fwd_deltas;
-    std::vector<int>     bwd_deltas;
-
-    auto optimize() -> void;
-    auto operator()(std::vector<int> x) const -> std::vector<int>;
+    std::vector<bits512>  masks;
+    std::vector<unsigned> deltas;
+    unsigned              size;
 };
 
-auto compile(std::vector<int> const& permutation, int initial_delta = 1)
-    -> std::optional<fat_benes_network_t>;
-
 /// Returns true when `xs` is a permutation of `{0, ..., xs.size() - 1}`.
-auto is_permutation(std::vector<int> const& xs) -> bool;
+auto is_permutation(tcb::span<unsigned const> xs) -> bool;
 
-template <class Function>
-auto for_each_pair(int const size, int const offset, Function fn) noexcept -> status_t
-{
-    LATTICE_SYMMETRIES_CHECK(size >= 0, "invalid size");
-    LATTICE_SYMMETRIES_CHECK(offset > 0, "invalid offset");
-    for (auto i = 0;; i += 2 * offset) {
-        for (auto j = 0; j < offset; ++j) {
-            auto const index = i + j;
-            if (index >= size - offset) { return status_t::success; }
-            if (status_t c = fn(index, index + offset); c != status_t::success) { return c; }
-        }
-    }
-}
+/// Compiles the \p permutation to a standard Benes network.
+auto compile(tcb::span<unsigned const> permutation) -> outcome::result<fat_benes_network_t>;
 
 } // namespace lattice_symmetries

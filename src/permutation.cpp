@@ -28,222 +28,244 @@
 
 #include "permutation.hpp"
 #include "error_handling.hpp"
-
+#include "macros.hpp"
 #include <algorithm>
 #include <cmath>
 #include <numeric>
 #include <tuple>
 
-#include <iostream>
-
 namespace lattice_symmetries {
 
-template <class T> auto operator<<(std::ostream& out, std::vector<T> const& xs) -> std::ostream&
+auto is_permutation(tcb::span<unsigned const> xs) -> bool
 {
-    auto const write = [&out](auto const& x) {
-        if constexpr (std::is_same_v<T, uint8_t>) { out << static_cast<int>(x); }
-        else {
-            out << x;
-        }
-    };
-    out << '[';
-    if (!xs.empty()) {
-        write(xs[0]);
-        for (auto i = 1U; i < xs.size(); ++i) {
-            out << ", ";
-            write(xs[i]);
-        }
-    }
-    out << ']';
-    return out;
-}
-
-auto is_permutation(std::vector<int> const& xs) -> bool
-{
-    std::vector<int> range(xs.size());
+    std::vector<unsigned> range(xs.size());
     std::iota(std::begin(range), std::end(range), 0);
     return std::is_permutation(std::begin(xs), std::end(xs), std::begin(range));
 }
 
+enum class status_t { success, invalid_argument, no_solution, swap_impossible };
+enum class index_type_t { small, big };
+
 struct solver_t {
   private:
-    std::vector<int> source;
-    std::vector<int> target;
-    std::vector<int> inverse_source;
-    std::vector<int> inverse_target;
+    struct state_t {
+        std::vector<uint16_t> source;
+        std::vector<uint16_t> target;
+        std::vector<uint16_t> inverse_source;
+        std::vector<uint16_t> inverse_target;
+    };
 
-    // scratch space
-    bits512 _visited;
-    bits512 _source_mask;
-    bits512 _target_mask;
+    struct scratch_t {
+        bits512                   visited;
+        bits512                   source_mask;
+        bits512                   target_mask;
+        std::vector<index_type_t> types;
+        int                       delta;
 
-    enum class index_type_t { small, big };
+        auto reset(tcb::span<std::pair<uint16_t, uint16_t> const> pairs) -> void
+        {
+            set_zero(visited);
+            set_zero(source_mask);
+            set_zero(target_mask);
+            LATTICE_SYMMETRIES_ASSERT(!pairs.empty(), "");
+            LATTICE_SYMMETRIES_ASSERT(pairs[0].first < pairs[0].second, "");
+            delta = pairs[0].second - pairs[0].first;
+            for (auto const& p : pairs) {
+                LATTICE_SYMMETRIES_ASSERT(p.first + delta == p.second, "");
+                LATTICE_SYMMETRIES_ASSERT(0 <= p.first && p.second < types.size(), "");
+                LATTICE_SYMMETRIES_ASSERT(
+                    !test_bit(visited, p.first) && !test_bit(visited, p.second), "");
+                types[p.first]  = index_type_t::small;
+                types[p.second] = index_type_t::big;
+                set_bit(visited, p.first);
+                set_bit(visited, p.second);
+            }
+            set_zero(visited);
+        }
+    };
+
+    state_t   _info;
+    scratch_t _cxt;
 
   public:
-    solver_t(std::vector<int> _source, std::vector<int> _target)
-        : source{std::move(_source)}
-        , target{std::move(_target)}
-        , inverse_source{}
-        , inverse_target{}
-        , _visited{}
-        , _source_mask{}
-        , _target_mask{}
+    solver_t(std::vector<uint16_t> _source, std::vector<uint16_t> _target)
+        : _info{std::move(_source), std::move(_target), {}, {}}, _cxt{}
     {
-        inverse_source.resize(source.size());
-        inverse_target.resize(target.size());
-        for (auto i = size_t{0}; i < source.size(); ++i) {
-            inverse_source[source[i]] = i;
-            inverse_target[target[i]] = i;
+        auto const n = _info.source.size();
+        _info.inverse_source.resize(n);
+        _info.inverse_target.resize(n);
+        for (auto i = size_t{0}; i < n; ++i) {
+            _info.inverse_source[_info.source[i]] = i;
+            _info.inverse_target[_info.target[i]] = i;
         }
+        _cxt.types.resize(n);
     }
 
   private:
-    /// Given an index of an element in `source` or `target` determines its type.
-    static constexpr auto get_index_type(int index, int const delta) noexcept -> index_type_t
+    [[nodiscard]] auto size() const noexcept { return static_cast<unsigned>(_info.source.size()); }
+
+    [[nodiscard]] auto get_index_type(uint16_t const index) const noexcept -> index_type_t
     {
-        LATTICE_SYMMETRIES_ASSERT(index >= 0 && delta > 0, "invalid arguments");
-        index %= 2 * delta;
-        if (index < delta) { return index_type_t::small; }
-        return index_type_t::big;
+        LATTICE_SYMMETRIES_ASSERT(index < size(), "invalid index");
+        return _cxt.types[index];
     }
-    static constexpr auto other_index(int const index, int const delta) noexcept -> int
+    static constexpr auto other_type(index_type_t const type) noexcept -> index_type_t
     {
-        switch (get_index_type(index, delta)) {
-        case index_type_t::small: return index + delta;
-        case index_type_t::big: return index - delta;
+        switch (type) {
+        case index_type_t::small: return index_type_t::big;
+        case index_type_t::big: return index_type_t::small;
         default: LATTICE_SYMMETRIES_UNREACHABLE;
         }
     }
-
-    constexpr auto already_visited(int const i) noexcept { return test_bit(_visited, i); }
-    constexpr auto mark_visited(int const i, int const delta) noexcept
+    [[nodiscard]] auto other_index(uint16_t const index, index_type_t const type) const noexcept
+        -> uint16_t
     {
-        set_bit(_visited, i);
-        set_bit(_visited, other_index(i, delta));
+        LATTICE_SYMMETRIES_ASSERT(index < size(), "invalid index");
+        LATTICE_SYMMETRIES_ASSERT(type == get_index_type(index), "invalid type");
+        switch (type) {
+        case index_type_t::small: return index + _cxt.delta;
+        case index_type_t::big: return index - _cxt.delta;
+        default: LATTICE_SYMMETRIES_UNREACHABLE;
+        }
+    }
+    [[nodiscard]] auto other_index(uint16_t const index) const noexcept
+    {
+        return other_index(index, get_index_type(index));
     }
 
-    static auto _find_in(int const value, int const delta, std::vector<int> const& inverse) noexcept
-        -> std::tuple<int, index_type_t>
+    constexpr auto already_visited(uint16_t const i) noexcept { return test_bit(_cxt.visited, i); }
+    auto           mark_visited(uint16_t const i) noexcept -> void
     {
-        LATTICE_SYMMETRIES_ASSERT(0 <= value && value < inverse.size(), "");
-        auto const index = inverse[static_cast<size_t>(value)];
-        return std::make_tuple(index, get_index_type(index, delta));
+        set_bit(_cxt.visited, i);
+        auto const other = other_index(i);
+        if (other < size()) { set_bit(_cxt.visited, other); }
     }
-    auto find_in_source(int v, int d) const noexcept { return _find_in(v, d, inverse_source); }
-    auto find_in_target(int v, int d) const noexcept { return _find_in(v, d, inverse_target); }
-
-    static auto _swap_in(int const index, index_type_t const type, int const delta,
-                         std::vector<int>& perm, std::vector<int>& inverse_perm, bits512& mask)
-        -> void
+    auto mark_not_visited(uint16_t const i) noexcept -> void
     {
-        auto const other = [&]() {
-            switch (type) {
-            case index_type_t::small: return index + delta;
-            case index_type_t::big: return index - delta;
-            default: LATTICE_SYMMETRIES_UNREACHABLE;
-            }
-        }();
-        LATTICE_SYMMETRIES_ASSERT(0 <= index && index < perm.size(), "");
-        LATTICE_SYMMETRIES_ASSERT(0 <= other && other < perm.size(), "");
+        clear_bit(_cxt.visited, i);
+        auto const other = other_index(i);
+        if (other < size()) { clear_bit(_cxt.visited, other); }
+    }
+
+    [[nodiscard]] auto _find_in(uint16_t const value, tcb::span<uint16_t const> const inverse) const
+        noexcept -> uint16_t
+    {
+        LATTICE_SYMMETRIES_ASSERT(value < inverse.size(), "");
+        return inverse[value];
+    }
+    [[nodiscard]] auto index_in_source(uint16_t const value) const noexcept
+    {
+        return _find_in(value, _info.inverse_source);
+    }
+    [[nodiscard]] auto index_in_target(uint16_t const value) const noexcept
+    {
+        return _find_in(value, _info.inverse_target);
+    }
+
+    [[nodiscard]] auto _swap_in(uint16_t const index, index_type_t const type,
+                                tcb::span<uint16_t> const perm,
+                                tcb::span<uint16_t> const inverse_perm, bits512& mask) const
+        noexcept -> status_t
+    {
+        auto const other = other_index(index, type);
+        if (other >= size()) { return status_t::swap_impossible; }
         std::swap(perm[index], perm[other]);
-        LATTICE_SYMMETRIES_ASSERT(0 <= perm[index] && perm[index] < inverse_perm.size(), "");
-        LATTICE_SYMMETRIES_ASSERT(0 <= perm[other] && perm[other] < inverse_perm.size(), "");
         inverse_perm[perm[index]] = index;
         inverse_perm[perm[other]] = other;
-        set_bit(mask, std::min(other, index));
+        toggle_bit(mask, std::min(index, other));
+        return status_t::success;
     }
-    auto swap_in_source(int const index, index_type_t const type, int const delta) noexcept
+    [[nodiscard]] auto swap_in_source(uint16_t const index, index_type_t const type) noexcept
     {
-        _swap_in(index, type, delta, source, inverse_source, _source_mask);
+        return _swap_in(index, type, _info.source, _info.inverse_source, _cxt.source_mask);
     }
-    auto swap_in_target(int const index, index_type_t const type, int const delta) noexcept
+    [[nodiscard]] auto swap_in_target(uint16_t const index, index_type_t const type) noexcept
     {
-        _swap_in(index, type, delta, target, inverse_target, _target_mask);
+        return _swap_in(index, type, _info.target, _info.inverse_target, _cxt.target_mask);
     }
 
-    auto solve_in_source(int const i, index_type_t const type, int const delta) noexcept -> status_t
+    auto solve_in_source(uint16_t i, bool const should_swap) noexcept -> status_t
     {
         if (already_visited(i)) {
-            if (test_bit(_source_mask, std::min(i, other_index(i, delta)))) {
-                return status_t::no_solution;
+            if (should_swap) { return status_t::no_solution; }
+            return status_t::success;
+        }
+
+        auto type = get_index_type(i);
+        if (should_swap) {
+            auto const status = swap_in_source(i, type);
+            if (status == status_t::swap_impossible) { return status; }
+            LATTICE_SYMMETRIES_ASSERT(status == status_t::success, "");
+        }
+
+        mark_visited(i);
+        if (!should_swap) {
+            i    = other_index(i);
+            type = other_type(type);
+            if (i >= size()) { return status_t::success; }
+        }
+
+        auto const target_index          = index_in_target(_info.source[i]);
+        auto const should_swap_in_target = get_index_type(target_index) != type;
+        auto const status                = solve_in_target(target_index, should_swap_in_target);
+        if (status == status_t::swap_impossible) {
+            mark_not_visited(i);
+            if (should_swap) {
+                auto const c = swap_in_source(i, type);
+                LATTICE_SYMMETRIES_ASSERT(c == status_t::success, "");
             }
-            return status_t::success;
         }
-        mark_visited(i, delta);
-
-        auto const [target_index, target_index_type] = find_in_target(source[i], delta);
-        if (target_index_type != type) {
-            swap_in_target(target_index, target_index_type, delta);
-            return solve_in_target(target_index, target_index_type, delta);
-        }
-        switch (target_index_type) {
-        case index_type_t::small:
-            return solve_in_target(target_index + delta, index_type_t::big, delta);
-        case index_type_t::big:
-            return solve_in_target(target_index - delta, index_type_t::small, delta);
-        default: LATTICE_SYMMETRIES_UNREACHABLE;
-        }
-    }
-
-    auto solve_in_target(int const i, index_type_t const type, int const delta) noexcept -> status_t
-    {
-        auto const [source_index, source_index_type] = find_in_source(target[i], delta);
-        if (source_index_type != type) {
-            swap_in_source(source_index, source_index_type, delta);
-            return solve_in_source(source_index, source_index_type, delta);
-        }
-        switch (source_index_type) {
-        case index_type_t::small:
-            return solve_in_source(source_index + delta, index_type_t::big, delta);
-        case index_type_t::big:
-            return solve_in_source(source_index - delta, index_type_t::small, delta);
-        default: LATTICE_SYMMETRIES_UNREACHABLE;
-        }
-    }
-
-    auto solve_in_source_final(int const i, int const j) noexcept -> status_t
-    {
-        if (source[i] == target[i] && source[j] == target[j]) { return status_t::success; }
-        if (source[i] == target[j] && source[j] == target[i]) {
-            swap_in_source(i, index_type_t::small, j - i);
-            return status_t::success;
-        }
-        return status_t::no_solution;
-    }
-
-    auto solve_stage(int const delta, bits512& source_mask, bits512& target_mask) noexcept
-        -> status_t
-    {
-        // std::cout << "delta = " << delta << '\n';
-        // std::cout << source << '\n';
-        // std::cout << target << '\n';
-        set_zero(_visited);
-        set_zero(_source_mask);
-        set_zero(_target_mask);
-        auto const status = for_each_pair(
-            static_cast<int>(source.size()), delta, [&](auto const i, auto const /*i + delta*/) {
-                auto status = status_t::success;
-                if (!already_visited(i)) {
-                    status = solve_in_source(i, index_type_t::small, delta);
-                }
-                return status;
-            });
-        if (status == status_t::success) {
-            source_mask = _source_mask;
-            target_mask = _target_mask;
-        }
-        // std::cout << source << '\n';
-        // std::cout << target << '\n';
-        // std::cout << "delta = " << delta << " - done " << '\n';
         return status;
     }
 
-  public:
-    auto solve(int start = 1) -> std::optional<fat_benes_network_t>
+    auto solve_in_target(uint16_t i, bool const should_swap) noexcept -> status_t
     {
-        std::vector<int> stages;
-        stages.reserve(static_cast<size_t>(std::ceil(std::log2(source.size()))));
-        for (auto i = start; i <= source.size() / 2; i *= 2) {
+        auto type = get_index_type(i);
+        if (should_swap) {
+            auto const status = swap_in_target(i, type);
+            if (status == status_t::swap_impossible) { return status; }
+            LATTICE_SYMMETRIES_ASSERT(status == status_t::success, "");
+        }
+        else {
+            i    = other_index(i);
+            type = other_type(type);
+            if (i >= size()) { return status_t::success; }
+        }
+
+        auto const source_index          = index_in_source(_info.target[i]);
+        auto const should_swap_in_source = get_index_type(source_index) != type;
+        return solve_in_source(source_index, should_swap_in_source);
+    }
+
+  public:
+    auto solve_stage(tcb::span<std::pair<uint16_t, uint16_t> const> const pairs,
+                     bits512& source_mask, bits512& target_mask) noexcept -> status_t
+    {
+        _cxt.reset(pairs);
+        auto backup = _info;
+        auto status = status_t::success;
+        for (auto const [i, j] : pairs) {
+            if (!already_visited(i)) {
+                status = solve_in_source(j, false);
+                if (status == status_t::swap_impossible) { status = solve_in_source(j, true); }
+            }
+            if (status != status_t::success) { break; }
+        }
+        if (status == status_t::success) {
+            source_mask = _cxt.source_mask;
+            target_mask = _cxt.target_mask;
+        }
+        else {
+            _info = backup;
+        }
+        return status;
+    }
+
+    auto solve() -> fat_benes_network_t
+    {
+        std::vector<unsigned> stages;
+        stages.reserve(static_cast<size_t>(std::ceil(std::log2(_info.source.size()))));
+        for (auto i = 1U; i <= _info.source.size() / 2; i *= 2) {
             stages.push_back(i);
         }
 
@@ -254,68 +276,77 @@ struct solver_t {
         for (auto const delta : stages) {
             left.emplace_back();
             right.emplace_back();
-            auto const status = solve_stage(delta, left.back(), right.back());
-            if (status != status_t::success) {
-                LATTICE_SYMMETRIES_CHECK(status == status_t::no_solution, "weird error");
-                return std::nullopt;
+
+            std::vector<std::pair<uint16_t, uint16_t>> pairs;
+            pairs.reserve(_info.source.size() / 2);
+            for (auto i = 0U; i + delta <= _info.source.size(); i += 2 * delta) {
+                for (auto j = 0U; j < delta; ++j) {
+                    auto const index = i + j;
+                    if (index >= _info.source.size() - delta) { break; }
+                    pairs.emplace_back(index, index + delta);
+                }
             }
+
+            auto const status = solve_stage(pairs, left.back(), right.back());
+            LATTICE_SYMMETRIES_CHECK(status == status_t::success, "");
         }
-        if (source != target) { return std::nullopt; }
+
         auto stages_right = stages;
-        return fat_benes_network_t{std::move(left), std::move(right), std::move(stages),
-                                   std::move(stages_right)};
+        LATTICE_SYMMETRIES_CHECK(is_zero(left.back()), "");
+        left.pop_back();
+        stages.pop_back();
+        left.insert(left.end(), right.rbegin(), right.rend());
+        stages.insert(stages.end(), stages_right.rbegin(), stages_right.rend());
+        return fat_benes_network_t{std::move(left), std::move(stages),
+                                   static_cast<unsigned>(_info.source.size())};
     }
 };
 
-auto compile(std::vector<int> const& permutation, int const initial_delta)
-    -> std::optional<fat_benes_network_t>
+auto compile(tcb::span<unsigned const> const permutation) -> outcome::result<fat_benes_network_t>
 {
-    LATTICE_SYMMETRIES_CHECK(is_permutation(permutation), "not a permutation");
-    std::vector<int> source(permutation.size());
-    std::iota(std::begin(source), std::end(source), 0);
-    return solver_t{std::move(source), permutation}.solve(initial_delta);
+    if (!is_permutation(permutation)) { return LS_NOT_A_PERMUTATION; }
+    if (permutation.size() > 512U) { return LS_PERMUTATION_TOO_LONG; }
+    try {
+        std::vector<uint16_t> source(permutation.size());
+        std::iota(std::begin(source), std::end(source), uint16_t{0});
+        std::vector<uint16_t> target(permutation.size());
+        std::copy(std::begin(permutation), std::end(permutation), std::begin(target));
+        return solver_t{std::move(source), std::move(target)}.solve();
+    }
+    catch (std::bad_alloc&) {
+        return LS_OUT_OF_MEMORY;
+    }
 }
 
+#if 0
 auto fat_benes_network_t::optimize() -> void
 {
-    auto const remove_zeros = [](auto& masks, auto& stages) {
-        auto       first = size_t{0};
-        auto const last  = masks.size();
-        for (; first != last && !is_zero(masks[first]); ++first) {}
-        if (first == last) { return; }
-        for (auto i = first + 1; i != last; ++i) {
-            if (!is_zero(masks[i])) {
-                masks[first]  = masks[i];
-                stages[first] = stages[i];
-                ++first;
-            }
+    auto       first = size_t{0};
+    auto const last  = masks.size();
+    for (; first != last && !is_zero(masks[first]); ++first) {}
+    if (first == last) { return; }
+    for (auto i = first + 1; i != last; ++i) {
+        if (!is_zero(masks[i])) {
+            masks[first]  = masks[i];
+            deltas[first] = deltas[i];
+            ++first;
         }
-        masks.resize(first);
-        stages.resize(first);
-    };
-    remove_zeros(fwd_masks, fwd_deltas);
-    remove_zeros(bwd_masks, bwd_deltas);
+    }
+    masks.resize(first);
+    deltas.resize(first);
 }
 
 auto fat_benes_network_t::operator()(std::vector<int> x) const -> std::vector<int>
 {
-    for (auto _i = 0; _i < fwd_masks.size(); ++_i) {
-        auto const& mask  = this->fwd_masks[_i];
-        auto const  delta = this->fwd_deltas[_i];
-        for_each_pair(x.size(), delta, [&mask, &x](auto const i, auto const j) {
-            if (test_bit(mask, i)) { std::swap(x[i], x[j]); }
-            return status_t::success;
-        });
-    }
-    for (auto _i = bwd_masks.size(); _i-- > 0;) {
-        auto const& mask  = this->bwd_masks[_i];
-        auto const  delta = this->bwd_deltas[_i];
-        for_each_pair(x.size(), delta, [&mask, &x](auto const i, auto const j) {
-            if (test_bit(mask, i)) { std::swap(x[i], x[j]); }
-            return status_t::success;
-        });
+    for (auto _i = 0; _i < masks.size(); ++_i) {
+        auto const& mask  = masks[_i];
+        auto const  delta = deltas[_i];
+        for (auto j = 0; j < x.size() - delta; ++j) {
+            if (test_bit(mask, j)) { std::swap(x[j], x[j + delta]); }
+        }
     }
     return x;
 }
+#endif
 
 } // namespace lattice_symmetries
