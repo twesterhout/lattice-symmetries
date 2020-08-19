@@ -46,4 +46,8 @@ TEST_CASE("builds standard Benes networks", "[permutation]")
     network = compile(target);
     REQUIRE(network.has_value());
     REQUIRE(network.value().size == target.size());
+
+    target  = std::vector<unsigned>{1, 2, 3, 4, 5, 6, 0};
+    network = compile(target);
+    REQUIRE(network.has_value());
 }

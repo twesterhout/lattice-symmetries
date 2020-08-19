@@ -46,8 +46,10 @@ struct fat_benes_network_t {
 
 /// Returns true when `xs` is a permutation of `{0, ..., xs.size() - 1}`.
 auto is_permutation(tcb::span<unsigned const> xs) -> bool;
+auto is_permutation(tcb::span<uint16_t const> xs) -> bool;
 
 /// Compiles the \p permutation to a standard Benes network.
 auto compile(tcb::span<unsigned const> permutation) -> outcome::result<fat_benes_network_t>;
+auto compile(tcb::span<uint16_t const> permutation) -> outcome::result<fat_benes_network_t>;
 
 } // namespace lattice_symmetries

@@ -34,14 +34,19 @@
 #include <numeric>
 #include <tuple>
 
+#include <iostream>
+
 namespace lattice_symmetries {
 
-auto is_permutation(tcb::span<unsigned const> xs) -> bool
+template <class Int> auto is_permutation_helper(tcb::span<Int const> xs) -> bool
 {
-    std::vector<unsigned> range(xs.size());
-    std::iota(std::begin(range), std::end(range), 0);
+    std::vector<Int> range(xs.size());
+    std::iota(std::begin(range), std::end(range), Int{0});
     return std::is_permutation(std::begin(xs), std::end(xs), std::begin(range));
 }
+
+auto is_permutation(tcb::span<unsigned const> xs) -> bool { return is_permutation_helper(xs); }
+auto is_permutation(tcb::span<uint16_t const> xs) -> bool { return is_permutation_helper(xs); }
 
 enum class status_t { success, invalid_argument, no_solution, swap_impossible };
 enum class index_type_t { small, big };
@@ -302,20 +307,39 @@ struct solver_t {
     }
 };
 
-auto compile(tcb::span<unsigned const> const permutation) -> outcome::result<fat_benes_network_t>
+inline auto next_pow_of_2(uint64_t const x) noexcept -> uint64_t
+{
+    return x <= 1U ? uint64_t{1} : uint64_t{1} << (64 - __builtin_clzl(x - 1U));
+}
+
+template <class Int>
+auto compile_helper(tcb::span<Int const> const permutation) -> outcome::result<fat_benes_network_t>
 {
     if (!is_permutation(permutation)) { return LS_NOT_A_PERMUTATION; }
     if (permutation.size() > 512U) { return LS_PERMUTATION_TOO_LONG; }
-    try {
-        std::vector<uint16_t> source(permutation.size());
-        std::iota(std::begin(source), std::end(source), uint16_t{0});
-        std::vector<uint16_t> target(permutation.size());
-        std::copy(std::begin(permutation), std::end(permutation), std::begin(target));
-        return solver_t{std::move(source), std::move(target)}.solve();
-    }
-    catch (std::bad_alloc&) {
-        return LS_OUT_OF_MEMORY;
-    }
+    if (permutation.empty()) { return fat_benes_network_t{{}, {}, 0U}; }
+    auto const working_size = next_pow_of_2(permutation.size());
+
+    std::vector<uint16_t> source(working_size);
+    std::iota(std::begin(source), std::end(source), uint16_t{0});
+    std::vector<uint16_t> target(working_size);
+    auto i = std::copy(std::begin(permutation), std::end(permutation), std::begin(target));
+    std::copy(std::next(std::begin(source), static_cast<ptrdiff_t>(permutation.size())),
+              std::end(source), i);
+
+    auto network = solver_t{std::move(source), std::move(target)}.solve();
+    network.size = permutation.size();
+    return network;
+}
+
+auto compile(tcb::span<unsigned const> const permutation) -> outcome::result<fat_benes_network_t>
+{
+    return compile_helper(permutation);
+}
+
+auto compile(tcb::span<uint16_t const> const permutation) -> outcome::result<fat_benes_network_t>
+{
+    return compile_helper(permutation);
 }
 
 #if 0
