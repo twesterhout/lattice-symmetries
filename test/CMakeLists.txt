@@ -4,6 +4,7 @@ project(${CMAKE_PROJECT_NAME}Tests LANGUAGES C CXX)
 
 set(test_sources 
     src/test_main.cpp
+    src/test_api.cpp
     src/test_permutation.cpp
     src/test_network.cpp
 )
