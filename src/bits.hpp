@@ -135,4 +135,13 @@ constexpr auto set_bit_to(bits512& bits, unsigned const i,
 }
 */
 
+inline auto popcount(unsigned long const x) noexcept -> unsigned
+{
+    return static_cast<unsigned>(__builtin_popcountl(x));
+}
+inline auto popcount(unsigned long long const x) noexcept -> unsigned
+{
+    return static_cast<unsigned>(__builtin_popcountll(x));
+}
+
 } // namespace lattice_symmetries
