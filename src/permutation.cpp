@@ -273,6 +273,10 @@ struct solver_t {
         for (auto i = 1U; i <= _info.source.size() / 2; i *= 2) {
             stages.push_back(i);
         }
+        if (stages.empty()) {
+            LATTICE_SYMMETRIES_CHECK(_info.source == _info.target, "");
+            return fat_benes_network_t{{}, {}, 0U};
+        }
 
         std::vector<bits512> left;
         std::vector<bits512> right;
@@ -295,6 +299,7 @@ struct solver_t {
             auto const status = solve_stage(pairs, left.back(), right.back());
             LATTICE_SYMMETRIES_CHECK(status == status_t::success, "");
         }
+        LATTICE_SYMMETRIES_CHECK(_info.source == _info.target, "");
 
         auto stages_right = stages;
         LATTICE_SYMMETRIES_CHECK(is_zero(left.back()), "");
