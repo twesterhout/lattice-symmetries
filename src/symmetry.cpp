@@ -205,3 +205,8 @@ extern "C" double ls_get_phase(ls_symmetry const* symmetry)
         },
         symmetry->payload);
 }
+
+extern "C" unsigned ls_symmetry_get_number_spins(ls_symmetry const* symmetry)
+{
+    return std::visit([](auto const& x) noexcept { return x.network.width; }, symmetry->payload);
+}
