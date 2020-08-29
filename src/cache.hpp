@@ -29,7 +29,6 @@
 #pragma once
 
 #include "symmetry.hpp"
-#include <forward_list>
 #include <optional>
 #include <vector>
 
@@ -40,8 +39,7 @@ auto split_into_tasks(unsigned number_spins, std::optional<unsigned> hamming_wei
                       unsigned chunk_size) -> std::vector<std::pair<uint64_t, uint64_t>>;
 auto generate_states(tcb::span<batched_small_symmetry_t const> batched,
                      tcb::span<small_symmetry_t const> other, unsigned number_spins,
-                     std::optional<unsigned> hamming_weight)
-    -> std::forward_list<std::vector<uint64_t>>;
+                     std::optional<unsigned> hamming_weight) -> std::vector<std::vector<uint64_t>>;
 
 struct basis_cache_t {
   private:

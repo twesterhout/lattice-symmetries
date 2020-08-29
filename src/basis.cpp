@@ -81,6 +81,17 @@ struct ls_spin_basis {
     }
 };
 
+struct ls_states {
+    tcb::span<uint64_t const> payload;
+    ls_spin_basis*            parent;
+
+    ls_states(tcb::span<uint64_t const> states, ls_spin_basis const* owner)
+        : payload{states}, parent{ls_copy_spin_basis(owner)}
+    {}
+
+    ~ls_states() { ls_destroy_spin_basis(parent); }
+};
+
 extern "C" ls_error_code ls_create_spin_basis(ls_spin_basis** ptr, ls_group const* group,
                                               unsigned const number_spins, int const hamming_weight)
 {
@@ -108,6 +119,14 @@ extern "C" ls_error_code ls_create_spin_basis(ls_spin_basis** ptr, ls_group cons
     increment(p->header.refcount);
     *ptr = p.release();
     return LS_SUCCESS;
+}
+
+extern "C" ls_spin_basis* ls_copy_spin_basis(ls_spin_basis const* basis)
+{
+    LATTICE_SYMMETRIES_ASSERT(load(basis->header.refcount) > 0,
+                              "refcount cannot be increased from zero");
+    increment(basis->header.refcount);
+    return const_cast<ls_spin_basis*>(basis);
 }
 
 extern "C" void ls_destroy_spin_basis(ls_spin_basis* basis)
@@ -199,3 +218,23 @@ extern "C" void ls_get_state_info(ls_spin_basis* basis, uint64_t const bits[],
         visitor_t{bits, representative, *reinterpret_cast<std::complex<double>*>(character), *norm},
         basis->payload);
 }
+
+extern "C" ls_error_code ls_get_states(ls_states** ptr, ls_spin_basis const* basis)
+{
+    auto small_basis = std::get_if<small_basis_t>(&basis->payload);
+    if (LATTICE_SYMMETRIES_UNLIKELY(small_basis == nullptr)) { return LS_WRONG_BASIS_TYPE; }
+    if (LATTICE_SYMMETRIES_UNLIKELY(small_basis->cache == nullptr)) { return LS_CACHE_NOT_BUILT; }
+    auto const states = small_basis->cache->states();
+    auto       p      = std::make_unique<ls_states>(states, basis);
+    *ptr              = p.release();
+    return LS_SUCCESS;
+}
+
+extern "C" void ls_destroy_states(ls_states* states) { std::default_delete<ls_states>{}(states); }
+
+extern "C" uint64_t const* ls_states_get_data(ls_states const* states)
+{
+    return states->payload.data();
+}
+
+extern "C" uint64_t ls_states_get_size(ls_states const* states) { return states->payload.size(); }

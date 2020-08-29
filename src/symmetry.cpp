@@ -38,8 +38,12 @@ auto compute_eigenvalue(unsigned sector, unsigned periodicity) noexcept -> std::
     if (sector == 0U) { return std::complex<double>{1.0, 0.0}; }
     if (2U * sector == periodicity) { return std::complex<double>{-1.0, 0.0}; }
     auto const arg = -static_cast<long double>(2U * sector) / static_cast<long double>(periodicity);
-    return std::complex<double>{static_cast<double>(std::cos(M_PIl * arg)),
-                                static_cast<double>(std::sin(M_PIl * arg))};
+    auto       re  = static_cast<double>(std::cos(M_PIl * arg));
+    auto       im  = static_cast<double>(std::sin(M_PIl * arg));
+    constexpr auto cutoff = 1e-9;
+    if (std::abs(re) < cutoff) { re = 0.0; }
+    if (std::abs(im) < cutoff) { im = 0.0; }
+    return {re, im};
 }
 
 auto get_state_info(tcb::span<batched_small_symmetry_t const> const batched_symmetries,

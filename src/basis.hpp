@@ -37,7 +37,7 @@
 namespace lattice_symmetries {
 
 struct basis_base_t {
-    atomic_count_t          refcount;
+    mutable atomic_count_t  refcount;
     unsigned                number_spins;
     std::optional<unsigned> hamming_weight;
     bool                    has_symmetries;

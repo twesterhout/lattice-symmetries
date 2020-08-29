@@ -30,7 +30,6 @@
 #include "error_handling.hpp"
 #include <omp.h>
 #include <algorithm>
-#include <forward_list>
 #include <numeric>
 
 namespace lattice_symmetries {
@@ -205,7 +204,7 @@ auto closest_hamming(uint64_t x, unsigned const hamming_weight) noexcept -> uint
 auto generate_states(tcb::span<batched_small_symmetry_t const> batched,
                      tcb::span<small_symmetry_t const> other, unsigned const number_spins,
                      std::optional<unsigned> const hamming_weight)
-    -> std::forward_list<std::vector<uint64_t>>
+    -> std::vector<std::vector<uint64_t>>
 {
     LATTICE_SYMMETRIES_CHECK(0 < number_spins && number_spins <= 64, "invalid number of spins");
     LATTICE_SYMMETRIES_CHECK(!hamming_weight.has_value() || *hamming_weight <= number_spins,
@@ -217,31 +216,19 @@ auto generate_states(tcb::span<batched_small_symmetry_t const> batched,
         return std::max((bound - current) / number_chunks, 1UL);
     }();
     auto const ranges = split_into_tasks(number_spins, hamming_weight, chunk_size);
-    auto       states = std::forward_list<std::vector<uint64_t>>{};
-#pragma omp parallel default(none) firstprivate(hamming_weight)                                    \
+    auto       states = std::vector<std::vector<uint64_t>>(ranges.size());
+#pragma omp parallel for schedule(dynamic, 1) default(none) firstprivate(hamming_weight)           \
     shared(batched, other, ranges, states)
-    {
-        for (auto const [current, bound] : ranges) {
-#pragma omp single nowait
-            {
-                auto* chunk = std::addressof(states.emplace_front());
-                chunk->reserve(1048576UL / sizeof(uint64_t));
-#pragma omp task default(none) firstprivate(hamming_weight, current, bound, chunk)                 \
-    shared(batched, other)
-                {
-                    generate_states_task(hamming_weight.has_value(), current, bound, batched, other,
-                                         *chunk);
-                }
-            }
-        }
+    for (auto i = size_t{0}; i < ranges.size(); ++i) {
+        auto const [current, bound] = ranges[i];
+        states[i].reserve(1048576UL / sizeof(uint64_t));
+        generate_states_task(hamming_weight.has_value(), current, bound, batched, other, states[i]);
     }
-    // we were pushing to the front
-    states.reverse();
     return states;
 }
 
 namespace {
-    auto concatenate(std::forward_list<std::vector<uint64_t>> const& chunks)
+    auto concatenate(std::vector<std::vector<uint64_t>> const& chunks)
     {
         auto r = std::vector<uint64_t>{};
         r.reserve(std::accumulate(std::begin(chunks), std::end(chunks), size_t{0},
