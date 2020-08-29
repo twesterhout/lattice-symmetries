@@ -29,6 +29,8 @@
 #include "error_handling.hpp"
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <memory>
 
 namespace lattice_symmetries {
 
@@ -78,3 +80,17 @@ auto get_error_category() noexcept -> ls_error_category const&
 }
 
 } // namespace lattice_symmetries
+
+extern "C" char const* ls_error_to_string(ls_error_code code)
+{
+    using namespace lattice_symmetries;
+    auto msg = get_error_category().message(code);
+    auto p   = std::make_unique<char[]>(msg.size() + 1);
+    std::strcpy(p.get(), msg.c_str());
+    return p.release();
+}
+
+extern "C" void ls_destroy_string(char const* message)
+{
+    std::default_delete<char[]>{}(const_cast<char*>(message));
+}
