@@ -119,21 +119,18 @@ constexpr auto toggle_bit(bits512& bits, unsigned const i) noexcept -> void
     LATTICE_SYMMETRIES_ASSERT(i < 512U, "index out of bounds");
     return toggle_bit(bits.words[i / 64U], i % 64U);
 }
-/*
-constexpr auto set_bit_to(uint64_t& bits, unsigned const i,
-                          bool const value) noexcept -> void
+
+constexpr auto set_bit_to(uint64_t& bits, unsigned const i, bool const value) noexcept -> void
 {
-    LATTICE_SYMMETRIES_ASSERT(i < 64U, "index out of bounds");
-    bits = (bits & ~(uint64_t{1} << i)) | (static_cast<uint64_t>(value) << i);
+    clear_bit(bits, i);
+    bits |= static_cast<uint64_t>(value) << i;
 }
 
-constexpr auto set_bit_to(bits512& bits, unsigned const i,
-                          bool const value) noexcept -> void
+constexpr auto set_bit_to(bits512& bits, unsigned const i, bool const value) noexcept -> void
 {
     LATTICE_SYMMETRIES_ASSERT(i < 512U, "index out of bounds");
     set_bit_to(bits.words[i / 64U], i % 64U, value);
 }
-*/
 
 inline auto popcount(unsigned long const x) noexcept -> unsigned
 {
