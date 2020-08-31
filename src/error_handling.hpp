@@ -29,6 +29,7 @@
 #pragma once
 
 #include "lattice_symmetries/lattice_symmetries.h"
+#include "macros.hpp"
 #include <outcome.hpp>
 #include <string_view>
 #include <system_error>
@@ -41,6 +42,9 @@ template <> struct is_error_code_enum<ls_error_code> : true_type {};
 
 namespace lattice_symmetries {
 
+[[noreturn]] auto check_fail(char const* expr, char const* file, unsigned line,
+                             char const* function, char const* msg) noexcept -> void;
+
 [[noreturn]] auto assert_fail(char const* expr, char const* file, unsigned line,
                               char const* function, char const* msg) noexcept -> void;
 
@@ -49,7 +53,7 @@ class ls_error_category : public std::error_category {
   public:
     [[nodiscard]] auto name() const noexcept -> const char* final;
     [[nodiscard]] auto message(int c) const -> std::string final;
-    [[nodiscard]] auto default_error_condition(int c) const noexcept -> std::error_condition final;
+    // [[nodiscard]] auto default_error_condition(int c) const noexcept -> std::error_condition final;
 };
 
 auto get_error_category() noexcept -> ls_error_category const&;
@@ -62,12 +66,17 @@ inline auto make_error_code(ls_error_code const e) noexcept -> std::error_code
 }
 
 #define LATTICE_SYMMETRIES_CHECK(cond, msg)                                                        \
-    ((cond) ? static_cast<void>(0)                                                                 \
-            : ::lattice_symmetries::assert_fail(                                                   \
-                #cond, __FILE__, __LINE__, static_cast<char const*>(__PRETTY_FUNCTION__), msg))
+    (LATTICE_SYMMETRIES_LIKELY(cond)                                                               \
+         ? static_cast<void>(0)                                                                    \
+         : ::lattice_symmetries::check_fail(#cond, __FILE__, __LINE__,                             \
+                                            static_cast<char const*>(__FUNCTION__), msg))
 
 #if !defined(NDEBUG)
-#    define LATTICE_SYMMETRIES_ASSERT(cond, msg) LATTICE_SYMMETRIES_CHECK(cond, msg)
+#    define LATTICE_SYMMETRIES_ASSERT(cond, msg)                                                   \
+        (LATTICE_SYMMETRIES_LIKELY(cond)                                                           \
+             ? static_cast<void>(0)                                                                \
+             : ::lattice_symmetries::assert_fail(#cond, __FILE__, __LINE__,                        \
+                                                 static_cast<char const*>(__FUNCTION__), msg))
 #else
 #    define LATTICE_SYMMETRIES_ASSERT(cond, msg) static_cast<void>(cond)
 #endif
