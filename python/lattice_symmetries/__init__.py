@@ -2,6 +2,7 @@ import ctypes
 from ctypes import *
 import os
 import sys
+import math
 import subprocess
 import weakref
 from typing import List, Optional, Tuple
@@ -65,6 +66,15 @@ def __preprocess_library():
         ("ls_destroy_states", [c_void_p], None),
         ("ls_states_get_data", [c_void_p], POINTER(c_uint64)),
         ("ls_states_get_size", [c_void_p], c_uint64),
+        ("ls_save_cache", [c_void_p, c_char_p], c_int),
+        ("ls_load_cache", [c_void_p, c_char_p], c_int),
+        # Interaction
+        ("ls_create_interaction1", [POINTER(c_void_p), c_void_p, c_uint, POINTER(c_uint16)], c_int),
+        ("ls_create_interaction2", [POINTER(c_void_p), c_void_p, c_uint, POINTER(c_uint16 * 2)], c_int),
+        ("ls_create_interaction3", [POINTER(c_void_p), c_void_p, c_uint, POINTER(c_uint16 * 3)], c_int),
+        ("ls_create_interaction4", [POINTER(c_void_p), c_void_p, c_uint, POINTER(c_uint16 * 4)], c_int),
+        ("ls_destroy_interaction", [c_void_p], None),
+        # Operator
     ]
     # fmt: on
     for (name, argtypes, restype) in info:
@@ -79,7 +89,7 @@ __preprocess_library()
 def _get_error_message(status: int) -> str:
     """Convert `ls_error_code` by lattice_symmetries C library into human-readable string.
     """
-    raw = __lib.ls_error_to_string(status)
+    raw = _lib.ls_error_to_string(status)
     msg = ctypes.string_at(raw).decode()
     _lib.ls_destroy_string(raw)
     return msg
@@ -228,7 +238,7 @@ class SpinBasis:
     def number_states(self) -> int:
         r = c_uint64()
         _check_error(_lib.ls_get_number_states(self._payload, ctypes.byref(r)))
-        return r
+        return r.value
 
     def build(self):
         _check_error(_lib.ls_build(self._payload))
@@ -255,3 +265,74 @@ class SpinBasis:
         array = Array.from_address(cast(_lib.ls_states_get_data(states), c_void_p).value)
         weakref.finalize(array, _lib.ls_destroy_states, states)
         return np.frombuffer(array, dtype=np.uint64)
+
+    def save_cache(self, filename: str):
+        _check_error(_lib.ls_save_cache(self._payload, bytes(filename, "utf-8")))
+
+    def load_cache(self, filename: str):
+        _check_error(_lib.ls_load_cache(self._payload, bytes(filename, "utf-8")))
+
+
+# def _create_spin_basis(group, number_spins, hamming_weight) -> c_void_p:
+#     if not isinstance(group, Group):
+#         raise TypeError("expected Group, but got {}".format(type(group)))
+#     if hamming_weight is None:
+#         hamming_weight = -1
+#     basis = c_void_p()
+#     _check_error(
+#         _lib.ls_create_spin_basis(ctypes.byref(basis), group._payload, number_spins, hamming_weight)
+#     )
+#     return basis
+
+
+def _deduce_number_spins(matrix) -> int:
+    if matrix.ndim != 2:
+        ndim = matrix.ndim
+        raise ValueError("'matrix' must be a matrix, but got a {}-dimensional array".format(ndim))
+    n = matrix.shape[0]
+    if matrix.shape != (n, n):
+        shape = matrix.shape
+        raise ValueError("'matrix' must be square, but got an array of shape {}".format(shape))
+
+    error = ValueError("'matrix' must have shape 2ⁿ x 2ⁿ where n > 0 is the number of spins")
+    if n < 2:
+        raise error
+    number_spins = round(math.log2(n))
+    if 1 << number_spins != n:
+        raise error
+    if number_spins not in {1, 2, 3, 4}:
+        msg = "'Interaction' currently only supports interactions between 1, 2, 3 or 4 spins"
+        raise ValueError(msg)
+    return number_spins
+
+
+def _create_interaction(matrix, sites) -> c_void_p:
+    matrix = np.asarray(matrix, dtype=np.complex128, order="C")
+    number_spins = _deduce_number_spins(matrix)
+    sites = np.asarray(sites, dtype=np.uint16, order="C")
+    if sites.ndim == 1:
+        sites = sites.reshape(-1, 1)
+    if sites.ndim != 2 or sites.shape[1] != number_spins:
+        raise ValueError(
+            "'sites' must be a list of tuples and each tuple must have length {}"
+            "".format(number_spins)
+        )
+    f = {
+        1: _lib.ls_create_interaction1,
+        2: _lib.ls_create_interaction2,
+        3: _lib.ls_create_interaction3,
+        4: _lib.ls_create_interaction4,
+    }[number_spins]
+
+    interaction = c_void_p()
+    matrix_ptr = matrix.ctypes.data_as(c_void_p)
+    number_sites = sites.shape[0]
+    sites_ptr = sites.ctypes.data_as(POINTER(c_uint16 * number_spins))
+    _check_error(f(byref(interaction), matrix_ptr, number_sites, sites_ptr))
+    return interaction
+
+
+class Interaction:
+    def __init__(self, matrix, sites):
+        self._payload = _create_interaction(matrix, sites)
+        self._finalizer = weakref.finalize(self, _lib.ls_destroy_interaction, self._payload)
