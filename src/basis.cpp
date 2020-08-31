@@ -238,3 +238,61 @@ extern "C" uint64_t const* ls_states_get_data(ls_states const* states)
 }
 
 extern "C" uint64_t ls_states_get_size(ls_states const* states) { return states->payload.size(); }
+
+extern "C" ls_error_code ls_save_cache(ls_spin_basis const* basis, char const* filename)
+{
+    auto small_basis = std::get_if<small_basis_t>(&basis->payload);
+    if (small_basis == nullptr) { return LS_WRONG_BASIS_TYPE; }
+    if (small_basis->cache == nullptr) { return LS_CACHE_NOT_BUILT; }
+    auto const states = small_basis->cache->states();
+    auto const r      = save_states(states, filename);
+    if (!r) {
+        if (r.error().category() == get_error_category()) {
+            return static_cast<ls_error_code>(r.error().value());
+        }
+        return LS_SYSTEM_ERROR;
+    }
+    return LS_SUCCESS;
+}
+
+extern "C" ls_error_code ls_load_cache(ls_spin_basis* basis, char const* filename)
+{
+    auto p = std::get_if<small_basis_t>(&basis->payload);
+    if (p == nullptr) { return LS_WRONG_BASIS_TYPE; }
+    // Cache already built
+    if (p->cache != nullptr) { return LS_SUCCESS; }
+
+    auto const r = load_states(filename);
+    if (!r) {
+        if (r.error().category() == get_error_category()) {
+            return static_cast<ls_error_code>(r.error().value());
+        }
+        return LS_SYSTEM_ERROR;
+    }
+    p->cache = std::make_unique<basis_cache_t>(p->batched_symmetries, p->other_symmetries,
+                                               basis->header.number_spins,
+                                               basis->header.hamming_weight, std::move(r).value());
+    return LS_SUCCESS;
+}
+
+namespace lattice_symmetries {
+auto is_real(ls_spin_basis const& basis) noexcept -> bool
+{
+    struct visitor_fn_t {
+        auto operator()(small_basis_t const& x) const noexcept -> bool
+        {
+            return std::all_of(std::begin(x.batched_symmetries), std::end(x.batched_symmetries),
+                               [](auto const& s) { return is_real(s); })
+                   && std::all_of(std::begin(x.other_symmetries), std::end(x.other_symmetries),
+                                  [](auto const& s) { return is_real(s); });
+        }
+
+        auto operator()(big_basis_t const& x) const noexcept -> bool
+        {
+            return std::all_of(std::begin(x.symmetries), std::end(x.symmetries),
+                               [](auto const& s) { return is_real(s); });
+        }
+    };
+    return std::visit(visitor_fn_t{}, basis.payload);
+}
+} // namespace lattice_symmetries

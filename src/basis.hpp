@@ -57,4 +57,6 @@ struct big_basis_t {
     explicit big_basis_t(ls_group const& group);
 };
 
+auto is_real(ls_spin_basis const& basis) noexcept -> bool;
+
 } // namespace lattice_symmetries

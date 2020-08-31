@@ -29,6 +29,7 @@
 #pragma once
 
 #include "symmetry.hpp"
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -58,5 +59,8 @@ struct basis_cache_t {
     [[nodiscard]] auto number_states() const noexcept -> uint64_t;
     [[nodiscard]] auto index(uint64_t x) const noexcept -> outcome::result<uint64_t>;
 };
+
+auto save_states(tcb::span<uint64_t const> states, char const* filename) -> outcome::result<void>;
+auto load_states(char const* filename) -> outcome::result<std::vector<uint64_t>>;
 
 } // namespace lattice_symmetries

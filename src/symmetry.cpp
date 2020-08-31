@@ -132,6 +132,22 @@ auto get_state_info(std::vector<big_symmetry_t> const& symmetries, bits512 const
     norm           = n;
 }
 
+auto is_real(small_symmetry_t const& symmetry) noexcept -> bool
+{
+    return symmetry.eigenvalue.imag() == 0.0;
+}
+
+auto is_real(batched_small_symmetry_t const& symmetry) noexcept -> bool
+{
+    return std::all_of(std::begin(symmetry.eigenvalues), std::end(symmetry.eigenvalues),
+                       [](auto const& x) { return x.imag() == 0.0; });
+}
+
+auto is_real(big_symmetry_t const& symmetry) noexcept -> bool
+{
+    return symmetry.eigenvalue.imag() == 0.0;
+}
+
 } // namespace lattice_symmetries
 
 extern "C" ls_error_code ls_create_symmetry(ls_symmetry** ptr, unsigned const length,

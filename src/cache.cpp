@@ -28,8 +28,15 @@
 
 #include "cache.hpp"
 #include "error_handling.hpp"
+
+// POSIX only :(
+#include <endian.h>
+#include <sys/stat.h>
+
 #include <omp.h>
 #include <algorithm>
+#include <cerrno>
+#include <cstdio>
 #include <numeric>
 
 namespace lattice_symmetries {
@@ -150,8 +157,8 @@ namespace {
             if (*hamming_weight == 64U) { return {~uint64_t{0}, ~uint64_t{0}}; }
             auto const current = ~uint64_t{0} >> (64U - *hamming_weight);
             auto const bound   = number_spins > *hamming_weight
-                                   ? (current << (number_spins - *hamming_weight))
-                                   : current;
+                                     ? (current << (number_spins - *hamming_weight))
+                                     : current;
             return {current, bound};
         }
         auto const current = uint64_t{0};
@@ -264,6 +271,77 @@ auto basis_cache_t::index(uint64_t const x) const noexcept -> outcome::result<ui
     if (i == last) { return outcome::failure(LS_NOT_A_REPRESENTATIVE); }
     LATTICE_SYMMETRIES_ASSERT(*i == x, "");
     return static_cast<uint64_t>(std::distance(begin(_states), i));
+}
+
+namespace {
+    struct close_file_fn_t {
+        auto operator()(std::FILE* file) noexcept -> void { std::fclose(file); }
+    };
+
+    auto open_file(char const* filename, char const* mode) noexcept
+        -> outcome::result<std::unique_ptr<std::FILE, close_file_fn_t>>
+    {
+        auto* p = std::fopen(filename, mode);
+        if (p == nullptr) { return LS_COULD_NOT_OPEN_FILE; }
+        return std::unique_ptr<std::FILE, close_file_fn_t>{p};
+    }
+
+    auto file_size(char const* filename) noexcept -> uint64_t
+    {
+        struct stat buf;
+        stat(filename, &buf);
+        return static_cast<uint64_t>(buf.st_size);
+    }
+} // namespace
+
+auto save_states(tcb::span<uint64_t const> states, char const* filename) -> outcome::result<void>
+{
+    constexpr auto                 chunk_size = uint64_t{4096};
+    constexpr std::array<char, 16> header     = {42, 42, 42, 42, 42, 42, 42, 42,
+                                             42, 42, 42, 42, 42, 42, 42, 42};
+    OUTCOME_TRY(stream, open_file(filename, "wb"));
+    if (std::fwrite(header.data(), sizeof(char), std::size(header), stream.get())
+        != std::size(header)) {
+        return LS_FILE_IO_FAILED;
+    }
+    auto buffer = std::vector<uint64_t>(chunk_size);
+    for (auto first = std::begin(states), last = std::end(states); first != last;) {
+        auto const count = std::min(chunk_size, static_cast<uint64_t>(std::distance(first, last)));
+        auto const next  = std::next(first, static_cast<int64_t>(count));
+        std::transform(first, next, std::begin(buffer), [](auto const x) { return htole64(x); });
+        if (std::fwrite(buffer.data(), sizeof(uint64_t), count, stream.get()) != count) {
+            return LS_FILE_IO_FAILED;
+        }
+        // Move forward
+        first = next;
+    }
+    return LS_SUCCESS;
+}
+
+auto load_states(char const* filename) -> outcome::result<std::vector<uint64_t>>
+{
+    OUTCOME_TRY(stream, open_file(filename, "rb"));
+
+    auto size = file_size(filename);
+    if (size < 16U) { return LS_CACHE_IS_CORRUPT; }
+    size -= 16U;
+    if (size % sizeof(uint64_t) != 0) { return LS_CACHE_IS_CORRUPT; }
+
+    std::array<char, 16> header;
+    if (std::fread(header.data(), sizeof(char), std::size(header), stream.get())
+        != std::size(header)) {
+        return LS_FILE_IO_FAILED;
+    }
+    if (!std::all_of(std::begin(header), std::end(header), [](auto const c) { return c == 42; })) {
+        return LS_CACHE_IS_CORRUPT;
+    }
+    auto states = std::vector<uint64_t>(size / sizeof(uint64_t));
+    if (std::fread(states.data(), sizeof(uint64_t), states.size(), stream.get()) != states.size()) {
+        return LS_FILE_IO_FAILED;
+    }
+    std::transform(std::begin(states), std::end(states), std::begin(states),
+                   [](auto const x) { return le64toh(x); });
+    return outcome::success(std::move(states));
 }
 
 } // namespace lattice_symmetries

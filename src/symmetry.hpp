@@ -87,6 +87,10 @@ auto get_state_info(std::vector<big_symmetry_t> const& symmetries, bits512 const
                     bits512& representative, std::complex<double>& character, double& norm) noexcept
     -> void;
 
+auto is_real(small_symmetry_t const&) noexcept -> bool;
+auto is_real(batched_small_symmetry_t const&) noexcept -> bool;
+auto is_real(big_symmetry_t const&) noexcept -> bool;
+
 } // namespace lattice_symmetries
 
 struct ls_symmetry {
