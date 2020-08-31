@@ -13,16 +13,15 @@ struct symmetry_spec_t {
     uint16_t              periodicity;
 };
 
-constexpr auto multiply(std::pair<unsigned, unsigned> const& a,
-                        std::pair<unsigned, unsigned> const& b) noexcept
-    -> std::pair<unsigned, unsigned>
+auto rational_add(std::pair<unsigned, unsigned> const& a,
+                  std::pair<unsigned, unsigned> const& b) noexcept -> std::pair<unsigned, unsigned>
 {
-    auto p = a.first * b.first;
+    auto p = a.first * b.second + b.first * a.second;
     auto q = a.second * b.second;
     auto m = std::gcd(p, q);
     p /= m;
     q /= m;
-    return std::make_pair(p, q);
+    return std::make_pair(p % q, q);
 }
 
 namespace {
@@ -60,7 +59,8 @@ namespace {
         auto const flip        = static_cast<bool>(x.flip ^ y.flip);
         auto       periodicity = compute_periodicity(tcb::span<uint16_t const>{permutation});
         if (flip && periodicity % 2U != 0U) { periodicity *= 2U; }
-        auto const phase = multiply({x.sector, x.periodicity}, {y.sector, y.periodicity});
+        // auto const phase = multiply({x.sector, x.periodicity}, {y.sector, y.periodicity});
+        auto const phase = rational_add({x.sector, x.periodicity}, {y.sector, y.periodicity});
         if (phase.second > periodicity) { return LS_INCOMPATIBLE_SYMMETRIES; }
         if (periodicity % phase.second != 0) { return LS_INCOMPATIBLE_SYMMETRIES; }
         auto const sector = phase.first * (periodicity / phase.second);
