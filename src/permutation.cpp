@@ -100,8 +100,8 @@ struct solver_t {
         _info.inverse_source.resize(n);
         _info.inverse_target.resize(n);
         for (auto i = size_t{0}; i < n; ++i) {
-            _info.inverse_source[_info.source[i]] = i;
-            _info.inverse_target[_info.target[i]] = i;
+            _info.inverse_source[_info.source[i]] = static_cast<uint16_t>(i);
+            _info.inverse_target[_info.target[i]] = static_cast<uint16_t>(i);
         }
         _cxt.types.resize(n);
     }
@@ -128,8 +128,8 @@ struct solver_t {
         LATTICE_SYMMETRIES_ASSERT(index < size(), "invalid index");
         LATTICE_SYMMETRIES_ASSERT(type == get_index_type(index), "invalid type");
         switch (type) {
-        case index_type_t::small: return index + _cxt.delta;
-        case index_type_t::big: return index - _cxt.delta;
+        case index_type_t::small: return static_cast<uint16_t>(index + _cxt.delta);
+        case index_type_t::big: return static_cast<uint16_t>(index - _cxt.delta);
         default: LATTICE_SYMMETRIES_UNREACHABLE;
         }
     }
@@ -152,8 +152,8 @@ struct solver_t {
         if (other < size()) { clear_bit(_cxt.visited, other); }
     }
 
-    [[nodiscard]] auto _find_in(uint16_t const value, tcb::span<uint16_t const> const inverse) const
-        noexcept -> uint16_t
+    [[nodiscard]] auto _find_in(uint16_t const                  value,
+                                tcb::span<uint16_t const> const inverse) const noexcept -> uint16_t
     {
         LATTICE_SYMMETRIES_ASSERT(value < inverse.size(), "");
         return inverse[value];
@@ -169,8 +169,8 @@ struct solver_t {
 
     [[nodiscard]] auto _swap_in(uint16_t const index, index_type_t const type,
                                 tcb::span<uint16_t> const perm,
-                                tcb::span<uint16_t> const inverse_perm, bits512& mask) const
-        noexcept -> status_t
+                                tcb::span<uint16_t> const inverse_perm,
+                                bits512&                  mask) const noexcept -> status_t
     {
         auto const other = other_index(index, type);
         if (other >= size()) { return status_t::swap_impossible; }
@@ -249,7 +249,7 @@ struct solver_t {
         _cxt.reset(pairs);
         auto backup = _info;
         auto status = status_t::success;
-        for (auto const [i, j] : pairs) {
+        for (auto const& [i, j] : pairs) {
             if (!already_visited(i)) {
                 status = solve_in_source(j, false);
                 if (status == status_t::swap_impossible) { status = solve_in_source(j, true); }
@@ -320,7 +320,7 @@ inline auto next_pow_of_2(uint64_t const x) noexcept -> uint64_t
 template <class Int>
 auto compile_helper(tcb::span<Int const> const permutation) -> outcome::result<fat_benes_network_t>
 {
-    if (!is_permutation(permutation)) { return LS_NOT_A_PERMUTATION; }
+    if (!is_permutation(permutation)) { return LS_INVALID_PERMUTATION; }
     if (permutation.size() > 512U) { return LS_PERMUTATION_TOO_LONG; }
     if (permutation.empty()) { return fat_benes_network_t{{}, {}, 0U}; }
     auto const working_size = next_pow_of_2(permutation.size());
@@ -333,7 +333,7 @@ auto compile_helper(tcb::span<Int const> const permutation) -> outcome::result<f
               std::end(source), i);
 
     auto network = solver_t{std::move(source), std::move(target)}.solve();
-    network.size = permutation.size();
+    network.size = static_cast<unsigned>(permutation.size());
     return network;
 }
 
