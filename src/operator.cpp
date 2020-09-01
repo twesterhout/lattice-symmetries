@@ -9,15 +9,24 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <numeric>
 #include <span.hpp>
 #include <variant>
 #include <vector>
+
+#include <cstdio>
 
 namespace lattice_symmetries {
 
 namespace {
     template <unsigned N> auto transpose(std::complex<double> (&matrix)[N][N]) noexcept -> void
     {
+        // for (auto i = 0U; i < N; ++i) {
+        //     for (auto j = 0U; j < N; ++j) {
+        //         std::printf("%f+%fi, ", matrix[i][j].real(), matrix[i][j].imag());
+        //     }
+        //     std::printf("\n");
+        // }
         for (auto i = 0U; i < N; ++i) {
             for (auto j = 0U; j < i; ++j) {
                 std::swap(matrix[i][j], matrix[j][i]);
@@ -31,13 +40,19 @@ template <unsigned NumberSpins> struct interaction_t {
         auto operator()(void* p) const noexcept -> void { std::free(p); }
     };
 
+    static constexpr unsigned Dim = 1U << NumberSpins;
+
     struct alignas(64) matrix_t {
-        std::complex<double> payload[NumberSpins][NumberSpins];
+        std::complex<double> payload[Dim][Dim];
 
         explicit matrix_t(std::complex<double> const* data) noexcept
         {
-            std::memcpy(payload, data, NumberSpins * NumberSpins * sizeof(std::complex<double>));
+            std::memcpy(payload, data, Dim * Dim * sizeof(std::complex<double>));
         }
+
+        explicit matrix_t(std::complex<double> const (&data)[Dim][Dim]) noexcept
+            : matrix_t{&data[0][0]}
+        {}
     };
     using sites_t = std::vector<std::array<uint16_t, NumberSpins>>;
 
@@ -50,6 +65,11 @@ template <unsigned NumberSpins> struct interaction_t {
     {
         transpose(matrix->payload);
     }
+
+    interaction_t(interaction_t&&) noexcept = default;
+    interaction_t(interaction_t const& other)
+        : matrix{std::make_unique<matrix_t>(other.matrix->payload)}, sites{other.sites}
+    {}
 };
 
 namespace {
@@ -81,14 +101,21 @@ namespace {
     }
 
     template <class Bits, std::size_t N>
-    constexpr auto scatter_bits(Bits& bits, unsigned r, std::array<uint16_t, N> const& indices)
-        -> void
+    auto scatter_bits(Bits& bits, unsigned r, std::array<uint16_t, N> const& indices) -> void
     {
+        // std::printf("scatter_bits(%zu, %u, {", bits, r);
+        // for (auto i : indices) {
+        //     std::printf("%u, ", i);
+        // }
+        // std::printf("})\n");
         for (auto i = N; i-- > 0;) {
             LATTICE_SYMMETRIES_ASSERT(indices[i] < 64, "index out of bounds");
+            // std::printf("set_bit_to(%zu, %u, %u)\n", bits, indices[i], r & 1U);
             set_bit_to(bits, indices[i], r & 1U);
+            // std::printf("  -> %zu\n", bits);
             r >>= 1U;
         }
+        // std::printf("  -> %zu\n", bits);
     }
 
     template <class Bits, class OffDiag> struct interaction_apply_fn_t {
@@ -102,15 +129,28 @@ namespace {
         template <unsigned N>
         auto operator()(interaction_t<N> const& self) const noexcept(is_noexcept) -> void
         {
+            // std::printf("interaction_t<%u>::operator()(%zu, %f+%fi, off_diag)\n", N, x,
+            //             diagonal.real(), diagonal.imag());
+            // for (auto const& data : self.matrix->payload) {
+            //     std::printf("[%f, %f, %f, %f]\n", data[0].real(), data[1].real(), data[2].real(),
+            //                 data[3].real());
+            // }
             for (auto const edge : self.sites) {
-                auto const  k    = gather_bits(x, edge);
+                auto const k = gather_bits(x, edge);
+                // std::printf("k = %u, edge = {%u, %u}\n", k, edge[0], edge[1]);
                 auto const& data = self.matrix->payload[k];
+                // std::printf("data = {%f, %f, %f, %f}\n", data[0].real(), data[1].real(),
+                //             data[2].real(), data[3].real());
                 for (auto n = 0U; n < std::size(data); ++n) {
                     if (data[n] != 0.0) {
-                        if (n == k) { diagonal += data[n]; }
+                        if (n == k) {
+                            // std::printf("diagonal += %f\n", data[n].real());
+                            diagonal += data[n];
+                        }
                         else {
                             auto y = x;
                             scatter_bits(y, n, edge);
+                            // std::printf("off_diag(%zu, %f)\n", y, data[n].real());
                             off_diag(y, data[n]);
                         }
                     }
@@ -118,6 +158,16 @@ namespace {
             }
         }
     };
+
+    template <unsigned N>
+    constexpr auto max_index(interaction_t<N> const& interaction) noexcept -> unsigned
+    {
+        return std::accumulate(std::begin(interaction.sites), std::end(interaction.sites), 0U,
+                               [](auto const max, auto const& sites) {
+                                   return std::max<unsigned>(
+                                       max, *std::max_element(std::begin(sites), std::end(sites)));
+                               });
+    }
 
 } // namespace
 
@@ -144,6 +194,19 @@ namespace {
         std::visit(interaction_apply_fn_t<Bits, OffDiag>{spin, diagonal, std::move(off_diag)},
                    interaction.payload);
     }
+
+    constexpr auto max_index(ls_interaction const& interaction) noexcept -> unsigned
+    {
+        return std::visit([](auto const& x) { return max_index(x); }, interaction.payload);
+    }
+
+    auto max_index(tcb::span<ls_interaction const* const> interactions) noexcept -> unsigned
+    {
+        return std::accumulate(std::begin(interactions), std::end(interactions), 0U,
+                               [](auto const max, auto const* interaction) {
+                                   return std::max(max, max_index(*interaction));
+                               });
+    }
 } // namespace
 } // namespace lattice_symmetries
 
@@ -156,6 +219,18 @@ struct ls_operator {
     basis_ptr_t                 basis;
     std::vector<ls_interaction> terms;
     bool                        is_real;
+
+    ls_operator(ls_spin_basis const* _basis, tcb::span<ls_interaction const* const> _terms)
+        : basis{ls_copy_spin_basis(_basis)}, terms{}
+    {
+        terms.reserve(_terms.size());
+        std::transform(
+            std::begin(_terms), std::end(_terms), std::back_inserter(terms),
+            [](auto const* x) noexcept -> auto const& { return *x; });
+        is_real = lattice_symmetries::is_real(*basis)
+                  && std::all_of(std::begin(terms), std::end(terms),
+                                 [](auto const& x) { return ls_interaction_is_real(&x); });
+    }
 };
 
 extern "C" ls_error_code ls_create_interaction1(ls_interaction** ptr, void const* matrix_2x2,
@@ -263,7 +338,10 @@ auto apply_helper(ls_operator const& op, Bits const& spin, Callback callback) no
     double               norm;
 
     ls_get_state_info(op.basis.get(), to_bits(spin), to_bits(repr), &eigenvalue, &norm);
-    if (norm == 0.0) { return LS_INVALID_STATE; }
+    if (norm == 0.0) {
+        // std::printf("%zu invalid state!\n", spin);
+        return LS_INVALID_STATE;
+    }
     auto const old_norm = norm;
     auto       diagonal = std::complex<double>{0.0, 0.0};
     auto const off_diag = [&](Bits const& x, std::complex<double> const& c) {
@@ -274,11 +352,12 @@ auto apply_helper(ls_operator const& op, Bits const& spin, Callback callback) no
         apply(term, spin, diagonal, std::cref(off_diag));
     }
     callback(spin, diagonal);
-    return LS_SUCCESS;
+    return outcome::success();
 }
 
 template <class T>
-auto apply_helper(ls_operator const& op, T const* x, T* y) noexcept -> outcome::result<void>
+auto apply_helper(ls_operator const& op, uint64_t size, T const* x, T* y) noexcept
+    -> outcome::result<void>
 {
     OUTCOME_TRY(states, [&op]() -> outcome::result<tcb::span<uint64_t const>> {
         ls_states* states = nullptr;
@@ -289,6 +368,7 @@ auto apply_helper(ls_operator const& op, T const* x, T* y) noexcept -> outcome::
     if constexpr (!is_complex_v<T>) {
         if (!op.is_real) { return LS_OPERATOR_IS_COMPLEX; }
     }
+    if (size != states.size()) { return LS_DIMENSION_MISMATCH; }
 
     auto const chunk_size =
         std::max(500UL, states.size() / (100UL * static_cast<unsigned>(omp_get_max_threads())));
@@ -299,6 +379,7 @@ auto apply_helper(ls_operator const& op, T const* x, T* y) noexcept -> outcome::
         auto acc    = acc_t{0.0};
         auto status = apply_helper(
             op, states[i], [&acc, &op, x](auto const spin, auto const& coeff) noexcept {
+                // std::printf("%zu, %f + %fi\n", spin, coeff.real(), coeff.imag());
                 uint64_t   index;
                 auto const _status = ls_get_index(op.basis.get(), to_bits(spin), &index);
                 LATTICE_SYMMETRIES_ASSERT(_status == LS_SUCCESS, "");
@@ -306,18 +387,20 @@ auto apply_helper(ls_operator const& op, T const* x, T* y) noexcept -> outcome::
                     acc += std::conj(coeff) * static_cast<acc_t>(x[index]);
                 }
                 else {
-                    acc += coeff.real() * x[index];
+                    acc += coeff.real() * static_cast<acc_t>(x[index]);
                 }
             });
-        LATTICE_SYMMETRIES_ASSERT(status, "");
+        // if (!status) { std::printf("status = %i\n", status.error()); }
+        LATTICE_SYMMETRIES_ASSERT(status.has_value(), "");
         y[i] = static_cast<T>(acc);
     }
     return LS_SUCCESS;
 }
 
-template <class T> auto apply(ls_operator const* op, T const* x, T* y) noexcept -> ls_error_code
+template <class T>
+auto apply(ls_operator const* op, uint64_t size, T const* x, T* y) noexcept -> ls_error_code
 {
-    auto r = apply_helper(*op, x, y);
+    auto r = apply_helper(*op, size, x, y);
     if (!r) {
         if (r.error().category() == get_error_category()) {
             return static_cast<ls_error_code>(r.error().value());
@@ -329,24 +412,42 @@ template <class T> auto apply(ls_operator const* op, T const* x, T* y) noexcept 
 
 } // namespace lattice_symmetries
 
-extern "C" ls_error_code ls_operator_matvec_f32(ls_operator const* op, float const* x, float* y)
+extern "C" ls_error_code ls_create_operator(ls_operator** ptr, ls_spin_basis const* basis,
+                                            unsigned const              number_terms,
+                                            ls_interaction const* const terms[])
 {
-    return apply(op, x, y);
+    auto const _terms                = tcb::span<ls_interaction const* const>{terms, number_terms};
+    auto       expected_number_spins = 1U + max_index(_terms);
+    if (expected_number_spins > ls_get_number_spins(basis)) { return LS_INVALID_NUMBER_SPINS; }
+    auto p = std::make_unique<ls_operator>(basis, _terms);
+    *ptr   = p.release();
+    return LS_SUCCESS;
 }
 
-extern "C" ls_error_code ls_operator_matvec_f64(ls_operator const* op, double const* x, double* y)
+extern "C" void ls_destroy_operator(ls_operator* op) { std::default_delete<ls_operator>{}(op); }
+
+extern "C" ls_error_code ls_operator_matvec_f32(ls_operator const* op, uint64_t size,
+                                                float const* x, float* y)
 {
-    return apply(op, x, y);
+    return apply(op, size, x, y);
 }
 
-extern "C" ls_error_code ls_operator_matvec_c64(ls_operator const* op, void const* x, void* y)
+extern "C" ls_error_code ls_operator_matvec_f64(ls_operator const* op, uint64_t size,
+                                                double const* x, double* y)
+{
+    return apply(op, size, x, y);
+}
+
+extern "C" ls_error_code ls_operator_matvec_c64(ls_operator const* op, uint64_t size, void const* x,
+                                                void* y)
 {
     using C = std::complex<float>;
-    return apply(op, static_cast<C const*>(x), static_cast<C*>(y));
+    return apply(op, size, static_cast<C const*>(x), static_cast<C*>(y));
 }
 
-extern "C" ls_error_code ls_operator_matvec_c128(ls_operator const* op, void const* x, void* y)
+extern "C" ls_error_code ls_operator_matvec_c128(ls_operator const* op, uint64_t size,
+                                                 void const* x, void* y)
 {
     using C = std::complex<double>;
-    return apply(op, static_cast<C const*>(x), static_cast<C*>(y));
+    return apply(op, size, static_cast<C const*>(x), static_cast<C*>(y));
 }
