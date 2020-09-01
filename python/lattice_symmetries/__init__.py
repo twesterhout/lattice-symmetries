@@ -75,6 +75,9 @@ def __preprocess_library():
         ("ls_create_interaction4", [POINTER(c_void_p), c_void_p, c_uint, POINTER(c_uint16 * 4)], c_int),
         ("ls_destroy_interaction", [c_void_p], None),
         # Operator
+        ("ls_create_operator", [POINTER(c_void_p), c_void_p, c_uint, POINTER(c_void_p)], c_int),
+        ("ls_destroy_operator", [c_void_p], None),
+        ("ls_operator_matvec_f64", [c_void_p, c_uint64, POINTER(c_double), POINTER(c_double)], c_int),
     ]
     # fmt: on
     for (name, argtypes, restype) in info:
@@ -87,7 +90,8 @@ __preprocess_library()
 
 
 def _get_error_message(status: int) -> str:
-    """Convert `ls_error_code` by lattice_symmetries C library into human-readable string.
+    """Convert `ls_error_code` produced by lattice_symmetries C library into a
+    human-readable string.
     """
     raw = _lib.ls_error_to_string(status)
     msg = ctypes.string_at(raw).decode()
@@ -96,13 +100,22 @@ def _get_error_message(status: int) -> str:
 
 
 class LatticeSymmetriesException(Exception):
-    def __init__(self, error_code):
+    """Used to report errors from lattice_symmetries C library.
+    """
+
+    def __init__(self, error_code: int):
+        """Constructs the exception. `error_code` is the status code obtained
+        from the C library.
+        """
         self.status = error_code
         self.message = _get_error_message(error_code)
-        super().__init__(self.message)
+        super().__init__(self.message + " (error code: {})".format(self.status))
 
 
-def _check_error(status):
+def _check_error(status: int):
+    """Check `status` and raise a ``LatticeSymmetriesException`` in case of an
+    error.
+    """
     if status != 0:
         raise LatticeSymmetriesException(status)
 
@@ -123,34 +136,45 @@ def _create_symmetry(permutation, flip, sector) -> c_void_p:
 
 
 class Symmetry:
-    def __init__(self, permutation: List[int], sector: int, flip: bool):
+    """Symmetry operator.
+
+    See documentation of ls_symmetry for more information.
+    """
+
+    def __init__(self, permutation: List[int], sector: int, flip: bool = False):
         self._payload = _create_symmetry(permutation, flip, sector)
         self._finalizer = weakref.finalize(self, _lib.ls_destroy_symmetry, self._payload)
 
     @property
     def sector(self) -> int:
+        """Return symmetry sector"""
         return _lib.ls_get_sector(self._payload)
 
     @property
     def flip(self) -> bool:
+        """Return whether symmetry applies spin inversion"""
         return _lib.ls_get_flip(self._payload)
 
     @property
     def phase(self) -> float:
+        """Return phase of symmetry eigenvalue"""
         return _lib.ls_get_phase(self._payload)
 
     @property
     def eigenvalue(self) -> complex:
+        """Return symmetry eigenvalue"""
         out = (c_double * 2)()
         _lib.ls_get_eigenvalue(self._payload, out)
         return complex(out[0], out[1])
 
     @property
     def periodicity(self) -> int:
+        """Return periodicity of the operator"""
         return _lib.ls_get_periodicity(self._payload)
 
     @property
     def number_spins(self) -> int:
+        """Return number of spins on which the operator acts"""
         return _lib.ls_symmetry_get_number_spins(self._payload)
 
 
@@ -260,7 +284,7 @@ class SpinBasis:
     @property
     def states(self) -> np.ndarray:
         states = c_void_p()
-        _check_error(_lib.ls_get_states(byref(states), basis))
+        _check_error(_lib.ls_get_states(byref(states), self._payload))
         Array = c_uint64 * _lib.ls_states_get_size(states)
         array = Array.from_address(cast(_lib.ls_states_get_data(states), c_void_p).value)
         weakref.finalize(array, _lib.ls_destroy_states, states)
@@ -336,3 +360,85 @@ class Interaction:
     def __init__(self, matrix, sites):
         self._payload = _create_interaction(matrix, sites)
         self._finalizer = weakref.finalize(self, _lib.ls_destroy_interaction, self._payload)
+
+
+def _create_operator(basis: SpinBasis, terms: List[Interaction]) -> c_void_p:
+    if not isinstance(basis, SpinBasis):
+        raise TypeError("expected SpinBasis, but got {}".format(type(basis)))
+    if not all(map(lambda x: isinstance(x, Interaction), terms)):
+        raise TypeError("expected List[Interaction]")
+    view = (c_void_p * len(terms))()
+    for i in range(len(terms)):
+        view[i] = terms[i]._payload
+    op = c_void_p()
+    _check_error(_lib.ls_create_operator(ctypes.byref(op), basis._payload, len(terms), view))
+    return op
+
+
+class Operator:
+    def __init__(self, basis, terms):
+        self._payload = _create_operator(basis, terms)
+        self._finalizer = weakref.finalize(self, _lib.ls_destroy_operator, self._payload)
+        self.basis = basis
+
+    def __call__(self, x, out=None):
+        if x.ndim != 1:
+            raise ValueError("'x' must be a vector, but got a {}-dimensional array".format(x.ndim))
+        assert x.dtype == np.float64
+        if out is None:
+            out = np.empty_like(x)
+        _check_error(
+            _lib.ls_operator_matvec_f64(
+                self._payload,
+                len(x),
+                x.ctypes.data_as(POINTER(c_double)),
+                out.ctypes.data_as(POINTER(c_double)),
+            )
+        )
+        return out
+
+
+def diagonalize(hamiltonian: Operator, k: int = 1, dtype=None, tol=0):
+    import gc
+    import numpy as np
+    import scipy.sparse.linalg
+
+    hamiltonian.basis.build()
+    n = hamiltonian.basis.number_states
+    dtype = np.float64
+    # if dtype is not None:
+    #     if dtype not in {np.float32, np.float64, np.complex64, np.complex128}:
+    #         raise ValueError(
+    #             "invalid dtype: {}; expected float32, float64, complex64 or complex128"
+    #             "".format(dtype)
+    #         )
+    #     if not hamiltonian.is_real and dtype in {np.float32, np.float64}:
+    #         raise ValueError(
+    #             "invalid dtype: {}; Hamiltonian is complex -- expected either complex64 "
+    #             "or complex128".format(dtype)
+    #         )
+    # else:
+    #     dtype = np.float64 if hamiltonian.is_real else np.complex128
+
+    def matvec(x):
+        gc.collect()
+        return hamiltonian(x)
+
+    def number_lanczos_vectors():
+        # free = psutil.virtual_memory().free
+        # usage = np.dtype(dtype).itemsize * n
+        # need = 20 * usage
+        # if need > free:
+        #     import warnings
+
+        #     count = (2 * free // 3) // usage
+        #     warnings.warn(
+        #         "Not enough memory to store the default=20 Lanczos vectors. "
+        #         "Need ~{:.1f}GB, but have only ~{:.1f}GB. Will use {} Lanczos "
+        #         "vectors instead.".format(need / 1024 ** 3, free / 1024 ** 3, count)
+        #     )
+        #     return count
+        return None
+
+    op = scipy.sparse.linalg.LinearOperator(shape=(n, n), matvec=matvec, dtype=dtype)
+    return scipy.sparse.linalg.eigsh(op, k=k, ncv=number_lanczos_vectors(), which="SA", tol=tol)
