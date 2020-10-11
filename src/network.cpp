@@ -15,12 +15,14 @@ namespace {
     auto init_flip_mask(bits64& mask, unsigned const n) noexcept -> void
     {
         // Play nice and do not shift by 64 bits
+        // NOLINTNEXTLINE: 64 is the number of bits in bits64
         mask = n == 0U ? uint64_t{0} : ((~uint64_t{0}) >> (64U - n));
     }
 
     auto init_flip_mask(bits512& mask, unsigned n) noexcept -> void
     {
         auto i = 0U;
+        // NOLINTNEXTLINE: 64 is the number of bits in uint64_t
         for (; n >= 64U; ++i, n -= 64) {
             mask.words[i] = ~uint64_t{0};
         }
@@ -28,7 +30,7 @@ namespace {
             init_flip_mask(mask.words[i], n);
             ++i;
         }
-        for (; i < 8U; ++i) {
+        for (; i < std::size(mask.words); ++i) {
             mask.words[i] = uint64_t{0};
         }
     }
@@ -90,12 +92,15 @@ auto small_network_t::operator()(uint64_t bits) const noexcept -> uint64_t
 
 auto big_network_t::operator()(bits512& bits) const noexcept -> void
 {
-    benes_forward(bits, masks, depth, deltas, flip, flip_mask);
+    benes_forward(bits, static_cast<bits512 const*>(masks), depth,
+                  static_cast<uint16_t const*>(deltas), flip, flip_mask);
 }
 
 inline auto next_pow_of_2(uint64_t const x) noexcept -> uint64_t
 {
-    return x <= 1U ? uint64_t{1} : uint64_t{1} << (64 - __builtin_clzl(x - 1U));
+    return x <= 1U ? uint64_t{1}
+                   // NOLINTNEXTLINE: 64 is the number of bits in uint64_t, not a magic constant
+                   : uint64_t{1} << static_cast<unsigned>(64 - __builtin_clzl(x - 1U));
 }
 
 template <class Network, class Int>
@@ -171,7 +176,7 @@ auto compose(small_network_t const& x, small_network_t const& y) -> outcome::res
 
 batched_small_network_t::batched_small_network_t(
     std::array<small_network_t const*, batch_size> const& networks) noexcept
-    : masks{}, deltas{}, flips{}, flip_mask{}, depth{}
+    : masks{}, deltas{}, flips{}, flip_mask{}, depth{}, width{}
 {
     // Make sure that it is safe to access members
     for (auto const* network : networks) {
@@ -180,9 +185,11 @@ batched_small_network_t::batched_small_network_t(
     // Determine depth and flip_mask
     flip_mask = networks[0]->flip_mask;
     depth     = networks[0]->depth;
+    width     = networks[0]->width;
     for (auto const* network : networks) {
         LATTICE_SYMMETRIES_CHECK(network->flip_mask == flip_mask, "");
         LATTICE_SYMMETRIES_CHECK(network->depth == depth, "");
+        LATTICE_SYMMETRIES_CHECK(network->width == width, "");
     }
     // Determine masks
     for (auto i = 0U; i < depth; ++i) {
@@ -231,9 +238,10 @@ batched_small_network_t::batched_small_network_t(small_network_t const& small) n
 }
 #endif
 
-auto batched_small_network_t::operator()(uint64_t bits[8]) const noexcept -> void
+auto batched_small_network_t::operator()(uint64_t bits[batch_size]) const noexcept -> void
 {
-    benes_forward(bits, masks, depth, deltas);
+    benes_forward(bits, static_cast<uint64_t const(*)[batch_size]>(masks), depth,
+                  static_cast<uint16_t const*>(deltas));
 }
 
 } // namespace lattice_symmetries
