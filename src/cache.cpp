@@ -125,7 +125,7 @@ namespace {
     }
 
     template <bool FixedHammingWeight>
-    auto split_into_tasks(uint64_t current, uint64_t const bound, unsigned chunk_size)
+    auto split_into_tasks(uint64_t current, uint64_t const bound, uint64_t chunk_size)
         -> std::vector<std::pair<uint64_t, uint64_t>>
     {
         --chunk_size;
@@ -168,7 +168,7 @@ namespace {
 } // namespace
 
 auto split_into_tasks(unsigned number_spins, std::optional<unsigned> hamming_weight,
-                      unsigned const chunk_size) -> std::vector<std::pair<uint64_t, uint64_t>>
+                      uint64_t const chunk_size) -> std::vector<std::pair<uint64_t, uint64_t>>
 {
     LATTICE_SYMMETRIES_ASSERT(0 < number_spins && number_spins <= 64, "invalid number of spins");
     LATTICE_SYMMETRIES_ASSERT(!hamming_weight.has_value() || *hamming_weight <= number_spins,

@@ -37,7 +37,7 @@ namespace lattice_symmetries {
 
 auto closest_hamming(uint64_t x, unsigned hamming_weight) noexcept -> uint64_t;
 auto split_into_tasks(unsigned number_spins, std::optional<unsigned> hamming_weight,
-                      unsigned chunk_size) -> std::vector<std::pair<uint64_t, uint64_t>>;
+                      uint64_t chunk_size) -> std::vector<std::pair<uint64_t, uint64_t>>;
 auto generate_states(tcb::span<batched_small_symmetry_t const> batched,
                      tcb::span<small_symmetry_t const> other, unsigned number_spins,
                      std::optional<unsigned> hamming_weight) -> std::vector<std::vector<uint64_t>>;
