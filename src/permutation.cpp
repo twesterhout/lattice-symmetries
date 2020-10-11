@@ -34,8 +34,6 @@
 #include <numeric>
 #include <tuple>
 
-#include <iostream>
-
 namespace lattice_symmetries {
 
 template <class Int> auto is_permutation_helper(tcb::span<Int const> xs) -> bool
@@ -138,8 +136,11 @@ struct solver_t {
         return other_index(index, get_index_type(index));
     }
 
-    constexpr auto already_visited(uint16_t const i) noexcept { return test_bit(_cxt.visited, i); }
-    auto           mark_visited(uint16_t const i) noexcept -> void
+    [[nodiscard]] constexpr auto already_visited(uint16_t const i) const noexcept
+    {
+        return test_bit(_cxt.visited, i);
+    }
+    auto mark_visited(uint16_t const i) noexcept -> void
     {
         set_bit(_cxt.visited, i);
         auto const other = other_index(i);
@@ -152,8 +153,8 @@ struct solver_t {
         if (other < size()) { clear_bit(_cxt.visited, other); }
     }
 
-    [[nodiscard]] auto _find_in(uint16_t const                  value,
-                                tcb::span<uint16_t const> const inverse) const noexcept -> uint16_t
+    [[nodiscard]] static auto _find_in(uint16_t const                  value,
+                                       tcb::span<uint16_t const> const inverse) noexcept -> uint16_t
     {
         LATTICE_SYMMETRIES_ASSERT(value < inverse.size(), "");
         return inverse[value];
@@ -314,13 +315,16 @@ struct solver_t {
 
 inline auto next_pow_of_2(uint64_t const x) noexcept -> uint64_t
 {
-    return x <= 1U ? uint64_t{1} : uint64_t{1} << (64 - __builtin_clzl(x - 1U));
+    return x <= 1U ? uint64_t{1}
+                   // NOLINTNEXTLINE: 64 is the number of bits in uint64_t, not a magic constant
+                   : uint64_t{1} << static_cast<unsigned>(64 - __builtin_clzl(x - 1U));
 }
 
 template <class Int>
 auto compile_helper(tcb::span<Int const> const permutation) -> outcome::result<fat_benes_network_t>
 {
     if (!is_permutation(permutation)) { return LS_INVALID_PERMUTATION; }
+    // NOLINTNEXTLINE: 512 is the number of bits in bits512, not a magic constant
     if (permutation.size() > 512U) { return LS_PERMUTATION_TOO_LONG; }
     if (permutation.empty()) { return fat_benes_network_t{{}, {}, 0U}; }
     auto const working_size = next_pow_of_2(permutation.size());
