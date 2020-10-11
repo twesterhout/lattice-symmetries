@@ -1,5 +1,6 @@
 #include "symmetry.hpp"
 #include <algorithm>
+#include <cstring>
 #include <memory>
 #include <numeric>
 
@@ -52,8 +53,8 @@ auto get_state_info(tcb::span<batched_small_symmetry_t const> const batched_symm
                     double& norm) noexcept -> void
 {
     constexpr auto       batch_size = batched_small_symmetry_t::batch_size;
-    alignas(32) uint64_t initial[batch_size];
-    alignas(32) uint64_t buffer[batch_size];
+    alignas(32) uint64_t initial[batch_size]; // NOLINT: 32-byte alignment for AVX
+    alignas(32) uint64_t buffer[batch_size];  // NOLINT: same
     std::fill(std::begin(initial), std::end(initial), bits);
 
     auto r = bits;
@@ -62,7 +63,7 @@ auto get_state_info(tcb::span<batched_small_symmetry_t const> const batched_symm
 
     for (auto const& symmetry : batched_symmetries) {
         std::copy(std::begin(initial), std::end(initial), std::begin(buffer));
-        symmetry.network(buffer);
+        symmetry.network(static_cast<uint64_t*>(buffer));
         for (auto i = 0U; i < batch_size; ++i) {
             if (buffer[i] < r) {
                 r = buffer[i];
@@ -102,7 +103,7 @@ auto get_state_info(std::vector<big_symmetry_t> const& symmetries, bits512 const
                     bits512& representative, std::complex<double>& character, double& norm) noexcept
     -> void
 {
-    bits512 buffer;
+    bits512 buffer; // NOLINT: buffer is initialized inside the loop before it is used
     auto    r = bits;
     auto    n = 0.0;
     auto    e = std::complex<double>{1.0};
@@ -168,6 +169,7 @@ extern "C" ls_error_code ls_create_symmetry(ls_symmetry** ptr, unsigned const le
     if (sector >= periodicity) { return LS_INVALID_SECTOR; }
     auto const eigenvalue = compute_eigenvalue(sector, periodicity);
 
+    // NOLINTNEXTLINE: 64 spins is the max system size which can be represented by uint64_t
     if (length > 64U) {
         auto p = std::make_unique<ls_symmetry>(std::in_place_type_t<big_symmetry_t>{}, r.value(),
                                                flip, sector, periodicity, eigenvalue);
@@ -208,8 +210,10 @@ extern "C" unsigned ls_get_periodicity(ls_symmetry const* symmetry)
 extern "C" void ls_get_eigenvalue(ls_symmetry const* symmetry, void* out)
 {
     LATTICE_SYMMETRIES_CHECK(symmetry != nullptr, "trying to dereference a nullptr");
-    *reinterpret_cast<std::complex<double>*>(out) =
-        std::visit([](auto const& x) noexcept { return x.eigenvalue; }, symmetry->payload);
+    auto const value =
+        std::visit([](auto const& x) noexcept -> std::complex<double> { return x.eigenvalue; },
+                   symmetry->payload);
+    std::memcpy(out, &value, sizeof(std::complex<double>));
 }
 
 extern "C" double ls_get_phase(ls_symmetry const* symmetry)
@@ -225,4 +229,31 @@ extern "C" double ls_get_phase(ls_symmetry const* symmetry)
 extern "C" unsigned ls_symmetry_get_number_spins(ls_symmetry const* symmetry)
 {
     return std::visit([](auto const& x) noexcept { return x.network.width; }, symmetry->payload);
+}
+
+namespace lattice_symmetries {
+struct symmetry_apply_fn_t {
+    uint64_t* bits;
+
+    auto operator()(small_symmetry_t const& symmetry) const noexcept -> void
+    {
+        bits[0] = symmetry.network(bits[0]);
+    }
+
+    auto operator()(big_symmetry_t const& symmetry) const noexcept -> void
+    {
+        auto const n    = symmetry.network.width;
+        auto const size = (n + 63U) / 64U;
+        bits512    buffer; // NOLINT: buffer is initialized on the next line
+        std::copy(bits, bits + size, static_cast<uint64_t*>(buffer.words));
+        symmetry.network(buffer);
+        std::copy(static_cast<uint64_t const*>(buffer.words),
+                  static_cast<uint64_t const*>(buffer.words) + size, bits);
+    }
+};
+} // namespace lattice_symmetries
+
+extern "C" void ls_apply_symmetry(ls_symmetry const* symmetry, uint64_t bits[])
+{
+    return std::visit(lattice_symmetries::symmetry_apply_fn_t{bits}, symmetry->payload);
 }
