@@ -1,6 +1,7 @@
 #include "lattice_symmetries/lattice_symmetries.h"
 #include <catch2/catch.hpp>
 #include <complex>
+#include <cstdio>
 #include <numeric>
 
 TEST_CASE("constructs symmetries", "[api]")
@@ -55,7 +56,7 @@ TEST_CASE("constructs symmetries", "[api]")
         ls_symmetry*  self          = nullptr;
         ls_error_code status =
             ls_create_symmetry(&self, std::size(permutation), permutation, true, 3);
-        REQUIRE(status == LS_NOT_A_PERMUTATION);
+        REQUIRE(status == LS_INVALID_PERMUTATION);
     }
 
     {
@@ -84,5 +85,72 @@ TEST_CASE("constructs symmetry groups", "[api]")
         REQUIRE(ls_get_group_size(group) == 4);
         ls_destroy_group(group);
         ls_destroy_symmetry(symmetry);
+    }
+}
+
+TEST_CASE("constructs basis", "[api]")
+{
+    {
+        unsigned const permutation[] = {1, 2, 3, 0};
+        ls_symmetry*   symmetry      = nullptr;
+        ls_error_code  status =
+            ls_create_symmetry(&symmetry, std::size(permutation), permutation, false, 0);
+        REQUIRE(status == LS_SUCCESS);
+
+        ls_symmetry const* generators[] = {symmetry};
+        ls_group*          group        = nullptr;
+        status = ls_create_group(&group, std::size(generators), generators);
+        REQUIRE(status == LS_SUCCESS);
+        ls_destroy_symmetry(symmetry);
+
+        ls_spin_basis* basis = nullptr;
+        status               = ls_create_spin_basis(&basis, group, 4, -1);
+        REQUIRE(status == LS_SUCCESS);
+
+        ls_destroy_group(group);
+
+        status = ls_build(basis);
+        REQUIRE(status == LS_SUCCESS);
+
+        // uint64_t count;
+        // status = ls_get_number_states(basis, &count);
+        // REQUIRE(status == LS_SUCCESS);
+        // printf("%zu\n", count);
+
+        // ls_states* states = nullptr;
+        // status            = ls_get_states(&states, basis);
+        // REQUIRE(status == LS_SUCCESS);
+
+        // auto const begin = ls_states_get_data(states);
+        // auto const end   = begin + count;
+        // for (auto i = begin; i != end; ++i) {
+        //     printf("%zu, ", *i);
+        // }
+        // printf("\n");
+
+        // ls_destroy_states(states);
+        ls_destroy_spin_basis(basis);
+    }
+
+    {
+        ls_group*     group  = nullptr;
+        ls_error_code status = ls_create_group(&group, 0, nullptr);
+        REQUIRE(status == LS_SUCCESS);
+
+        ls_spin_basis* basis = nullptr;
+        status               = ls_create_spin_basis(&basis, group, 4, 2);
+        REQUIRE(status == LS_SUCCESS);
+
+        ls_destroy_group(group);
+
+        status = ls_build(basis);
+        REQUIRE(status == LS_SUCCESS);
+
+        uint64_t count;
+        status = ls_get_number_states(basis, &count);
+        REQUIRE(status == LS_SUCCESS);
+        REQUIRE(count == 6);
+
+        ls_destroy_spin_basis(basis);
     }
 }

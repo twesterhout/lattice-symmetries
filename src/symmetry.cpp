@@ -52,6 +52,12 @@ auto get_state_info(tcb::span<batched_small_symmetry_t const> const batched_symm
                     uint64_t& representative, std::complex<double>& character,
                     double& norm) noexcept -> void
 {
+    if (batched_symmetries.empty() && symmetries.empty()) {
+        representative = bits;
+        character      = {1.0, 0.0};
+        norm           = 1.0;
+        return;
+    }
     constexpr auto       batch_size = batched_small_symmetry_t::batch_size;
     alignas(32) uint64_t initial[batch_size]; // NOLINT: 32-byte alignment for AVX
     alignas(32) uint64_t buffer[batch_size];  // NOLINT: same
@@ -103,6 +109,12 @@ auto get_state_info(std::vector<big_symmetry_t> const& symmetries, bits512 const
                     bits512& representative, std::complex<double>& character, double& norm) noexcept
     -> void
 {
+    if (symmetries.empty()) {
+        representative = bits;
+        character      = {1.0, 0.0};
+        norm           = 1.0;
+        return;
+    }
     bits512 buffer; // NOLINT: buffer is initialized inside the loop before it is used
     auto    r = bits;
     auto    n = 0.0;
