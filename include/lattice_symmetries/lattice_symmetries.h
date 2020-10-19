@@ -9,6 +9,7 @@
 #if defined(__cplusplus)
 #    include <cstdint>
 #else
+#    include <stdbool.h>
 #    include <stdint.h>
 #endif
 
@@ -32,7 +33,7 @@ extern "C" {
 
 /// \brief Status codes used by the library
 ///
-enum ls_error_code {
+typedef enum ls_error_code {
     LS_SUCCESS = 0,             ///< No error
     LS_OUT_OF_MEMORY,           ///< Memory allocation failed
     LS_INVALID_ARGUMENT,        ///< Argument to a function is invalid
@@ -52,7 +53,7 @@ enum ls_error_code {
     LS_OPERATOR_IS_COMPLEX,     ///< Trying to apply complex operator to real vector
     LS_DIMENSION_MISMATCH,      ///< Operator dimension does not match vector length
     LS_SYSTEM_ERROR,            ///< Unknown error
-};
+} ls_error_code;
 
 /// \brief Given an error code, obtains the corresponding error message.
 ///
@@ -146,6 +147,7 @@ unsigned ls_get_periodicity(ls_symmetry const* symmetry);
 /// Apply symmetry to a spin configuration
 void ls_apply_symmetry(ls_symmetry const* symmetry, uint64_t bits[]);
 
+///
 // NOLINTNEXTLINE(modernize-use-trailing-return-type)
 unsigned ls_symmetry_get_number_spins(ls_symmetry const* symmetry);
 
@@ -283,13 +285,22 @@ ls_error_code ls_operator_matvec_f32(ls_operator const* op, uint64_t size, float
 // NOLINTNEXTLINE(modernize-use-trailing-return-type)
 ls_error_code ls_operator_matvec_f64(ls_operator const* op, uint64_t size, double const* x,
                                      double* y);
+
+ls_error_code ls_operator_matmat_f64(ls_operator const* op, uint64_t size, uint64_t block_size,
+                                     double const* x, uint64_t x_stride, double* y,
+                                     uint64_t y_stride);
+
 // NOLINTNEXTLINE(modernize-use-trailing-return-type)
 ls_error_code ls_operator_matvec_c64(ls_operator const* op, uint64_t size, void const* x, void* y);
 // NOLINTNEXTLINE(modernize-use-trailing-return-type)
 ls_error_code ls_operator_matvec_c128(ls_operator const* op, uint64_t size, void const* x, void* y);
 
-ls_error_code ls_operator_apply_64(ls_operator const* op, uint64_t out_size, uint64_t* out);
-ls_error_code ls_operator_apply_512(ls_operator const* op, uint64_t out_size, uint64_t (*out)[8]);
+// NOLINTNEXTLINE(modernize-use-trailing-return-type)
+ls_error_code ls_operator_apply_64(ls_operator const* op, uint64_t bits, uint64_t* out_size,
+                                   void* out_coeffs, uint64_t* out_bits);
+// NOLINTNEXTLINE(modernize-use-trailing-return-type)
+ls_error_code ls_operator_apply_512(ls_operator const* op, uint64_t const bits[], uint64_t out_size,
+                                    uint64_t (*out)[8]);
 
 #if defined(__cplusplus)
 } // extern "C"

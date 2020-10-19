@@ -398,9 +398,35 @@ auto apply_helper(ls_operator const& op, uint64_t size, T const* x, T* y) noexce
 }
 
 template <class T>
+auto apply_helper(ls_operator const& op, uint64_t const size, uint64_t const block_size, T const* x,
+                  uint64_t const x_stride, T* y, uint64_t const y_stride) noexcept
+    -> outcome::result<void>
+{
+    for (auto i = uint64_t{0}; i < block_size; ++i) {
+        auto const r = apply_helper(op, size, x + i * x_stride, y + i * y_stride);
+        if (!r) { return r; }
+    }
+    return LS_SUCCESS;
+}
+
+template <class T>
 auto apply(ls_operator const* op, uint64_t size, T const* x, T* y) noexcept -> ls_error_code
 {
     auto r = apply_helper(*op, size, x, y);
+    if (!r) {
+        if (r.error().category() == get_error_category()) {
+            return static_cast<ls_error_code>(r.error().value());
+        }
+        return LS_SYSTEM_ERROR;
+    }
+    return LS_SUCCESS;
+}
+
+template <class T>
+auto apply(ls_operator const* op, uint64_t const size, uint64_t block_size, T const* x,
+           uint64_t const x_stride, T* y, uint64_t const y_stride) noexcept -> ls_error_code
+{
+    auto r = apply_helper(*op, size, block_size, x, x_stride, y, y_stride);
     if (!r) {
         if (r.error().category() == get_error_category()) {
             return static_cast<ls_error_code>(r.error().value());
@@ -438,6 +464,13 @@ extern "C" ls_error_code ls_operator_matvec_f64(ls_operator const* op, uint64_t 
     return apply(op, size, x, y);
 }
 
+extern "C" ls_error_code ls_operator_matmat_f64(ls_operator const* op, uint64_t size,
+                                                uint64_t block_size, double const* x,
+                                                uint64_t x_stride, double* y, uint64_t y_stride)
+{
+    return apply(op, size, block_size, x, x_stride, y, y_stride);
+}
+
 extern "C" ls_error_code ls_operator_matvec_c64(ls_operator const* op, uint64_t size, void const* x,
                                                 void* y)
 {
@@ -451,3 +484,7 @@ extern "C" ls_error_code ls_operator_matvec_c128(ls_operator const* op, uint64_t
     using C = std::complex<double>;
     return apply(op, size, static_cast<C const*>(x), static_cast<C*>(y));
 }
+
+// extern "C" ls_error_code ls_operator_apply_64(ls_operator const* op, uint64_t const bits[],
+//                                               uint64_t out_size, uint64_t* out)
+// {}
