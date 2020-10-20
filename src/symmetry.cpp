@@ -6,6 +6,24 @@
 
 namespace lattice_symmetries {
 
+template <class Proj> auto get_projection(tcb::span<small_symmetry_t const> symmetries, Proj proj)
+{
+    LATTICE_SYMMETRIES_CHECK(symmetries.size() == batched_small_symmetry_t::batch_size,
+                             "symmetries has wrong length");
+    using element_type = decltype(std::declval<Proj>()(std::declval<small_symmetry_t const&>()));
+    std::array<element_type, batched_small_symmetry_t::batch_size> batch;
+    std::transform(std::begin(symmetries), std::end(symmetries), std::begin(batch),
+                   std::cref(proj));
+    return batch;
+}
+
+batched_small_symmetry_t::batched_small_symmetry_t(tcb::span<small_symmetry_t const> symmetries)
+    : network{get_projection(symmetries, [](auto const& s) { return &s.network; })}
+    , sectors{get_projection(symmetries, [](auto const& s) { return s.sector; })}
+    , periodicities{get_projection(symmetries, [](auto const& s) { return s.periodicity; })}
+    , eigenvalues{get_projection(symmetries, [](auto const& s) { return s.eigenvalue; })}
+{}
+
 // \p permutation must be a valid permutation!
 template <class Int> auto compute_periodicity(tcb::span<Int const> permutation) -> unsigned
 {
@@ -103,6 +121,41 @@ auto get_state_info(tcb::span<batched_small_symmetry_t const> const batched_symm
     representative = r;
     character      = e;
     norm           = n;
+}
+
+auto is_representative(tcb::span<batched_small_symmetry_t const> const batched_symmetries,
+                       tcb::span<small_symmetry_t const> const symmetries, uint64_t bits) noexcept
+    -> bool
+{
+    if (batched_symmetries.empty() && symmetries.empty()) { return true; }
+    constexpr auto       batch_size = batched_small_symmetry_t::batch_size;
+    alignas(32) uint64_t initial[batch_size]; // NOLINT: 32-byte alignment for AVX
+    alignas(32) uint64_t buffer[batch_size];  // NOLINT: same
+    std::fill(std::begin(initial), std::end(initial), bits);
+
+    auto r = bits;
+    auto n = 0.0;
+
+    for (auto const& symmetry : batched_symmetries) {
+        std::copy(std::begin(initial), std::end(initial), std::begin(buffer));
+        symmetry.network(static_cast<uint64_t*>(buffer));
+        for (auto i = 0U; i < batch_size; ++i) {
+            if (buffer[i] < r) { return false; }
+            if (buffer[i] == bits) { n += symmetry.eigenvalues[i].real(); }
+        }
+    }
+    for (auto const& symmetry : symmetries) {
+        auto const y = symmetry.network(bits);
+        if (y < r) { return false; }
+        if (y == bits) { n += symmetry.eigenvalue.real(); }
+    }
+
+    // We need to detect the case when norm is not zero, but only because of
+    // inaccurate arithmetics
+    constexpr auto norm_threshold = 1.0e-5;
+    if (std::abs(n) <= norm_threshold) { n = 0.0; }
+    LATTICE_SYMMETRIES_ASSERT(n >= 0.0, "");
+    return n > 0.0;
 }
 
 auto get_state_info(std::vector<big_symmetry_t> const& symmetries, bits512 const& bits,

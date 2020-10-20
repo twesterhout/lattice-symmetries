@@ -43,6 +43,23 @@ namespace {
         return r;
     }
 
+    auto split_into_batches(tcb::span<small_symmetry_t const> symmetries)
+        -> std::tuple<std::vector<batched_small_symmetry_t>, std::vector<small_symmetry_t>>
+    {
+        constexpr auto batch_size = batched_small_symmetry_t::batch_size;
+        auto           offset     = 0UL;
+
+        std::vector<batched_small_symmetry_t> batched;
+        for (; offset + batch_size < symmetries.size(); offset += batch_size) {
+            batched.emplace_back(symmetries.subspan(offset, batch_size));
+        }
+
+        std::vector<small_symmetry_t> other;
+        std::copy(std::next(std::begin(symmetries), static_cast<ptrdiff_t>(offset)),
+                  std::end(symmetries), std::back_inserter(other));
+        return std::make_tuple(std::move(batched), std::move(other));
+    }
+
     auto get_number_spins(ls_group const& group) noexcept -> std::optional<unsigned>
     {
         if (group.payload.empty()) { return std::nullopt; }
@@ -52,10 +69,11 @@ namespace {
 } // namespace
 
 small_basis_t::small_basis_t(ls_group const& group)
-    : batched_symmetries{}
-    , other_symmetries{extract<small_symmetry_t>(group.payload)}
-    , cache{nullptr}
-{}
+    : batched_symmetries{}, other_symmetries{}, cache{nullptr}
+{
+    auto symmetries                                = extract<small_symmetry_t>(group.payload);
+    std::tie(batched_symmetries, other_symmetries) = split_into_batches(symmetries);
+}
 
 big_basis_t::big_basis_t(ls_group const& group) : symmetries{extract<big_symmetry_t>(group.payload)}
 {}

@@ -96,11 +96,12 @@ namespace {
         }
         auto const handle = [&batched_symmetries, &symmetries,
                              &states](uint64_t const x) noexcept -> void {
-            uint64_t             repr;
-            std::complex<double> character;
-            double               norm;
-            get_state_info(batched_symmetries, symmetries, x, repr, character, norm);
-            if (repr == x && norm > 0.0) { states.push_back(x); }
+            // uint64_t             repr;
+            // std::complex<double> character;
+            // double               norm;
+            if (is_representative(batched_symmetries, symmetries, x)) { states.push_back(x); }
+            // get_state_info(batched_symmetries, symmetries, x, repr, character, norm);
+            // if (repr == x && norm > 0.0) { states.push_back(x); }
         };
 
         for (; current < upper_bound; current = next_state<FixedHammingWeight>(current)) {
