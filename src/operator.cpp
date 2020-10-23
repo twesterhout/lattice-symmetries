@@ -197,7 +197,7 @@ namespace {
 
     constexpr auto max_index(ls_interaction const& interaction) noexcept -> unsigned
     {
-        return std::visit([](auto const& x) { return max_index(x); }, interaction.payload);
+        return std::visit([](auto const& x) noexcept { return max_index(x); }, interaction.payload);
     }
 
     auto max_index(tcb::span<ls_interaction const* const> interactions) noexcept -> unsigned

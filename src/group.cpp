@@ -41,18 +41,19 @@ struct symmetry_spec_t {
     uint16_t              periodicity;
 };
 
-auto rational_add(std::pair<unsigned, unsigned> const& a,
-                  std::pair<unsigned, unsigned> const& b) noexcept -> std::pair<unsigned, unsigned>
-{
-    auto p = a.first * b.second + b.first * a.second;
-    auto q = a.second * b.second;
-    auto m = std::gcd(p, q);
-    p /= m;
-    q /= m;
-    return std::make_pair(p % q, q);
-}
-
 namespace {
+    auto rational_add(std::pair<unsigned, unsigned> const& a,
+                      std::pair<unsigned, unsigned> const& b) noexcept
+        -> std::pair<unsigned, unsigned>
+    {
+        auto p = a.first * b.second + b.first * a.second;
+        auto q = a.second * b.second;
+        auto m = std::gcd(p, q);
+        p /= m;
+        q /= m;
+        return std::make_pair(p % q, q);
+    }
+
     auto equal(symmetry_spec_t const& x, symmetry_spec_t const& y) -> outcome::result<bool>
     {
         if (x.permutation.size() != y.permutation.size()) {

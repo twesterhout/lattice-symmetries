@@ -302,6 +302,8 @@ ls_error_code ls_operator_apply_64(ls_operator const* op, uint64_t bits, uint64_
 ls_error_code ls_operator_apply_512(ls_operator const* op, uint64_t const bits[], uint64_t out_size,
                                     uint64_t (*out)[8]);
 
+bool ls_operator_is_real(ls_operator const* op);
+
 #if defined(__cplusplus)
 } // extern "C"
 #endif

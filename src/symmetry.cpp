@@ -6,7 +6,9 @@
 
 namespace lattice_symmetries {
 
-template <class Proj> auto get_projection(tcb::span<small_symmetry_t const> symmetries, Proj proj)
+template <class Proj>
+auto get_projection(tcb::span<small_symmetry_t const> symmetries, Proj proj) noexcept(
+    noexcept(std::declval<Proj const&>()(std::declval<small_symmetry_t const&>())))
 {
     LATTICE_SYMMETRIES_CHECK(symmetries.size() == batched_small_symmetry_t::batch_size,
                              "symmetries has wrong length");
@@ -18,10 +20,11 @@ template <class Proj> auto get_projection(tcb::span<small_symmetry_t const> symm
 }
 
 batched_small_symmetry_t::batched_small_symmetry_t(tcb::span<small_symmetry_t const> symmetries)
-    : network{get_projection(symmetries, [](auto const& s) { return &s.network; })}
-    , sectors{get_projection(symmetries, [](auto const& s) { return s.sector; })}
-    , periodicities{get_projection(symmetries, [](auto const& s) { return s.periodicity; })}
-    , eigenvalues{get_projection(symmetries, [](auto const& s) { return s.eigenvalue; })}
+    : network{get_projection(symmetries, [](auto const& s) noexcept { return &s.network; })}
+    , sectors{get_projection(symmetries, [](auto const& s) noexcept { return s.sector; })}
+    , periodicities{get_projection(symmetries,
+                                   [](auto const& s) noexcept { return s.periodicity; })}
+    , eigenvalues{get_projection(symmetries, [](auto const& s) noexcept { return s.eigenvalue; })}
 {}
 
 // \p permutation must be a valid permutation!
