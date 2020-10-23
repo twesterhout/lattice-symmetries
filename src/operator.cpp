@@ -359,12 +359,16 @@ template <class T>
 auto apply_helper(ls_operator const& op, uint64_t size, T const* x, T* y) noexcept
     -> outcome::result<void>
 {
-    OUTCOME_TRY(states, [&op]() -> outcome::result<tcb::span<uint64_t const>> {
-        ls_states* states = nullptr;
-        auto const status = ls_get_states(&states, op.basis.get());
+    // gcc-7.3 gets confused by OUTCOME_TRY here (because of auto&&), so we expand it manually
+    auto&& r = [&op]() -> outcome::result<tcb::span<uint64_t const>> {
+        ls_states* _states = nullptr;
+        auto const status  = ls_get_states(&_states, op.basis.get());
         if (status != LS_SUCCESS) { return status; }
-        return tcb::span<uint64_t const>{ls_states_get_data(states), ls_states_get_size(states)};
-    }());
+        return tcb::span<uint64_t const>{ls_states_get_data(_states), ls_states_get_size(_states)};
+    }();
+    if (!r) { return r.as_failure(); }
+    auto states = r.value(); // OUTCOME_TRY uses auto&& here
+
     if constexpr (!is_complex_v<T>) {
         if (!op.is_real) { return LS_OPERATOR_IS_COMPLEX; }
     }
@@ -373,8 +377,10 @@ auto apply_helper(ls_operator const& op, uint64_t size, T const* x, T* y) noexce
     auto const chunk_size =
         std::max(500UL, states.size() / (100UL * static_cast<unsigned>(omp_get_max_threads())));
     using acc_t = std::conditional_t<is_complex_v<T>, std::complex<double>, double>;
-#pragma omp parallel for schedule(dynamic, chunk_size) default(none)                               \
-    firstprivate(x, y, chunk_size, states) shared(op)
+    // There should be a default(none) here, but gcc-7.3 complains about __FUNCTION__ not being
+    // included in parallel...
+#pragma omp parallel for schedule(dynamic, chunk_size) firstprivate(x, y, chunk_size, states)      \
+    shared(op)
     for (auto i = uint64_t{0}; i < states.size(); ++i) {
         auto acc    = acc_t{0.0};
         auto status = apply_helper(

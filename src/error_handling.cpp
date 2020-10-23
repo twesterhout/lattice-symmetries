@@ -118,7 +118,8 @@ auto ls_error_category::message(int c) const -> std::string
         return "operator is complex. Are you trying to apply a complex operator to a real vector?";
     case LS_DIMENSION_MISMATCH:
         return "dimension of the operator does not match dimension of the vector";
-    case LS_SYSTEM_ERROR: return "unknown error";
+    case LS_SYSTEM_ERROR:
+    default: return "unknown error";
     }
 }
 
