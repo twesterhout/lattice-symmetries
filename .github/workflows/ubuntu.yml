@@ -14,7 +14,7 @@ jobs:
   build:
     strategy:
       matrix:
-        gcc-version: [7, 7.5, 8, 9]
+        gcc-version: [7, 8, 9, 10]
     runs-on: ubuntu-latest
     if: "!contains(github.event.head_commit.message, '[skip ci]') && !contains(github.event.head_commit.message, '[ci skip]')"
 
@@ -35,11 +35,7 @@ jobs:
     - name: run tests
       run: |
         cd build
-        ctest -C $BUILD_TYPE -VV
-
-    - name: Code coverage using Codecov 
-      run: bash <(curl -s https://codecov.io/bash) 
+        ctest -VV
 
     - name: install project
-      run: cmake --build build --target install --config Release 
-
+      run: cmake --build build --target install
