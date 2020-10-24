@@ -227,7 +227,7 @@ auto generate_states(tcb::span<batched_small_symmetry_t const> batched,
     auto const ranges = split_into_tasks(number_spins, hamming_weight, chunk_size);
     auto       states = std::vector<std::vector<uint64_t>>(ranges.size());
 #pragma omp parallel for schedule(dynamic, 1) firstprivate(hamming_weight)                         \
-    shared(batched, other, ranges, states)
+    shared(batched, other, states)
     for (auto i = size_t{0}; i < ranges.size(); ++i) {
         auto const [current, bound] = ranges[i];
         states[i].reserve(1048576UL / sizeof(uint64_t));
