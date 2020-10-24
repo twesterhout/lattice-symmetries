@@ -1,0 +1,36 @@
+name: MacOS
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  BUILD_TYPE: Debug
+  INSTALL_LOCATION: .local
+
+jobs:
+  build:
+    runs-on: macos-latest
+    if: "!contains(github.event.head_commit.message, '[skip ci]') && !contains(github.event.head_commit.message, '[ci skip]')"
+
+    steps:
+    - uses: actions/checkout@v2
+      
+    - name: configure
+      run: |
+        cmake -Bbuild \
+              -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+              -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/$INSTALL_LOCATION
+      
+    - name: build
+      run: cmake --build build -j4
+
+    - name: run tests
+      run: |
+        cd build
+        ctest -VV
+
+    - name: install project
+      run: cmake --build build --target install
