@@ -49,7 +49,7 @@ struct small_network_t {
     auto operator()(tcb::span<unsigned> bits) const noexcept -> void;
 };
 
-struct big_network_t {
+struct alignas(32) big_network_t {
     static constexpr auto max_depth = 17U;
 
     bits512  masks[max_depth];
@@ -76,7 +76,7 @@ auto compose(big_network_t const& x, big_network_t const& y) -> outcome::result<
 // auto operator==(big_network_t const& x, big_network_t const& y) -> bool;
 // auto operator!=(big_network_t const& x, big_network_t const& y) -> bool;
 
-struct batched_small_network_t {
+struct alignas(32) batched_small_network_t {
     static constexpr auto max_depth  = 11U;
     static constexpr auto batch_size = 8U;
 
@@ -89,7 +89,7 @@ struct batched_small_network_t {
 
     explicit batched_small_network_t(
         std::array<small_network_t const*, batch_size> const& networks) noexcept;
-    auto operator()(uint64_t bits[8]) const noexcept -> void;
+    auto operator()(uint64_t bits[batch_size]) const noexcept -> void;
 };
 
 } // namespace lattice_symmetries

@@ -46,6 +46,7 @@ struct basis_cache_t {
   private:
     static constexpr auto bits = 16U;
 
+    unsigned                                   _shift;
     std::vector<uint64_t>                      _states;
     std::vector<std::pair<uint64_t, uint64_t>> _ranges;
 

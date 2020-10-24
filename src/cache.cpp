@@ -42,12 +42,12 @@
 namespace lattice_symmetries {
 
 namespace {
-    auto generate_ranges(tcb::span<uint64_t const> states, unsigned const bits)
+    auto generate_ranges(tcb::span<uint64_t const> states, unsigned const bits,
+                         unsigned const shift)
     {
         LATTICE_SYMMETRIES_ASSERT(0 < bits && bits <= 32, "invalid bits");
         constexpr auto empty = std::make_pair(~uint64_t{0}, uint64_t{0});
         auto const     size  = uint64_t{1} << bits;
-        auto const     mask  = size - 1U;
 
         std::vector<std::pair<uint64_t, uint64_t>> ranges;
         ranges.reserve(size);
@@ -56,17 +56,18 @@ namespace {
         auto const* const begin = first;
         for (auto i = uint64_t{0}; i < size; ++i) {
             auto element = empty;
-            if (first != last && ((*first) & mask) == i) {
+            if (first != last && ((*first) >> shift) == i) {
                 element.first = static_cast<uint64_t>(first - begin);
                 ++first;
                 ++element.second;
-                while (first != last && ((*first) & mask) == i) {
-                    ++element.second;
+                while (first != last && ((*first) >> shift) == i) {
                     ++first;
+                    ++element.second;
                 }
             }
             ranges.push_back(element);
         }
+        LATTICE_SYMMETRIES_CHECK(first == last, "not all states checked");
         return ranges;
     }
 
@@ -225,8 +226,8 @@ auto generate_states(tcb::span<batched_small_symmetry_t const> batched,
     }();
     auto const ranges = split_into_tasks(number_spins, hamming_weight, chunk_size);
     auto       states = std::vector<std::vector<uint64_t>>(ranges.size());
-#pragma omp parallel for schedule(dynamic, 1) default(none) firstprivate(hamming_weight)           \
-    shared(batched, other, states)
+#pragma omp parallel for schedule(dynamic, 1) firstprivate(hamming_weight)                         \
+    shared(batched, other, ranges, states)
     for (auto i = size_t{0}; i < ranges.size(); ++i) {
         auto const [current, bound] = ranges[i];
         states[i].reserve(1048576UL / sizeof(uint64_t));
@@ -251,10 +252,11 @@ basis_cache_t::basis_cache_t(tcb::span<batched_small_symmetry_t const> batched,
                              tcb::span<small_symmetry_t const> other, unsigned number_spins,
                              std::optional<unsigned> hamming_weight,
                              std::vector<uint64_t>   _unsafe_states)
-    : _states{_unsafe_states.empty()
+    : _shift{bits >= number_spins ? 0U : (number_spins - bits)}
+    , _states{_unsafe_states.empty()
                   ? concatenate(generate_states(batched, other, number_spins, hamming_weight))
                   : std::move(_unsafe_states)}
-    , _ranges{generate_ranges(_states, bits)}
+    , _ranges{generate_ranges(_states, bits, _shift)}
 {}
 
 auto basis_cache_t::states() const noexcept -> tcb::span<uint64_t const> { return _states; }
@@ -264,11 +266,10 @@ auto basis_cache_t::number_states() const noexcept -> uint64_t { return _states.
 auto basis_cache_t::index(uint64_t const x) const noexcept -> outcome::result<uint64_t>
 {
     using std::begin, std::end;
-    constexpr auto mask  = (1U << bits) - 1U;
-    auto const&    range = _ranges[x & mask];
-    auto const     first = std::next(begin(_states), static_cast<ptrdiff_t>(range.first));
-    auto const     last  = std::next(first, static_cast<ptrdiff_t>(range.second));
-    auto const     i     = std::lower_bound(first, last, x);
+    auto const& range = _ranges[x >> _shift];
+    auto const  first = std::next(begin(_states), static_cast<ptrdiff_t>(range.first));
+    auto const  last  = std::next(first, static_cast<ptrdiff_t>(range.second));
+    auto const  i     = std::lower_bound(first, last, x);
     if (i == last) { return outcome::failure(LS_NOT_A_REPRESENTATIVE); }
     LATTICE_SYMMETRIES_ASSERT(*i == x, "");
     return static_cast<uint64_t>(std::distance(begin(_states), i));

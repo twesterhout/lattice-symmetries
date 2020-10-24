@@ -71,7 +71,8 @@ namespace {
 small_basis_t::small_basis_t(ls_group const& group)
     : batched_symmetries{}, other_symmetries{}, cache{nullptr}
 {
-    auto symmetries                                = extract<small_symmetry_t>(group.payload);
+    auto symmetries = extract<small_symmetry_t>(group.payload);
+    // other_symmetries = symmetries;
     std::tie(batched_symmetries, other_symmetries) = split_into_batches(symmetries);
 }
 

@@ -78,17 +78,17 @@ namespace detail {
     auto benes_forward_simd(uint64_t x[8], uint64_t const (*masks)[8], unsigned size,
                             uint16_t const deltas[]) noexcept -> void
     {
-        __m256i x0, x1;                                                  // NOLINT
-        __m256i m0, m1;                                                  // NOLINT
-        x0 = _mm256_load_si256(reinterpret_cast<__m256i const*>(x));     // NOLINT
-        x1 = _mm256_load_si256(reinterpret_cast<__m256i const*>(x) + 1); // NOLINT
+        __m256i x0, x1;                                                   // NOLINT
+        __m256i m0, m1;                                                   // NOLINT
+        x0 = _mm256_loadu_si256(reinterpret_cast<__m256i const*>(x));     // NOLINT
+        x1 = _mm256_loadu_si256(reinterpret_cast<__m256i const*>(x) + 1); // NOLINT
         for (auto i = 0U; i < size; ++i) {
-            m0 = _mm256_load_si256(reinterpret_cast<__m256i const*>(masks[i]));     // NOLINT
-            m1 = _mm256_load_si256(reinterpret_cast<__m256i const*>(masks[i]) + 1); // NOLINT
+            m0 = _mm256_loadu_si256(reinterpret_cast<__m256i const*>(masks[i]));     // NOLINT
+            m1 = _mm256_loadu_si256(reinterpret_cast<__m256i const*>(masks[i]) + 1); // NOLINT
             bit_permute_step(x0, x1, m0, m1, deltas[i]);
         }
-        _mm256_store_si256(reinterpret_cast<__m256i*>(x), x0);     // NOLINT
-        _mm256_store_si256(reinterpret_cast<__m256i*>(x) + 1, x1); // NOLINT
+        _mm256_storeu_si256(reinterpret_cast<__m256i*>(x), x0);     // NOLINT
+        _mm256_storeu_si256(reinterpret_cast<__m256i*>(x) + 1, x1); // NOLINT
     }
 
 } // namespace detail
@@ -220,54 +220,54 @@ namespace detail {
         __m128i x0, x1, x2, x3; // NOLINT
         __m128i m0, m1, m2, m3; // NOLINT
         // Really don't have much choice but to use reinterpret_cast
-        x0 = _mm_load_si128(reinterpret_cast<__m128i const*>(x));     // NOLINT
-        x1 = _mm_load_si128(reinterpret_cast<__m128i const*>(x) + 1); // NOLINT
-        x2 = _mm_load_si128(reinterpret_cast<__m128i const*>(x) + 2); // NOLINT
-        x3 = _mm_load_si128(reinterpret_cast<__m128i const*>(x) + 3); // NOLINT
+        x0 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(x));     // NOLINT
+        x1 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(x) + 1); // NOLINT
+        x2 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(x) + 2); // NOLINT
+        x3 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(x) + 3); // NOLINT
         for (auto i = 0U; i < size; ++i) {
-            m0 = _mm_load_si128(reinterpret_cast<__m128i const*>(masks[i]));     // NOLINT
-            m1 = _mm_load_si128(reinterpret_cast<__m128i const*>(masks[i]) + 1); // NOLINT
-            m2 = _mm_load_si128(reinterpret_cast<__m128i const*>(masks[i]) + 2); // NOLINT
-            m3 = _mm_load_si128(reinterpret_cast<__m128i const*>(masks[i]) + 3); // NOLINT
+            m0 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(masks[i]));     // NOLINT
+            m1 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(masks[i]) + 1); // NOLINT
+            m2 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(masks[i]) + 2); // NOLINT
+            m3 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(masks[i]) + 3); // NOLINT
             bit_permute_step(x0, x1, x2, x3, m0, m1, m2, m3, deltas[i]);
         }
-        _mm_store_si128(reinterpret_cast<__m128i*>(x), x0);     // NOLINT
-        _mm_store_si128(reinterpret_cast<__m128i*>(x) + 1, x1); // NOLINT
-        _mm_store_si128(reinterpret_cast<__m128i*>(x) + 2, x2); // NOLINT
-        _mm_store_si128(reinterpret_cast<__m128i*>(x) + 3, x3); // NOLINT
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(x), x0);     // NOLINT
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(x) + 1, x1); // NOLINT
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(x) + 2, x2); // NOLINT
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(x) + 3, x3); // NOLINT
     }
 
     auto benes_forward_512_simd(bits512& x, bits512 const masks[], unsigned size,
                                 uint16_t const deltas[], bool flip,
                                 bits512 const& flip_mask) noexcept -> void
     {
-        __m128i x0, x1, x2, x3;                                             // NOLINT
-        __m128i m0, m1, m2, m3;                                             // NOLINT
-        x0 = _mm_load_si128(reinterpret_cast<__m128i const*>(x.words));     // NOLINT
-        x1 = _mm_load_si128(reinterpret_cast<__m128i const*>(x.words) + 1); // NOLINT
-        x2 = _mm_load_si128(reinterpret_cast<__m128i const*>(x.words) + 2); // NOLINT
-        x3 = _mm_load_si128(reinterpret_cast<__m128i const*>(x.words) + 3); // NOLINT
+        __m128i x0, x1, x2, x3;                                              // NOLINT
+        __m128i m0, m1, m2, m3;                                              // NOLINT
+        x0 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(x.words));     // NOLINT
+        x1 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(x.words) + 1); // NOLINT
+        x2 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(x.words) + 2); // NOLINT
+        x3 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(x.words) + 3); // NOLINT
         for (auto i = 0U; i < size; ++i) {
-            m0 = _mm_load_si128(reinterpret_cast<__m128i const*>(masks[i].words));     // NOLINT
-            m1 = _mm_load_si128(reinterpret_cast<__m128i const*>(masks[i].words) + 1); // NOLINT
-            m2 = _mm_load_si128(reinterpret_cast<__m128i const*>(masks[i].words) + 2); // NOLINT
-            m3 = _mm_load_si128(reinterpret_cast<__m128i const*>(masks[i].words) + 3); // NOLINT
+            m0 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(masks[i].words));     // NOLINT
+            m1 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(masks[i].words) + 1); // NOLINT
+            m2 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(masks[i].words) + 2); // NOLINT
+            m3 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(masks[i].words) + 3); // NOLINT
             bit_permute_step_512(x0, x1, x2, x3, m0, m1, m2, m3, deltas[i]);
         }
         if (flip) {
-            m0 = _mm_load_si128(reinterpret_cast<__m128i const*>(flip_mask.words)); // NOLINT
+            m0 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(flip_mask.words)); // NOLINT
             x0 = _mm_xor_si128(x0, m0);
-            m1 = _mm_load_si128(reinterpret_cast<__m128i const*>(flip_mask.words) + 1); // NOLINT
+            m1 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(flip_mask.words) + 1); // NOLINT
             x1 = _mm_xor_si128(x1, m1);
-            m2 = _mm_load_si128(reinterpret_cast<__m128i const*>(flip_mask.words) + 2); // NOLINT
+            m2 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(flip_mask.words) + 2); // NOLINT
             x2 = _mm_xor_si128(x2, m2);
-            m3 = _mm_load_si128(reinterpret_cast<__m128i const*>(flip_mask.words) + 3); // NOLINT
+            m3 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(flip_mask.words) + 3); // NOLINT
             x3 = _mm_xor_si128(x3, m3);
         }
-        _mm_store_si128(reinterpret_cast<__m128i*>(x.words), x0);     // NOLINT
-        _mm_store_si128(reinterpret_cast<__m128i*>(x.words) + 1, x1); // NOLINT
-        _mm_store_si128(reinterpret_cast<__m128i*>(x.words) + 2, x2); // NOLINT
-        _mm_store_si128(reinterpret_cast<__m128i*>(x.words) + 3, x3); // NOLINT
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(x.words), x0);     // NOLINT
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(x.words) + 1, x1); // NOLINT
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(x.words) + 2, x2); // NOLINT
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(x.words) + 3, x3); // NOLINT
     }
 } // namespace detail
 #endif

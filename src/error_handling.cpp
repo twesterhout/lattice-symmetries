@@ -62,7 +62,7 @@ namespace lattice_symmetries {
         "╔═════════════════════════════════════════════════════════════════╗\n"
         "║   Congratulations, you have found a bug in lattice_symmetries!  ║\n"
         "║              Please, be so kind to submit it here               ║\n"
-        "║     https://github.com/twesterhout/lattice_symmetries/issues    ║\n"
+        "║     https://github.com/twesterhout/lattice-symmetries/issues    ║\n"
         "╚═════════════════════════════════════════════════════════════════╝";
     // clang-format on
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
