@@ -29,8 +29,11 @@
 #include "cache.hpp"
 #include "error_handling.hpp"
 
-// POSIX only :(
-#include <endian.h>
+#if defined(__APPLE__)
+#    include <machine/endian.h>
+#else
+#    include <endian.h>
+#endif
 #include <sys/stat.h>
 
 #include <omp.h>
