@@ -57,11 +57,12 @@ template auto compute_periodicity(tcb::span<unsigned const> permutation) -> unsi
 
 auto compute_eigenvalue(unsigned sector, unsigned periodicity) noexcept -> std::complex<double>
 {
+    constexpr auto pi = 3.141592653589793238462643383279502884L;
     if (sector == 0U) { return std::complex<double>{1.0, 0.0}; }
     if (2U * sector == periodicity) { return std::complex<double>{-1.0, 0.0}; }
     auto const arg = -static_cast<long double>(2U * sector) / static_cast<long double>(periodicity);
-    auto       re  = static_cast<double>(std::cos(M_PIl * arg));
-    auto       im  = static_cast<double>(std::sin(M_PIl * arg));
+    auto       re  = static_cast<double>(std::cos(pi * arg));
+    auto       im  = static_cast<double>(std::sin(pi * arg));
     constexpr auto cutoff = 1e-9;
     if (std::abs(re) < cutoff) { re = 0.0; }
     if (std::abs(im) < cutoff) { im = 0.0; }
