@@ -18,6 +18,10 @@ jobs:
     steps:
     - uses: actions/checkout@v2
       
+    - name: install dependencies
+      run: |
+        sudo brew install libomp
+
     - name: configure
       run: |
         cmake -Bbuild \
