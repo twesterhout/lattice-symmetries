@@ -5,7 +5,7 @@
 
 using namespace lattice_symmetries;
 // std::random_device device;
-std::mt19937 generator{0x2340987123};
+std::mt19937 generator{0x24987123};
 
 TEST_CASE("constructs small networks", "[network]")
 {
