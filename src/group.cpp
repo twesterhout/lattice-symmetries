@@ -205,4 +205,7 @@ extern "C" ls_error_code ls_create_group(ls_group** ptr, unsigned size,
 
 extern "C" void ls_destroy_group(ls_group* group) { std::default_delete<ls_group>{}(group); }
 
-extern "C" unsigned ls_get_group_size(ls_group const* group) { return group->payload.size(); }
+extern "C" unsigned ls_get_group_size(ls_group const* group)
+{
+    return static_cast<unsigned>(group->payload.size());
+}

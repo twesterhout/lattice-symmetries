@@ -134,8 +134,11 @@ target_sources(lattice_symmetries
         $<TARGET_OBJECTS:lattice_symmetries_kernels_sse2>
         $<TARGET_OBJECTS:lattice_symmetries_kernels_avx>
         $<TARGET_OBJECTS:lattice_symmetries_kernels_avx2>)
-set_target_properties(lattice_symmetries PROPERTIES
-  LINK_FLAGS "-static-libstdc++ -static-libgcc")
+if(APPLE)
+    message(WARNING "C++ standard library will be linked dynamically")
+else()
+    target_link_options(lattice_symmetries PRIVATE -static-libstdc++ -static-libgcc)
+endif()
 
 # Allow usage of header files in the `src` directory, but only for utilities
 target_include_directories(
