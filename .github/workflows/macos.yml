@@ -20,7 +20,7 @@ jobs:
       
     - name: install dependencies
       run: |
-        sudo brew install libomp
+        brew install libomp
 
     - name: configure
       run: |
