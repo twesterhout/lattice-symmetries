@@ -1,7 +1,7 @@
-DOXYFILE = 'Doxyfile-mcss'
+DOXYFILE = 'Doxyfile'
 
 LINKS_NAVBAR1 = [
-    ("Pages", 'pages', []),
+    # ("Pages", 'pages', []),
     ("Modules", 'modules', [])
 ]
 LINKS_NAVBAR2 = []
