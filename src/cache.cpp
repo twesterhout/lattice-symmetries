@@ -30,7 +30,23 @@
 #include "error_handling.hpp"
 
 #if defined(__APPLE__)
+#    include <libkern/OSByteOrder.h>
 #    include <machine/endian.h>
+
+#    define htobe16(x) OSSwapHostToBigInt16(x)
+#    define htole16(x) OSSwapHostToLittleInt16(x)
+#    define be16toh(x) OSSwapBigToHostInt16(x)
+#    define le16toh(x) OSSwapLittleToHostInt16(x)
+
+#    define htobe32(x) OSSwapHostToBigInt32(x)
+#    define htole32(x) OSSwapHostToLittleInt32(x)
+#    define be32toh(x) OSSwapBigToHostInt32(x)
+#    define le32toh(x) OSSwapLittleToHostInt32(x)
+
+#    define htobe64(x) OSSwapHostToBigInt64(x)
+#    define htole64(x) OSSwapHostToLittleInt64(x)
+#    define be64toh(x) OSSwapBigToHostInt64(x)
+#    define le64toh(x) OSSwapLittleToHostInt64(x)
 #else
 #    include <endian.h>
 #endif
@@ -225,7 +241,7 @@ auto generate_states(tcb::span<batched_small_symmetry_t const> batched,
     auto const chunk_size = [number_spins, hamming_weight]() {
         auto const number_chunks    = 100U * static_cast<unsigned>(omp_get_max_threads());
         auto const [current, bound] = get_bounds(number_spins, hamming_weight);
-        return std::max((bound - current) / number_chunks, 1UL);
+        return std::max((bound - current) / number_chunks, uint64_t{1});
     }();
     auto const ranges = split_into_tasks(number_spins, hamming_weight, chunk_size);
     auto       states = std::vector<std::vector<uint64_t>>(ranges.size());
