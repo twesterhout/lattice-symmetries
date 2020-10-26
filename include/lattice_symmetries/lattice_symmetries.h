@@ -6,6 +6,58 @@
 ///
 /// Long description!
 
+/// \mainpage Lattice Symmetries
+///
+/// \section intro_sec Introduction
+///
+/// This is the introduction.
+///
+/// \section install_sec Installation
+///
+/// \subsection from_source_sec Compiling from source
+///
+/// The suggested way of installing `lattice_symmetries` library is compiling it from source. There
+/// are almost no external dependencies, so the process is quite simple. To compile the code, you
+/// will need the following:
+///
+///   * C & C++ compiler (with C++17 support);
+///   * CMake (3.15+);
+///   * Git
+///
+/// Start by cloning the repository:
+///
+/// ```{.sh}
+/// git clone https://github.com/twesterhout/lattice-symmetries.git
+/// cd lattice-symmetries
+/// ```
+///
+/// Next, create a directory where build artifacts will be stored (we do not support in-source
+/// builds):
+///
+/// ```{.sh}
+/// mkdir build
+/// cd build
+/// ```
+///
+/// Run the configure step which will determine the compilers to use, download dependencies etc.
+///
+/// ```{.sh}
+/// cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=</where/to/install> ..
+/// ```
+///
+/// Build the library:
+///
+/// ```{.sh}
+/// cmake --build .
+/// ```
+///
+/// And finally install it:
+///
+/// ```{.sh}
+/// cmake --build . --target install
+/// ```
+///
+
 #if defined(__cplusplus)
 #    include <cstdint>
 #else
