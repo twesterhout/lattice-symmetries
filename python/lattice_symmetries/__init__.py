@@ -4,29 +4,57 @@ import os
 import sys
 import math
 import subprocess
+import warnings
 import weakref
 from typing import List, Optional, Tuple
 import numpy as np
 
+# Enable import warnings
+warnings.filterwarnings("default", category=ImportWarning)
 
-def __load_shared_library():
-    # Find library location
-    result = subprocess.run(
-        ["pkg-config", "--variable=libdir", "lattice_symmetries"], capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        raise ImportError("Failed to load lattice_symmetries C library")
-    prefix = result.stdout.strip()
-    # Determine shared library extension
+
+def __library_name() -> str:
+    """Get lattice_symmetries C library file name with correct extension."""
     if sys.platform == "linux":
         extension = ".so"
     elif sys.platform == "darwin":
         extension = ".dylib"
     else:
         raise ImportError("Unsupported platform: {}".format(sys.platform))
-    # Load the library
-    lib = ctypes.CDLL(os.path.join(prefix, "liblattice_symmetries{}".format(extension)))
-    return lib
+    return "liblattice_symmetries{}".format(extension)
+
+
+def __package_path() -> str:
+    """Get current package installation path"""
+    return os.path.dirname(os.path.realpath(__file__))
+
+
+def __load_shared_library():
+    """Load lattice_symmetries C library"""
+    libname = __library_name()
+    # First, try the current directory.
+    prefix = __package_path()
+    if os.path.exists(os.path.join(prefix, libname)):
+        return ctypes.CDLL(os.path.join(prefix, libname))
+    # Next, try using conda
+    if os.path.exists(os.path.join(sys.prefix, "conda-meta")):
+        prefix = os.path.join(sys.prefix, "lib")
+        try:
+            return ctypes.CDLL(os.path.join(prefix, libname))
+        except:
+            warnings.warn(
+                "Using python from Conda, but '{}' library was not found in "
+                "the current environment. Will try pkg-config now...".format(libname),
+                ImportWarning,
+            )
+    # Finally, try to determine the prefix using pkg-config
+    result = subprocess.run(
+        ["pkg-config", "--variable=libdir", "lattice_symmetries"], capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        raise ImportError("Failed to load lattice_symmetries C library")
+    prefix = result.stdout.strip()
+    return ctypes.CDLL(os.path.join(prefix, __library_name()))
 
 
 _lib = __load_shared_library()
@@ -78,6 +106,9 @@ def __preprocess_library():
         ("ls_create_operator", [POINTER(c_void_p), c_void_p, c_uint, POINTER(c_void_p)], c_int),
         ("ls_destroy_operator", [c_void_p], None),
         ("ls_operator_matvec_f64", [c_void_p, c_uint64, POINTER(c_double), POINTER(c_double)], c_int),
+        ("ls_operator_matvec_f32", [c_void_p, c_uint64, POINTER(c_float), POINTER(c_float)], c_int),
+        ("ls_operator_matvec_c64", [c_void_p, c_uint64, c_void_p, c_void_p], c_int),
+        ("ls_operator_matvec_c128", [c_void_p, c_uint64, c_void_p, c_void_p], c_int),
     ]
     # fmt: on
     for (name, argtypes, restype) in info:
@@ -100,8 +131,7 @@ def _get_error_message(status: int) -> str:
 
 
 class LatticeSymmetriesException(Exception):
-    """Used to report errors from lattice_symmetries C library.
-    """
+    """Used to report errors from lattice_symmetries C library."""
 
     def __init__(self, error_code: int):
         """Constructs the exception. `error_code` is the status code obtained
@@ -193,6 +223,8 @@ def _create_group(generators) -> c_void_p:
 
 
 class Group:
+    """Symmetry group"""
+
     def __init__(self, generators: List[Symmetry]):
         self._payload = _create_group(generators)
         self._finalizer = weakref.finalize(self, _lib.ls_destroy_group, self._payload)
