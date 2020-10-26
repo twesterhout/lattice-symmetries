@@ -111,9 +111,10 @@ struct ls_states {
     ~ls_states() { ls_destroy_spin_basis(parent); }
 };
 
-LATTICE_SYMMETRIES_EXPORT
-extern "C" ls_error_code ls_create_spin_basis(ls_spin_basis** ptr, ls_group const* group,
-                                              unsigned const number_spins, int const hamming_weight)
+extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_spin_basis(ls_spin_basis** ptr,
+                                                                        ls_group const* group,
+                                                                        unsigned const number_spins,
+                                                                        int const hamming_weight)
 {
     if (number_spins == 0 || number_spins > 512) { return LS_INVALID_NUMBER_SPINS; }
     if (auto n = get_number_spins(*group); n.has_value() && number_spins != *n) {
@@ -141,8 +142,7 @@ extern "C" ls_error_code ls_create_spin_basis(ls_spin_basis** ptr, ls_group cons
     return LS_SUCCESS;
 }
 
-LATTICE_SYMMETRIES_EXPORT
-extern "C" ls_spin_basis* ls_copy_spin_basis(ls_spin_basis const* basis)
+extern "C" LATTICE_SYMMETRIES_EXPORT ls_spin_basis* ls_copy_spin_basis(ls_spin_basis const* basis)
 {
     LATTICE_SYMMETRIES_ASSERT(load(basis->header.refcount) > 0,
                               "refcount cannot be increased from zero");
@@ -150,40 +150,35 @@ extern "C" ls_spin_basis* ls_copy_spin_basis(ls_spin_basis const* basis)
     return const_cast<ls_spin_basis*>(basis);
 }
 
-LATTICE_SYMMETRIES_EXPORT
-extern "C" void ls_destroy_spin_basis(ls_spin_basis* basis)
+extern "C" LATTICE_SYMMETRIES_EXPORT void ls_destroy_spin_basis(ls_spin_basis* basis)
 {
     if (decrement(basis->header.refcount) == 0) { std::default_delete<ls_spin_basis>{}(basis); }
 }
 
-LATTICE_SYMMETRIES_EXPORT
-extern "C" unsigned ls_get_number_spins(ls_spin_basis const* basis)
+extern "C" LATTICE_SYMMETRIES_EXPORT unsigned ls_get_number_spins(ls_spin_basis const* basis)
 {
     return basis->header.number_spins;
 }
 
-LATTICE_SYMMETRIES_EXPORT
-extern "C" unsigned ls_get_number_bits(ls_spin_basis const* basis)
+extern "C" LATTICE_SYMMETRIES_EXPORT unsigned ls_get_number_bits(ls_spin_basis const* basis)
 {
     if (std::holds_alternative<big_basis_t>(basis->payload)) { return 512U; }
     return 64U;
 }
 
-LATTICE_SYMMETRIES_EXPORT
-extern "C" int ls_get_hamming_weight(ls_spin_basis const* basis)
+extern "C" LATTICE_SYMMETRIES_EXPORT int ls_get_hamming_weight(ls_spin_basis const* basis)
 {
     auto const& m = basis->header.hamming_weight;
     return m.has_value() ? static_cast<int>(*m) : -1;
 }
 
-LATTICE_SYMMETRIES_EXPORT
-extern "C" bool ls_has_symmetries(ls_spin_basis const* basis)
+extern "C" LATTICE_SYMMETRIES_EXPORT bool ls_has_symmetries(ls_spin_basis const* basis)
 {
     return basis->header.has_symmetries;
 }
 
-LATTICE_SYMMETRIES_EXPORT
-extern "C" ls_error_code ls_get_number_states(ls_spin_basis const* basis, uint64_t* out)
+extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_get_number_states(ls_spin_basis const* basis,
+                                                                        uint64_t*            out)
 {
     auto p = std::get_if<small_basis_t>(&basis->payload);
     if (LATTICE_SYMMETRIES_UNLIKELY(p == nullptr)) { return LS_WRONG_BASIS_TYPE; }
@@ -192,9 +187,9 @@ extern "C" ls_error_code ls_get_number_states(ls_spin_basis const* basis, uint64
     return LS_SUCCESS;
 }
 
-LATTICE_SYMMETRIES_EXPORT
-extern "C" ls_error_code ls_get_index(ls_spin_basis const* basis, uint64_t const bits[],
-                                      uint64_t* index)
+extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_get_index(ls_spin_basis const* basis,
+                                                                uint64_t const       bits[],
+                                                                uint64_t*            index)
 {
     auto p = std::get_if<small_basis_t>(&basis->payload);
     if (LATTICE_SYMMETRIES_UNLIKELY(p == nullptr)) { return LS_WRONG_BASIS_TYPE; }
@@ -210,8 +205,7 @@ extern "C" ls_error_code ls_get_index(ls_spin_basis const* basis, uint64_t const
     return LS_SUCCESS;
 }
 
-LATTICE_SYMMETRIES_EXPORT
-extern "C" ls_error_code ls_build(ls_spin_basis* basis)
+extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_build(ls_spin_basis* basis)
 {
     auto p = std::get_if<small_basis_t>(&basis->payload);
     if (p == nullptr) { return LS_WRONG_BASIS_TYPE; }
@@ -223,9 +217,10 @@ extern "C" ls_error_code ls_build(ls_spin_basis* basis)
     return LS_SUCCESS;
 }
 
-LATTICE_SYMMETRIES_EXPORT
-extern "C" void ls_get_state_info(ls_spin_basis* basis, uint64_t const bits[],
-                                  uint64_t representative[], void* character, double* norm)
+extern "C" LATTICE_SYMMETRIES_EXPORT void ls_get_state_info(ls_spin_basis* basis,
+                                                            uint64_t const bits[],
+                                                            uint64_t       representative[],
+                                                            void* character, double* norm)
 {
     struct visitor_t {
         uint64_t const* const bits;
@@ -249,8 +244,8 @@ extern "C" void ls_get_state_info(ls_spin_basis* basis, uint64_t const bits[],
         basis->payload);
 }
 
-LATTICE_SYMMETRIES_EXPORT
-extern "C" ls_error_code ls_get_states(ls_states** ptr, ls_spin_basis const* basis)
+extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_get_states(ls_states**          ptr,
+                                                                 ls_spin_basis const* basis)
 {
     auto small_basis = std::get_if<small_basis_t>(&basis->payload);
     if (LATTICE_SYMMETRIES_UNLIKELY(small_basis == nullptr)) { return LS_WRONG_BASIS_TYPE; }
@@ -261,20 +256,23 @@ extern "C" ls_error_code ls_get_states(ls_states** ptr, ls_spin_basis const* bas
     return LS_SUCCESS;
 }
 
-LATTICE_SYMMETRIES_EXPORT
-extern "C" void ls_destroy_states(ls_states* states) { std::default_delete<ls_states>{}(states); }
+extern "C" LATTICE_SYMMETRIES_EXPORT void ls_destroy_states(ls_states* states)
+{
+    std::default_delete<ls_states>{}(states);
+}
 
-LATTICE_SYMMETRIES_EXPORT
-extern "C" uint64_t const* ls_states_get_data(ls_states const* states)
+extern "C" LATTICE_SYMMETRIES_EXPORT uint64_t const* ls_states_get_data(ls_states const* states)
 {
     return states->payload.data();
 }
 
-LATTICE_SYMMETRIES_EXPORT
-extern "C" uint64_t ls_states_get_size(ls_states const* states) { return states->payload.size(); }
+extern "C" LATTICE_SYMMETRIES_EXPORT uint64_t ls_states_get_size(ls_states const* states)
+{
+    return states->payload.size();
+}
 
-LATTICE_SYMMETRIES_EXPORT
-extern "C" ls_error_code ls_save_cache(ls_spin_basis const* basis, char const* filename)
+extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_save_cache(ls_spin_basis const* basis,
+                                                                 char const*          filename)
 {
     auto small_basis = std::get_if<small_basis_t>(&basis->payload);
     if (small_basis == nullptr) { return LS_WRONG_BASIS_TYPE; }
@@ -290,8 +288,8 @@ extern "C" ls_error_code ls_save_cache(ls_spin_basis const* basis, char const* f
     return LS_SUCCESS;
 }
 
-LATTICE_SYMMETRIES_EXPORT
-extern "C" ls_error_code ls_load_cache(ls_spin_basis* basis, char const* filename)
+extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_load_cache(ls_spin_basis* basis,
+                                                                 char const*    filename)
 {
     auto p = std::get_if<small_basis_t>(&basis->payload);
     if (p == nullptr) { return LS_WRONG_BASIS_TYPE; }

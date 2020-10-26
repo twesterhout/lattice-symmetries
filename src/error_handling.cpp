@@ -138,7 +138,7 @@ auto get_error_category() noexcept -> ls_error_category const&
 
 } // namespace lattice_symmetries
 
-extern "C" auto ls_error_to_string(ls_error_code code) -> char const*
+extern "C" LATTICE_SYMMETRIES_EXPORT auto ls_error_to_string(ls_error_code code) -> char const*
 {
     using namespace lattice_symmetries;
     auto msg = get_error_category().message(code);
@@ -147,7 +147,7 @@ extern "C" auto ls_error_to_string(ls_error_code code) -> char const*
     return p.release();
 }
 
-extern "C" auto ls_destroy_string(char const* message) -> void
+extern "C" LATTICE_SYMMETRIES_EXPORT auto ls_destroy_string(char const* message) -> void
 {
     // We really do want const_cast here
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
