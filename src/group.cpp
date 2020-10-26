@@ -181,6 +181,7 @@ struct ls_group {
     explicit ls_group(std::vector<ls_symmetry> gs) noexcept : payload{std::move(gs)} {}
 };
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" ls_error_code ls_create_group(ls_group** ptr, unsigned size,
                                          ls_symmetry const* generators[])
 {
@@ -203,8 +204,10 @@ extern "C" ls_error_code ls_create_group(ls_group** ptr, unsigned size,
     return LS_SUCCESS;
 }
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" void ls_destroy_group(ls_group* group) { std::default_delete<ls_group>{}(group); }
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" unsigned ls_get_group_size(ls_group const* group)
 {
     return static_cast<unsigned>(group->payload.size());

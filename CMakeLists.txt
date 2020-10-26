@@ -21,11 +21,13 @@ option(${PROJECT_NAME}_ENABLE_UNIT_TESTING "Enable unit tests for the project." 
 option(${PROJECT_NAME}_ENABLE_CLANG_TIDY "Enable static analysis with clang-tidy." OFF)
 option(${PROJECT_NAME}_ENABLE_CPPCHECK "Enable static analysis with Cppcheck." OFF)
 option(${PROJECT_NAME}_ENABLE_CODE_COVERAGE "Enable code coverage through GCC." OFF)
+option(${PROJECT_NAME}_LINK_STDLIB_STATICALLY "Enable static linking of libstdc++ and libgcc on Linux." OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_C_EXTENSIONS OFF)
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS OFF)
-# set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+set(CMAKE_C_VISIBILITY_PRESET hidden)
+set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN 1)
 
 #
@@ -122,13 +124,14 @@ target_compile_options(lattice_symmetries_kernels_avx2 PRIVATE -m64 -mavx2 -mfma
 #
 # Create library
 #
-add_library(lattice_symmetries SHARED
+add_library(lattice_symmetries
     ${LatticeSymmetries_headers}
     ${LatticeSymmetries_sources}
 )
 target_compile_features(lattice_symmetries PRIVATE cxx_std_17)
 set_project_warnings(lattice_symmetries)
 disable_rtti_and_exceptions(lattice_symmetries)
+set_property(TARGET lattice_symmetries PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_sources(lattice_symmetries
     PRIVATE
         $<TARGET_OBJECTS:lattice_symmetries_kernels_sse2>
@@ -137,7 +140,10 @@ target_sources(lattice_symmetries
 if(APPLE)
     message(WARNING "C++ standard library will be linked dynamically")
 else()
-    target_link_options(lattice_symmetries PRIVATE -static-libstdc++ -static-libgcc)
+    if(${PROJECT_NAME}_LINK_STDLIB_STATICALLY)
+        message(STATUS "Linking libstdc++ and libgcc statically")
+        target_link_options(lattice_symmetries PRIVATE -static-libstdc++ -static-libgcc)
+    endif()
 endif()
 
 # Allow usage of header files in the `src` directory, but only for utilities

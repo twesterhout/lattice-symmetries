@@ -188,6 +188,7 @@ namespace {
     }
 } // namespace
 
+LATTICE_SYMMETRIES_EXPORT
 auto split_into_tasks(unsigned number_spins, std::optional<unsigned> hamming_weight,
                       uint64_t const chunk_size) -> std::vector<std::pair<uint64_t, uint64_t>>
 {

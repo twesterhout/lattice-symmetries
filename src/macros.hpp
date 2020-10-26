@@ -31,3 +31,4 @@
 #define LATTICE_SYMMETRIES_UNREACHABLE __builtin_unreachable()
 #define LATTICE_SYMMETRIES_LIKELY(x) __builtin_expect(x, 1)
 #define LATTICE_SYMMETRIES_UNLIKELY(x) __builtin_expect(x, 0)
+#define LATTICE_SYMMETRIES_EXPORT __attribute__((visibility("default")))

@@ -220,6 +220,7 @@ auto is_real(big_symmetry_t const& symmetry) noexcept -> bool
 
 } // namespace lattice_symmetries
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" ls_error_code ls_create_symmetry(ls_symmetry** ptr, unsigned const length,
                                             unsigned const permutation[], bool const flip,
                                             unsigned const sector)
@@ -252,30 +253,35 @@ extern "C" ls_error_code ls_create_symmetry(ls_symmetry** ptr, unsigned const le
     return LS_SUCCESS;
 }
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" void ls_destroy_symmetry(ls_symmetry* symmetry)
 {
     LATTICE_SYMMETRIES_CHECK(symmetry != nullptr, "trying to destroy a nullptr");
     std::default_delete<ls_symmetry>{}(symmetry);
 }
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" unsigned ls_get_sector(ls_symmetry const* symmetry)
 {
     LATTICE_SYMMETRIES_CHECK(symmetry != nullptr, "trying to dereference a nullptr");
     return std::visit([](auto const& x) noexcept { return x.sector; }, symmetry->payload);
 }
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" bool ls_get_flip(ls_symmetry const* symmetry)
 {
     LATTICE_SYMMETRIES_CHECK(symmetry != nullptr, "trying to dereference a nullptr");
     return std::visit([](auto const& x) noexcept { return x.network.flip; }, symmetry->payload);
 }
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" unsigned ls_get_periodicity(ls_symmetry const* symmetry)
 {
     LATTICE_SYMMETRIES_CHECK(symmetry != nullptr, "trying to dereference a nullptr");
     return std::visit([](auto const& x) noexcept { return x.periodicity; }, symmetry->payload);
 }
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" void ls_get_eigenvalue(ls_symmetry const* symmetry, void* out)
 {
     LATTICE_SYMMETRIES_CHECK(symmetry != nullptr, "trying to dereference a nullptr");
@@ -285,6 +291,7 @@ extern "C" void ls_get_eigenvalue(ls_symmetry const* symmetry, void* out)
     std::memcpy(out, &value, sizeof(std::complex<double>));
 }
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" double ls_get_phase(ls_symmetry const* symmetry)
 {
     LATTICE_SYMMETRIES_CHECK(symmetry != nullptr, "trying to dereference a nullptr");
@@ -295,6 +302,7 @@ extern "C" double ls_get_phase(ls_symmetry const* symmetry)
         symmetry->payload);
 }
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" unsigned ls_symmetry_get_number_spins(ls_symmetry const* symmetry)
 {
     return std::visit([](auto const& x) noexcept { return x.network.width; }, symmetry->payload);
@@ -322,6 +330,7 @@ struct symmetry_apply_fn_t {
 };
 } // namespace lattice_symmetries
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" void ls_apply_symmetry(ls_symmetry const* symmetry, uint64_t bits[])
 {
     return std::visit(lattice_symmetries::symmetry_apply_fn_t{bits}, symmetry->payload);

@@ -233,6 +233,7 @@ struct ls_operator {
     }
 };
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" ls_error_code ls_create_interaction1(ls_interaction** ptr, void const* matrix_2x2,
                                                 unsigned const number_nodes, uint16_t const* nodes)
 {
@@ -245,6 +246,7 @@ extern "C" ls_error_code ls_create_interaction1(ls_interaction** ptr, void const
     return LS_SUCCESS;
 }
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" ls_error_code ls_create_interaction2(ls_interaction** ptr, void const* matrix_4x4,
                                                 unsigned const number_edges,
                                                 uint16_t const (*edges)[2])
@@ -258,6 +260,7 @@ extern "C" ls_error_code ls_create_interaction2(ls_interaction** ptr, void const
     return LS_SUCCESS;
 }
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" ls_error_code ls_create_interaction3(ls_interaction** ptr, void const* matrix_8x8,
                                                 unsigned const number_triangles,
                                                 uint16_t const (*triangles)[3])
@@ -271,6 +274,7 @@ extern "C" ls_error_code ls_create_interaction3(ls_interaction** ptr, void const
     return LS_SUCCESS;
 }
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" ls_error_code ls_create_interaction4(ls_interaction** ptr, void const* matrix_16x16,
                                                 unsigned const number_plaquettes,
                                                 uint16_t const (*plaquettes)[4])
@@ -284,11 +288,13 @@ extern "C" ls_error_code ls_create_interaction4(ls_interaction** ptr, void const
     return LS_SUCCESS;
 }
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" void ls_destroy_interaction(ls_interaction* interaction)
 {
     std::default_delete<ls_interaction>{}(interaction);
 }
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" bool ls_interaction_is_real(ls_interaction const* interaction)
 {
     return std::visit(
@@ -444,6 +450,7 @@ auto apply(ls_operator const* op, uint64_t const size, uint64_t block_size, T co
 
 } // namespace lattice_symmetries
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" ls_error_code ls_create_operator(ls_operator** ptr, ls_spin_basis const* basis,
                                             unsigned const              number_terms,
                                             ls_interaction const* const terms[])
@@ -456,20 +463,24 @@ extern "C" ls_error_code ls_create_operator(ls_operator** ptr, ls_spin_basis con
     return LS_SUCCESS;
 }
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" void ls_destroy_operator(ls_operator* op) { std::default_delete<ls_operator>{}(op); }
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" ls_error_code ls_operator_matvec_f32(ls_operator const* op, uint64_t size,
                                                 float const* x, float* y)
 {
     return apply(op, size, x, y);
 }
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" ls_error_code ls_operator_matvec_f64(ls_operator const* op, uint64_t size,
                                                 double const* x, double* y)
 {
     return apply(op, size, x, y);
 }
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" ls_error_code ls_operator_matmat_f64(ls_operator const* op, uint64_t size,
                                                 uint64_t block_size, double const* x,
                                                 uint64_t x_stride, double* y, uint64_t y_stride)
@@ -477,6 +488,7 @@ extern "C" ls_error_code ls_operator_matmat_f64(ls_operator const* op, uint64_t 
     return apply(op, size, block_size, x, x_stride, y, y_stride);
 }
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" ls_error_code ls_operator_matvec_c64(ls_operator const* op, uint64_t size, void const* x,
                                                 void* y)
 {
@@ -484,6 +496,7 @@ extern "C" ls_error_code ls_operator_matvec_c64(ls_operator const* op, uint64_t 
     return apply(op, size, static_cast<C const*>(x), static_cast<C*>(y));
 }
 
+LATTICE_SYMMETRIES_EXPORT
 extern "C" ls_error_code ls_operator_matvec_c128(ls_operator const* op, uint64_t size,
                                                  void const* x, void* y)
 {

@@ -43,6 +43,7 @@ template <class Int> auto is_permutation_helper(tcb::span<Int const> xs) -> bool
     return std::is_permutation(std::begin(xs), std::end(xs), std::begin(range));
 }
 
+LATTICE_SYMMETRIES_EXPORT
 auto is_permutation(tcb::span<unsigned const> xs) -> bool { return is_permutation_helper(xs); }
 auto is_permutation(tcb::span<uint16_t const> xs) -> bool { return is_permutation_helper(xs); }
 
@@ -341,6 +342,7 @@ auto compile_helper(tcb::span<Int const> const permutation) -> outcome::result<f
     return network;
 }
 
+LATTICE_SYMMETRIES_EXPORT
 auto compile(tcb::span<unsigned const> const permutation) -> outcome::result<fat_benes_network_t>
 {
     return compile_helper(permutation);
