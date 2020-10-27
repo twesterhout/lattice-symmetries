@@ -76,7 +76,7 @@ namespace {
 
 namespace detail {
     auto benes_forward_simd(uint64_t x[8], uint64_t const (*masks)[8], unsigned size,
-                            uint16_t const deltas[]) noexcept -> void
+                            uint16_t const deltas[], uint64_t const flip_masks[8]) noexcept -> void
     {
         __m256i x0, x1;                                                   // NOLINT
         __m256i m0, m1;                                                   // NOLINT
@@ -87,6 +87,10 @@ namespace detail {
             m1 = _mm256_loadu_si256(reinterpret_cast<__m256i const*>(masks[i]) + 1); // NOLINT
             bit_permute_step(x0, x1, m0, m1, deltas[i]);
         }
+        m0 = _mm256_loadu_si256(reinterpret_cast<__m256i const*>(flip_masks)); // NOLINT
+        x0 = _mm256_xor_si256(x0, m0);
+        m1 = _mm256_loadu_si256(reinterpret_cast<__m256i const*>(flip_masks) + 1); // NOLINT
+        x1 = _mm256_xor_si256(x1, m1);
         _mm256_storeu_si256(reinterpret_cast<__m256i*>(x), x0);     // NOLINT
         _mm256_storeu_si256(reinterpret_cast<__m256i*>(x) + 1, x1); // NOLINT
     }
@@ -215,7 +219,7 @@ namespace {
 
 namespace detail {
     auto benes_forward_simd(uint64_t x[8], uint64_t const (*masks)[8], unsigned size,
-                            uint16_t const deltas[]) noexcept -> void
+                            uint16_t const deltas[], uint64_t const flip_masks[8]) noexcept -> void
     {
         __m128i x0, x1, x2, x3; // NOLINT
         __m128i m0, m1, m2, m3; // NOLINT
@@ -231,6 +235,15 @@ namespace detail {
             m3 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(masks[i]) + 3); // NOLINT
             bit_permute_step(x0, x1, x2, x3, m0, m1, m2, m3, deltas[i]);
         }
+        m0 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(flip_masks)); // NOLINT
+        x0 = _mm_xor_si128(x0, m0);
+        m1 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(flip_masks) + 1); // NOLINT
+        x1 = _mm_xor_si128(x1, m1);
+        m2 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(flip_masks) + 2); // NOLINT
+        x2 = _mm_xor_si128(x2, m2);
+        m3 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(flip_masks) + 3); // NOLINT
+        x3 = _mm_xor_si128(x3, m3);
+
         _mm_storeu_si128(reinterpret_cast<__m128i*>(x), x0);     // NOLINT
         _mm_storeu_si128(reinterpret_cast<__m128i*>(x) + 1, x1); // NOLINT
         _mm_storeu_si128(reinterpret_cast<__m128i*>(x) + 2, x2); // NOLINT
@@ -274,17 +287,17 @@ namespace detail {
 
 #if defined(LATTICE_SYMMETRIES_ADD_DISPATCH_CODE)
 auto benes_forward(uint64_t x[8], uint64_t const (*masks)[8], unsigned size,
-                   uint16_t const deltas[]) noexcept -> void
+                   uint16_t const deltas[], uint64_t const flip_masks[8]) noexcept -> void
 {
     if (__builtin_cpu_supports("avx2")) {
         // ...
-        detail::benes_forward_avx2(x, masks, size, deltas);
+        detail::benes_forward_avx2(x, masks, size, deltas, flip_masks);
     }
     else if (__builtin_cpu_supports("avx")) {
-        detail::benes_forward_avx(x, masks, size, deltas);
+        detail::benes_forward_avx(x, masks, size, deltas, flip_masks);
     }
     else {
-        detail::benes_forward_sse2(x, masks, size, deltas);
+        detail::benes_forward_sse2(x, masks, size, deltas, flip_masks);
     }
 }
 

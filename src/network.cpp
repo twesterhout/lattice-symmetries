@@ -176,18 +176,16 @@ auto compose(small_network_t const& x, small_network_t const& y) -> outcome::res
 
 batched_small_network_t::batched_small_network_t(
     std::array<small_network_t const*, batch_size> const& networks) noexcept
-    : masks{}, deltas{}, flips{}, flip_mask{}, depth{}, width{}
+    : masks{}, deltas{}, flip_masks{}, depth{}, width{}
 {
     // Make sure that it is safe to access members
     for (auto const* network : networks) {
         LATTICE_SYMMETRIES_CHECK(network != nullptr, "");
     }
     // Determine depth and flip_mask
-    flip_mask = networks[0]->flip_mask;
-    depth     = networks[0]->depth;
-    width     = networks[0]->width;
+    depth = networks[0]->depth;
+    width = networks[0]->width;
     for (auto const* network : networks) {
-        LATTICE_SYMMETRIES_CHECK(network->flip_mask == flip_mask, "");
         LATTICE_SYMMETRIES_CHECK(network->depth == depth, "");
         LATTICE_SYMMETRIES_CHECK(network->width == width, "");
     }
@@ -212,8 +210,11 @@ batched_small_network_t::batched_small_network_t(
         }
     });
     // Determine flips
-    std::transform(std::begin(networks), std::end(networks), std::data(flips),
-                   [](auto const* network) { return network->flip; });
+    // std::transform(std::begin(networks), std::end(networks), std::data(flips),
+    //                [](auto const* network) { return network->flip; });
+    std::transform(
+        std::begin(networks), std::end(networks), std::data(flip_masks),
+        [](auto const* network) { return network->flip ? network->flip_mask : uint64_t{0}; });
 }
 
 #if 0
@@ -241,7 +242,7 @@ batched_small_network_t::batched_small_network_t(small_network_t const& small) n
 auto batched_small_network_t::operator()(uint64_t bits[batch_size]) const noexcept -> void
 {
     benes_forward(bits, static_cast<uint64_t const(*)[batch_size]>(masks), depth,
-                  static_cast<uint16_t const*>(deltas));
+                  static_cast<uint16_t const*>(deltas), flip_masks);
 }
 
 } // namespace lattice_symmetries

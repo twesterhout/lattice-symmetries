@@ -82,8 +82,9 @@ struct alignas(32) batched_small_network_t {
 
     uint64_t masks[max_depth][batch_size];
     uint16_t deltas[max_depth];
-    bool     flips[batch_size];
-    uint64_t flip_mask;
+    uint64_t flip_masks[batch_size];
+    // bool     flips[batch_size];
+    // uint64_t flip_mask;
     uint16_t depth;
     uint16_t width;
 
