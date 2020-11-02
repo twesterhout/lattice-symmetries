@@ -42,11 +42,24 @@
 ///
 /// \section install_sec Installation
 ///
+/// \subsection using_conda Installing from Conda
+///
+/// If you are mainly going to use the Python interface to the library, using [Conda](...) is the
+/// suggested way of installing the package.
+///
+/// ```{.sh}
+/// conda install -c twesterhout lattice-symmetries
+/// ```
+///
+/// Since Python interface is written entirely in Python using `ctypes` module, C code is not linked
+/// against Python or any other libraries like `numpy`. The above command should thus in principle
+/// work in any environment with Python version 3.7 or newer.
+///
 /// \subsection from_source_sec Compiling from source
 ///
-/// The suggested way of installing `lattice_symmetries` library is compiling it from source. There
-/// are almost no external dependencies, so the process is quite simple. To compile the code, you
-/// will need the following:
+/// If you are maily using the C interface, then the suggested way of installing
+/// `lattice_symmetries` library is compiling it from source. There are almost no external
+/// dependencies so the process is quite simple. To compile the code, you will need the following:
 ///
 ///   * C & C++ compiler (with C++17 support);
 ///   * CMake (3.15+);
@@ -102,7 +115,7 @@ extern "C" {
 ///
 /// LatticeSymmetries library uses status codes for reporting errors. #ls_error_code specifies all
 /// possible status codes which can be returned by library functions. Names of the constants should
-/// explain errors pretty well, however for higher-leven wrappers it is useful to convert these
+/// explain errors pretty well, however for higher-level wrappers it is useful to convert these
 /// status codes to human-readable messages. #ls_error_to_string function provides this
 /// functionality.
 ///
@@ -141,11 +154,12 @@ typedef enum ls_error_code {
 ///
 /// \param code status code returned by one of the library functions.
 /// \return human readable description of the error.
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
+/// \see #ls_error_code, #ls_destroy_string
 char const* ls_error_to_string(ls_error_code code);
-/// \brief Deallocates error message.
+/// \brief Deallocates the error message.
 ///
 /// \param message string obtained from #ls_error_to_string.
+/// \see #ls_error_code, #ls_error_to_string
 void ls_destroy_string(char const* message);
 
 /// @}
@@ -160,7 +174,6 @@ void ls_destroy_string(char const* message);
 ///
 /// All lattice symmetries are built from two primitive operations: permutation and spin inversion.
 /// Furthermore, each symmetry has corresponding eigenvalue to which we restrict the Hilbert space.
-// NOLINTNEXTLINE(modernize-use-using)
 typedef struct ls_symmetry ls_symmetry;
 
 /// \brief Allocates and constructs a symmetry.
@@ -355,6 +368,8 @@ void          ls_destroy_interaction(ls_interaction* interaction);
 // NOLINTNEXTLINE(modernize-use-trailing-return-type)
 bool ls_interaction_is_real(ls_interaction const* interaction);
 
+uint64_t ls_interaction_max_buffer_size(ls_interaction const* interaction);
+
 // NOLINTNEXTLINE(modernize-use-trailing-return-type)
 ls_error_code ls_create_operator(ls_operator** ptr, ls_spin_basis const* basis,
                                  unsigned number_terms, ls_interaction const* const terms[]);
@@ -374,6 +389,8 @@ ls_error_code ls_operator_matmat_f64(ls_operator const* op, uint64_t size, uint6
 ls_error_code ls_operator_matvec_c64(ls_operator const* op, uint64_t size, void const* x, void* y);
 // NOLINTNEXTLINE(modernize-use-trailing-return-type)
 ls_error_code ls_operator_matvec_c128(ls_operator const* op, uint64_t size, void const* x, void* y);
+
+uint64_t ls_operator_max_buffer_size(ls_operator const* op);
 
 // NOLINTNEXTLINE(modernize-use-trailing-return-type)
 ls_error_code ls_operator_apply_64(ls_operator const* op, uint64_t bits, uint64_t* out_size,
