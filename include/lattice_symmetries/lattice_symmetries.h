@@ -181,7 +181,7 @@ typedef struct ls_symmetry ls_symmetry;
 /// \warning #ls_symmetry must be destructed and deallocated using #ls_destroy_symmetry.
 ///
 /// \param ptr upon successful completion \p ptr set to point to the newly constructed object. Must
-///            not be `nullptr`.
+///            not be `nullptr`. In case of error, \p ptr is untouched.
 /// \param length length of the \p permutation array. Must not exceed 512.
 /// \param permutation permutation of `{0, 1, ..., length - 1}`.
 /// \param flip whether application of this symmetry inverts spins.
@@ -191,7 +191,6 @@ typedef struct ls_symmetry ls_symmetry;
 ///         form a valid permutation. #LS_PERMUTATION_TOO_LONG if \p length exceeds 512.
 ///         #LS_INVALID_SECTOR if \p sector exceeds the periodicity of the symmetry.
 /// \see #ls_destroy_symmetry
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
 ls_error_code ls_create_symmetry(ls_symmetry** ptr, unsigned length, unsigned const permutation[],
                                  bool flip, unsigned sector);
 /// \brief Destructs and deallocates the symmetry.
@@ -205,14 +204,13 @@ void ls_destroy_symmetry(ls_symmetry* symmetry);
 ///
 /// \param symmetry pointer to symmetry. Must not be `nullptr`.
 /// \return symmetry sector.
-/// \see #ls_get_periodicity, #ls_get_phase, #ls_get_eigenvalue
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
+/// \see #ls_get_flip, #ls_get_phase, #ls_get_periodicity, #ls_get_eigenvalue
 unsigned ls_get_sector(ls_symmetry const* symmetry);
-/// \brief Determine whether the symmetry applies spin inversion.
+/// \brief Get whether the symmetry applies spin inversion.
 ///
 /// \param symmetry pointer to symmetry. Must not be `nullptr`.
 /// \return `true` if \p symmetry applies spin inversion.
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
+/// \see #ls_get_sector, #ls_get_phase, #ls_get_periodicity, #ls_get_eigenvalue
 bool ls_get_flip(ls_symmetry const* symmetry);
 /// \brief Get phase of the eigenvalue.
 ///
@@ -220,8 +218,7 @@ bool ls_get_flip(ls_symmetry const* symmetry);
 ///
 /// \param symmetry pointer to symmetry. Must not be `nullptr`.
 /// \return complex phase of the eigenvalue of \p symmetry.
-/// \see #ls_get_sector, #ls_get_periodicity, #ls_get_eigenvalue
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
+/// \see #ls_get_sector, #ls_get_flip, #ls_get_periodicity, #ls_get_eigenvalue
 double ls_get_phase(ls_symmetry const* symmetry);
 /// \brief Get eigenvalue of the symmetry.
 ///
@@ -230,66 +227,83 @@ double ls_get_phase(ls_symmetry const* symmetry);
 /// \param symmetry pointer to symmetry. Must not be `nullptr`.
 /// \param out pointer to `std::complex<double>` or any other structure binary compatible
 ///            with it (e.g. `double _Complex` or `double[2]`). Must not be `nullptr`.
+/// \see #ls_get_sector, #ls_get_flip, #ls_get_phase, #ls_get_periodicity
 void ls_get_eigenvalue(ls_symmetry const* symmetry, void* out);
 /// \brief Get periodicity of the symmetry.
 ///
 /// \param symmetry pointer to symmetry. Must not be `nullptr`.
 /// \return periodicity of the symmetry.
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
+/// \see #ls_get_sector, #ls_get_flip, #ls_get_phase, #ls_get_eigenvalue
 unsigned ls_get_periodicity(ls_symmetry const* symmetry);
-/// Apply symmetry to a spin configuration
+/// \brief Apply symmetry to a spin configuration.
+///
+/// \param symmetry pointer to symmetry. Must not be `nullptr`.
+/// \param bits spin configuration. It is modified in-place. Size of \p bits array is at least
+///             `ceil(number_spins / 64)`. `i`'th spin is determined as `(bits[i / 64] >> (i % 64)) & 0x1`.
+/// \see #ls_get_number_spins
 void ls_apply_symmetry(ls_symmetry const* symmetry, uint64_t bits[]);
 
+/// \brief Get number of spins in the system.
 ///
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
+/// \param symmetry pointer to symmetry. Must not be `nullptr`.
+/// \return number of spins for which the symmetry was constructed.
+/// \see #ls_apply_symmetry
 unsigned ls_symmetry_get_number_spins(ls_symmetry const* symmetry);
 
 /// @}
 // end of symmetries group
 
-/// \defgroup group Symmetry group
+/// \defgroup group Group
+/// \brief Defining symmetry groups
+///
 /// @{
 
-// NOLINTNEXTLINE(modernize-use-using)
+/// \brief Opaque structure representing a symmetry group.
+///
+/// This is basically a collection of #ls_symmetry which is closed under symmetry composition
+/// operation (**TODO**: make symmetry composition part of public interface).
 typedef struct ls_group ls_group;
 
-/// \brief Allocates and symmetry group.
+/// \brief Allocates and constructs a symmetry group.
 ///
 /// After successful completion of this function \p ptr points to the newly constructed
 /// #ls_group.
 ///
 /// \note #ls_group must be destructed and deallocated using #ls_destroy_group.
 ///
-/// \param ptr is set to point to the newly constructed object.
+/// \param ptr after success \p ptr is set to point to the newly constructed object. In case of
+///            error, \p ptr is untouched.
 /// \param size length of the \p generators array.
-/// \param generators array of pointers to individual symmetries which act as generators.
+/// \param generators array of pointers to individual symmetries which act as group generators.
 /// \return #LS_SUCCESS on successful completion. #LS_INCOMPATIBLE_SYMMETRIES if some symmetries are
 ///         incompatible with each other.
 /// \see #ls_destroy_group
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
 ls_error_code ls_create_group(ls_group** ptr, unsigned size, ls_symmetry const* generators[]);
 /// \brief Destructs and deallocates the symmetry group.
 ///
 /// This function **must** be called on objects constructed using #ls_create_group.
 ///
 /// \param group pointer to the group. Must not be `nullptr`.
+/// \see #ls_create_group
 void ls_destroy_group(ls_group* group);
 /// \brief Get size of the symmetry sector.
 ///
 /// \param group pointer to symmetry group. Must not be `nullptr`.
 /// \return number of elements in the group.
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
 unsigned ls_get_group_size(ls_group const* group);
 
 /// @}
 // end of group group
 
 /// \defgroup basis Spin basis
+/// \brief Working with Hilbert space bases
+///
 /// @{
 
-// NOLINTNEXTLINE(modernize-use-using)
+/// \brief Basis for a Hilbert space consisting of `N` spins.
 typedef struct ls_spin_basis ls_spin_basis;
-// NOLINTNEXTLINE(modernize-use-using)
+
+/// \brief Opaque structure representing a vector of representative basis states.
 typedef struct ls_states ls_states;
 
 /// \brief Allocates and constructs a basis.
@@ -302,27 +316,57 @@ typedef struct ls_states ls_states;
 /// \param ptr is set to point to the newly constructed object.
 /// \param group symmetry group. Group may be empty, but must not be `nullptr`.
 /// \param number_spins number of spins in the system. When \p group is not empty, number of spins
-///                     may be deduced from it. In such a case it must match the value of \p
+///                     may be deduced from it. Deduced number of spins must match the value of \p
 ///                     number_spins.
 /// \param hamming_weight allows to restrict to a sector with particular magnetisation. Hamming
 ///                       weight is the number of spins pointing upward. If one does not wish to
 ///                       restrict to a sector with given magnetisation, \p hamming_weight should
 ///                       be set to `-1`.
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
+/// \return #LS_SUCCESS upon success; #LS_INVALID_HAMMING_WEIGHT if \p hamming_weight exceeds \p
+///         number_spins or has a negative value other than `-1`; #LS_INVALID_NUMBER_SPINS if number
+///         of spins does not match the one deduced from \p group.
+/// \see #ls_destroy_spin_basis, #ls_copy_spin_basis
 ls_error_code ls_create_spin_basis(ls_spin_basis** ptr, ls_group const* group,
                                    unsigned number_spins, int hamming_weight);
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
+/// \brief Create a shallow copy of \p basis.
+///
+/// \see #ls_create_spin_basis, #ls_destroy_spin_basis
 ls_spin_basis* ls_copy_spin_basis(ls_spin_basis const* basis);
-void           ls_destroy_spin_basis(ls_spin_basis* basis);
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
+/// \brief Destructs and deallocates a #ls_spin_basis.
+///
+/// \param basis pointer to Hilbert space basis. Must not be `nullptr`.
+/// \see #ls_create_spin_basis, #ls_copy_spin_basis
+void ls_destroy_spin_basis(ls_spin_basis* basis);
+/// \brief Get number of spins in the system.
+///
+/// \param basis pointer to Hilbert space basis. Must not be `nullptr`.
+/// \return number of spins in the system.
+/// \see #ls_get_number_states, #ls_get_hamming_weight, #ls_get_state_info, #ls_get_index, #ls_get_states
 unsigned ls_get_number_spins(ls_spin_basis const* basis);
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
+/// \brief Get number of bits which is used to represent a spin configuration.
+///
+/// \param basis pointer to Hilbert space basis. Must not be `nullptr`.
+/// \return 64 or 512 depending on system size.
 unsigned ls_get_number_bits(ls_spin_basis const* basis);
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
+/// \brief Get Hamming weight of all basis states.
+///
+/// \param basis pointer to Hilbert space basis. Must not be `nullptr`.
+/// \return a non-negative Hamming weight or `-1` if any Hamming weight is allowed.
+/// \see #ls_get_number_spins, #ls_get_number_states, #ls_get_state_info, #ls_get_index, #ls_get_states
 int ls_get_hamming_weight(ls_spin_basis const* basis);
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
+/// \brief Return whether the basis is restricted to some symmetry sector.
+///
+/// \param basis pointer to Hilbert space basis. Must not be `nullptr`.
+/// \return `true` if the basis was constructed with a non-empty #ls_group and `false` otherwise.
 bool ls_has_symmetries(ls_spin_basis const* basis);
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
+/// \brief Get number of states in the basis (i.e. dimension of the Hilbert space)
+///
+/// \warning This operation is supported only *after* a call to #ls_build.
+///
+/// \param basis pointer to Hilbert space basis. Must not be `nullptr`.
+/// \param out on success, \p out is set to the number of states.
+/// \return #LS_SUCCESS on success and #LS_CACHE_NOT_BUILT if basis has not been built beforehand.
+/// \see #ls_build
 ls_error_code ls_get_number_states(ls_spin_basis const* basis, uint64_t* out);
 // NOLINTNEXTLINE(modernize-use-trailing-return-type)
 ls_error_code ls_build(ls_spin_basis* basis);
