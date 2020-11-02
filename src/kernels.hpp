@@ -33,19 +33,24 @@
 
 namespace lattice_symmetries {
 
-auto benes_forward(uint64_t x[8], uint64_t const (*masks)[8], unsigned size,
-                   uint16_t const deltas[], uint64_t const flip_masks[8]) noexcept -> void;
+inline constexpr int batch_size = 8;
+
+auto benes_forward(uint64_t x[batch_size], uint64_t const (*masks)[batch_size], unsigned size,
+                   uint16_t const deltas[], uint64_t const flip_masks[batch_size]) noexcept -> void;
 
 auto benes_forward(bits512& x, bits512 const masks[], unsigned size, uint16_t const deltas[],
                    bool flip, bits512 const& flip_mask) noexcept -> void;
 
 namespace detail {
-    auto benes_forward_sse2(uint64_t x[8], uint64_t const (*masks)[8], unsigned size,
-                            uint16_t const deltas[], uint64_t const flip_masks[8]) noexcept -> void;
-    auto benes_forward_avx(uint64_t x[8], uint64_t const (*masks)[8], unsigned size,
-                           uint16_t const deltas[], uint64_t const flip_masks[8]) noexcept -> void;
-    auto benes_forward_avx2(uint64_t x[8], uint64_t const (*masks)[8], unsigned size,
-                            uint16_t const deltas[], uint64_t const flip_masks[8]) noexcept -> void;
+    auto benes_forward_sse2(uint64_t x[batch_size], uint64_t const (*masks)[batch_size],
+                            unsigned size, uint16_t const deltas[],
+                            uint64_t const flip_masks[batch_size]) noexcept -> void;
+    auto benes_forward_avx(uint64_t x[batch_size], uint64_t const (*masks)[batch_size],
+                           unsigned size, uint16_t const deltas[],
+                           uint64_t const flip_masks[batch_size]) noexcept -> void;
+    auto benes_forward_avx2(uint64_t x[batch_size], uint64_t const (*masks)[batch_size],
+                            unsigned size, uint16_t const deltas[],
+                            uint64_t const flip_masks[batch_size]) noexcept -> void;
 
     auto benes_forward_512_sse2(bits512& x, bits512 const masks[], unsigned size,
                                 uint16_t const deltas[], bool flip,

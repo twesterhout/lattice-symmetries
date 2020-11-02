@@ -68,8 +68,7 @@ namespace {
     }
 } // namespace
 
-small_basis_t::small_basis_t(ls_group const& group)
-    : batched_symmetries{}, other_symmetries{}, cache{nullptr}
+small_basis_t::small_basis_t(ls_group const& group) : cache{nullptr}
 {
     auto symmetries = extract<small_symmetry_t>(group.payload);
     // other_symmetries = symmetries;
@@ -94,6 +93,11 @@ struct ls_spin_basis {
         , payload{tag, group}
     {}
 
+    ls_spin_basis(ls_spin_basis const&) = delete;
+    ls_spin_basis(ls_spin_basis&&)      = delete;
+    auto operator=(ls_spin_basis const&) -> ls_spin_basis& = delete;
+    auto operator=(ls_spin_basis&&) -> ls_spin_basis& = delete;
+
     ~ls_spin_basis()
     {
         LATTICE_SYMMETRIES_CHECK(load(header.refcount) == 0, "there remain references to object");
@@ -108,6 +112,11 @@ struct ls_states {
         : payload{states}, parent{ls_copy_spin_basis(owner)}
     {}
 
+    ls_states(ls_states const&) = delete;
+    ls_states(ls_states&&)      = delete;
+    auto operator=(ls_states const&) -> ls_states& = delete;
+    auto operator=(ls_states&&) -> ls_states& = delete;
+
     ~ls_states() { ls_destroy_spin_basis(parent); }
 };
 
@@ -116,6 +125,7 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_spin_basis(ls_spin_
                                                                         unsigned const number_spins,
                                                                         int const hamming_weight)
 {
+    // NOLINTNEXTLINE: 512 is the max supported system size (i.e. number of bits in bits512)
     if (number_spins == 0 || number_spins > 512) { return LS_INVALID_NUMBER_SPINS; }
     if (auto n = get_number_spins(*group); n.has_value() && number_spins != *n) {
         return LS_INVALID_NUMBER_SPINS;
@@ -129,7 +139,7 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_spin_basis(ls_spin_
         if (ls_get_group_size(group) > 0) {
             return std::holds_alternative<big_symmetry_t>(group->payload.front().payload);
         }
-        return number_spins > 64;
+        return number_spins > 64; // NOLINT: 64 is number of bits in uint64_t
     }();
     auto const _hamming_weight =
         hamming_weight == -1 ? std::nullopt : std::optional<unsigned>{hamming_weight};
@@ -147,6 +157,8 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_spin_basis* ls_copy_spin_basis(ls_spin_b
     LATTICE_SYMMETRIES_ASSERT(load(basis->header.refcount) > 0,
                               "refcount cannot be increased from zero");
     increment(basis->header.refcount);
+    // NOLINTNEXTLINE: We really do want const_cast here since the only non-const operation on
+    // NOLINTNEXTLINE: ls_spin_basis is ls_build which may be called from on any instance
     return const_cast<ls_spin_basis*>(basis);
 }
 
@@ -162,8 +174,10 @@ extern "C" LATTICE_SYMMETRIES_EXPORT unsigned ls_get_number_spins(ls_spin_basis 
 
 extern "C" LATTICE_SYMMETRIES_EXPORT unsigned ls_get_number_bits(ls_spin_basis const* basis)
 {
-    if (std::holds_alternative<big_basis_t>(basis->payload)) { return 512U; }
-    return 64U;
+    if (std::holds_alternative<big_basis_t>(basis->payload)) {
+        return 512U; // NOLINT: number of bits in bits512
+    }
+    return 64U; // NOLINT: number of bits in uint64_t
 }
 
 extern "C" LATTICE_SYMMETRIES_EXPORT int ls_get_hamming_weight(ls_spin_basis const* basis)
@@ -180,7 +194,7 @@ extern "C" LATTICE_SYMMETRIES_EXPORT bool ls_has_symmetries(ls_spin_basis const*
 extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_get_number_states(ls_spin_basis const* basis,
                                                                         uint64_t*            out)
 {
-    auto p = std::get_if<small_basis_t>(&basis->payload);
+    auto const* p = std::get_if<small_basis_t>(&basis->payload);
     if (LATTICE_SYMMETRIES_UNLIKELY(p == nullptr)) { return LS_WRONG_BASIS_TYPE; }
     if (LATTICE_SYMMETRIES_UNLIKELY(p->cache == nullptr)) { return LS_CACHE_NOT_BUILT; }
     *out = p->cache->number_states();
@@ -191,7 +205,7 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_get_index(ls_spin_basis co
                                                                 uint64_t const       bits[],
                                                                 uint64_t*            index)
 {
-    auto p = std::get_if<small_basis_t>(&basis->payload);
+    auto const* p = std::get_if<small_basis_t>(&basis->payload);
     if (LATTICE_SYMMETRIES_UNLIKELY(p == nullptr)) { return LS_WRONG_BASIS_TYPE; }
     if (LATTICE_SYMMETRIES_UNLIKELY(p->cache == nullptr)) { return LS_CACHE_NOT_BUILT; }
     auto r = p->cache->index(bits[0]);
@@ -207,7 +221,7 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_get_index(ls_spin_basis co
 
 extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_build(ls_spin_basis* basis)
 {
-    auto p = std::get_if<small_basis_t>(&basis->payload);
+    auto* p = std::get_if<small_basis_t>(&basis->payload);
     if (p == nullptr) { return LS_WRONG_BASIS_TYPE; }
     if (p->cache == nullptr) {
         p->cache = std::make_unique<basis_cache_t>(p->batched_symmetries, p->other_symmetries,
@@ -217,10 +231,9 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_build(ls_spin_basis* basis
     return LS_SUCCESS;
 }
 
-extern "C" LATTICE_SYMMETRIES_EXPORT void ls_get_state_info(ls_spin_basis* basis,
-                                                            uint64_t const bits[],
-                                                            uint64_t       representative[],
-                                                            void* character, double* norm)
+extern "C" LATTICE_SYMMETRIES_EXPORT void
+ls_get_state_info(ls_spin_basis* basis, uint64_t const bits[], uint64_t representative[],
+                  void* character, double* norm) // NOLINT: nope, norm can't be const
 {
     struct visitor_t {
         uint64_t const* const bits;
@@ -235,19 +248,21 @@ extern "C" LATTICE_SYMMETRIES_EXPORT void ls_get_state_info(ls_spin_basis* basis
         }
         auto operator()(big_basis_t const& payload) const noexcept
         {
-            get_state_info(payload.symmetries, *reinterpret_cast<bits512 const*>(bits),
-                           *reinterpret_cast<bits512*>(representative), character, norm);
+            // We do need reinterpret_casts here
+            get_state_info(payload.symmetries, *reinterpret_cast<bits512 const*>(bits),   // NOLINT
+                           *reinterpret_cast<bits512*>(representative), character, norm); // NOLINT
         }
     };
-    std::visit(
-        visitor_t{bits, representative, *reinterpret_cast<std::complex<double>*>(character), *norm},
-        basis->payload);
+    std::visit(visitor_t{bits, representative,
+                         *reinterpret_cast<std::complex<double>*>(character), // NOLINT
+                         *norm},
+               basis->payload);
 }
 
 extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_get_states(ls_states**          ptr,
                                                                  ls_spin_basis const* basis)
 {
-    auto small_basis = std::get_if<small_basis_t>(&basis->payload);
+    auto const* small_basis = std::get_if<small_basis_t>(&basis->payload);
     if (LATTICE_SYMMETRIES_UNLIKELY(small_basis == nullptr)) { return LS_WRONG_BASIS_TYPE; }
     if (LATTICE_SYMMETRIES_UNLIKELY(small_basis->cache == nullptr)) { return LS_CACHE_NOT_BUILT; }
     auto const states = small_basis->cache->states();
@@ -274,7 +289,7 @@ extern "C" LATTICE_SYMMETRIES_EXPORT uint64_t ls_states_get_size(ls_states const
 extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_save_cache(ls_spin_basis const* basis,
                                                                  char const*          filename)
 {
-    auto small_basis = std::get_if<small_basis_t>(&basis->payload);
+    auto const* small_basis = std::get_if<small_basis_t>(&basis->payload);
     if (small_basis == nullptr) { return LS_WRONG_BASIS_TYPE; }
     if (small_basis->cache == nullptr) { return LS_CACHE_NOT_BUILT; }
     auto const states = small_basis->cache->states();
@@ -291,12 +306,12 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_save_cache(ls_spin_basis c
 extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_load_cache(ls_spin_basis* basis,
                                                                  char const*    filename)
 {
-    auto p = std::get_if<small_basis_t>(&basis->payload);
+    auto* p = std::get_if<small_basis_t>(&basis->payload);
     if (p == nullptr) { return LS_WRONG_BASIS_TYPE; }
     // Cache already built
     if (p->cache != nullptr) { return LS_SUCCESS; }
 
-    auto const r = load_states(filename);
+    auto&& r = load_states(filename);
     if (!r) {
         if (r.error().category() == get_error_category()) {
             return static_cast<ls_error_code>(r.error().value());
@@ -305,7 +320,7 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_load_cache(ls_spin_basis* 
     }
     p->cache = std::make_unique<basis_cache_t>(p->batched_symmetries, p->other_symmetries,
                                                basis->header.number_spins,
-                                               basis->header.hamming_weight, std::move(r).value());
+                                               basis->header.hamming_weight, r.value());
     return LS_SUCCESS;
 }
 

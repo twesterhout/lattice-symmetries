@@ -145,6 +145,7 @@ namespace {
         auto fat = compile(spec.permutation);
         LATTICE_SYMMETRIES_CHECK(fat.has_value(), "compilation failed");
         auto const eigenvalue = compute_eigenvalue(spec.sector, spec.periodicity);
+        // NOLINTNEXTLINE: 64 is the number of bits in uint64_t
         if (spec.permutation.size() > 64U) {
             return ls_symmetry{std::in_place_type_t<big_symmetry_t>{},
                                fat.value(),

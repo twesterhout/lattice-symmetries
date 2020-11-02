@@ -37,16 +37,19 @@ namespace {
 
 template <unsigned NumberSpins> struct interaction_t {
     struct free_fn_t {
+        // NOLINTNEXTLINE: we are using RAII, that's the purpose of this struct
         auto operator()(void* p) const noexcept -> void { std::free(p); }
     };
 
     static constexpr unsigned Dim = 1U << NumberSpins;
 
+    // NOLINTNEXTLINE: 64 is typical L1 cache line size
     struct alignas(64) matrix_t {
         std::complex<double> payload[Dim][Dim];
 
         explicit matrix_t(std::complex<double> const* data) noexcept
         {
+            // NOLINTNEXTLINE: we do want array to pointer decay here
             std::memcpy(payload, data, Dim * Dim * sizeof(std::complex<double>));
         }
 
@@ -70,6 +73,10 @@ template <unsigned NumberSpins> struct interaction_t {
     interaction_t(interaction_t const& other)
         : matrix{std::make_unique<matrix_t>(other.matrix->payload)}, sites{other.sites}
     {}
+    auto operator=(interaction_t const&) -> interaction_t& = delete;
+    auto operator=(interaction_t&&) -> interaction_t& = delete;
+
+    ~interaction_t() noexcept = default;
 };
 
 namespace {
@@ -195,6 +202,34 @@ namespace {
                    interaction.payload);
     }
 
+    template <size_t Dim>
+    constexpr auto max_nonzeros(std::complex<double> const (&matrix)[Dim][Dim]) noexcept -> uint64_t
+    {
+        auto count = uint64_t{0};
+        for (auto i = uint64_t{0}; i < Dim; ++i) {
+            auto local_count = uint64_t{0};
+            for (auto j = uint64_t{0}; j < Dim; ++j) {
+                if (matrix[i][j] != 0.0) { ++local_count; }
+            }
+            if (local_count > count) { count = local_count; }
+        }
+        return count;
+    }
+
+    constexpr auto max_nonzeros(ls_interaction const& interaction) noexcept -> uint64_t
+    {
+        return std::visit([](auto const& x) noexcept { return max_nonzeros(x.matrix->payload); },
+                          interaction.payload);
+    }
+
+    auto max_buffer_size(tcb::span<ls_interaction const> interactions) noexcept -> uint64_t
+    {
+        return std::accumulate(std::begin(interactions), std::end(interactions), uint64_t{0},
+                               [](auto const total, auto const& interaction) {
+                                   return total + max_nonzeros(interaction);
+                               });
+    }
+
     constexpr auto max_index(ls_interaction const& interaction) noexcept -> unsigned
     {
         return std::visit([](auto const& x) noexcept { return max_index(x); }, interaction.payload);
@@ -221,7 +256,7 @@ struct ls_operator {
     bool                        is_real;
 
     ls_operator(ls_spin_basis const* _basis, tcb::span<ls_interaction const* const> _terms)
-        : basis{ls_copy_spin_basis(_basis)}, terms{}
+        : basis{ls_copy_spin_basis(_basis)}
     {
         terms.reserve(_terms.size());
         std::transform(
@@ -239,9 +274,9 @@ ls_create_interaction1(ls_interaction** ptr, void const* matrix_2x2, unsigned co
 {
     auto p = std::make_unique<ls_interaction>(
         std::in_place_type_t<interaction_t<1>>{},
-        reinterpret_cast<std::complex<double> const*>(matrix_2x2),
+        reinterpret_cast<std::complex<double> const*>(matrix_2x2), // NOLINT
         tcb::span<std::array<uint16_t, 1> const>{
-            reinterpret_cast<std::array<uint16_t, 1> const*>(nodes), number_nodes});
+            reinterpret_cast<std::array<uint16_t, 1> const*>(nodes), number_nodes}); // NOLINT
     *ptr = p.release();
     return LS_SUCCESS;
 }
@@ -252,9 +287,9 @@ ls_create_interaction2(ls_interaction** ptr, void const* matrix_4x4, unsigned co
 {
     auto p = std::make_unique<ls_interaction>(
         std::in_place_type_t<interaction_t<2>>{},
-        reinterpret_cast<std::complex<double> const*>(matrix_4x4),
+        reinterpret_cast<std::complex<double> const*>(matrix_4x4), // NOLINT
         tcb::span<std::array<uint16_t, 2> const>{
-            reinterpret_cast<std::array<uint16_t, 2> const*>(edges), number_edges});
+            reinterpret_cast<std::array<uint16_t, 2> const*>(edges), number_edges}); // NOLINT
     *ptr = p.release();
     return LS_SUCCESS;
 }
@@ -265,9 +300,10 @@ ls_create_interaction3(ls_interaction** ptr, void const* matrix_8x8,
 {
     auto p = std::make_unique<ls_interaction>(
         std::in_place_type_t<interaction_t<3>>{},
-        reinterpret_cast<std::complex<double> const*>(matrix_8x8),
+        reinterpret_cast<std::complex<double> const*>(matrix_8x8), // NOLINT
         tcb::span<std::array<uint16_t, 3> const>{
-            reinterpret_cast<std::array<uint16_t, 3> const*>(triangles), number_triangles});
+            reinterpret_cast<std::array<uint16_t, 3> const*>(triangles), // NOLINT
+            number_triangles});
     *ptr = p.release();
     return LS_SUCCESS;
 }
@@ -278,9 +314,10 @@ ls_create_interaction4(ls_interaction** ptr, void const* matrix_16x16,
 {
     auto p = std::make_unique<ls_interaction>(
         std::in_place_type_t<interaction_t<4>>{},
-        reinterpret_cast<std::complex<double> const*>(matrix_16x16),
+        reinterpret_cast<std::complex<double> const*>(matrix_16x16), // NOLINT
         tcb::span<std::array<uint16_t, 4> const>{
-            reinterpret_cast<std::array<uint16_t, 4> const*>(plaquettes), number_plaquettes});
+            reinterpret_cast<std::array<uint16_t, 4> const*>(plaquettes), // NOLINT
+            number_plaquettes});
     *ptr = p.release();
     return LS_SUCCESS;
 }
@@ -294,7 +331,7 @@ extern "C" LATTICE_SYMMETRIES_EXPORT bool ls_interaction_is_real(ls_interaction 
 {
     return std::visit(
         [](auto const& x) noexcept {
-            for (auto const& column : x.matrix->payload) {
+            for (auto const& column : x.matrix->payload) { // NOLINT: there's no decay :/
                 for (auto const element : column) {
                     if (element.imag() != 0.0) { return false; }
                 }
@@ -326,8 +363,11 @@ struct is_complex<std::complex<T>, std::enable_if_t<std::is_floating_point<T>::v
     : std::true_type {};
 template <class T> inline constexpr bool is_complex_v = is_complex<T>::value;
 
-constexpr auto to_bits(bits512 const& x) noexcept -> uint64_t const* { return x.words; }
-constexpr auto to_bits(bits512& x) noexcept -> uint64_t* { return x.words; }
+constexpr auto to_bits(bits512 const& x) noexcept -> uint64_t const*
+{
+    return static_cast<uint64_t const*>(x.words);
+}
+constexpr auto to_bits(bits512& x) noexcept -> uint64_t* { return static_cast<uint64_t*>(x.words); }
 constexpr auto to_bits(bits64 const& x) noexcept -> uint64_t const* { return &x; }
 constexpr auto to_bits(bits64& x) noexcept -> uint64_t* { return &x; }
 
@@ -339,7 +379,7 @@ auto apply_helper(ls_operator const& op, Bits const& spin, Callback callback) no
 {
     auto                 repr = spin;
     std::complex<double> eigenvalue;
-    double               norm;
+    double               norm; // NOLINT: norm is initialized by ls_get_state_info
 
     ls_get_state_info(op.basis.get(), to_bits(spin), to_bits(repr), &eigenvalue, &norm);
     if (norm == 0.0) {
@@ -381,16 +421,15 @@ auto apply_helper(ls_operator const& op, uint64_t size, T const* x, T* y) noexce
     auto const chunk_size =
         std::max(500UL, states.size() / (100UL * static_cast<unsigned>(omp_get_max_threads())));
     using acc_t = std::conditional_t<is_complex_v<T>, std::complex<double>, double>;
-    // There should be a default(none) here, but gcc-7.3 complains about __FUNCTION__ not being
-    // included in parallel...
+    // NOLINTNEXTLINE: There should be a default(none) here, but gcc-7.3 complains about
+    // NOLINTNEXTLINE: __FUNCTION__ not being included in parallel...
 #pragma omp parallel for schedule(dynamic, chunk_size) firstprivate(x, y, chunk_size, states)      \
     shared(op)
     for (auto i = uint64_t{0}; i < states.size(); ++i) {
         auto acc    = acc_t{0.0};
         auto status = apply_helper(
             op, states[i], [&acc, &op, x](auto const spin, auto const& coeff) noexcept {
-                // std::printf("%zu, %f + %fi\n", spin, coeff.real(), coeff.imag());
-                uint64_t   index;
+                uint64_t   index; // NOLINT: index is initialized by ls_get_index
                 auto const _status = ls_get_index(op.basis.get(), to_bits(spin), &index);
                 LATTICE_SYMMETRIES_ASSERT(_status == LS_SUCCESS, "");
                 if constexpr (is_complex_v<T>) {
@@ -463,6 +502,11 @@ ls_create_operator(ls_operator** ptr, ls_spin_basis const* basis, unsigned const
 extern "C" LATTICE_SYMMETRIES_EXPORT void ls_destroy_operator(ls_operator* op)
 {
     std::default_delete<ls_operator>{}(op);
+}
+
+extern "C" LATTICE_SYMMETRIES_EXPORT uint64_t ls_operator_max_buffer_size(ls_operator const* op)
+{
+    return max_buffer_size(op->terms);
 }
 
 extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_operator_matvec_f32(ls_operator const* op,

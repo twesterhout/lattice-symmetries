@@ -75,8 +75,9 @@ namespace {
 } // namespace
 
 namespace detail {
-    auto benes_forward_simd(uint64_t x[8], uint64_t const (*masks)[8], unsigned size,
-                            uint16_t const deltas[], uint64_t const flip_masks[8]) noexcept -> void
+    auto benes_forward_simd(uint64_t x[batch_size], uint64_t const (*masks)[batch_size],
+                            unsigned size, uint16_t const deltas[],
+                            uint64_t const flip_masks[batch_size]) noexcept -> void
     {
         __m256i x0, x1;                                                   // NOLINT
         __m256i m0, m1;                                                   // NOLINT
@@ -218,8 +219,9 @@ namespace {
 } // namespace
 
 namespace detail {
-    auto benes_forward_simd(uint64_t x[8], uint64_t const (*masks)[8], unsigned size,
-                            uint16_t const deltas[], uint64_t const flip_masks[8]) noexcept -> void
+    auto benes_forward_simd(uint64_t x[batch_size], uint64_t const (*masks)[batch_size],
+                            unsigned size, uint16_t const deltas[],
+                            uint64_t const flip_masks[batch_size]) noexcept -> void
     {
         __m128i x0, x1, x2, x3; // NOLINT
         __m128i m0, m1, m2, m3; // NOLINT
@@ -286,8 +288,8 @@ namespace detail {
 #endif
 
 #if defined(LATTICE_SYMMETRIES_ADD_DISPATCH_CODE)
-auto benes_forward(uint64_t x[8], uint64_t const (*masks)[8], unsigned size,
-                   uint16_t const deltas[], uint64_t const flip_masks[8]) noexcept -> void
+auto benes_forward(uint64_t x[batch_size], uint64_t const (*masks)[batch_size], unsigned size,
+                   uint16_t const deltas[], uint64_t const flip_masks[batch_size]) noexcept -> void
 {
     if (__builtin_cpu_supports("avx2")) {
         // ...

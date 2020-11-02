@@ -241,8 +241,8 @@ batched_small_network_t::batched_small_network_t(small_network_t const& small) n
 
 auto batched_small_network_t::operator()(uint64_t bits[batch_size]) const noexcept -> void
 {
-    benes_forward(bits, static_cast<uint64_t const(*)[batch_size]>(masks), depth,
-                  static_cast<uint16_t const*>(deltas), flip_masks);
+    // NOLINTNEXTLINE: we do want implicit decays of arrays to pointers here
+    benes_forward(bits, masks, depth, deltas, flip_masks);
 }
 
 } // namespace lattice_symmetries

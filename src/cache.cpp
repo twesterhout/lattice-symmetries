@@ -174,7 +174,9 @@ namespace {
         -> std::pair<uint64_t, uint64_t>
     {
         if (hamming_weight.has_value()) {
+            // special case 0 == all spins down
             if (*hamming_weight == 0U) { return {0U, 0U}; }
+            // NOLINTNEXTLINE: special case 64 == all spins up
             if (*hamming_weight == 64U) { return {~uint64_t{0}, ~uint64_t{0}}; }
             auto const current = ~uint64_t{0} >> (64U - *hamming_weight);
             auto const bound   = number_spins > *hamming_weight
@@ -246,11 +248,13 @@ auto generate_states(tcb::span<batched_small_symmetry_t const> batched,
     }();
     auto const ranges = split_into_tasks(number_spins, hamming_weight, chunk_size);
     auto       states = std::vector<std::vector<uint64_t>>(ranges.size());
+// NOLINTNEXTLINE: default(none) causes compilation issues in gcc-7
 #pragma omp parallel for schedule(dynamic, 1) firstprivate(hamming_weight)                         \
     shared(batched, other, states)
     for (auto i = size_t{0}; i < ranges.size(); ++i) {
         auto const [current, bound] = ranges[i];
-        states[i].reserve(1048576UL / sizeof(uint64_t));
+        // NOLINTNEXTLINE: 1024 * 1024 == 1048576 == 1MB
+        states[i].reserve((1024 * 1024) / sizeof(uint64_t));
         generate_states_task(hamming_weight.has_value(), current, bound, batched, other, states[i]);
     }
     return states;
@@ -297,12 +301,14 @@ auto basis_cache_t::index(uint64_t const x) const noexcept -> outcome::result<ui
 
 namespace {
     struct close_file_fn_t {
+        // NOLINTNEXTLINE: we're not using GSL, so no gsl::owner
         auto operator()(std::FILE* file) noexcept -> void { std::fclose(file); }
     };
 
     auto open_file(char const* filename, char const* mode) noexcept
         -> outcome::result<std::unique_ptr<std::FILE, close_file_fn_t>>
     {
+        // NOLINTNEXTLINE: we're not using GSL, so no gsl::owner
         auto* p = std::fopen(filename, mode);
         if (p == nullptr) { return LS_COULD_NOT_OPEN_FILE; }
         return std::unique_ptr<std::FILE, close_file_fn_t>{p};
@@ -310,7 +316,7 @@ namespace {
 
     auto file_size(char const* filename) noexcept -> uint64_t
     {
-        struct stat buf;
+        struct stat buf; // NOLINT: buf is initialized by stat
         stat(filename, &buf);
         return static_cast<uint64_t>(buf.st_size);
     }
@@ -328,8 +334,8 @@ auto save_states(tcb::span<uint64_t const> states, char const* filename) -> outc
     }
     auto buffer = std::vector<uint64_t>(chunk_size);
     for (auto first = std::begin(states), last = std::end(states); first != last;) {
-        auto const count = std::min(chunk_size, static_cast<uint64_t>(std::distance(first, last)));
-        auto const next  = std::next(first, static_cast<int64_t>(count));
+        auto const  count = std::min(chunk_size, static_cast<uint64_t>(std::distance(first, last)));
+        auto const* next  = std::next(first, static_cast<int64_t>(count));
         std::transform(first, next, std::begin(buffer), [](auto const x) { return htole64(x); });
         if (std::fwrite(buffer.data(), sizeof(uint64_t), count, stream.get()) != count) {
             return LS_FILE_IO_FAILED;
@@ -344,16 +350,17 @@ auto load_states(char const* filename) -> outcome::result<std::vector<uint64_t>>
 {
     OUTCOME_TRY(stream, open_file(filename, "rb"));
 
-    auto size = file_size(filename);
-    if (size < 16U) { return LS_CACHE_IS_CORRUPT; }
-    size -= 16U;
+    auto           size        = file_size(filename);
+    constexpr auto header_size = 16U;
+    if (size < header_size) { return LS_CACHE_IS_CORRUPT; }
+    size -= header_size;
     if (size % sizeof(uint64_t) != 0) { return LS_CACHE_IS_CORRUPT; }
 
-    std::array<char, 16> header;
-    if (std::fread(header.data(), sizeof(char), std::size(header), stream.get())
-        != std::size(header)) {
+    std::array<char, header_size> header; // NOLINT: header is initialized by fread
+    if (std::fread(header.data(), sizeof(char), header_size, stream.get()) != std::size(header)) {
         return LS_FILE_IO_FAILED;
     }
+    // NOLINTNEXTLINE: 42 is indeed a magic number, that's why it's used here
     if (!std::all_of(std::begin(header), std::end(header), [](auto const c) { return c == 42; })) {
         return LS_CACHE_IS_CORRUPT;
     }

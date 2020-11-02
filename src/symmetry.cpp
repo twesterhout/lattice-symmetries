@@ -14,6 +14,7 @@ auto get_projection(tcb::span<small_symmetry_t const> symmetries, Proj proj) noe
     LATTICE_SYMMETRIES_CHECK(symmetries.size() == batched_small_symmetry_t::batch_size,
                              "symmetries has wrong length");
     using element_type = decltype(std::declval<Proj>()(std::declval<small_symmetry_t const&>()));
+    // NOLINTNEXTLINE: batch is initialized in std::transform
     std::array<element_type, batched_small_symmetry_t::batch_size> batch;
     std::transform(std::begin(symmetries), std::end(symmetries), std::begin(batch),
                    std::cref(proj));
