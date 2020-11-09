@@ -429,6 +429,9 @@ ls_error_code ls_operator_matmat_f64(ls_operator const* op, uint64_t size, uint6
                                      double const* x, uint64_t x_stride, double* y,
                                      uint64_t y_stride);
 
+ls_error_code ls_operator_expectation_f64(ls_operator const* op, uint64_t size, uint64_t block_size,
+                                          double const* x, uint64_t x_stride, double* out);
+
 // NOLINTNEXTLINE(modernize-use-trailing-return-type)
 ls_error_code ls_operator_matvec_c64(ls_operator const* op, uint64_t size, void const* x, void* y);
 // NOLINTNEXTLINE(modernize-use-trailing-return-type)

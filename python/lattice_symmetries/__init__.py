@@ -137,6 +137,7 @@ def __preprocess_library():
         ("ls_operator_matvec_f32", [c_void_p, c_uint64, POINTER(c_float), POINTER(c_float)], c_int),
         ("ls_operator_matvec_c64", [c_void_p, c_uint64, c_void_p, c_void_p], c_int),
         ("ls_operator_matvec_c128", [c_void_p, c_uint64, c_void_p, c_void_p], c_int),
+        ("ls_operator_expectation_f64", [c_void_p, c_uint64, c_uint64, POINTER(c_double), c_uint64, POINTER(c_double)], c_int),
     ]
     # fmt: on
     for (name, argtypes, restype) in info:
@@ -452,6 +453,38 @@ class Operator:
                 self._payload,
                 len(x),
                 x.ctypes.data_as(POINTER(c_double)),
+                out.ctypes.data_as(POINTER(c_double)),
+            )
+        )
+        return out
+
+    def expectation(self, x):
+        if x.ndim != 1 and x.ndim != 2:
+            raise ValueError(
+                "'x' must either a vector or a matrix, but got a {}-dimensional array"
+                "".format(x.ndim)
+            )
+        if x.ndim == 1:
+            x = x.reshape(-1, 1)
+        if not x.flags['F_CONTIGUOUS']:
+            warnings.warn(
+                "Operator.expectation works with Fortran-contiguous (i.e.  column-major), "
+                "but 'x' is not. A copy of 'x' will be created with proper memory order, "
+                "but note that this will incur performance and memory (!) overhead..."
+            )
+            x = np.asfortranarray(x)
+        if x.dtype != np.float64:
+            raise ValueError(
+                "only float64 dtype is currently supported, but 'x' has {}".format(x.dtype)
+            )
+        out = np.empty(x.shape[1], dtype=np.float64)
+        _check_error(
+            _lib.ls_operator_expectation_f64(
+                self._payload,
+                x.shape[0],
+                x.shape[1],
+                x.ctypes.data_as(POINTER(c_double)),
+                x.strides[1] // sizeof(c_double),
                 out.ctypes.data_as(POINTER(c_double)),
             )
         )

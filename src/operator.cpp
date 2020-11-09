@@ -134,7 +134,7 @@ namespace {
             std::declval<Bits const&>(), std::declval<std::complex<double> const&>()));
 
         template <unsigned N>
-        auto operator()(interaction_t<N> const& self) const noexcept(is_noexcept) -> void
+        auto operator()(interaction_t<N> const& self) const noexcept(is_noexcept) -> ls_error_code
         {
             // std::printf("interaction_t<%u>::operator()(%zu, %f+%fi, off_diag)\n", N, x,
             //             diagonal.real(), diagonal.imag());
@@ -158,11 +158,15 @@ namespace {
                             auto y = x;
                             scatter_bits(y, n, edge);
                             // std::printf("off_diag(%zu, %f)\n", y, data[n].real());
-                            off_diag(y, data[n]);
+                            auto const status = off_diag(y, data[n]);
+                            if (LATTICE_SYMMETRIES_UNLIKELY(status != LS_SUCCESS)) {
+                                return status;
+                            }
                         }
                     }
                 }
             }
+            return LS_SUCCESS;
         }
     };
 
@@ -196,10 +200,11 @@ namespace {
     template <class Bits, class OffDiag>
     auto apply(ls_interaction const& interaction, Bits const& spin, std::complex<double>& diagonal,
                OffDiag off_diag) noexcept(interaction_apply_fn_t<Bits, OffDiag>::is_noexcept)
-        -> void
+        -> ls_error_code
     {
-        std::visit(interaction_apply_fn_t<Bits, OffDiag>{spin, diagonal, std::move(off_diag)},
-                   interaction.payload);
+        return std::visit(
+            interaction_apply_fn_t<Bits, OffDiag>{spin, diagonal, std::move(off_diag)},
+            interaction.payload);
     }
 
     template <size_t Dim>
@@ -372,31 +377,33 @@ constexpr auto to_bits(bits64 const& x) noexcept -> uint64_t const* { return &x;
 constexpr auto to_bits(bits64& x) noexcept -> uint64_t* { return &x; }
 
 template <class Bits, class Callback>
-auto apply_helper(ls_operator const& op, Bits const& spin, Callback callback) noexcept(
-    noexcept(std::declval<Callback&>()(std::declval<Bits const&>(),
-                                       std::declval<std::complex<double> const&>())))
-    -> outcome::result<void>
+auto apply_helper(ls_operator const& op, Bits const& spin, Callback callback) noexcept(noexcept(
+    std::declval<Callback&>()(std::declval<Bits const&>(),
+                              std::declval<std::complex<double> const&>()))) -> ls_error_code
 {
     auto                 repr = spin;
     std::complex<double> eigenvalue;
     double               norm; // NOLINT: norm is initialized by ls_get_state_info
-
     ls_get_state_info(op.basis.get(), to_bits(spin), to_bits(repr), &eigenvalue, &norm);
-    if (norm == 0.0) {
-        // std::printf("%zu invalid state!\n", spin);
-        return LS_INVALID_STATE;
-    }
+    if (norm == 0.0) { return LS_INVALID_STATE; }
     auto const old_norm = norm;
     auto       diagonal = std::complex<double>{0.0, 0.0};
     auto const off_diag = [&](Bits const& x, std::complex<double> const& c) {
         ls_get_state_info(op.basis.get(), to_bits(x), to_bits(repr), &eigenvalue, &norm);
-        if (norm > 0.0) { callback(repr, c * norm / old_norm * eigenvalue); }
+        if (norm > 0.0) {
+            auto const status = callback(repr, c * norm / old_norm * eigenvalue);
+            if (LATTICE_SYMMETRIES_UNLIKELY(status != LS_SUCCESS)) { return status; }
+        }
+        return LS_SUCCESS;
     };
     for (auto const& term : op.terms) {
-        apply(term, spin, diagonal, std::cref(off_diag));
+        auto const status = apply(term, spin, diagonal, std::cref(off_diag));
+        if (LATTICE_SYMMETRIES_UNLIKELY(status != LS_SUCCESS)) { return status; }
     }
-    callback(spin, diagonal);
-    return outcome::success();
+    {
+        auto const status = callback(spin, diagonal);
+        return status;
+    }
 }
 
 template <class T>
@@ -420,30 +427,88 @@ auto apply_helper(ls_operator const& op, uint64_t size, T const* x, T* y) noexce
 
     auto const chunk_size =
         std::max(500UL, states.size() / (100UL * static_cast<unsigned>(omp_get_max_threads())));
+    auto status = LS_SUCCESS;
     using acc_t = std::conditional_t<is_complex_v<T>, std::complex<double>, double>;
-    // NOLINTNEXTLINE: There should be a default(none) here, but gcc-7.3 complains about
-    // NOLINTNEXTLINE: __FUNCTION__ not being included in parallel...
-#pragma omp parallel for schedule(dynamic, chunk_size) firstprivate(x, y, chunk_size, states)      \
-    shared(op)
+#pragma omp parallel for default(none) schedule(dynamic, chunk_size)                               \
+    firstprivate(x, y, chunk_size, states) shared(status, op)
     for (auto i = uint64_t{0}; i < states.size(); ++i) {
-        auto acc    = acc_t{0.0};
-        auto status = apply_helper(
+        ls_error_code local_status;
+#pragma omp atomic read
+        local_status = status;
+        if (LATTICE_SYMMETRIES_UNLIKELY(local_status != LS_SUCCESS)) { continue; }
+
+        auto acc     = acc_t{0.0};
+        local_status = apply_helper(
             op, states[i], [&acc, &op, x](auto const spin, auto const& coeff) noexcept {
                 uint64_t   index; // NOLINT: index is initialized by ls_get_index
                 auto const _status = ls_get_index(op.basis.get(), to_bits(spin), &index);
-                LATTICE_SYMMETRIES_ASSERT(_status == LS_SUCCESS, "");
+                if (LATTICE_SYMMETRIES_UNLIKELY(_status != LS_SUCCESS)) { return _status; }
                 if constexpr (is_complex_v<T>) {
                     acc += std::conj(coeff) * static_cast<acc_t>(x[index]);
                 }
                 else {
                     acc += coeff.real() * static_cast<acc_t>(x[index]);
                 }
+                return LS_SUCCESS;
             });
-        // if (!status) { std::printf("status = %i\n", status.error()); }
-        LATTICE_SYMMETRIES_ASSERT(status.has_value(), "");
+        if (LATTICE_SYMMETRIES_UNLIKELY(local_status != LS_SUCCESS)) {
+#pragma omp atomic write
+            status = local_status;
+        }
         y[i] = static_cast<T>(acc);
     }
-    return LS_SUCCESS;
+    return status;
+}
+
+template <class T>
+auto expectation_helper(ls_operator const& op, uint64_t size, T const* x) noexcept
+    -> outcome::result<double>
+{
+    // gcc-7.3 gets confused by OUTCOME_TRY here (because of auto&&), so we expand it manually
+    auto&& r = [&op]() -> outcome::result<tcb::span<uint64_t const>> {
+        ls_states* _states = nullptr;
+        auto const status  = ls_get_states(&_states, op.basis.get());
+        if (status != LS_SUCCESS) { return status; }
+        return tcb::span<uint64_t const>{ls_states_get_data(_states), ls_states_get_size(_states)};
+    }();
+    if (!r) { return r.as_failure(); }
+    auto states = r.value(); // OUTCOME_TRY uses auto&& here
+    if (size != states.size()) { return outcome::failure(LS_DIMENSION_MISMATCH); }
+
+    auto const chunk_size =
+        std::max(500UL, states.size() / (100UL * static_cast<unsigned>(omp_get_max_threads())));
+    auto sum    = 0.0;
+    auto status = LS_SUCCESS;
+#    pragma omp parallel for default(none) schedule(dynamic, chunk_size)                           \
+        firstprivate(x, chunk_size, states) shared(op, status) reduction(+:sum)
+    for (auto i = uint64_t{0}; i < states.size(); ++i) {
+        ls_error_code local_status;
+#pragma omp atomic read
+        local_status = status;
+        if (LATTICE_SYMMETRIES_UNLIKELY(local_status != LS_SUCCESS)) { continue; }
+
+        auto acc     = std::complex<double>{0.0};
+        local_status = apply_helper(
+            op, states[i], [&acc, &op, x](auto const spin, auto const& coeff) noexcept {
+                uint64_t   index; // NOLINT: index is initialized by ls_get_index
+                auto const _status = ls_get_index(op.basis.get(), to_bits(spin), &index);
+                if (LATTICE_SYMMETRIES_LIKELY(_status == LS_SUCCESS)) {
+                    acc += std::conj(coeff) * static_cast<std::complex<double>>(x[index]);
+                }
+                return _status;
+            });
+        if (LATTICE_SYMMETRIES_UNLIKELY(local_status != LS_SUCCESS)) {
+#pragma omp atomic write
+            status = local_status;
+        }
+        acc *= std::conj(x[i]);
+        if (acc.imag() != 0.0) {
+#pragma omp atomic write
+            status = LS_OPERATOR_IS_COMPLEX;
+        }
+        sum += acc.real();
+    }
+    return sum;
 }
 
 template <class T>
@@ -459,9 +524,36 @@ auto apply_helper(ls_operator const& op, uint64_t const size, uint64_t const blo
 }
 
 template <class T>
+auto expectation_helper(ls_operator const& op, uint64_t const size, uint64_t const block_size,
+                        T const* x, uint64_t const x_stride, double* out) noexcept
+    -> outcome::result<void>
+{
+    for (auto i = uint64_t{0}; i < block_size; ++i) {
+        auto const r = expectation_helper(op, size, x + i * x_stride);
+        if (!r) { return r.error(); }
+        out[i] = r.value();
+    }
+    return LS_SUCCESS;
+}
+
+template <class T>
 auto apply(ls_operator const* op, uint64_t size, T const* x, T* y) noexcept -> ls_error_code
 {
     auto r = apply_helper(*op, size, x, y);
+    if (!r) {
+        if (r.error().category() == get_error_category()) {
+            return static_cast<ls_error_code>(r.error().value());
+        }
+        return LS_SYSTEM_ERROR;
+    }
+    return LS_SUCCESS;
+}
+
+template <class T>
+auto expectation(ls_operator const* op, uint64_t const size, uint64_t block_size, T const* x,
+                 uint64_t const x_stride, double* out) noexcept -> ls_error_code
+{
+    auto r = expectation_helper(*op, size, block_size, x, x_stride, out);
     if (!r) {
         if (r.error().category() == get_error_category()) {
             return static_cast<ls_error_code>(r.error().value());
@@ -529,6 +621,13 @@ ls_operator_matmat_f64(ls_operator const* op, uint64_t size, uint64_t block_size
                        uint64_t x_stride, double* y, uint64_t y_stride)
 {
     return apply(op, size, block_size, x, x_stride, y, y_stride);
+}
+
+extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code
+ls_operator_expectation_f64(ls_operator const* op, uint64_t size, uint64_t block_size,
+                            double const* x, uint64_t x_stride, double* out)
+{
+    return expectation(op, size, block_size, x, x_stride, out);
 }
 
 extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_operator_matvec_c64(ls_operator const* op,
