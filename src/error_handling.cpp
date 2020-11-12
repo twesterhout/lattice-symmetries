@@ -93,6 +93,7 @@ auto ls_error_category::message(int c) const -> std::string
     case LS_INVALID_STATE:
         return "spin configuration does not belong to the basis. This typically happens when the "
                "norm of the basis element is zero.";
+    case LS_INVALID_DATATYPE: return "unsupported datatype";
     case LS_PERMUTATION_TOO_LONG: return "permutation length exceeds 512";
     case LS_INCOMPATIBLE_SYMMETRIES:
         return "specified group generators are incompatible. This either means that symmetry "

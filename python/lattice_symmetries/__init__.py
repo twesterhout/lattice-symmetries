@@ -133,11 +133,12 @@ def __preprocess_library():
         # Operator
         ("ls_create_operator", [POINTER(c_void_p), c_void_p, c_uint, POINTER(c_void_p)], c_int),
         ("ls_destroy_operator", [c_void_p], None),
-        ("ls_operator_matvec_f64", [c_void_p, c_uint64, POINTER(c_double), POINTER(c_double)], c_int),
-        ("ls_operator_matvec_f32", [c_void_p, c_uint64, POINTER(c_float), POINTER(c_float)], c_int),
-        ("ls_operator_matvec_c64", [c_void_p, c_uint64, c_void_p, c_void_p], c_int),
-        ("ls_operator_matvec_c128", [c_void_p, c_uint64, c_void_p, c_void_p], c_int),
-        ("ls_operator_expectation_f64", [c_void_p, c_uint64, c_uint64, POINTER(c_double), c_uint64, POINTER(c_double)], c_int),
+        # ("ls_operator_matvec_f64", [c_void_p, c_uint64, POINTER(c_double), POINTER(c_double)], c_int),
+        # ("ls_operator_matvec_f32", [c_void_p, c_uint64, POINTER(c_float), POINTER(c_float)], c_int),
+        # ("ls_operator_matvec_c64", [c_void_p, c_uint64, c_void_p, c_void_p], c_int),
+        # ("ls_operator_matvec_c128", [c_void_p, c_uint64, c_void_p, c_void_p], c_int),
+        ("ls_operator_matmat", [c_void_p, c_int, c_uint64, c_uint64, c_void_p, c_uint64, c_void_p, c_uint64], c_int),
+        ("ls_operator_expectation", [c_void_p, c_int, c_uint64, c_uint64, c_void_p, c_uint64, c_void_p], c_int),
     ]
     # fmt: on
     for (name, argtypes, restype) in info:
@@ -177,6 +178,21 @@ def _check_error(status: int):
     """
     if status != 0:
         raise LatticeSymmetriesException(status)
+
+
+def _get_dtype(dtype):
+    if dtype == np.float32:
+        return 0
+    if dtype == np.float64:
+        return 1
+    if dtype == np.complex64:
+        return 2
+    if dtype == np.complex128:
+        return 3
+    raise ValueError(
+        "unexpected datatype: {}; currently only float32, float64, complex64, and "
+        "complex128 are supported".format(dtype)
+    )
 
 
 def _create_symmetry(permutation, flip, sector) -> c_void_p:
@@ -443,19 +459,50 @@ class Operator:
         self.basis = basis
 
     def __call__(self, x, out=None):
-        if x.ndim != 1:
-            raise ValueError("'x' must be a vector, but got a {}-dimensional array".format(x.ndim))
-        assert x.dtype == np.float64
+        if x.ndim != 1 and x.ndim != 2:
+            raise ValueError(
+                "'x' must either a vector or a matrix, but got a {}-dimensional array"
+                "".format(x.ndim)
+            )
+        x_was_a_vector = False
+        if x.ndim == 1:
+            x_was_a_vector = True
+            x = x.reshape(-1, 1)
+        if not x.flags["F_CONTIGUOUS"]:
+            warnings.warn(
+                "Operator.__call__ works with Fortran-contiguous (i.e. column-major), "
+                "but 'x' is not. A copy of 'x' will be created with proper memory order, "
+                "but note that this will incur performance and memory (!) overhead..."
+            )
+            x = np.asfortranarray(x)
         if out is None:
-            out = np.empty_like(x)
+            out = np.empty_like(x, order="F")
+        else:
+            if not out.flags["F_CONTIGUOUS"]:
+                warnings.warn(
+                    "Operator.__call__ works with Fortran-contiguous (i.e. column-major), "
+                    "but 'out' is not. A copy of 'out' will be created with proper memory order, "
+                    "but note that this will incur performance and memory (!) overhead..."
+                )
+                out = np.asfortranarray(out)
+            if x.dtype != out.dtype:
+                raise ValueError(
+                    "datatypes of 'x' and 'out' do not match: {} vs {}".format(x.dtype, out.dtype)
+                )
         _check_error(
-            _lib.ls_operator_matvec_f64(
+            _lib.ls_operator_matmat(
                 self._payload,
-                len(x),
-                x.ctypes.data_as(POINTER(c_double)),
-                out.ctypes.data_as(POINTER(c_double)),
+                _get_dtype(x.dtype),
+                x.shape[0],
+                x.shape[1],
+                x.ctypes.data_as(c_void_p),
+                x.strides[1] // x.itemsize,
+                out.ctypes.data_as(c_void_p),
+                out.strides[1] // out.itemsize,
             )
         )
+        if x_was_a_vector:
+            out = np.squeeze(out)
         return out
 
     def expectation(self, x):
@@ -464,30 +511,31 @@ class Operator:
                 "'x' must either a vector or a matrix, but got a {}-dimensional array"
                 "".format(x.ndim)
             )
+        x_was_a_vector = False
         if x.ndim == 1:
+            x_was_a_vector = True
             x = x.reshape(-1, 1)
-        if not x.flags['F_CONTIGUOUS']:
+        if not x.flags["F_CONTIGUOUS"]:
             warnings.warn(
                 "Operator.expectation works with Fortran-contiguous (i.e.  column-major), "
                 "but 'x' is not. A copy of 'x' will be created with proper memory order, "
                 "but note that this will incur performance and memory (!) overhead..."
             )
             x = np.asfortranarray(x)
-        if x.dtype != np.float64:
-            raise ValueError(
-                "only float64 dtype is currently supported, but 'x' has {}".format(x.dtype)
-            )
-        out = np.empty(x.shape[1], dtype=np.float64)
+        out = np.empty(x.shape[1], dtype=np.complex128)
         _check_error(
-            _lib.ls_operator_expectation_f64(
+            _lib.ls_operator_expectation(
                 self._payload,
+                _get_dtype(x.dtype),
                 x.shape[0],
                 x.shape[1],
-                x.ctypes.data_as(POINTER(c_double)),
-                x.strides[1] // sizeof(c_double),
-                out.ctypes.data_as(POINTER(c_double)),
+                x.ctypes.data_as(c_void_p),
+                x.strides[1] // x.itemsize,
+                out.ctypes.data_as(c_void_p)
             )
         )
+        if x_was_a_vector:
+            out = complex(out)
         return out
 
 

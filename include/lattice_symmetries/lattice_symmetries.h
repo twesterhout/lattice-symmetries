@@ -135,6 +135,7 @@ typedef enum ls_error_code {
     LS_INVALID_PERMUTATION,     ///< Argument is not a valid permutation
     LS_INVALID_SECTOR,          ///< Sector exceeds the periodicity of the operator
     LS_INVALID_STATE,           ///< Invalid basis state
+    LS_INVALID_DATATYPE,        ///< Invalid datatype
     LS_PERMUTATION_TOO_LONG,    ///< Such long permutations are not supported
     LS_INCOMPATIBLE_SYMMETRIES, ///< Symmetries are incompatible
     LS_NOT_A_REPRESENTATIVE,    ///< Spin configuration is not a representative
@@ -425,26 +426,46 @@ ls_error_code ls_operator_matvec_f32(ls_operator const* op, uint64_t size, float
 ls_error_code ls_operator_matvec_f64(ls_operator const* op, uint64_t size, double const* x,
                                      double* y);
 
-ls_error_code ls_operator_matmat_f64(ls_operator const* op, uint64_t size, uint64_t block_size,
-                                     double const* x, uint64_t x_stride, double* y,
-                                     uint64_t y_stride);
+typedef enum {
+    LS_FLOAT32,
+    LS_FLOAT64,
+    LS_COMPLEX64,
+    LS_COMPLEX128,
+} ls_datatype;
 
-ls_error_code ls_operator_expectation_f64(ls_operator const* op, uint64_t size, uint64_t block_size,
-                                          double const* x, uint64_t x_stride, double* out);
+typedef ls_error_code (*ls_callback)(uint64_t const* bits, double const coeff[2], void* cxt);
+
+ls_error_code ls_operator_apply(ls_operator const* op, uint64_t const* bits, ls_callback func,
+                                void* cxt);
+
+ls_error_code ls_operator_matmat(ls_operator const* op, ls_datatype dtype, uint64_t size,
+                                 uint64_t block_size, void const* x, uint64_t x_stride, void* y,
+                                 uint64_t y_stride);
+
+ls_error_code ls_operator_expectation(ls_operator const* op, ls_datatype dtype, uint64_t size,
+                                      uint64_t block_size, void const* x, uint64_t x_stride,
+                                      void* out);
+
+// ls_error_code ls_operator_matmat_f64(ls_operator const* op, uint64_t size, uint64_t block_size,
+//                                      double const* x, uint64_t x_stride, double* y,
+//                                      uint64_t y_stride);
+
+// ls_error_code ls_operator_expectation_f64(ls_operator const* op, uint64_t size, uint64_t block_size,
+//                                           double const* x, uint64_t x_stride, double* out);
 
 // NOLINTNEXTLINE(modernize-use-trailing-return-type)
-ls_error_code ls_operator_matvec_c64(ls_operator const* op, uint64_t size, void const* x, void* y);
+// ls_error_code ls_operator_matvec_c64(ls_operator const* op, uint64_t size, void const* x, void* y);
 // NOLINTNEXTLINE(modernize-use-trailing-return-type)
-ls_error_code ls_operator_matvec_c128(ls_operator const* op, uint64_t size, void const* x, void* y);
+// ls_error_code ls_operator_matvec_c128(ls_operator const* op, uint64_t size, void const* x, void* y);
 
 uint64_t ls_operator_max_buffer_size(ls_operator const* op);
 
 // NOLINTNEXTLINE(modernize-use-trailing-return-type)
-ls_error_code ls_operator_apply_64(ls_operator const* op, uint64_t bits, uint64_t* out_size,
-                                   void* out_coeffs, uint64_t* out_bits);
+// ls_error_code ls_operator_apply_64(ls_operator const* op, uint64_t bits, uint64_t* out_size,
+//                                    void* out_coeffs, uint64_t* out_bits);
 // NOLINTNEXTLINE(modernize-use-trailing-return-type)
-ls_error_code ls_operator_apply_512(ls_operator const* op, uint64_t const bits[], uint64_t out_size,
-                                    uint64_t (*out)[8]);
+// ls_error_code ls_operator_apply_512(ls_operator const* op, uint64_t const bits[], uint64_t out_size,
+//                                     uint64_t (*out)[8]);
 
 bool ls_operator_is_real(ls_operator const* op);
 
