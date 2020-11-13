@@ -18,6 +18,8 @@
 
 namespace lattice_symmetries {
 
+inline constexpr auto l1_cache_size = 64;
+
 template <class T, class = void> struct is_complex : std::false_type {};
 template <class T>
 struct is_complex<std::complex<T>, std::enable_if_t<std::is_floating_point<T>::value>>
@@ -64,8 +66,7 @@ template <unsigned NumberSpins> struct interaction_t {
 
     static constexpr unsigned Dim = 1U << NumberSpins;
 
-    // NOLINTNEXTLINE: 64 is typical L1 cache line size
-    struct alignas(64) matrix_t {
+    struct alignas(l1_cache_size) matrix_t {
         std::complex<double> payload[Dim][Dim];
 
         explicit matrix_t(std::complex<double> const* data) noexcept
@@ -397,7 +398,7 @@ extern "C" ls_error_code ls_operator_apply(ls_operator const* op, uint64_t const
     using namespace lattice_symmetries;
     auto const number_spins = ls_get_number_spins(op->basis.get());
     auto const number_words = (number_spins + 64U - 1U) / 64U;
-    bits512    spin;
+    bits512    spin; // NOLINT: spin is initialized in the following loops
     auto       i = 0U;
     for (; i < number_words; ++i) {
         spin.words[i] = bits[i];
@@ -406,6 +407,7 @@ extern "C" ls_error_code ls_operator_apply(ls_operator const* op, uint64_t const
         spin.words[i] = 0U;
     }
     return apply_helper(*op, spin, [func, cxt](auto const& x, auto const& c) {
+        // NOLINTNEXTLINE: it's fine to cast std::complex<double> to double[2]
         return (*func)(x.words, reinterpret_cast<double const(&)[2]>(c), cxt);
     });
 }
@@ -423,9 +425,10 @@ template <class T> struct block_acc_t {
         : data{}
         , num_threads{static_cast<unsigned>(omp_get_max_threads())}
         , block_size{_block_size}
-        , stride{64U * ((block_size + 63U) / 64U)}
+        , stride{l1_cache_size * ((block_size + l1_cache_size - 1) / l1_cache_size)}
     {
-        auto* p = std::aligned_alloc(64U, sizeof(acc_t) * num_threads * stride);
+        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+        auto* p = std::aligned_alloc(l1_cache_size, sizeof(acc_t) * num_threads * stride);
         LATTICE_SYMMETRIES_CHECK(p != nullptr, "memory allocation failed");
         data = std::unique_ptr<acc_t, free_fn_t>{static_cast<acc_t*>(p)};
         std::memset(data.get(), 0, sizeof(acc_t) * num_threads * stride);
@@ -487,21 +490,22 @@ auto matmat_helper(ls_operator const& op, uint64_t const size, uint64_t const bl
     auto const representatives = _r.value(); // OUTCOME_TRY uses auto&& here
     if (size != representatives.size()) { return LS_DIMENSION_MISMATCH; }
 
-    alignas(64) auto status    = LS_SUCCESS;
-    alignas(64) auto block_acc = block_acc_t<T>{block_size};
-    using acc_t                = typename block_acc_t<T>::acc_t;
+    alignas(l1_cache_size) auto status    = LS_SUCCESS;
+    alignas(l1_cache_size) auto block_acc = block_acc_t<T>{block_size};
+    using acc_t                           = typename block_acc_t<T>::acc_t;
 
     auto const chunk_size = std::max<uint64_t>(
         500U, representatives.size() / (100U * static_cast<unsigned>(omp_get_max_threads())));
 #pragma omp parallel for default(none) schedule(dynamic, chunk_size)                               \
-    firstprivate(x, x_stride, y, y_stride, representatives) shared(status, block_acc, op)
+    firstprivate(x, x_stride, y, y_stride, chunk_size, representatives)                            \
+        shared(status, block_acc, op)
     for (auto i = uint64_t{0}; i < representatives.size(); ++i) {
         ls_error_code local_status; // NOLINT: initialized by atomic read
 #pragma omp atomic read
         local_status = status;
         if (LATTICE_SYMMETRIES_UNLIKELY(local_status != LS_SUCCESS)) { continue; }
         // Load the representative into bits512
-        bits512 local_state;
+        bits512 local_state; // NOLINT: initialized by set_zero
         set_zero(local_state);
         local_state.words[0] = representatives[i];
         // Reset the accumulator
@@ -629,29 +633,29 @@ auto expectation_helper(ls_operator const& op, uint64_t const size, uint64_t con
     auto const representatives = _r.value(); // OUTCOME_TRY uses auto&& here
     if (size != representatives.size()) { return LS_DIMENSION_MISMATCH; }
 
-    alignas(64) auto status    = LS_SUCCESS;
-    alignas(64) auto block_acc = block_acc_t<std::complex<double>>{block_size};
-    alignas(64) auto sum_acc   = block_acc_t<std::complex<double>>{block_size};
-    using acc_t                = block_acc_t<std::complex<double>>::acc_t;
+    alignas(l1_cache_size) auto status    = LS_SUCCESS;
+    alignas(l1_cache_size) auto block_acc = block_acc_t<std::complex<double>>{block_size};
+    alignas(l1_cache_size) auto sum_acc   = block_acc_t<std::complex<double>>{block_size};
+    using acc_t                           = std::complex<double>;
 
     auto const chunk_size = std::max<uint64_t>(
         500U, representatives.size() / (100U * static_cast<unsigned>(omp_get_max_threads())));
 #pragma omp parallel for default(none) schedule(dynamic, chunk_size)                               \
-    firstprivate(x, x_stride, representatives) shared(status, block_acc, sum_acc, op)
+    firstprivate(x, x_stride, chunk_size, representatives) shared(status, block_acc, sum_acc, op)
     for (auto i = uint64_t{0}; i < representatives.size(); ++i) {
         ls_error_code local_status; // NOLINT: initialized by atomic read
 #pragma omp atomic read
         local_status = status;
         if (LATTICE_SYMMETRIES_UNLIKELY(local_status != LS_SUCCESS)) { continue; }
         // Load the representative into bits512
-        bits512 local_state;
+        bits512 local_state; // NOLINT: initialized by set_zero
         set_zero(local_state);
         local_state.words[0] = representatives[i];
         // Reset the accumulator
         auto const thread_num = static_cast<unsigned>(omp_get_thread_num());
         block_acc.set_zero(thread_num);
         // Define a callback function
-        struct cxt_t {
+        struct cxt_t { // NOLINT: we don't care about constructors here
             tcb::span<acc_t> const     acc;
             ls_spin_basis const* const basis;
             T const* const             x;
@@ -664,8 +668,9 @@ auto expectation_helper(ls_operator const& op, uint64_t const size, uint64_t con
             auto const  _status = ls_get_index(_cxt.basis, spin, &index);
             if (LATTICE_SYMMETRIES_LIKELY(_status == LS_SUCCESS)) {
                 for (auto j = uint64_t{0}; j < _cxt.acc.size(); ++j) {
+                    using T_ = typename block_acc_t<T>::acc_t;
                     _cxt.acc[j] += std::conj(std::complex{coeff[0], coeff[1]})
-                                   * static_cast<acc_t>(_cxt.x[index + _cxt.x_stride * j]);
+                                   * static_cast<T_>(_cxt.x[index + _cxt.x_stride * j]);
                 }
             }
             return _status;
@@ -680,7 +685,7 @@ auto expectation_helper(ls_operator const& op, uint64_t const size, uint64_t con
         // Accumulate the results into thread local sum
         auto const sum = sum_acc[thread_num];
         for (auto j = uint64_t{0}; j < cxt.acc.size(); ++j) {
-            sum[j] += std::conj(static_cast<acc_t>(x[i + x_stride * j])) * cxt.acc[j];
+            sum[j] += static_cast<acc_t>(std::conj(x[i + x_stride * j])) * cxt.acc[j];
         }
     }
     if (LATTICE_SYMMETRIES_LIKELY(status == LS_SUCCESS)) {
@@ -839,9 +844,10 @@ extern "C" LATTICE_SYMMETRIES_EXPORT uint64_t ls_operator_max_buffer_size(ls_ope
     return max_buffer_size(op->terms);
 }
 
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define LS_CALL_MATMAT_HELPER(dtype)                                                               \
     matmat_helper<dtype>(*op, size, block_size, static_cast<dtype const*>(x), x_stride,            \
-                         static_cast<dtype*>(y), y_stride)
+                         static_cast<dtype*>(y), y_stride) // NOLINT(bugprone-macro-parentheses)
 
 extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code
 ls_operator_matmat(ls_operator const* op, ls_datatype dtype, uint64_t size, uint64_t block_size,
@@ -867,6 +873,7 @@ ls_operator_matmat(ls_operator const* op, ls_datatype dtype, uint64_t size, uint
 
 #undef LS_CALL_MATMAT_HELPER
 
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define LS_CALL_EXPECTATION_HELPER(dtype)                                                          \
     expectation_helper<dtype>(*op, size, block_size, static_cast<dtype const*>(x), x_stride,       \
                               static_cast<std::complex<double>*>(out))
