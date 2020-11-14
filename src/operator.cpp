@@ -14,8 +14,6 @@
 #include <variant>
 #include <vector>
 
-#include <cstdio>
-
 namespace lattice_symmetries {
 
 inline constexpr auto l1_cache_size = 64;
@@ -391,9 +389,8 @@ extern "C" ls_error_code ls_operator_apply(ls_operator const* op, uint64_t const
     for (; i < std::size(spin.words); ++i) {
         spin.words[i] = 0U;
     }
-    return apply_helper(*op, spin, [func, cxt](auto const& x, auto const& c) {
-        // NOLINTNEXTLINE: it's fine to cast std::complex<double> to double[2]
-        return (*func)(x.words, reinterpret_cast<double const(&)[2]>(c), cxt);
+    return apply_helper(*op, spin, [func, cxt](bits512 const& x, std::complex<double> const& c) {
+        return (*func)(x.words, &c, cxt);
     });
 }
 
@@ -504,19 +501,19 @@ auto matmat_helper(ls_operator const& op, uint64_t const size, uint64_t const bl
             uint64_t const             x_stride;
         };
         auto cxt  = cxt_t{block_acc[thread_num], op.basis.get(), x, x_stride};
-        auto func = [](uint64_t const* spin, double const coeff[2], void* raw_cxt) noexcept {
+        auto func = [](uint64_t const* spin, void const* coeff, void* raw_cxt) noexcept {
             auto const& _cxt = *static_cast<cxt_t*>(raw_cxt);
             uint64_t    index; // NOLINT: index is initialized by ls_get_index
             auto const  _status = ls_get_index(_cxt.basis, spin, &index);
             if (LATTICE_SYMMETRIES_LIKELY(_status == LS_SUCCESS)) {
                 for (auto j = uint64_t{0}; j < _cxt.acc.size(); ++j) {
                     if constexpr (is_complex_v<T>) {
-                        _cxt.acc[j] += std::conj(std::complex{coeff[0], coeff[1]})
+                        _cxt.acc[j] += std::conj(*static_cast<std::complex<double> const*>(coeff))
                                        * static_cast<acc_t>(_cxt.x[index + _cxt.x_stride * j]);
                     }
                     else {
-                        _cxt.acc[j] +=
-                            coeff[0] * static_cast<acc_t>(_cxt.x[index + _cxt.x_stride * j]);
+                        _cxt.acc[j] += *static_cast<double const*>(coeff)
+                                       * static_cast<acc_t>(_cxt.x[index + _cxt.x_stride * j]);
                     }
                 }
             }
@@ -578,14 +575,14 @@ auto expectation_helper(ls_operator const& op, uint64_t const size, uint64_t con
             uint64_t const             x_stride;
         };
         auto cxt  = cxt_t{block_acc[thread_num], op.basis.get(), x, x_stride};
-        auto func = [](uint64_t const* spin, double const coeff[2], void* raw_cxt) noexcept {
+        auto func = [](uint64_t const* spin, void const* coeff, void* raw_cxt) noexcept {
             auto const& _cxt = *static_cast<cxt_t*>(raw_cxt);
             uint64_t    index; // NOLINT: index is initialized by ls_get_index
             auto const  _status = ls_get_index(_cxt.basis, spin, &index);
             if (LATTICE_SYMMETRIES_LIKELY(_status == LS_SUCCESS)) {
                 for (auto j = uint64_t{0}; j < _cxt.acc.size(); ++j) {
                     using T_ = typename block_acc_t<T>::acc_t;
-                    _cxt.acc[j] += std::conj(std::complex{coeff[0], coeff[1]})
+                    _cxt.acc[j] += std::conj(*static_cast<std::complex<double> const*>(coeff))
                                    * static_cast<T_>(_cxt.x[index + _cxt.x_stride * j]);
                 }
             }

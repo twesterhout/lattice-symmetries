@@ -32,20 +32,20 @@
 /// \file
 /// \brief Public API
 ///
-/// Long description!
+/// **TODO:** To be written.
 
 /// \mainpage Lattice Symmetries
 ///
 /// \section intro_sec Introduction
 ///
-/// This is the introduction.
+/// **TODO:** To be written.
 ///
 /// \section install_sec Installation
 ///
 /// \subsection using_conda Installing from Conda
 ///
-/// If you are mainly going to use the Python interface to the library, using [Conda](...) is the
-/// suggested way of installing the package.
+/// If you are mainly going to use the Python interface to the library, using
+/// [Conda](https://docs.conda.io/en/latest/) is the suggested way of installing the package.
 ///
 /// ```{.sh}
 /// conda install -c twesterhout lattice-symmetries
@@ -53,19 +53,27 @@
 ///
 /// Since Python interface is written entirely in Python using `ctypes` module, C code is not linked
 /// against Python or any other libraries like `numpy`. The above command should thus in principle
-/// work in any environment with Python version 3.7 or newer.
+/// work in any environment with Python version 3.7 or above.
+///
+/// The package contains both C and Python interfaces, so even if you do not need the Python
+/// interface, using conda is the simplest way to get started.
 ///
 /// \subsection from_source_sec Compiling from source
 ///
-/// If you are maily using the C interface, then the suggested way of installing
+/// If you are purely using the C interface, then the suggested way of installing
 /// `lattice_symmetries` library is compiling it from source. There are almost no external
 /// dependencies so the process is quite simple. To compile the code, you will need the following:
 ///
 ///   * C & C++ compiler (with C++17 support);
+///   * GNU Make or Ninja;
 ///   * CMake (3.15+);
 ///   * Git
 ///
-/// Start by cloning the repository:
+/// We also provide a [Conda environment
+/// file](https://github.com/twesterhout/lattice-symmetries/blob/master/conda-devel.yml) which
+/// contains all required dependencies (except Git).
+///
+/// First step is to clone the repository:
 ///
 /// ```{.sh}
 /// git clone https://github.com/twesterhout/lattice-symmetries.git
@@ -85,6 +93,20 @@
 /// ```{.sh}
 /// cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=</where/to/install> ..
 /// ```
+///
+/// The following CMake parameters affect the build:
+///
+///   * `BUILD_SHARED_LIBS`: when `ON` shared version of the library will be built, otherwise --
+///     static. Note that static library does not include the dependencies. It is thus suggested to
+///     use the shared version unless you know what you are doing.
+///   * `CMAKE_INSTALL_PREFIX`: where to install the library.
+///   * `CMAKE_BUILD_TYPE`: typically `Release` for optimized builds and `Debug` for development and
+///     testing.
+///   * `LatticeSymmetries_ENABLE_UNIT_TESTING`: when `ON` unit tests will be compiled (default:
+///     `ON`).
+///   * `LatticeSymmetries_ENABLE_CLANG_TIDY`: when `ON`, `clang-tidy` will be used for static
+///     analysis.
+///
 ///
 /// Build the library:
 ///
@@ -360,7 +382,7 @@ int ls_get_hamming_weight(ls_spin_basis const* basis);
 /// \param basis pointer to Hilbert space basis. Must not be `nullptr`.
 /// \return `true` if the basis was constructed with a non-empty #ls_group and `false` otherwise.
 bool ls_has_symmetries(ls_spin_basis const* basis);
-/// \brief Get number of states in the basis (i.e. dimension of the Hilbert space)
+/// \brief Get number of states in the basis (i.e. dimension of the Hilbert space).
 ///
 /// \warning This operation is supported only *after* a call to #ls_build.
 ///
@@ -369,12 +391,42 @@ bool ls_has_symmetries(ls_spin_basis const* basis);
 /// \return #LS_SUCCESS on success and #LS_CACHE_NOT_BUILT if basis has not been built beforehand.
 /// \see #ls_build
 ls_error_code ls_get_number_states(ls_spin_basis const* basis, uint64_t* out);
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
+/// \brief Construct list of all representatives.
+///
+/// \note This operation is supported only for small systems.
+///
+/// After a call to this function operations like #ls_get_index and #ls_get_number_states become
+/// available.
+///
+/// \param basis pointer to Hilbert space basis. Must not be `nullptr`.
+/// \return #LS_SUCCESS on success or other status code on error.
 ls_error_code ls_build(ls_spin_basis* basis);
-void ls_get_state_info(ls_spin_basis* basis, uint64_t const bits[], uint64_t representative[],
+/// \brief Get information about a spin configuration.
+///
+/// Given a spin configuration, computes its representative, character, and norm of the orbit.
+///
+/// \param basis pointer to Hilbert space basis. Must not be `nullptr`.
+/// \param bits spin configuration. Size of \p bits array is 8 (i.e. 512 bits). If number of spins
+///             in the basis is fewer than 64, then only the first word of \p bits will be accessed.
+/// \param representative where the representative will be written to. Same as with \p bits, when
+///        the number of spins does not exceed 64, only the first word of \p representative will be
+///        modified.
+/// \param character a pointer to `std::complex<double>` (`_Complex double` in C) where the
+///                  character will be written to.
+/// \param norm where the norm of the orbit will be written to.
+void ls_get_state_info(ls_spin_basis* basis, uint64_t const bits[8], uint64_t representative[8],
                        void* character, double* norm);
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
-ls_error_code ls_get_index(ls_spin_basis const* basis, uint64_t const bits[], uint64_t* index);
+/// \brief Get index of a basis representative.
+///
+/// \note \p bits must be a basis representative. If you just have a spin configuration, call
+///       #ls_get_state_info first to obtain its representative.
+///
+/// \warning This operation is supported only *after* a call to #ls_build.
+///
+/// \param basis pointer to Hilbert space basis. Must not be `nullptr`.
+/// \param bits basis representative. Since this function only works for small systems, \p bits has
+///             length 1.
+ls_error_code ls_get_index(ls_spin_basis const* basis, uint64_t const bits[1], uint64_t* index);
 
 // NOLINTNEXTLINE(modernize-use-trailing-return-type)
 ls_error_code ls_get_states(ls_states** ptr, ls_spin_basis const* basis);
@@ -433,7 +485,7 @@ typedef enum {
     LS_COMPLEX128,
 } ls_datatype;
 
-typedef ls_error_code (*ls_callback)(uint64_t const* bits, double const coeff[2], void* cxt);
+typedef ls_error_code (*ls_callback)(uint64_t const* bits, void const* coeff, void* cxt);
 
 ls_error_code ls_operator_apply(ls_operator const* op, uint64_t const* bits, ls_callback func,
                                 void* cxt);
