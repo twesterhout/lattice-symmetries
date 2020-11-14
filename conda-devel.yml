@@ -1,0 +1,27 @@
+name: lattice_symmetries_devel
+channels:
+  - defaults
+  - weinbe58 # for quspin
+dependencies:
+  - python
+  - pip
+  - pip:
+    - black
+    - neovim
+  - numpy
+  - scipy
+  - anaconda-client
+  - conda-build
+  - conda-verify
+  # Stuff to compile the package locally
+  - gcc_linux-64
+  - gxx_linux-64
+  - cmake
+  - ninja
+  # Stuff to create documentation
+  - jinja2
+  - pygments
+  # For benchmarks and testing
+  - numba ==0.48 # QuSpin doesn't work with the latest version
+  - omp # Get multi-threading support for QuSpin
+  - quspin
