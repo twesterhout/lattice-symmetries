@@ -539,14 +539,14 @@ class Operator:
         return out
 
 
-def diagonalize(hamiltonian: Operator, k: int = 1, dtype=None, tol=0):
+def diagonalize(hamiltonian: Operator, k: int = 1, dtype=None, **kwargs):
     import gc
-    import numpy as np
     import scipy.sparse.linalg
 
     hamiltonian.basis.build()
     n = hamiltonian.basis.number_states
-    dtype = np.float64
+    if dtype is None:
+        dtype = np.float64
     # if dtype is not None:
     #     if dtype not in {np.float32, np.float64, np.complex64, np.complex128}:
     #         raise ValueError(
@@ -582,4 +582,4 @@ def diagonalize(hamiltonian: Operator, k: int = 1, dtype=None, tol=0):
         return None
 
     op = scipy.sparse.linalg.LinearOperator(shape=(n, n), matvec=matvec, dtype=dtype)
-    return scipy.sparse.linalg.eigsh(op, k=k, ncv=number_lanczos_vectors(), which="SA", tol=tol)
+    return scipy.sparse.linalg.eigsh(op, k=k, which="SA", **kwargs)
