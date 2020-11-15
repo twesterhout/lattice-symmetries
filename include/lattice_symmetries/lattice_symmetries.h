@@ -449,34 +449,27 @@ typedef struct ls_interaction ls_interaction;
 // NOLINTNEXTLINE(modernize-use-using)
 typedef struct ls_operator ls_operator;
 
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
 ls_error_code ls_create_interaction1(ls_interaction** ptr, void const* matrix_2x2,
                                      unsigned number_nodes, uint16_t const* nodes);
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
+
 ls_error_code ls_create_interaction2(ls_interaction** ptr, void const* matrix_4x4,
                                      unsigned number_edges, uint16_t const (*edges)[2]);
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
+
 ls_error_code ls_create_interaction3(ls_interaction** ptr, void const* matrix_8x8,
                                      unsigned number_triangles, uint16_t const (*triangles)[3]);
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
+
 ls_error_code ls_create_interaction4(ls_interaction** ptr, void const* matrix_16x16,
                                      unsigned number_plaquettes, uint16_t const (*plaquettes)[4]);
-void          ls_destroy_interaction(ls_interaction* interaction);
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
+
+void ls_destroy_interaction(ls_interaction* interaction);
+
 bool ls_interaction_is_real(ls_interaction const* interaction);
 
 uint64_t ls_interaction_max_buffer_size(ls_interaction const* interaction);
 
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
 ls_error_code ls_create_operator(ls_operator** ptr, ls_spin_basis const* basis,
                                  unsigned number_terms, ls_interaction const* const terms[]);
 void          ls_destroy_operator(ls_operator* op);
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
-ls_error_code ls_operator_matvec_f32(ls_operator const* op, uint64_t size, float const* x,
-                                     float* y);
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
-ls_error_code ls_operator_matvec_f64(ls_operator const* op, uint64_t size, double const* x,
-                                     double* y);
 
 typedef enum {
     LS_FLOAT32,
@@ -498,26 +491,7 @@ ls_error_code ls_operator_expectation(ls_operator const* op, ls_datatype dtype, 
                                       uint64_t block_size, void const* x, uint64_t x_stride,
                                       void* out);
 
-// ls_error_code ls_operator_matmat_f64(ls_operator const* op, uint64_t size, uint64_t block_size,
-//                                      double const* x, uint64_t x_stride, double* y,
-//                                      uint64_t y_stride);
-
-// ls_error_code ls_operator_expectation_f64(ls_operator const* op, uint64_t size, uint64_t block_size,
-//                                           double const* x, uint64_t x_stride, double* out);
-
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
-// ls_error_code ls_operator_matvec_c64(ls_operator const* op, uint64_t size, void const* x, void* y);
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
-// ls_error_code ls_operator_matvec_c128(ls_operator const* op, uint64_t size, void const* x, void* y);
-
 uint64_t ls_operator_max_buffer_size(ls_operator const* op);
-
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
-// ls_error_code ls_operator_apply_64(ls_operator const* op, uint64_t bits, uint64_t* out_size,
-//                                    void* out_coeffs, uint64_t* out_bits);
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
-// ls_error_code ls_operator_apply_512(ls_operator const* op, uint64_t const bits[], uint64_t out_size,
-//                                     uint64_t (*out)[8]);
 
 bool ls_operator_is_real(ls_operator const* op);
 
