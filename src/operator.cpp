@@ -396,6 +396,17 @@ extern "C" ls_error_code ls_operator_apply(ls_operator const* op, uint64_t const
 
 namespace lattice_symmetries {
 
+namespace detail {
+    inline auto aligned_alloc(uint64_t const alignment, uint64_t const size) noexcept -> void*
+    {
+#if defined(__APPLE__)
+        return ::aligned_alloc(alignment, size);
+#else
+        return std::aligned_alloc(alignment, size);
+#endif
+    }
+} // namespace detail
+
 template <class T> struct block_acc_t {
     using acc_t = std::conditional_t<is_complex_v<T>, std::complex<double>, double>;
     struct free_fn_t {
@@ -410,7 +421,8 @@ template <class T> struct block_acc_t {
         , stride{l1_cache_size * ((block_size + l1_cache_size - 1) / l1_cache_size)}
     {
         // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-        auto* p = std::aligned_alloc(l1_cache_size, sizeof(acc_t) * num_threads * stride);
+        auto* p = detail::aligned_alloc(l1_cache_size, sizeof(acc_t) * num_threads * stride);
+
         LATTICE_SYMMETRIES_CHECK(p != nullptr, "memory allocation failed");
         data = std::unique_ptr<acc_t, free_fn_t>{static_cast<acc_t*>(p)};
         std::memset(data.get(), 0, sizeof(acc_t) * num_threads * stride);
