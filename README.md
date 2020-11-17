@@ -142,11 +142,10 @@ cmake --build . --target install
 
 ### C interface
 
-1. Add
+1. Add the following include your source file
 ```c
-#include <lattice_symmetries/lattice_symmetries.h>`
+#include <lattice_symmetries/lattice_symmetries.h>
 ```
-to your source file
 
 2. Link against `liblattice_symmetries.so` (or `.dylib` if you're on OS X, or
    `.a` if you're using the static version).
