@@ -1,6 +1,6 @@
 # Lattice Symmetries
 ![Linux](https://github.com/twesterhout/lattice-symmetries/workflows/Ubuntu/badge.svg)
-![OSX](https://github.com/twesterhout/lattice-symmetries/workflows/MacOS/badge.svg)
+![OS X](https://github.com/twesterhout/lattice-symmetries/workflows/MacOS/badge.svg)
 
 A package to simplify working with symmetry-adapted quantum many-body bases
 (think spin systems). This package is written with two main applications in
