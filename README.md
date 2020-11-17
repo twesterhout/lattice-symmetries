@@ -1,8 +1,4 @@
-# Lattice Symmetries
-![License](https://img.shields.io/github/license/twesterhout/lattice-symmetries)
-![Conda](https://img.shields.io/conda/v/twesterhout/lattice-symmetries)
-![Linux](https://github.com/twesterhout/lattice-symmetries/workflows/Ubuntu/badge.svg)
-![OS X](https://github.com/twesterhout/lattice-symmetries/workflows/OS%20X/badge.svg)
+# Lattice Symmetries ![License](https://img.shields.io/github/license/twesterhout/lattice-symmetries)![Conda](https://img.shields.io/conda/v/twesterhout/lattice-symmetries)![Linux](https://github.com/twesterhout/lattice-symmetries/workflows/Ubuntu/badge.svg)![OS X](https://github.com/twesterhout/lattice-symmetries/workflows/OS%20X/badge.svg)
 
 A package to simplify working with symmetry-adapted quantum many-body bases
 (think spin systems). This package is written with two main applications in
@@ -11,29 +7,24 @@ mind:
   * Exact diagonalization;
   * Experiments with neural quantum states and symmetries.
 
-`lattice_symmetries` provides a relatively low-level (and high performance)
+`lattice_symmetries` provides a relatively low-level and high-performance
 interface to working with symmetries and Hilbert space bases and operators. If
 all you want to do it to diagonalize a spin Hamiltonian, have a loop at
-[`SpinED`](...) application which does all the heavy-lifting for you.
+[`SpinED`](...) application which uses `lattice_symmetries` under the hood and
+provides a high-level and user-friendly interface to exact diagonalization.
 
-Have a look at [online documentation](...) for installation instructions and
-usage examples.
+## Contents
 
-
-## Why not use QuSpin?
-
-[QuSpin](...) is a very general Python package for working with many-body
-systems using exact-diagonalization-like methods. I am a big fan! However, it is
-very tightly coupled to Python and could not be easily incorporated into
-variational Monte Carlo code I was working on. This was my main reason for
-partially reimplementing QuSpin's functionality. Hence, this package provides a
-portable C interface with minimal dependencies.
-
-It turns out, however, that this package is also considerably faster than QuSpin
-and can thus handle larger systems. For systems larger than 32 spins, storing
-the Hamiltonian as a matrix (even sparse) is impractical. However, computing
-matrix elements on the fly requires that symmetry applications are very
-efficient, and the implementation in QuSpin is not quite there yet.
+* [Citing](#citing)
+* [Installation](#installation)
+    * [Installing from Conda](#installing-from-conda)
+    * [Building from source](#building-from-source)
+* [Example](#example)
+* [Reference](#reference)
+    * [C interface](#c-interface)
+    * [Python interface](#python-interface)
+* [Reading the source code](#reading-the-source-code)
+* [Other software](#other-software)
 
 
 ## Citing
@@ -50,14 +41,222 @@ following paper (**WIP**):
   annote = "".
 }
 ```
+Also, the paper introduces all the basic concepts like symmetry-adapted basis,
+spin configuration etc. If you are not yet familiar with the terminology it
+is advised to have a look at the paper first before reading the reference
+documentation or trying to use the code.
 
 
-## Okay, but how does it work?
+## Installation
 
-Doxygen documentation focuses on the API (Application Programming Interface) and
-the algorithms which make this code work fast enough might seem like black magic.
-The best way to learn about them is to read the source code. To simplify the
-process we provide a short guide.
+### Installing from Conda
+
+If you are mainly going to use the Python interface to the library, using
+[Conda](https://docs.conda.io/en/latest/) is the suggested way of installing the package.
+
+```{.sh}
+conda install -c twesterhout lattice-symmetries
+```
+
+Since Python interface is written entirely in Python using `ctypes` module, C code is not linked
+against Python or any other libraries like `numpy`. The above command should thus in principle
+work in any environment with **Python version 3.7 or above**.
+
+The package contains both C and Python interfaces, so even if you do not need the Python
+interface, using `conda` is the simplest way to get started.
+
+
+### Compiling from source
+
+If you are going to contribute to the project or just want to have more control
+over the installation, it is possible to compile `lattice_symmetries` from
+source. There are almost no external dependencies so the process is quite
+simple. You will need the following:
+
+  * C & C++ compiler (with C++17 support);
+  * GNU Make or Ninja;
+  * CMake (**3.15+**);
+  * Git
+
+We also provide a [Conda environment
+file](https://github.com/twesterhout/lattice-symmetries/blob/master/conda-devel.yml)
+which contains the required dependencies (except Git).
+
+First step is to clone the repository:
+
+```{.sh}
+git clone https://github.com/twesterhout/lattice-symmetries.git
+cd lattice-symmetries
+```
+
+Create a directory where build artifacts will be stored (we do not support in-source
+builds):
+
+```{.sh}
+mkdir build
+cd build
+```
+
+Run the configure step which will determine the compilers to use, download
+dependencies etc.
+
+```{.sh}
+cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=</where/to/install> ..
+```
+
+The following CMake parameters affect the build:
+
+  * `BUILD_SHARED_LIBS`: when `ON` shared version of the library will be built, otherwise --
+    static. Note that static library does not include the dependencies. It is thus suggested to
+    use the shared version unless you know what you are doing.
+  * `CMAKE_INSTALL_PREFIX`: where to install the library.
+  * `CMAKE_BUILD_TYPE`: typically `Release` for optimized builds and `Debug` for development and
+    testing.
+  * `LatticeSymmetries_ENABLE_UNIT_TESTING`: when `ON` unit tests will be compiled (default:
+    `ON`).
+  * `LatticeSymmetries_ENABLE_CLANG_TIDY`: when `ON`, `clang-tidy` will be used for static
+    analysis.
+
+
+Build the library:
+
+```{.sh}
+cmake --build .
+```
+
+And finally install it:
+
+```sh
+cmake --build . --target install
+```
+
+
+
+## Example
+
+
+
+
+
+## Reference
+
+### C interface
+
+1. Add
+```c
+#include <lattice_symmetries/lattice_symmetries.h>`
+```
+to your source file
+
+2. Link against `liblattice_symmetries.so` (or `.dylib` if you're on OS X, or
+   `.a` if you're using the static version).
+
+
+#### Symmetries
+
+Opaque struct representing a symmetry operator:
+```c
+typedef struct ls_symmetry ls_symmetry;
+```
+
+Symmetries are created and destructed using the following two functions:
+```c
+ls_error_code ls_create_symmetry(ls_symmetry** ptr, unsigned length, unsigned const permutation[],
+                                 bool flip, unsigned sector);
+void ls_destroy_symmetry(ls_symmetry* symmetry);
+```
+`ls_create_symmetry` accepts a `permutation` of indices `{0, 1, ..., length-1}`,
+a flag which indicates whether to apply global spin inversion, and `sector`
+specifying the eigenvalue. Upon successful completion (indicated by returning
+`LS_SUCCESS`), `*ptr` is set to point to the newly allocated `ls_symmetry`
+object.
+
+*Periodicity* of the symmetry operator `T` is the smallest positive integer `N`
+such that <code>T<sup>N</sup> = 1</code>. It then follows that eigenvalues of
+`T` are roots of unity: `2πik/N` for `k ∈ {0, ..., N-1}`. `sector` argument
+specifies the value of `k`.
+
+Various properties of the symmetry operator can be accessed using the getter
+functions:
+```c
+unsigned ls_get_sector(ls_symmetry const* symmetry);
+bool ls_get_flip(ls_symmetry const* symmetry);
+double ls_get_phase(ls_symmetry const* symmetry);
+void ls_get_eigenvalue(ls_symmetry const* symmetry, void* out); // _Complex double*
+unsigned ls_get_periodicity(ls_symmetry const* symmetry);
+unsigned ls_symmetry_get_number_spins(ls_symmetry const* symmetry);
+```
+`ls_get_eigenvalue` function stores the eigenvalue in `out` parameter using
+`_Complex double` datatype (same as `std::complex<double>` in C++).
+
+Finally, symmetry operators can also be applied to spin configurations:
+```c
+void ls_apply_symmetry(ls_symmetry const* symmetry, uint64_t bits[]);
+```
+**TODO:** document length of `bits`.
+
+
+#### Symmetry groups
+
+Opaque struct representing a symmetry group:
+```c
+typedef struct ls_group ls_group;
+```
+
+Symmetry groups are constructed and destructed using the following functions:
+```c
+ls_error_code ls_create_group(ls_group** ptr, unsigned size, ls_symmetry const* generators[]);
+void ls_destroy_group(ls_group* group);
+```
+`ls_create_group` receives an array of `size` symmetry generators and tries to
+build a group from them. If symmetries are incommensurable an error will be
+returned. Note that `ls_create_group` **does not take ownership** of `generators`.
+
+There is currently just one getter which allows to obtain the size of the group:
+```c
+unsigned ls_get_group_size(ls_group const* group);
+```
+
+
+#### Spin basis
+
+
+#### Interactions
+
+
+#### Operators
+
+
+####
+
+
+#### Error handling
+
+
+
+### Python interface
+
+
+
+
+
+## Other software
+
+[QuSpin](...) is a very general Python package for working with many-body
+systems using exact-diagonalization-like methods. I am a big fan! However, it is
+very tightly coupled to Python and could not be easily incorporated into
+variational Monte Carlo code I was working on. This was my main reason for
+partially reimplementing QuSpin's functionality. Hence, this package provides a
+portable C interface with minimal dependencies.
+
+It turns out, however, that this package is also considerably faster than QuSpin
+and can thus handle larger systems. For systems larger than 32 spins, storing
+the Hamiltonian as a matrix (even sparse) is impractical. However, computing
+matrix elements on the fly requires that symmetry applications are very
+efficient, and the implementation in QuSpin is not quite there yet.
+
+
+## Reading the source code
 
 The code can be roughly divided into a few layers. At the very bottom we have
 error handling (`error_handling.*` files) and utilities (`bits512.hpp`,
