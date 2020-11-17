@@ -1,6 +1,8 @@
 # Lattice Symmetries
+![License](https://img.shields.io/github/license/twesterhout/lattice-symmetries)
+![Conda](https://img.shields.io/conda/v/twesterhout/lattice-symmetries)
 ![Linux](https://github.com/twesterhout/lattice-symmetries/workflows/Ubuntu/badge.svg)
-![OS X](https://github.com/twesterhout/lattice-symmetries/workflows/MacOS/badge.svg)
+![OS X](https://github.com/twesterhout/lattice-symmetries/workflows/OS%20X/badge.svg)
 
 A package to simplify working with symmetry-adapted quantum many-body bases
 (think spin systems). This package is written with two main applications in
@@ -18,7 +20,7 @@ Have a look at [online documentation](...) for installation instructions and
 usage examples.
 
 
-## Why don't you just use QuSpin?
+## Why not use QuSpin?
 
 [QuSpin](...) is a very general Python package for working with many-body
 systems using exact-diagonalization-like methods. I am a big fan! However, it is
