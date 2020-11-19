@@ -26,6 +26,7 @@ def get_processor_name():
 
 
 def square_lattice_symmetries(L_x, L_y, sectors=dict()):
+    assert L_x > 0 and L_y > 0
     sites = np.arange(L_y * L_x, dtype=np.int32)
     x = sites % L_x
     y = sites // L_x
@@ -49,8 +50,32 @@ def square_lattice_symmetries(L_x, L_y, sectors=dict()):
     return symmetries
 
 
-def chain_edges(n):
-    return [(i, (i + 1) % n) for i in range(n)]
+def square_lattice_edges(L_x, L_y):
+    assert L_x > 0 and L_y > 0
+    # Example 4x6 square to illustrate the ordering of sites:
+    #  [[ 0,  1,  2,  3,  4,  5],
+    #   [ 6,  7,  8,  9, 10, 11],
+    #   [12, 13, 14, 15, 16, 17],
+    #   [18, 19, 20, 21, 22, 23]])
+    sites = np.arange(L_y * L_x, dtype=np.int32).reshape(L_y, L_x)
+
+    def generate_nearest_neighbours():
+        for y in range(L_y):
+            for x in range(L_x):
+                if L_x > 1:
+                    yield (sites[y, x], sites[y, (x + 1) % L_x])
+                if L_y > 1:
+                    yield (sites[y, x], sites[(y + 1) % L_y, x])
+
+    def generate_next_nearest_neighbours():
+        if L_x == 1 or L_y == 1:
+            return
+        for y in range(L_y):
+            for x in range(L_x):
+                yield (sites[y, x], sites[(y + 1) % L_y, (x + L_x - 1) % L_x])
+                yield (sites[y, x], sites[(y + 1) % L_y, (x + 1) % L_x])
+
+    return list(generate_nearest_neighbours()), list(generate_next_nearest_neighbours())
 
 
 def _quspin_make_basis(symmetries, number_spins, hamming_weight=None, build=True, **kwargs):
@@ -98,5 +123,43 @@ def make_basis(*args, backend="ls", **kwargs):
         return _ls_make_basis(*args, **kwargs)
     elif backend == "quspin":
         return _quspin_make_basis(*args, **kwargs)
+    else:
+        raise ValueError("invalid backend: {}; expected either 'ls' or 'quspin'".format(backend))
+
+
+def _quspin_make_heisenberg(basis, nearest, next_nearest=None, j2=None, dtype=np.float64):
+    from quspin.operators import quantum_LinearOperator, hamiltonian
+
+    static = [
+        ["+-", [[0.5, i, j] for (i, j) in nearest]],
+        ["-+", [[0.5, i, j] for (i, j) in nearest]],
+        ["zz", [[1.0, i, j] for (i, j) in nearest]],
+    ]
+    if next_nearest is not None:
+        assert j2 is not None
+        static += [
+            ["+-", [[0.5 * j2, i, j] for (i, j) in next_nearest]],
+            ["-+", [[0.5 * j2, i, j] for (i, j) in next_nearest]],
+            ["zz", [[1.0 * j2, i, j] for (i, j) in next_nearest]],
+        ]
+    return quantum_LinearOperator(static, basis=basis, dtype=dtype)
+
+
+def _ls_make_heisenberg(basis, nearest, next_nearest=None, j2=None, dtype=None):
+    import lattice_symmetries
+
+    matrix = [[1, 0, 0, 0], [0, -1, 2, 0], [0, 2, -1, 0], [0, 0, 0, 1]]
+    interactions = [lattice_symmetries.Interaction(matrix, nearest)]
+    if next_nearest is not None:
+        assert j2 is not None
+        interactions.append(lattice_symmetries.Interaction(j2 * matrix, next_nearest))
+    return lattice_symmetries.Operator(basis, interactions)
+
+
+def make_heisenberg(*args, backend="ls", **kwargs):
+    if backend == "ls":
+        return _ls_make_heisenberg(*args, **kwargs)
+    elif backend == "quspin":
+        return _quspin_make_heisenberg(*args, **kwargs)
     else:
         raise ValueError("invalid backend: {}; expected either 'ls' or 'quspin'".format(backend))

@@ -1,0 +1,55 @@
+\documentclass[border=5pt]{standalone}
+\usepackage{verbatim}
+
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.15}
+\usepgfplotslibrary{colorbrewer}
+
+\pgfplotsset{
+    cycle list/Pastel2-8,
+}
+\begin{document}
+\begin{tikzpicture}
+    \begin{axis}[
+        ybar,
+        width=8cm, height=5cm,
+        ylabel={Relative time},
+        axis x line*=bottom,
+        axis y line*=left,
+        bar width=0.4cm,
+        xmin={[normalized]-0.5},
+        legend entries={\texttt{lattice\_symmetries}, QuSpin},
+        every axis legend/.append style={
+            at={(0.5, -0.15)},
+            anchor=north,
+            line width=0.7pt,
+            legend columns=-1,
+            /tikz/every even column/.append style={column sep=0.5cm},
+        },
+        every axis/.append style={
+            line width=1pt,
+            tickwidth=0pt,
+            tick style={line width=0.8pt},
+            tick label style={font=\small},
+            label style={font=\small},
+            legend style={font=\small},
+        },
+        xtick=data,
+        every node near coord/.append style={font=\footnotesize},
+        nodes near coords={\pgfmathprintnumber[fixed]{\pgfplotspointmeta}},
+        symbolic x coords={$1 \times 24$, $1 \times 28$, $4 \times 6$,
+                           $5 \times 5$, $5 \times 6$},
+    ]
+        \addplot [draw=black, fill=Pastel2-B] table [col sep=tab, meta=system, y=relative] {
+            system	relative
+            $1 \times 24$	1.0
+            $1 \times 28$	1.0
+            $4 \times 6$	1.0
+            $5 \times 5$	1.0
+            $5 \times 6$	1.0
+        };
+        \addplot [draw=black, fill=Pastel2-C] table [col sep=tab, meta=system, y=relative]
+            {02_operator_application_1.dat};
+    \end{axis}
+\end{tikzpicture}
+\end{document}
