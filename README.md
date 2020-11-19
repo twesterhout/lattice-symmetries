@@ -20,6 +20,7 @@ provides a high-level and user-friendly interface to exact diagonalization.
     * [Installing from Conda](#installing-from-conda)
     * [Building from source](#building-from-source)
 * [Example](#example)
+* [Performance](#performance)
 * [Reference](#reference)
     * [C interface](#c-interface)
     * [Python interface](#python-interface)
@@ -136,6 +137,12 @@ cmake --build . --target install
 
 Have a look into [example/getting_started](https://github.com/twesterhout/lattice-symmetries/tree/master/example/getting_started). It provides very simple examples how to use `lattice_symmetries` from both Python and C.
 
+
+
+## Performance
+
+![basis construction](benchmark/01_basis_construction.png)
+![operator application](benchmark/02_operator_application.png)
 
 
 ## Reference
