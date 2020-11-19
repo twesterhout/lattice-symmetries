@@ -181,6 +181,7 @@ def _check_error(status: int):
 
 
 def _get_dtype(dtype):
+    """Convert NumPy datatype to ls_datatype enum"""
     if dtype == np.float32:
         return 0
     if dtype == np.float64:
@@ -212,11 +213,13 @@ def _create_symmetry(permutation, flip, sector) -> c_void_p:
 
 class Symmetry:
     """Symmetry operator.
-
-    See documentation of ls_symmetry for more information.
     """
 
     def __init__(self, permutation: List[int], sector: int, flip: bool = False):
+        """Create a symmetry given a `permutation` of sites, `flip` indicating
+        whether to apply global spin inversion, and `sector` specifying the
+        eigenvalue
+        """
         self._payload = _create_symmetry(permutation, flip, sector)
         self._finalizer = weakref.finalize(self, _lib.ls_destroy_symmetry, self._payload)
 
@@ -271,6 +274,7 @@ class Group:
     """Symmetry group"""
 
     def __init__(self, generators: List[Symmetry]):
+        """Construct a symmetry group from a list of generators"""
         self._payload = _create_group(generators)
         self._finalizer = weakref.finalize(self, _lib.ls_destroy_group, self._payload)
 
@@ -314,37 +318,52 @@ def _bits_to_int(bits: ctypes.Array) -> int:
 
 
 class SpinBasis:
-    def __init__(self, group, number_spins, hamming_weight):
+    """Hilbert space basis for a spin system
+    """
+    def __init__(self, group: Group, number_spins: int, hamming_weight: Optional[int]):
+        """Construct a spin basis given a symmetry group, number of spins in
+        the system, and (optionally) the Hamming weight to which to restrict
+        the Hilbert space.
+        """
         self._payload = _create_spin_basis(group, number_spins, hamming_weight)
         self._finalizer = weakref.finalize(self, _lib.ls_destroy_spin_basis, self._payload)
 
     @property
     def number_spins(self) -> int:
+        """Number of spins in the system"""
         return _lib.ls_get_number_spins(self._payload)
 
     @property
     def number_bits(self) -> int:
+        """Number of bits used to represent the spin configuration"""
         return _lib.ls_get_number_bits(self._payload)
 
     @property
     def hamming_weight(self) -> Optional[int]:
+        """Hamming weight of all spin configurations, `None` if it varies"""
         r = _lib.ls_get_hamming_weight(self._payload)
         return None if r == -1 else r
 
     @property
     def has_symmetries(self) -> bool:
+        """Whether lattice symmetries were used to construct the basis"""
         return _lib.ls_has_symmetries(self._payload)
 
     @property
     def number_states(self) -> int:
+        """Number of states in the basis (i.e. dimension of the Hilbert space)"""
         r = c_uint64()
         _check_error(_lib.ls_get_number_states(self._payload, ctypes.byref(r)))
         return r.value
 
     def build(self):
+        """Build internal cache"""
         _check_error(_lib.ls_build(self._payload))
 
     def state_info(self, bits: int) -> Tuple[int, complex, float]:
+        """For a spin configuration `bits` obtain its representative, corresponding
+        group character, and orbit norm
+        """
         is_big = self.number_bits > 64
         bits = _int_to_bits(bits, is_big)
         representative = (c_uint64 * 8)() if is_big else (c_uint64 * 1)()
@@ -354,6 +373,7 @@ class SpinBasis:
         return _bits_to_int(representative), complex(character[0], character[1]), norm.value
 
     def index(self, bits: int) -> int:
+        """Obtain index of a representative in `self.states` array"""
         i = c_uint64()
         _check_error(_lib.ls_get_index(self._payload, _int_to_bits(bits, False), byref(i)))
         return i.value

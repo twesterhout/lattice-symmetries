@@ -1,4 +1,4 @@
-# Lattice Symmetries ![License](https://img.shields.io/github/license/twesterhout/lattice-symmetries)![Conda](https://img.shields.io/conda/v/twesterhout/lattice-symmetries)![Linux](https://github.com/twesterhout/lattice-symmetries/workflows/Ubuntu/badge.svg)![OS X](https://github.com/twesterhout/lattice-symmetries/workflows/OS%20X/badge.svg)
+# lattice_symmetries ![License](https://img.shields.io/github/license/twesterhout/lattice-symmetries)![Conda](https://img.shields.io/conda/v/twesterhout/lattice-symmetries)![Linux](https://github.com/twesterhout/lattice-symmetries/workflows/Ubuntu/badge.svg)![OS X](https://github.com/twesterhout/lattice-symmetries/workflows/OS%20X/badge.svg)
 
 A package to simplify working with symmetry-adapted quantum many-body bases
 (think spin systems). This package is written with two main applications in
@@ -134,7 +134,7 @@ cmake --build . --target install
 
 ## Example
 
-
+Have a look into [example/getting_started](https://github.com/twesterhout/lattice-symmetries/tree/master/example/getting_started). It provides very simple examples how to use `lattice_symmetries` from both Python and C.
 
 
 
@@ -219,14 +219,74 @@ unsigned ls_get_group_size(ls_group const* group);
 
 #### Spin basis
 
+Opaque struct representing a spin basis:
+```c
+typedef struct ls_spin_basis ls_spin_basis;
+```
+
+Bases are created and destructed using the following functions:
+```c
+ls_error_code ls_create_spin_basis(ls_spin_basis** ptr, ls_group const* group,
+                                   unsigned number_spins, int hamming_weight);
+ls_spin_basis* ls_copy_spin_basis(ls_spin_basis const* basis);
+void ls_destroy_spin_basis(ls_spin_basis* basis);
+```
+`ls_create_spin_basis` receives a symmetry group, the number of spins in the
+system, and Hamming weight. Symmetry group may be empty (i.e. if
+`ls_create_group` was called with no symmetries), but must not be `NULL`. If one
+does not wish to restrict the space to a particular Hamming weight, `-1` can be
+used for `hamming_weight`. Upon successful completion of the function `*ptr` is
+set to point to the newly constructed spin basis. The basis should later on be
+destroyed using `ls_destroy_spin_basis`, otherwise a memory leak will occur.
+
+`ls_copy_spin_basis` allows one to create a shallow copy of the basis. A copy
+obtained from `ls_copy_spin_basis` must also be destroyed using
+`ls_destroy_spin_basis`. Internally, reference counting is used, so copying a
+basis even for a large system is a cheap operation.
+
+The are a few functions to query basis properties:
+```c
+unsigned ls_get_number_spins(ls_spin_basis const* basis);
+unsigned ls_get_number_bits(ls_spin_basis const* basis);
+int ls_get_hamming_weight(ls_spin_basis const* basis);
+bool ls_has_symmetries(ls_spin_basis const* basis);
+```
+`ls_get_number_spins` returns the number of spins in the system.
+`ls_get_number_bits` returns the number of bits used to represent spin
+configurations. `ls_get_hamming_weight` returns the Hamming weight, `-1` is
+returned if Hilbert space is not restricted to a particular Hamming weight.
+`ls_has_symmetries` returns whether lattice symmetries were used in the
+construction of the basis.
+
+```c
+void ls_get_state_info(ls_spin_basis* basis, uint64_t const bits[8], uint64_t representative[8],
+                       void* character, double* norm);
+```
+**TODO:** description.
+
+There are also a few functions which are available only for small systems after
+a list of representatives has been built:
+```c
+ls_error_code ls_build(ls_spin_basis* basis);
+ls_error_code ls_get_number_states(ls_spin_basis const* basis, uint64_t* out);
+ls_error_code ls_get_index(ls_spin_basis const* basis, uint64_t const bits[1], uint64_t* index);
+```
+`ls_build` function builds the internal cache. Is is a quite expensive operation.
+
+```c
+ls_error_code ls_get_states(ls_states** ptr, ls_spin_basis const* basis);
+void          ls_destroy_states(ls_states* states);
+uint64_t const* ls_states_get_data(ls_states const* states);
+uint64_t ls_states_get_size(ls_states const* states);
+```
+
+
+
 
 #### Interactions
 
 
 #### Operators
-
-
-####
 
 
 #### Error handling
