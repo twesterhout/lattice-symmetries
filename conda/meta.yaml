@@ -22,6 +22,7 @@ requirements:
     - numpy
 
   run:
+    - python
     - libstdcxx-ng
     - libgcc-ng
     - numpy
