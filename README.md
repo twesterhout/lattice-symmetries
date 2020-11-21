@@ -1,4 +1,7 @@
-# lattice_symmetries ![License](https://img.shields.io/github/license/twesterhout/lattice-symmetries)![Conda](https://img.shields.io/conda/v/twesterhout/lattice-symmetries)![Linux](https://github.com/twesterhout/lattice-symmetries/workflows/Ubuntu/badge.svg)![OS X](https://github.com/twesterhout/lattice-symmetries/workflows/OS%20X/badge.svg)
+# lattice_symmetries ![Linux](https://github.com/twesterhout/lattice-symmetries/workflows/Ubuntu/badge.svg)![OS X](https://github.com/twesterhout/lattice-symmetries/workflows/OS%20X/badge.svg)
+![License](https://img.shields.io/github/license/twesterhout/lattice-symmetries)![Conda](https://img.shields.io/conda/v/twesterhout/lattice-symmetries)
+
+**WARNING** This is work-in-progress
 
 A package to simplify working with symmetry-adapted quantum many-body bases
 (think spin systems). This package is written with two main applications in
