@@ -79,21 +79,21 @@ namespace detail {
                             unsigned size, uint16_t const deltas[],
                             uint64_t const flip_masks[batch_size]) noexcept -> void
     {
-        __m256i x0, x1;                                                   // NOLINT
-        __m256i m0, m1;                                                   // NOLINT
-        x0 = _mm256_loadu_si256(reinterpret_cast<__m256i const*>(x));     // NOLINT
-        x1 = _mm256_loadu_si256(reinterpret_cast<__m256i const*>(x) + 1); // NOLINT
+        __m256i x0, x1;                                                  // NOLINT
+        __m256i m0, m1;                                                  // NOLINT
+        x0 = _mm256_load_si256(reinterpret_cast<__m256i const*>(x));     // NOLINT
+        x1 = _mm256_load_si256(reinterpret_cast<__m256i const*>(x) + 1); // NOLINT
         for (auto i = 0U; i < size; ++i) {
-            m0 = _mm256_loadu_si256(reinterpret_cast<__m256i const*>(masks[i]));     // NOLINT
-            m1 = _mm256_loadu_si256(reinterpret_cast<__m256i const*>(masks[i]) + 1); // NOLINT
+            m0 = _mm256_load_si256(reinterpret_cast<__m256i const*>(masks[i]));     // NOLINT
+            m1 = _mm256_load_si256(reinterpret_cast<__m256i const*>(masks[i]) + 1); // NOLINT
             bit_permute_step(x0, x1, m0, m1, deltas[i]);
         }
-        m0 = _mm256_loadu_si256(reinterpret_cast<__m256i const*>(flip_masks)); // NOLINT
+        m0 = _mm256_load_si256(reinterpret_cast<__m256i const*>(flip_masks)); // NOLINT
         x0 = _mm256_xor_si256(x0, m0);
-        m1 = _mm256_loadu_si256(reinterpret_cast<__m256i const*>(flip_masks) + 1); // NOLINT
+        m1 = _mm256_load_si256(reinterpret_cast<__m256i const*>(flip_masks) + 1); // NOLINT
         x1 = _mm256_xor_si256(x1, m1);
-        _mm256_storeu_si256(reinterpret_cast<__m256i*>(x), x0);     // NOLINT
-        _mm256_storeu_si256(reinterpret_cast<__m256i*>(x) + 1, x1); // NOLINT
+        _mm256_store_si256(reinterpret_cast<__m256i*>(x), x0);     // NOLINT
+        _mm256_store_si256(reinterpret_cast<__m256i*>(x) + 1, x1); // NOLINT
     }
 
 } // namespace detail
