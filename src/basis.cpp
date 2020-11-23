@@ -50,7 +50,7 @@ namespace {
         auto           offset     = 0UL;
 
         std::vector<batched_small_symmetry_t> batched;
-        for (; offset + batch_size < symmetries.size(); offset += batch_size) {
+        for (; offset + batch_size <= symmetries.size(); offset += batch_size) {
             batched.emplace_back(symmetries.subspan(offset, batch_size));
         }
 
