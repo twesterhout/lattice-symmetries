@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.15)
 
 project(
   LatticeSymmetries
-  VERSION 0.1.1
+  VERSION 0.2.0
   LANGUAGES C CXX
 )
 
