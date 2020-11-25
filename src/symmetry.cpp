@@ -169,6 +169,7 @@ auto is_representative(tcb::span<batched_small_symmetry_t const> const batched_s
 }
 #endif
 
+#if 0
 auto get_state_info(std::vector<big_symmetry_t> const& symmetries, bits512 const& bits,
                     bits512& representative, std::complex<double>& character, double& norm) noexcept
     -> void
@@ -208,6 +209,7 @@ auto get_state_info(std::vector<big_symmetry_t> const& symmetries, bits512 const
     character      = e;
     norm           = n;
 }
+#endif
 
 auto is_real(small_symmetry_t const& symmetry) noexcept -> bool
 {

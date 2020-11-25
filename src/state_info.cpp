@@ -27,11 +27,38 @@ namespace {
     //     0000....0011....1111
     //               ~~~~~~~~~~
     //                   n
-    auto get_flip_mask(unsigned const n) noexcept -> bits64
+    auto get_flip_mask_64(unsigned const n) noexcept -> bits64
     {
         // Play nice and do not shift by 64 bits
         // NOLINTNEXTLINE: 64 is the number of bits in bits64
         return n == 0U ? uint64_t{0} : ((~uint64_t{0}) >> (64U - n));
+    }
+
+    auto get_flip_mask_512(unsigned n) noexcept -> bits512
+    {
+        bits512 mask;
+        auto    i = 0U;
+        // NOLINTNEXTLINE: 64 is the number of bits in uint64_t
+        for (; n >= 64U; ++i, n -= 64) {
+            mask.words[i] = ~uint64_t{0};
+        }
+        if (n != 0U) {
+            mask.words[i] = get_flip_mask_64(n);
+            ++i;
+        }
+        for (; i < std::size(mask.words); ++i) {
+            mask.words[i] = uint64_t{0};
+        }
+        return mask;
+    }
+
+    LATTICE_SYMMETRIES_FORCEINLINE
+    auto operator^=(bits512& x, bits512 const& y) noexcept -> bits512&
+    {
+        for (auto i = 0; i < static_cast<int>(std::size(x.words)); ++i) {
+            x.words[i] ^= y.words[i];
+        }
+        return x;
     }
 
     struct alignas(32) batch_acc_64_arch_t {
@@ -141,10 +168,8 @@ namespace detail {
             norm           = 1.0;
             return;
         }
-        auto const flip_mask         = get_flip_mask(basis_header.number_spins);
-        auto const flip_mask_vector  = vcl::Vec8uq{flip_mask};
-        auto const flip_coeff        = static_cast<double>(basis_header.spin_inversion);
-        auto const flip_coeff_vector = vcl::Vec8d{flip_coeff};
+        auto const flip_mask  = vcl::Vec8uq{get_flip_mask_64(basis_header.number_spins)};
+        auto const flip_coeff = vcl::Vec8d{static_cast<double>(basis_header.spin_inversion)};
 
         batch_acc_64_arch_t acc{bits};
         for (auto const& symmetry : basis_body.batched_symmetries) {
@@ -157,10 +182,10 @@ namespace detail {
             imag.load_a(symmetry.eigenvalues_imag.data());
             acc.update(x, real, imag);
             if (basis_header.spin_inversion != 0) {
-                x ^= flip_mask_vector;
+                x ^= flip_mask;
                 if (basis_header.spin_inversion != 1) {
-                    real *= flip_coeff_vector;
-                    imag *= flip_coeff_vector;
+                    real *= flip_coeff;
+                    imag *= flip_coeff;
                 }
                 acc.update(x, real, imag);
             }
@@ -177,10 +202,10 @@ namespace detail {
             imag.load_a(symmetry.eigenvalues_imag.data());
             acc.update_first_few(x, real, imag, basis_body.number_other_symmetries);
             if (basis_header.spin_inversion != 0) {
-                x ^= flip_mask_vector;
+                x ^= flip_mask;
                 if (basis_header.spin_inversion != 1) {
-                    real *= flip_coeff_vector;
-                    imag *= flip_coeff_vector;
+                    real *= flip_coeff;
+                    imag *= flip_coeff;
                 }
                 acc.update_first_few(x, real, imag, basis_body.number_other_symmetries);
             }
@@ -205,10 +230,8 @@ namespace detail {
     {
         if (!basis_header.has_symmetries) { return true; }
 
-        auto const flip_mask         = get_flip_mask(basis_header.number_spins);
-        auto const flip_mask_vector  = vcl::Vec8uq{flip_mask};
-        auto const flip_coeff        = static_cast<double>(basis_header.spin_inversion);
-        auto const flip_coeff_vector = vcl::Vec8d{flip_coeff};
+        auto const flip_mask  = vcl::Vec8uq{get_flip_mask_64(basis_header.number_spins)};
+        auto const flip_coeff = vcl::Vec8d{static_cast<double>(basis_header.spin_inversion)};
 
         batch_acc_64_arch_t acc{bits};
         for (auto const& symmetry : basis_body.batched_symmetries) {
@@ -220,8 +243,8 @@ namespace detail {
 
             if (!acc.update_norm_only(x, real)) { return false; }
             if (basis_header.spin_inversion != 0) {
-                x ^= flip_mask_vector;
-                real *= flip_coeff_vector;
+                x ^= flip_mask;
+                real *= flip_coeff;
                 if (!acc.update_norm_only(x, real)) { return false; };
             }
         }
@@ -236,8 +259,8 @@ namespace detail {
             real.load_a(symmetry.eigenvalues_real.data());
             if (!acc.update_first_few_norm_only(x, real, count)) { return false; }
             if (basis_header.spin_inversion != 0) {
-                x ^= flip_mask_vector;
-                real *= flip_coeff_vector;
+                x ^= flip_mask;
+                real *= flip_coeff;
                 if (!acc.update_first_few_norm_only(x, real, count)) { return false; };
             }
         }
@@ -249,6 +272,61 @@ namespace detail {
         if (std::abs(n) <= norm_threshold) { n = 0.0; }
         LATTICE_SYMMETRIES_ASSERT(n >= 0.0, "");
         return n > 0.0;
+    }
+
+    auto get_state_info_arch(basis_base_t const& basis_header, big_basis_t const& basis_body,
+                             bits512 const& bits, bits512& representative,
+                             std::complex<double>& character, double& norm) noexcept -> void
+    {
+        if (!basis_header.has_symmetries) {
+            representative = bits;
+            character      = {1.0, 0.0};
+            norm           = 1.0;
+            return;
+        }
+        auto const flip_mask  = get_flip_mask_512(basis_header.number_spins);
+        auto const flip_coeff = static_cast<double>(basis_header.spin_inversion);
+
+        bits512 buffer; // NOLINT: buffer is initialized inside the loop before it is used
+        auto    r = bits;
+        auto    n = 0.0;
+        auto    e = std::complex<double>{1.0};
+
+        for (auto const& symmetry : basis_body.symmetries) {
+            buffer = bits;
+            symmetry.network(buffer);
+            if (buffer < r) {
+                r = buffer;
+                e = symmetry.eigenvalue;
+            }
+            else if (buffer == bits) {
+                n += symmetry.eigenvalue.real();
+            }
+            if (basis_header.spin_inversion != 0) {
+                buffer ^= flip_mask;
+                if (buffer < r) {
+                    r = buffer;
+                    e = flip_coeff * symmetry.eigenvalue;
+                }
+                else if (buffer == bits) {
+                    n += flip_coeff * symmetry.eigenvalue.real();
+                }
+            }
+        }
+
+        // We need to detect the case when norm is not zero, but only because of
+        // inaccurate arithmetics
+        constexpr auto norm_threshold = 1.0e-5;
+        if (std::abs(n) <= norm_threshold) { n = 0.0; }
+        LATTICE_SYMMETRIES_ASSERT(n >= 0.0, "");
+        auto const group_size = (static_cast<unsigned>(basis_header.spin_inversion != 0) + 1)
+                                * basis_body.symmetries.size();
+        n = std::sqrt(n / static_cast<double>(group_size));
+
+        // Save results
+        representative = r;
+        character      = e;
+        norm           = n;
     }
 } // namespace detail
 
@@ -281,6 +359,23 @@ auto is_representative(basis_base_t const& basis_header, small_basis_t const& ba
     }
     else {
         return detail::is_representative_sse2(basis_header, basis_body, bits);
+    }
+}
+
+auto get_state_info(basis_base_t const& basis_header, big_basis_t const& basis_body,
+                    bits512 const& bits, bits512& representative, std::complex<double>& character,
+                    double& norm) noexcept -> void
+{
+    if (__builtin_cpu_supports("avx2")) {
+        detail::get_state_info_avx2(basis_header, basis_body, bits, representative, character,
+                                    norm);
+    }
+    else if (__builtin_cpu_supports("avx")) {
+        detail::get_state_info_avx(basis_header, basis_body, bits, representative, character, norm);
+    }
+    else {
+        detail::get_state_info_sse2(basis_header, basis_body, bits, representative, character,
+                                    norm);
     }
 }
 #endif

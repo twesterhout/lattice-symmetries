@@ -249,24 +249,26 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_build(ls_spin_basis* basis
 }
 
 namespace lattice_symmetries {
-struct get_state_info_visitor_t {
-    basis_base_t const&   header;
-    uint64_t const* const bits;
-    uint64_t* const       representative;
-    std::complex<double>& character;
-    double&               norm;
+namespace {
+    struct get_state_info_visitor_t {
+        basis_base_t const&   header;
+        uint64_t const* const bits;
+        uint64_t* const       representative;
+        std::complex<double>& character;
+        double&               norm;
 
-    auto operator()(small_basis_t const& payload) const noexcept
-    {
-        get_state_info(header, payload, *bits, *representative, character, norm);
-    }
-    auto operator()(big_basis_t const& payload) const noexcept
-    {
-        // We do need reinterpret_casts here
-        get_state_info(payload.symmetries, *reinterpret_cast<bits512 const*>(bits),   // NOLINT
-                       *reinterpret_cast<bits512*>(representative), character, norm); // NOLINT
-    }
-};
+        auto operator()(small_basis_t const& payload) const noexcept
+        {
+            get_state_info(header, payload, *bits, *representative, character, norm);
+        }
+        auto operator()(big_basis_t const& payload) const noexcept
+        {
+            // We do need reinterpret_casts here
+            get_state_info(header, payload, *reinterpret_cast<bits512 const*>(bits),      // NOLINT
+                           *reinterpret_cast<bits512*>(representative), character, norm); // NOLINT
+        }
+    };
+} // namespace
 } // namespace lattice_symmetries
 
 extern "C" LATTICE_SYMMETRIES_EXPORT void
