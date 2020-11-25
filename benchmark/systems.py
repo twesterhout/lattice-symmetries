@@ -100,18 +100,23 @@ def _quspin_make_basis(symmetries, number_spins, hamming_weight=None, build=True
 def _ls_make_basis(symmetries, number_spins, hamming_weight=None, build=True):
     import lattice_symmetries
 
-    def transform(t):
-        x0, x1, x2 = t
+    spin_inversion = None
+    processed_symmetries = []
+    for s in symmetries:
+        _, x1, x2 = s
         if x1 is None:
-            return lattice_symmetries.Symmetry(
-                np.arange(number_spins, dtype=np.int32), flip=True, sector=x2
-            )
-        return lattice_symmetries.Symmetry(x1, sector=x2)
+            assert x2 == 0 or x2 == 1
+            spin_inversion = 1 if x2 == 0 else -1
+        else:
+            processed_symmetries.append(lattice_symmetries.Symmetry(x1, sector=x2))
 
+    group = lattice_symmetries.Group(processed_symmetries)
+    logger.info("Symmetry group contains {} elements", len(group))
     basis = lattice_symmetries.SpinBasis(
-        lattice_symmetries.Group([transform(s) for s in symmetries]),
+        group,
         number_spins=number_spins,
         hamming_weight=hamming_weight,
+        spin_inversion=spin_inversion,
     )
     if build:
         basis.build()
