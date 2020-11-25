@@ -63,10 +63,11 @@ struct big_symmetry_t {
 struct batched_small_symmetry_t {
     static constexpr auto batch_size = batched_small_network_t::batch_size;
 
-    batched_small_network_t                      network;
-    std::array<unsigned, batch_size>             sectors;
-    std::array<unsigned, batch_size>             periodicities;
-    std::array<std::complex<double>, batch_size> eigenvalues;
+    batched_small_network_t          network;
+    std::array<unsigned, batch_size> sectors;
+    std::array<unsigned, batch_size> periodicities;
+    alignas(32) std::array<double, batch_size> eigenvalues_real;
+    alignas(32) std::array<double, batch_size> eigenvalues_imag;
 
     explicit batched_small_symmetry_t(tcb::span<small_symmetry_t const> symmetries);
 };

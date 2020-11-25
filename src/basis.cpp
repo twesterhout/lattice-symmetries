@@ -27,6 +27,7 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "basis.hpp"
+#include "cache.hpp"
 #include "group.hpp"
 #include "macros.hpp"
 #include "state_info.hpp"
@@ -229,11 +230,7 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_build(ls_spin_basis* basis
 {
     auto* p = std::get_if<small_basis_t>(&basis->payload);
     if (p == nullptr) { return LS_WRONG_BASIS_TYPE; }
-    if (p->cache == nullptr) {
-        p->cache = std::make_unique<basis_cache_t>(p->batched_symmetries, p->other_symmetries,
-                                                   basis->header.number_spins,
-                                                   basis->header.hamming_weight);
-    }
+    if (p->cache == nullptr) { p->cache = std::make_unique<basis_cache_t>(basis->header, *p); }
     return LS_SUCCESS;
 }
 
@@ -247,7 +244,7 @@ struct get_state_info_visitor_t {
 
     auto operator()(small_basis_t const& payload) const noexcept
     {
-        get_state_info_v2(header, payload, *bits, *representative, character, norm);
+        get_state_info(header, payload, *bits, *representative, character, norm);
     }
     auto operator()(big_basis_t const& payload) const noexcept
     {
@@ -326,9 +323,7 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_load_cache(ls_spin_basis* 
         }
         return LS_SYSTEM_ERROR;
     }
-    p->cache = std::make_unique<basis_cache_t>(p->batched_symmetries, p->other_symmetries,
-                                               basis->header.number_spins,
-                                               basis->header.hamming_weight, r.value());
+    p->cache = std::make_unique<basis_cache_t>(basis->header, *p, r.value());
     return LS_SUCCESS;
 }
 

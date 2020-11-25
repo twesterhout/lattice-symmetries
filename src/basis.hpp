@@ -28,7 +28,6 @@
 
 #pragma once
 
-#include "cache.hpp"
 #include "intrusive_ptr.hpp"
 #include "symmetry.hpp"
 #include <memory>
@@ -43,6 +42,8 @@ struct basis_base_t {
     int                     spin_inversion;
     bool                    has_symmetries;
 };
+
+struct basis_cache_t;
 
 struct small_basis_t {
     std::vector<batched_small_symmetry_t> batched_symmetries;

@@ -27,7 +27,7 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "kernels.hpp"
-#include <immintrin.h>
+#include <vectorclass.h>
 
 #if defined(__AVX2__)
 // This is one of the few cases when macros really simplify life
@@ -51,7 +51,33 @@
 
 namespace lattice_symmetries {
 
-#if defined(__AVX2__)
+namespace {
+    LATTICE_SYMMETRIES_FORCEINLINE
+    auto bit_permute_step(vcl::Vec8uq& x, vcl::Vec8uq const& m, int const d) noexcept -> void
+    {
+        vcl::Vec8uq y;
+        y = x >> d;
+        y ^= x;
+        y &= m;
+        x ^= y;
+        y <<= d;
+        x ^= y;
+    }
+} // namespace
+
+namespace detail {
+    auto benes_forward_simd(void* x, uint64_t const (*masks)[batch_size], unsigned size,
+                            uint16_t const deltas[]) noexcept -> void
+    {
+        vcl::Vec8uq m;
+        for (auto i = 0; i < static_cast<int>(size); ++i) {
+            m.load(masks[i]);
+            bit_permute_step(*static_cast<vcl::Vec8uq*>(x), m, deltas[i]);
+        }
+    }
+} // namespace detail
+
+#if LATTICE_SYMMETRIES_HAS_AVX2()
 namespace {
     /// Performs one step of the Butterfly network. It exchanges bits with distance
     /// \p d between them if the corresponding bits in the mask \p m are set.
@@ -75,24 +101,29 @@ namespace {
 } // namespace
 
 namespace detail {
-    auto benes_forward_simd(uint64_t x[batch_size], uint64_t const (*masks)[batch_size],
+    auto benes_forward_avx2(__m256i& x0, __m256i& x1, uint64_t const (*masks)[batch_size],
                             unsigned size, uint16_t const deltas[]) noexcept -> void
     {
-        __m256i x0, x1;                                                  // NOLINT
-        __m256i m0, m1;                                                  // NOLINT
-        x0 = _mm256_load_si256(reinterpret_cast<__m256i const*>(x));     // NOLINT
-        x1 = _mm256_load_si256(reinterpret_cast<__m256i const*>(x) + 1); // NOLINT
-        for (auto i = 0U; i < size; ++i) {
+        __m256i m0, m1; // NOLINT
+        for (auto i = 0; i < static_cast<int>(size); ++i) {
             m0 = _mm256_load_si256(reinterpret_cast<__m256i const*>(masks[i]));     // NOLINT
             m1 = _mm256_load_si256(reinterpret_cast<__m256i const*>(masks[i]) + 1); // NOLINT
             bit_permute_step(x0, x1, m0, m1, deltas[i]);
         }
+    }
+
+    auto benes_forward_avx2(uint64_t x[batch_size], uint64_t const (*masks)[batch_size],
+                            unsigned size, uint16_t const deltas[]) noexcept -> void
+    {
+        auto x0 = _mm256_load_si256(reinterpret_cast<__m256i const*>(x));     // NOLINT
+        auto x1 = _mm256_load_si256(reinterpret_cast<__m256i const*>(x) + 1); // NOLINT
+        benes_forward_avx2(x0, x1, masks, size, deltas);
         _mm256_store_si256(reinterpret_cast<__m256i*>(x), x0);     // NOLINT
         _mm256_store_si256(reinterpret_cast<__m256i*>(x) + 1, x1); // NOLINT
     }
 } // namespace detail
 
-#else
+#else // AVX or SSE2
 namespace {
     /// Performs one step of the Butterfly network. It exchanges bits with distance
     /// \p d between them if the corresponding bits in the mask \p m are set.
@@ -213,27 +244,34 @@ namespace {
 } // namespace
 
 namespace detail {
+    auto benes_forward_simd(__m128i& x0, __m128i& x1, __m128i& x2, __m128i& x3,
+                            uint64_t const (*masks)[batch_size], unsigned size,
+                            uint16_t const deltas[]) noexcept -> void
+    {
+        __m128i m0, m1, m2, m3; // NOLINT
+        for (auto i = 0U; i < size; ++i) {
+            m0 = _mm_load_si128(reinterpret_cast<__m128i const*>(masks[i]));     // NOLINT
+            m1 = _mm_load_si128(reinterpret_cast<__m128i const*>(masks[i]) + 1); // NOLINT
+            m2 = _mm_load_si128(reinterpret_cast<__m128i const*>(masks[i]) + 2); // NOLINT
+            m3 = _mm_load_si128(reinterpret_cast<__m128i const*>(masks[i]) + 3); // NOLINT
+            bit_permute_step(x0, x1, x2, x3, m0, m1, m2, m3, deltas[i]);
+        }
+    }
+
     auto benes_forward_simd(uint64_t x[batch_size], uint64_t const (*masks)[batch_size],
                             unsigned size, uint16_t const deltas[]) noexcept -> void
     {
         __m128i x0, x1, x2, x3; // NOLINT
-        __m128i m0, m1, m2, m3; // NOLINT
         // Really don't have much choice but to use reinterpret_cast
-        x0 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(x));     // NOLINT
-        x1 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(x) + 1); // NOLINT
-        x2 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(x) + 2); // NOLINT
-        x3 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(x) + 3); // NOLINT
-        for (auto i = 0U; i < size; ++i) {
-            m0 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(masks[i]));     // NOLINT
-            m1 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(masks[i]) + 1); // NOLINT
-            m2 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(masks[i]) + 2); // NOLINT
-            m3 = _mm_loadu_si128(reinterpret_cast<__m128i const*>(masks[i]) + 3); // NOLINT
-            bit_permute_step(x0, x1, x2, x3, m0, m1, m2, m3, deltas[i]);
-        }
-        _mm_storeu_si128(reinterpret_cast<__m128i*>(x), x0);     // NOLINT
-        _mm_storeu_si128(reinterpret_cast<__m128i*>(x) + 1, x1); // NOLINT
-        _mm_storeu_si128(reinterpret_cast<__m128i*>(x) + 2, x2); // NOLINT
-        _mm_storeu_si128(reinterpret_cast<__m128i*>(x) + 3, x3); // NOLINT
+        x0 = _mm_load_si128(reinterpret_cast<__m128i const*>(x));     // NOLINT
+        x1 = _mm_load_si128(reinterpret_cast<__m128i const*>(x) + 1); // NOLINT
+        x2 = _mm_load_si128(reinterpret_cast<__m128i const*>(x) + 2); // NOLINT
+        x3 = _mm_load_si128(reinterpret_cast<__m128i const*>(x) + 3); // NOLINT
+        benes_forward_simd(x0, x1, x2, x3, masks, size, deltas);
+        _mm_store_si128(reinterpret_cast<__m128i*>(x), x0);     // NOLINT
+        _mm_store_si128(reinterpret_cast<__m128i*>(x) + 1, x1); // NOLINT
+        _mm_store_si128(reinterpret_cast<__m128i*>(x) + 2, x2); // NOLINT
+        _mm_store_si128(reinterpret_cast<__m128i*>(x) + 3, x3); // NOLINT
     }
 
     auto benes_forward_512_simd(bits512& x, bits512 const masks[], unsigned size,

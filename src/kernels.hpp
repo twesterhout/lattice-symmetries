@@ -29,11 +29,15 @@
 #pragma once
 
 #include "bits.hpp"
+#include "macros.hpp"
+#include <immintrin.h>
 #include <cstdint>
 
 namespace lattice_symmetries {
 
 inline constexpr int batch_size = 8;
+static_assert(4 * sizeof(__m128i) == batch_size * sizeof(uint64_t));
+static_assert(2 * sizeof(__m256i) == batch_size * sizeof(uint64_t));
 
 auto benes_forward(uint64_t x[batch_size], uint64_t const (*masks)[batch_size], unsigned size,
                    uint16_t const deltas[]) noexcept -> void;
@@ -48,6 +52,25 @@ namespace detail {
                            unsigned size, uint16_t const deltas[]) noexcept -> void;
     auto benes_forward_avx2(uint64_t x[batch_size], uint64_t const (*masks)[batch_size],
                             unsigned size, uint16_t const deltas[]) noexcept -> void;
+
+    // auto benes_forward_sse2(__m128i& x0, __m128i& x1, __m128i& x2, __m128i& x3,
+    //                         uint64_t const (*masks)[batch_size], unsigned size,
+    //                         uint16_t const deltas[]) noexcept -> void;
+    auto benes_forward_sse2(void* x, uint64_t const (*masks)[batch_size], unsigned size,
+                            uint16_t const deltas[]) noexcept -> void;
+#if LATTICE_SYMMETRIES_HAS_AVX()
+    // auto benes_forward_avx(__m128i& x0, __m128i& x1, __m128i& x2, __m128i& x3,
+    //                        uint64_t const (*masks)[batch_size], unsigned size,
+    //                        uint16_t const deltas[]) noexcept -> void;
+    auto benes_forward_avx(void* x, uint64_t const (*masks)[batch_size], unsigned size,
+                           uint16_t const deltas[]) noexcept -> void;
+#endif
+#if LATTICE_SYMMETRIES_HAS_AVX2()
+    // auto benes_forward_avx2(__m256i& x0, __m256i& x1, uint64_t const (*masks)[batch_size],
+    //                         unsigned size, uint16_t const deltas[]) noexcept -> void;
+    auto benes_forward_avx2(void* x, uint64_t const (*masks)[batch_size], unsigned size,
+                            uint16_t const deltas[]) noexcept -> void;
+#endif
 
     auto benes_forward_512_sse2(bits512& x, bits512 const masks[], unsigned size,
                                 uint16_t const deltas[]) noexcept -> void;

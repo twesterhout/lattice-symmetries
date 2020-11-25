@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include "basis.hpp"
 #include "symmetry.hpp"
 #include <memory>
 #include <optional>
@@ -38,9 +39,9 @@ namespace lattice_symmetries {
 auto closest_hamming(uint64_t x, unsigned hamming_weight) noexcept -> uint64_t;
 auto split_into_tasks(unsigned number_spins, std::optional<unsigned> hamming_weight,
                       uint64_t chunk_size) -> std::vector<std::pair<uint64_t, uint64_t>>;
-auto generate_states(tcb::span<batched_small_symmetry_t const> batched,
-                     tcb::span<small_symmetry_t const> other, unsigned number_spins,
-                     std::optional<unsigned> hamming_weight) -> std::vector<std::vector<uint64_t>>;
+// auto generate_states(tcb::span<batched_small_symmetry_t const> batched,
+//                      tcb::span<small_symmetry_t const> other, unsigned number_spins,
+//                      std::optional<unsigned> hamming_weight) -> std::vector<std::vector<uint64_t>>;
 
 struct basis_cache_t {
   private:
@@ -51,10 +52,13 @@ struct basis_cache_t {
     std::vector<std::pair<uint64_t, uint64_t>> _ranges;
 
   public:
-    basis_cache_t(tcb::span<batched_small_symmetry_t const> batched,
-                  tcb::span<small_symmetry_t const> other, unsigned number_spins,
-                  std::optional<unsigned> hamming_weight,
-                  std::vector<uint64_t>   _unsafe_states = {});
+    // basis_cache_t(tcb::span<batched_small_symmetry_t const> batched,
+    //               tcb::span<small_symmetry_t const> other, unsigned number_spins,
+    //               std::optional<unsigned> hamming_weight,
+    //               std::vector<uint64_t>   _unsafe_states = {});
+
+    basis_cache_t(basis_base_t const& header, small_basis_t const& payload,
+                  std::vector<uint64_t> _unsafe_states = {});
 
     [[nodiscard]] auto states() const noexcept -> tcb::span<uint64_t const>;
     [[nodiscard]] auto number_states() const noexcept -> uint64_t;

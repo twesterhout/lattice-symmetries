@@ -47,7 +47,6 @@ set(LatticeSymmetries_sources
     src/permutation.cpp
     src/network.cpp
     src/symmetry.cpp
-    src/state_info.cpp
     src/group.cpp
     src/cache.cpp
     src/basis.cpp
@@ -59,7 +58,6 @@ set(LatticeSymmetries_headers
     src/permutation.hpp
     src/network.hpp
     src/symmetry.hpp
-    src/state_info.hpp
     src/cache.hpp
     src/basis.hpp
     src/operator.hpp
@@ -70,7 +68,10 @@ set(LatticeSymmetries_all_files
     ${LatticeSymmetries_sources}
     ${LatticeSymmetries_headers}
     src/kernels.hpp
-    src/kernels.cpp)
+    src/kernels.cpp
+    src/state_info.hpp
+    src/state_info.cpp
+)
 
 
 #
@@ -104,7 +105,9 @@ endfunction()
 foreach(_target sse2 avx avx2)
     add_library(lattice_symmetries_kernels_${_target}
         OBJECT src/kernels.hpp
-               src/kernels.cpp)
+               src/kernels.cpp
+               src/state_info.hpp
+               src/state_info.cpp)
     target_include_directories(lattice_symmetries_kernels_${_target}
       PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -113,8 +116,10 @@ foreach(_target sse2 avx avx2)
     target_include_directories(lattice_symmetries_kernels_${_target}
       SYSTEM PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/version2
     )
     target_compile_features(lattice_symmetries_kernels_${_target} PRIVATE cxx_std_17)
+    target_compile_definitions(lattice_symmetries_kernels_${_target} PRIVATE VCL_NAMESPACE=vcl_${_target})
     set_project_warnings(lattice_symmetries_kernels_${_target})
     disable_rtti_and_exceptions(lattice_symmetries_kernels_${_target})
     set_property(TARGET lattice_symmetries_kernels_${_target} PROPERTY
@@ -163,7 +168,9 @@ target_include_directories(
   lattice_symmetries
   SYSTEM PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/version2
 )
+target_compile_definitions(lattice_symmetries PRIVATE VCL_NAMESPACE=vcl)
 
 #
 # Dependencies 

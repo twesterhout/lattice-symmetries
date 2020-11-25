@@ -28,6 +28,7 @@
 
 #include "cache.hpp"
 #include "error_handling.hpp"
+#include "state_info.hpp"
 
 #if defined(__APPLE__)
 #    include <libkern/OSByteOrder.h>
@@ -106,20 +107,22 @@ namespace {
 
     template <bool FixedHammingWeight>
     auto generate_states_task(uint64_t current, uint64_t const upper_bound,
-                              tcb::span<batched_small_symmetry_t const> batched_symmetries,
-                              tcb::span<small_symmetry_t const>         symmetries,
-                              std::vector<uint64_t>&                    states) -> void
+                              basis_base_t const& header, small_basis_t const& payload,
+                              std::vector<uint64_t>& states) -> void
     {
         if constexpr (FixedHammingWeight) {
             LATTICE_SYMMETRIES_ASSERT(popcount(current) == popcount(upper_bound),
                                       "current and upper_bound must have the same Hamming weight");
         }
-        auto const handle = [&batched_symmetries, &symmetries,
-                             &states](uint64_t const x) noexcept -> void {
+        auto const handle = [&header, &payload, &states](uint64_t const x) noexcept -> void {
             // uint64_t             repr;
             // std::complex<double> character;
             // double               norm;
-            if (is_representative(batched_symmetries, symmetries, x)) { states.push_back(x); }
+            auto const is_repr =
+                is_representative(payload.batched_symmetries, payload.other_symmetries, x);
+            // auto const is_repr = is_representative_avx2(header, payload, x);
+
+            if (is_repr) { states.push_back(x); }
             // get_state_info(batched_symmetries, symmetries, x, repr, character, norm);
             // if (repr == x && norm > 0.0) { states.push_back(x); }
         };
@@ -131,18 +134,14 @@ namespace {
         handle(current);
     }
 
-    auto generate_states_task(bool fixed_hamming_weight, uint64_t current,
-                              uint64_t const                            upper_bound,
-                              tcb::span<batched_small_symmetry_t const> batched_symmetries,
-                              tcb::span<small_symmetry_t const>         symmetries,
-                              std::vector<uint64_t>&                    states) -> void
+    auto generate_states_task(uint64_t current, uint64_t const upper_bound,
+                              basis_base_t const& header, small_basis_t const& payload,
+                              std::vector<uint64_t>& states) -> void
     {
-        if (fixed_hamming_weight) {
-            return generate_states_task<true>(current, upper_bound, batched_symmetries, symmetries,
-                                              states);
+        if (header.hamming_weight.has_value()) {
+            return generate_states_task<true>(current, upper_bound, header, payload, states);
         }
-        return generate_states_task<false>(current, upper_bound, batched_symmetries, symmetries,
-                                           states);
+        return generate_states_task<false>(current, upper_bound, header, payload, states);
     }
 
     template <bool FixedHammingWeight>
@@ -232,35 +231,34 @@ auto closest_hamming(uint64_t x, unsigned const hamming_weight) noexcept -> uint
     return x;
 }
 
-auto generate_states(tcb::span<batched_small_symmetry_t const> batched,
-                     tcb::span<small_symmetry_t const> other, unsigned const number_spins,
-                     std::optional<unsigned> const hamming_weight)
-    -> std::vector<std::vector<uint64_t>>
-{
-    LATTICE_SYMMETRIES_CHECK(0 < number_spins && number_spins <= 64, "invalid number of spins");
-    LATTICE_SYMMETRIES_CHECK(!hamming_weight.has_value() || *hamming_weight <= number_spins,
-                             "invalid hamming weight");
-
-    auto const chunk_size = [number_spins, hamming_weight]() {
-        auto const number_chunks    = 100U * static_cast<unsigned>(omp_get_max_threads());
-        auto const [current, bound] = get_bounds(number_spins, hamming_weight);
-        return std::max((bound - current) / number_chunks, uint64_t{1});
-    }();
-    auto const ranges = split_into_tasks(number_spins, hamming_weight, chunk_size);
-    auto       states = std::vector<std::vector<uint64_t>>(ranges.size());
-// NOLINTNEXTLINE: default(none) causes compilation issues in gcc-7
-#pragma omp parallel for schedule(dynamic, 1) firstprivate(hamming_weight)                         \
-    shared(batched, other, states)
-    for (auto i = size_t{0}; i < ranges.size(); ++i) {
-        auto const [current, bound] = ranges[i];
-        // NOLINTNEXTLINE: 1024 * 1024 == 1048576 == 1MB
-        states[i].reserve((1024 * 1024) / sizeof(uint64_t));
-        generate_states_task(hamming_weight.has_value(), current, bound, batched, other, states[i]);
-    }
-    return states;
-}
-
 namespace {
+    auto generate_states(basis_base_t const& header, small_basis_t const& payload)
+        -> std::vector<std::vector<uint64_t>>
+    {
+        LATTICE_SYMMETRIES_CHECK(0 < header.number_spins && header.number_spins <= 64,
+                                 "invalid number of spins");
+        LATTICE_SYMMETRIES_CHECK(!header.hamming_weight.has_value()
+                                     || *header.hamming_weight <= header.number_spins,
+                                 "invalid hamming weight");
+
+        auto const chunk_size = [&header]() {
+            auto const number_chunks    = 100U * static_cast<unsigned>(omp_get_max_threads());
+            auto const [current, bound] = get_bounds(header.number_spins, header.hamming_weight);
+            return std::max((bound - current) / number_chunks, uint64_t{1});
+        }();
+        auto ranges = lattice_symmetries::split_into_tasks(header.number_spins,
+                                                           header.hamming_weight, chunk_size);
+        auto states = std::vector<std::vector<uint64_t>>(ranges.size());
+#pragma omp parallel for schedule(dynamic, 1) default(none) shared(header, payload, ranges, states)
+        for (auto i = size_t{0}; i < ranges.size(); ++i) {
+            auto const [current, bound] = ranges[i];
+            // NOLINTNEXTLINE: 1024 * 1024 == 1048576 == 1MB
+            states[i].reserve((1024 * 1024) / sizeof(uint64_t));
+            generate_states_task(current, bound, header, payload, states[i]);
+        }
+        return states;
+    }
+
     auto concatenate(std::vector<std::vector<uint64_t>> const& chunks)
     {
         auto r = std::vector<uint64_t>{};
@@ -272,14 +270,22 @@ namespace {
     }
 } // namespace
 
-basis_cache_t::basis_cache_t(tcb::span<batched_small_symmetry_t const> batched,
-                             tcb::span<small_symmetry_t const> other, unsigned number_spins,
-                             std::optional<unsigned> hamming_weight,
-                             std::vector<uint64_t>   _unsafe_states)
-    : _shift{bits >= number_spins ? 0U : (number_spins - bits)}
-    , _states{_unsafe_states.empty()
-                  ? concatenate(generate_states(batched, other, number_spins, hamming_weight))
-                  : std::move(_unsafe_states)}
+// basis_cache_t::basis_cache_t(tcb::span<batched_small_symmetry_t const> batched,
+//                              tcb::span<small_symmetry_t const> other, unsigned number_spins,
+//                              std::optional<unsigned> hamming_weight,
+//                              std::vector<uint64_t>   _unsafe_states)
+//     : _shift{bits >= number_spins ? 0U : (number_spins - bits)}
+//     , _states{_unsafe_states.empty()
+//                   ? concatenate(generate_states(batched, other, number_spins, hamming_weight))
+//                   : std::move(_unsafe_states)}
+//     , _ranges{generate_ranges(_states, bits, _shift)}
+// {}
+
+basis_cache_t::basis_cache_t(basis_base_t const& header, small_basis_t const& payload,
+                             std::vector<uint64_t> _unsafe_states)
+    : _shift{bits >= header.number_spins ? 0U : (header.number_spins - bits)}
+    , _states{_unsafe_states.empty() ? concatenate(generate_states(header, payload))
+                                     : std::move(_unsafe_states)}
     , _ranges{generate_ranges(_states, bits, _shift)}
 {}
 

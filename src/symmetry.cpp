@@ -26,7 +26,10 @@ batched_small_symmetry_t::batched_small_symmetry_t(tcb::span<small_symmetry_t co
     , sectors{get_projection(symmetries, [](auto const& s) noexcept { return s.sector; })}
     , periodicities{get_projection(symmetries,
                                    [](auto const& s) noexcept { return s.periodicity; })}
-    , eigenvalues{get_projection(symmetries, [](auto const& s) noexcept { return s.eigenvalue; })}
+    , eigenvalues_real{get_projection(symmetries,
+                                      [](auto const& s) noexcept { return s.eigenvalue.real(); })}
+    , eigenvalues_imag{
+          get_projection(symmetries, [](auto const& s) noexcept { return s.eigenvalue.imag(); })}
 {}
 
 // \p permutation must be a valid permutation!
@@ -71,6 +74,7 @@ auto compute_eigenvalue(unsigned sector, unsigned periodicity) noexcept -> std::
     return {re, im};
 }
 
+#if 0
 auto get_state_info(tcb::span<batched_small_symmetry_t const> const batched_symmetries,
                     tcb::span<small_symmetry_t const> const symmetries, uint64_t bits,
                     uint64_t& representative, std::complex<double>& character,
@@ -97,10 +101,10 @@ auto get_state_info(tcb::span<batched_small_symmetry_t const> const batched_symm
         for (auto i = 0U; i < batch_size; ++i) {
             if (buffer[i] < r) {
                 r = buffer[i];
-                e = symmetry.eigenvalues[i];
+                e = std::complex{symmetry.eigenvalues_real[i], symmetry.eigenvalues_imag[i]};
             }
             else if (buffer[i] == bits) {
-                n += symmetry.eigenvalues[i].real();
+                n += symmetry.eigenvalues_real[i];
             }
         }
     }
@@ -128,6 +132,7 @@ auto get_state_info(tcb::span<batched_small_symmetry_t const> const batched_symm
     character      = e;
     norm           = n;
 }
+#endif
 
 auto is_representative(tcb::span<batched_small_symmetry_t const> const batched_symmetries,
                        tcb::span<small_symmetry_t const> const symmetries, uint64_t bits) noexcept
@@ -147,7 +152,7 @@ auto is_representative(tcb::span<batched_small_symmetry_t const> const batched_s
         symmetry.network(static_cast<uint64_t*>(buffer));
         for (auto i = 0U; i < batch_size; ++i) {
             if (buffer[i] < r) { return false; }
-            if (buffer[i] == bits) { n += symmetry.eigenvalues[i].real(); }
+            if (buffer[i] == bits) { n += symmetry.eigenvalues_real[i]; }
         }
     }
     for (auto const& symmetry : symmetries) {
@@ -211,8 +216,8 @@ auto is_real(small_symmetry_t const& symmetry) noexcept -> bool
 
 auto is_real(batched_small_symmetry_t const& symmetry) noexcept -> bool
 {
-    return std::all_of(std::begin(symmetry.eigenvalues), std::end(symmetry.eigenvalues),
-                       [](auto const& x) { return x.imag() == 0.0; });
+    return std::all_of(std::begin(symmetry.eigenvalues_imag), std::end(symmetry.eigenvalues_imag),
+                       [](auto const& x) { return x == 0.0; });
 }
 
 auto is_real(big_symmetry_t const& symmetry) noexcept -> bool
