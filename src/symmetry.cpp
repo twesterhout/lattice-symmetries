@@ -132,7 +132,6 @@ auto get_state_info(tcb::span<batched_small_symmetry_t const> const batched_symm
     character      = e;
     norm           = n;
 }
-#endif
 
 auto is_representative(tcb::span<batched_small_symmetry_t const> const batched_symmetries,
                        tcb::span<small_symmetry_t const> const symmetries, uint64_t bits) noexcept
@@ -168,6 +167,7 @@ auto is_representative(tcb::span<batched_small_symmetry_t const> const batched_s
     LATTICE_SYMMETRIES_ASSERT(n >= 0.0, "");
     return n > 0.0;
 }
+#endif
 
 auto get_state_info(std::vector<big_symmetry_t> const& symmetries, bits512 const& bits,
                     bits512& representative, std::complex<double>& character, double& norm) noexcept

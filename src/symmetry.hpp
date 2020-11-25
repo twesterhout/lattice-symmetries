@@ -75,6 +75,7 @@ struct batched_small_symmetry_t {
 template <class Int> auto compute_periodicity(tcb::span<Int const> permutation) -> unsigned;
 auto compute_eigenvalue(unsigned sector, unsigned periodicity) noexcept -> std::complex<double>;
 
+#if 0
 auto get_state_info(tcb::span<batched_small_symmetry_t const> batched_symmetries,
                     tcb::span<small_symmetry_t const> symmetries, uint64_t bits,
                     uint64_t& representative, std::complex<double>& character,
@@ -83,6 +84,7 @@ auto get_state_info(tcb::span<batched_small_symmetry_t const> batched_symmetries
 auto is_representative(tcb::span<batched_small_symmetry_t const> batched_symmetries,
                        tcb::span<small_symmetry_t const> symmetries, uint64_t bits) noexcept
     -> bool;
+#endif
 
 auto get_state_info(std::vector<big_symmetry_t> const& symmetries, bits512 const& bits,
                     bits512& representative, std::complex<double>& character, double& norm) noexcept

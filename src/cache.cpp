@@ -118,10 +118,8 @@ namespace {
             // uint64_t             repr;
             // std::complex<double> character;
             // double               norm;
-            auto const is_repr =
-                is_representative(payload.batched_symmetries, payload.other_symmetries, x);
-            // auto const is_repr = is_representative_avx2(header, payload, x);
-
+            // auto const is_repr = is_representative(payload.batched_symmetries, payload.other_symmetries, x);
+            auto const is_repr = is_representative(header, payload, x);
             if (is_repr) { states.push_back(x); }
             // get_state_info(batched_symmetries, symmetries, x, repr, character, norm);
             // if (repr == x && norm > 0.0) { states.push_back(x); }
