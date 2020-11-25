@@ -56,11 +56,34 @@ namespace {
             n    = vcl::if_add(x == original, n, real);
         }
 
+        auto update_first_few(vcl::Vec8uq const& x, vcl::Vec8d const& real, vcl::Vec8d const& imag,
+                              unsigned const count) noexcept -> void
+        {
+            LATTICE_SYMMETRIES_ASSERT(count < 8, "");
+            auto const include = vcl::Vec8uq{0, 1, 2, 3, 4, 5, 6, 7} < count;
+            auto const smaller = (x < r) && include;
+
+            r    = vcl::select(smaller, x, r);
+            e_re = vcl::select(smaller, real, e_re);
+            e_im = vcl::select(smaller, imag, e_im);
+            n    = vcl::if_add((x == original) && include, n, real);
+        }
+
         auto update_norm_only(vcl::Vec8uq const& x, vcl::Vec8d const& real) noexcept -> bool
         {
             auto const smaller = x < r;
             if (vcl::horizontal_or(smaller)) { return false; }
             n = vcl::if_add(x == original, n, real);
+            return true;
+        }
+
+        auto update_first_few_norm_only(vcl::Vec8uq const& x, vcl::Vec8d const& real,
+                                        unsigned const count) noexcept -> bool
+        {
+            auto const include = vcl::Vec8uq{0, 1, 2, 3, 4, 5, 6, 7} < count;
+            auto const smaller = (x < r) && include;
+            if (vcl::horizontal_or(smaller)) { return false; }
+            n = vcl::if_add((x == original) && include, n, real);
             return true;
         }
 
@@ -128,7 +151,6 @@ namespace detail {
             auto x = acc.original;
             benes_forward_arch(&x, symmetry.network.masks, symmetry.network.depth,
                                symmetry.network.deltas);
-
             vcl::Vec8d real;
             vcl::Vec8d imag;
             real.load_a(symmetry.eigenvalues_real.data());
@@ -143,32 +165,28 @@ namespace detail {
                 acc.update(x, real, imag);
             }
         }
+        if (basis_body.other_symmetries.has_value()) {
+            auto const& symmetry = *basis_body.other_symmetries;
 
-        uint64_t             r;
-        std::complex<double> e;
-        double               n;
-        acc.reduce(r, e, n);
-
-        for (auto const& symmetry : basis_body.other_symmetries) {
-            auto const y = symmetry.network(bits);
-            if (y < r) {
-                r = y;
-                e = symmetry.eigenvalue;
-            }
-            else if (y == bits) {
-                n += symmetry.eigenvalue.real();
-            }
+            auto x = acc.original;
+            benes_forward_arch(&x, symmetry.network.masks, symmetry.network.depth,
+                               symmetry.network.deltas);
+            vcl::Vec8d real;
+            vcl::Vec8d imag;
+            real.load_a(symmetry.eigenvalues_real.data());
+            imag.load_a(symmetry.eigenvalues_imag.data());
+            acc.update_first_few(x, real, imag, basis_body.number_other_symmetries);
             if (basis_header.spin_inversion != 0) {
-                auto const inverted = y ^ flip_mask;
-                if (inverted < r) {
-                    r = inverted;
-                    e = flip_coeff * symmetry.eigenvalue;
+                x ^= flip_mask_vector;
+                if (basis_header.spin_inversion != 1) {
+                    real *= flip_coeff_vector;
+                    imag *= flip_coeff_vector;
                 }
-                else if (inverted == bits) {
-                    n += flip_coeff * symmetry.eigenvalue.real();
-                }
+                acc.update_first_few(x, real, imag, basis_body.number_other_symmetries);
             }
         }
+        double n;
+        acc.reduce(representative, character, n);
 
         // We need to detect the case when norm is not zero, but only because of
         // inaccurate arithmetics
@@ -177,13 +195,9 @@ namespace detail {
         LATTICE_SYMMETRIES_ASSERT(n >= 0.0, "");
         auto const group_size = (static_cast<unsigned>(basis_header.spin_inversion != 0) + 1)
                                 * (batch_size * basis_body.batched_symmetries.size()
-                                   + basis_body.other_symmetries.size());
-        n = std::sqrt(n / static_cast<double>(group_size));
-
-        // Save results
-        representative = r;
-        character      = e;
-        norm           = n;
+                                   + basis_body.number_other_symmetries);
+        n    = std::sqrt(n / static_cast<double>(group_size));
+        norm = n;
     }
 
     auto is_representative_arch(basis_base_t const& basis_header, small_basis_t const& basis_body,
@@ -211,14 +225,24 @@ namespace detail {
                 if (!acc.update_norm_only(x, real)) { return false; };
             }
         }
+        if (basis_body.other_symmetries.has_value()) {
+            auto const& symmetry = *basis_body.other_symmetries;
+            auto const  count    = basis_body.number_other_symmetries;
 
-        auto n = acc.reduce_norm_only();
-        for (auto const& symmetry : basis_body.other_symmetries) {
-            auto const y = symmetry.network(bits);
-            if (y < bits) { return false; }
-            if (y == bits) { n += symmetry.eigenvalue.real(); }
+            auto x = acc.original;
+            benes_forward_arch(&x, symmetry.network.masks, symmetry.network.depth,
+                               symmetry.network.deltas);
+            vcl::Vec8d real;
+            real.load_a(symmetry.eigenvalues_real.data());
+            if (!acc.update_first_few_norm_only(x, real, count)) { return false; }
+            if (basis_header.spin_inversion != 0) {
+                x ^= flip_mask_vector;
+                real *= flip_coeff_vector;
+                if (!acc.update_first_few_norm_only(x, real, count)) { return false; };
+            }
         }
 
+        auto n = acc.reduce_norm_only();
         // We need to detect the case when norm is not zero, but only because of
         // inaccurate arithmetics
         constexpr auto norm_threshold = 1.0e-5;

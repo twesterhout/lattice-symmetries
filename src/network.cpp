@@ -52,6 +52,34 @@ small_network_t::small_network_t(fat_benes_network_t const& fat) noexcept
     std::fill(std::next(std::begin(deltas), depth), std::end(deltas), uint64_t{0});
 }
 
+small_network_t::small_network_t(uint16_t _depth, uint16_t _width) noexcept
+    : masks{}, deltas{}, depth{_depth}, width{_width}
+{
+    LATTICE_SYMMETRIES_CHECK(_depth <= max_depth, "network too deep");
+    LATTICE_SYMMETRIES_CHECK(_width <= 64, "network too wide");
+    auto i = 0U;
+    for (auto d = 1U; d < _width / 2; ++i, d *= 2) {
+        LATTICE_SYMMETRIES_ASSERT(i < max_depth, "");
+        deltas[i] = d;
+        masks[i]  = 0U;
+    }
+    for (auto j = i - 1; j-- > 0; ++i) {
+        LATTICE_SYMMETRIES_ASSERT(i < max_depth, "");
+        deltas[i] = deltas[j];
+        masks[i]  = 0;
+    }
+    LATTICE_SYMMETRIES_CHECK(i == depth, "depth and width are inconsistent");
+    for (; i < max_depth; ++i) {
+        deltas[i] = 0;
+        masks[i]  = 0;
+    }
+}
+
+auto small_network_t::make_fake(uint16_t depth, uint16_t width) noexcept -> small_network_t
+{
+    return small_network_t{depth, width};
+}
+
 big_network_t::big_network_t(fat_benes_network_t const& fat) noexcept
     : masks{}
     , deltas{}

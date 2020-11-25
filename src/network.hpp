@@ -42,9 +42,14 @@ struct small_network_t {
     uint16_t depth;
     uint16_t width;
 
-    small_network_t(fat_benes_network_t const& fat) noexcept;
+    explicit small_network_t(fat_benes_network_t const& fat) noexcept;
     auto operator()(uint64_t bits) const noexcept -> uint64_t;
     auto operator()(tcb::span<unsigned> bits) const noexcept -> void;
+
+    static auto make_fake(uint16_t depth, uint16_t width) noexcept -> small_network_t;
+
+  private:
+    small_network_t(uint16_t depth, uint16_t width) noexcept;
 };
 
 struct alignas(32) big_network_t {
@@ -55,7 +60,7 @@ struct alignas(32) big_network_t {
     uint16_t depth;
     uint16_t width;
 
-    big_network_t(fat_benes_network_t const& fat) noexcept;
+    explicit big_network_t(fat_benes_network_t const& fat) noexcept;
     auto operator()(bits512& bits) const noexcept -> void;
     auto operator()(tcb::span<unsigned> bits) const noexcept -> void;
 };

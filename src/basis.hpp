@@ -46,9 +46,10 @@ struct basis_base_t {
 struct basis_cache_t;
 
 struct small_basis_t {
-    std::vector<batched_small_symmetry_t> batched_symmetries;
-    std::vector<small_symmetry_t>         other_symmetries;
-    std::unique_ptr<basis_cache_t>        cache;
+    std::vector<batched_small_symmetry_t>   batched_symmetries;
+    std::optional<batched_small_symmetry_t> other_symmetries;
+    unsigned                                number_other_symmetries;
+    std::unique_ptr<basis_cache_t>          cache;
 
     explicit small_basis_t(ls_group const& group);
 };

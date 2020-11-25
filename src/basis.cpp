@@ -46,7 +46,9 @@ namespace {
     }
 
     auto split_into_batches(tcb::span<small_symmetry_t const> symmetries)
-        -> std::tuple<std::vector<batched_small_symmetry_t>, std::vector<small_symmetry_t>>
+        // -> std::tuple<std::vector<batched_small_symmetry_t>, std::vector<small_symmetry_t>>
+        -> std::tuple<std::vector<batched_small_symmetry_t>,
+                      std::optional<batched_small_symmetry_t>, unsigned>
     {
         constexpr auto batch_size = batched_small_symmetry_t::batch_size;
         auto           offset     = 0UL;
@@ -59,7 +61,13 @@ namespace {
         std::vector<small_symmetry_t> other;
         std::copy(std::next(std::begin(symmetries), static_cast<ptrdiff_t>(offset)),
                   std::end(symmetries), std::back_inserter(other));
-        return std::make_tuple(std::move(batched), std::move(other));
+        if (other.empty()) { return std::make_tuple(std::move(batched), std::nullopt, 0U); }
+        auto const count = other.size();
+        for (auto const& s = other.back(); other.size() != batch_size;) {
+            other.push_back(s);
+        }
+        return std::make_tuple(std::move(batched), std::optional{batched_small_symmetry_t{other}},
+                               count);
     }
 
     auto get_number_spins(ls_group const& group) noexcept -> std::optional<unsigned>
@@ -73,8 +81,8 @@ namespace {
 small_basis_t::small_basis_t(ls_group const& group) : cache{nullptr}
 {
     auto symmetries = extract<small_symmetry_t>(group.payload);
-    // other_symmetries = symmetries;
-    std::tie(batched_symmetries, other_symmetries) = split_into_batches(symmetries);
+    std::tie(batched_symmetries, other_symmetries, number_other_symmetries) =
+        split_into_batches(symmetries);
 }
 
 big_basis_t::big_basis_t(ls_group const& group) : symmetries{extract<big_symmetry_t>(group.payload)}
@@ -333,10 +341,11 @@ auto is_real(ls_spin_basis const& basis) noexcept -> bool
     struct visitor_fn_t {
         auto operator()(small_basis_t const& x) const noexcept -> bool
         {
-            return std::all_of(std::begin(x.batched_symmetries), std::end(x.batched_symmetries),
-                               [](auto const& s) { return is_real(s); })
-                   && std::all_of(std::begin(x.other_symmetries), std::end(x.other_symmetries),
-                                  [](auto const& s) { return is_real(s); });
+            auto const batched =
+                std::all_of(std::begin(x.batched_symmetries), std::end(x.batched_symmetries),
+                            [](auto const& s) { return is_real(s); });
+            auto const other = x.other_symmetries.has_value() ? is_real(*x.other_symmetries) : true;
+            return batched && other;
         }
 
         auto operator()(big_basis_t const& x) const noexcept -> bool
