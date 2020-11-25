@@ -153,6 +153,7 @@ typedef enum ls_error_code {
     LS_OUT_OF_MEMORY,           ///< Memory allocation failed
     LS_INVALID_ARGUMENT,        ///< Argument to a function is invalid
     LS_INVALID_HAMMING_WEIGHT,  ///< Invalid Hamming weight
+    LS_INVALID_SPIN_INVERSION,  ///< Invalid value for spin_inversion
     LS_INVALID_NUMBER_SPINS,    ///< Invalid number of spins
     LS_INVALID_PERMUTATION,     ///< Argument is not a valid permutation
     LS_INVALID_SECTOR,          ///< Sector exceeds the periodicity of the operator
@@ -350,7 +351,7 @@ typedef struct ls_states ls_states;
 ///         of spins does not match the one deduced from \p group.
 /// \see #ls_destroy_spin_basis, #ls_copy_spin_basis
 ls_error_code ls_create_spin_basis(ls_spin_basis** ptr, ls_group const* group,
-                                   unsigned number_spins, int hamming_weight);
+                                   unsigned number_spins, int hamming_weight, int spin_inversion);
 /// \brief Create a shallow copy of \p basis.
 ///
 /// \see #ls_create_spin_basis, #ls_destroy_spin_basis

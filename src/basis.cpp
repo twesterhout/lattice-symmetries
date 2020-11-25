@@ -98,8 +98,9 @@ struct ls_spin_basis {
 
     template <class T>
     explicit ls_spin_basis(std::in_place_type_t<T> tag, ls_group const& group,
-                           unsigned const number_spins, std::optional<unsigned> hamming_weight)
-        : header{{}, number_spins, hamming_weight, 0, ls_get_group_size(&group) > 0}
+                           unsigned const                number_spins,
+                           std::optional<unsigned> const hamming_weight, int const spin_inversion)
+        : header{{}, number_spins, hamming_weight, spin_inversion, ls_get_group_size(&group) > 0}
         , payload{tag, group}
     {}
 
@@ -133,7 +134,8 @@ struct ls_states {
 extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_spin_basis(ls_spin_basis** ptr,
                                                                         ls_group const* group,
                                                                         unsigned const number_spins,
-                                                                        int const hamming_weight)
+                                                                        int const hamming_weight,
+                                                                        int const spin_inversion)
 {
     // NOLINTNEXTLINE: 512 is the max supported system size (i.e. number of bits in bits512)
     if (number_spins == 0 || number_spins > 512) { return LS_INVALID_NUMBER_SPINS; }
@@ -144,6 +146,9 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_spin_basis(ls_spin_
           || (0 <= hamming_weight && hamming_weight <= static_cast<int>(number_spins)))) {
         return LS_INVALID_HAMMING_WEIGHT;
     }
+    if (spin_inversion != -1 && spin_inversion != 0 && spin_inversion != 1) {
+        return LS_INVALID_SPIN_INVERSION;
+    }
 
     auto need_big = [group, number_spins]() {
         if (ls_get_group_size(group) > 0) {
@@ -153,10 +158,11 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_spin_basis(ls_spin_
     }();
     auto const _hamming_weight =
         hamming_weight == -1 ? std::nullopt : std::optional<unsigned>{hamming_weight};
-    auto p = need_big ? std::make_unique<ls_spin_basis>(std::in_place_type_t<big_basis_t>{}, *group,
-                                                        number_spins, _hamming_weight)
-                      : std::make_unique<ls_spin_basis>(std::in_place_type_t<small_basis_t>{},
-                                                        *group, number_spins, _hamming_weight);
+    auto p = need_big
+                 ? std::make_unique<ls_spin_basis>(std::in_place_type_t<big_basis_t>{}, *group,
+                                                   number_spins, _hamming_weight, spin_inversion)
+                 : std::make_unique<ls_spin_basis>(std::in_place_type_t<small_basis_t>{}, *group,
+                                                   number_spins, _hamming_weight, spin_inversion);
     increment(p->header.refcount);
     *ptr = p.release();
     return LS_SUCCESS;

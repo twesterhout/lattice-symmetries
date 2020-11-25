@@ -82,6 +82,8 @@ auto ls_error_category::message(int c) const -> std::string
         return "specified Hamming weight is invalid. This means that Hamming weight is negative "
                "or that it exceeds the number of spins. Note that -1 is the only allowed negative "
                "value for Hamming weight, which means do not restrict magnetization";
+    case LS_INVALID_SPIN_INVERSION:
+        return "specified spin_inversion is invalid. Expected either -1, 0, or 1";
     case LS_INVALID_NUMBER_SPINS:
         return "specified number of spins is invalid. This means one of two things: specified "
                "number of spins is zero or exceeds 512; or that basis size is incompatible with "

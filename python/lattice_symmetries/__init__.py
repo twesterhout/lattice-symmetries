@@ -107,7 +107,7 @@ def __preprocess_library():
         ("ls_destroy_group", [c_void_p], None),
         ("ls_get_group_size", [c_void_p], c_uint),
         # Basis
-        ("ls_create_spin_basis", [POINTER(c_void_p), c_void_p, c_uint, c_int], c_int),
+        ("ls_create_spin_basis", [POINTER(c_void_p), c_void_p, c_uint, c_int, c_int], c_int),
         ("ls_destroy_spin_basis", [c_void_p], None),
         ("ls_get_number_spins", [c_void_p], c_uint),
         ("ls_get_number_bits", [c_void_p], c_uint),
@@ -210,8 +210,7 @@ def _create_symmetry(permutation, sector) -> c_void_p:
 
 
 class Symmetry:
-    """Symmetry operator.
-    """
+    """Symmetry operator."""
 
     def __init__(self, permutation: List[int], sector: int):
         """Create a symmetry given a `permutation` of sites, `flip` indicating
@@ -280,14 +279,18 @@ class Group:
         return _lib.ls_get_group_size(self._payload)
 
 
-def _create_spin_basis(group, number_spins, hamming_weight) -> c_void_p:
+def _create_spin_basis(group, number_spins, hamming_weight, spin_inversion) -> c_void_p:
     if not isinstance(group, Group):
         raise TypeError("expected Group, but got {}".format(type(group)))
     if hamming_weight is None:
         hamming_weight = -1
+    if spin_inversion is None:
+        spin_inversion = 0
     basis = c_void_p()
     _check_error(
-        _lib.ls_create_spin_basis(ctypes.byref(basis), group._payload, number_spins, hamming_weight)
+        _lib.ls_create_spin_basis(
+            ctypes.byref(basis), group._payload, number_spins, hamming_weight, spin_inversion
+        )
     )
     return basis
 
@@ -316,14 +319,20 @@ def _bits_to_int(bits: ctypes.Array) -> int:
 
 
 class SpinBasis:
-    """Hilbert space basis for a spin system
-    """
-    def __init__(self, group: Group, number_spins: int, hamming_weight: Optional[int]):
+    """Hilbert space basis for a spin system"""
+
+    def __init__(
+        self,
+        group: Group,
+        number_spins: int,
+        hamming_weight: Optional[int],
+        spin_inversion: Optional[int] = None,
+    ):
         """Construct a spin basis given a symmetry group, number of spins in
         the system, and (optionally) the Hamming weight to which to restrict
         the Hilbert space.
         """
-        self._payload = _create_spin_basis(group, number_spins, hamming_weight)
+        self._payload = _create_spin_basis(group, number_spins, hamming_weight, spin_inversion)
         self._finalizer = weakref.finalize(self, _lib.ls_destroy_spin_basis, self._payload)
 
     @property
@@ -549,7 +558,7 @@ class Operator:
                 x.shape[1],
                 x.ctypes.data_as(c_void_p),
                 x.strides[1] // x.itemsize,
-                out.ctypes.data_as(c_void_p)
+                out.ctypes.data_as(c_void_p),
             )
         )
         if x_was_a_vector:

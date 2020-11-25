@@ -31,7 +31,9 @@ def main():
     print("Symmetry group contains {} elements".format(len(symmetry_group)))
 
     # Constructing the basis
-    basis = ls.SpinBasis(symmetry_group, number_spins=number_spins, hamming_weight=hamming_weight)
+    basis = ls.SpinBasis(
+        symmetry_group, number_spins=number_spins, hamming_weight=hamming_weight, spin_inversion=-1
+    )
     basis.build()  # Build the cache, we need it since we're doing ED
     print("Hilbert space dimension is {}".format(basis.number_states))
 
