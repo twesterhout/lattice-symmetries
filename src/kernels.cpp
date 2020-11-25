@@ -75,9 +75,19 @@ namespace detail {
             bit_permute_step(*static_cast<vcl::Vec8uq*>(x), m, deltas[i]);
         }
     }
+
+    auto benes_forward_simd(uint64_t x[batch_size], uint64_t const (*masks)[batch_size],
+                            unsigned size, uint16_t const deltas[]) noexcept -> void
+    {
+        vcl::Vec8uq x_v;
+        x_v.load(x);
+        benes_forward_simd(&x_v, masks, size, deltas);
+        x_v.store(x);
+    }
 } // namespace detail
 
 #if LATTICE_SYMMETRIES_HAS_AVX2()
+#    if 0
 namespace {
     /// Performs one step of the Butterfly network. It exchanges bits with distance
     /// \p d between them if the corresponding bits in the mask \p m are set.
@@ -122,9 +132,11 @@ namespace detail {
         _mm256_store_si256(reinterpret_cast<__m256i*>(x) + 1, x1); // NOLINT
     }
 } // namespace detail
+#    endif
 
 #else // AVX or SSE2
 namespace {
+#    if 0
     /// Performs one step of the Butterfly network. It exchanges bits with distance
     /// \p d between them if the corresponding bits in the mask \p m are set.
     inline auto bit_permute_step(__m128i& x0, __m128i& x1, __m128i& x2, __m128i& x3, __m128i m0,
@@ -156,6 +168,7 @@ namespace {
         x2 = _mm_xor_si128(x2, y2);
         x3 = _mm_xor_si128(x3, y3);
     }
+#    endif
 
     auto bit_permute_step_512(__m128i& x0, __m128i& x1, __m128i& x2, __m128i& x3, __m128i m0,
                               __m128i m1, __m128i m2, __m128i m3, int const d) noexcept -> void
@@ -244,6 +257,7 @@ namespace {
 } // namespace
 
 namespace detail {
+#    if 0
     auto benes_forward_simd(__m128i& x0, __m128i& x1, __m128i& x2, __m128i& x3,
                             uint64_t const (*masks)[batch_size], unsigned size,
                             uint16_t const deltas[]) noexcept -> void
@@ -273,6 +287,7 @@ namespace detail {
         _mm_store_si128(reinterpret_cast<__m128i*>(x) + 2, x2); // NOLINT
         _mm_store_si128(reinterpret_cast<__m128i*>(x) + 3, x3); // NOLINT
     }
+#    endif
 
     auto benes_forward_512_simd(bits512& x, bits512 const masks[], unsigned size,
                                 uint16_t const deltas[]) noexcept -> void
