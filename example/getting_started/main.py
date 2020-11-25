@@ -23,8 +23,8 @@ def main():
     P = sites[::-1]
     symmetries.append(ls.Symmetry(P, sector=1))
     # Global spin inversion with eigenvalue π
-    Z = sites  # no permutation
-    symmetries.append(ls.Symmetry(Z, flip=True, sector=1))
+    # Z = sites  # no permutation
+    # symmetries.append(ls.Symmetry(Z, flip=True, sector=1))
 
     # Constructing the group
     symmetry_group = ls.Group(symmetries)

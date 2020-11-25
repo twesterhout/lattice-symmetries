@@ -29,6 +29,7 @@
 #include "basis.hpp"
 #include "group.hpp"
 #include "macros.hpp"
+#include "state_info.hpp"
 #include <algorithm>
 
 namespace lattice_symmetries {
@@ -238,6 +239,7 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_build(ls_spin_basis* basis
 
 namespace lattice_symmetries {
 struct get_state_info_visitor_t {
+    basis_base_t const&   header;
     uint64_t const* const bits;
     uint64_t* const       representative;
     std::complex<double>& character;
@@ -245,8 +247,7 @@ struct get_state_info_visitor_t {
 
     auto operator()(small_basis_t const& payload) const noexcept
     {
-        get_state_info(payload.batched_symmetries, payload.other_symmetries, *bits, *representative,
-                       character, norm);
+        get_state_info_v2(header, payload, *bits, *representative, character, norm);
     }
     auto operator()(big_basis_t const& payload) const noexcept
     {
@@ -262,7 +263,8 @@ ls_get_state_info(ls_spin_basis* basis, uint64_t const bits[], uint64_t represen
                   void* character, double* norm) // NOLINT: nope, norm can't be const
 {
     auto& ch = *reinterpret_cast<std::complex<double>*>(character); // NOLINT
-    std::visit(get_state_info_visitor_t{bits, representative, ch, *norm}, basis->payload);
+    std::visit(get_state_info_visitor_t{basis->header, bits, representative, ch, *norm},
+               basis->payload);
 }
 
 extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_get_states(ls_states**          ptr,

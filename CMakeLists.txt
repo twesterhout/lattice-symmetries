@@ -47,6 +47,7 @@ set(LatticeSymmetries_sources
     src/permutation.cpp
     src/network.cpp
     src/symmetry.cpp
+    src/state_info.cpp
     src/group.cpp
     src/cache.cpp
     src/basis.cpp
@@ -58,9 +59,12 @@ set(LatticeSymmetries_headers
     src/permutation.hpp
     src/network.hpp
     src/symmetry.hpp
+    src/state_info.hpp
     src/cache.hpp
+    src/basis.hpp
     src/operator.hpp
-    src/error_handling.hpp)
+    src/error_handling.hpp
+    src/macros.hpp)
 
 set(LatticeSymmetries_all_files
     ${LatticeSymmetries_sources}

@@ -95,10 +95,9 @@ def __preprocess_library():
         ("ls_error_to_string", [c_int], POINTER(c_char)),
         ("ls_destroy_string", [POINTER(c_char)], None),
         # Symmetry
-        ("ls_create_symmetry", [POINTER(c_void_p), c_uint, POINTER(c_uint), c_bool, c_uint], c_int),
+        ("ls_create_symmetry", [POINTER(c_void_p), c_uint, POINTER(c_uint), c_uint], c_int),
         ("ls_destroy_symmetry", [c_void_p], None),
         ("ls_get_sector", [c_void_p], c_uint),
-        ("ls_get_flip", [c_void_p], c_bool),
         ("ls_get_phase", [c_void_p], c_double),
         ("ls_get_eigenvalue", [c_void_p, c_double * 2], None),
         ("ls_get_periodicity", [c_void_p], c_uint),
@@ -196,7 +195,7 @@ def _get_dtype(dtype):
     )
 
 
-def _create_symmetry(permutation, flip, sector) -> c_void_p:
+def _create_symmetry(permutation, sector) -> c_void_p:
     permutation = np.asarray(permutation, dtype=np.uint32)
     symmetry = c_void_p()
     _check_error(
@@ -204,7 +203,6 @@ def _create_symmetry(permutation, flip, sector) -> c_void_p:
             ctypes.byref(symmetry),
             permutation.size,
             permutation.ctypes.data_as(POINTER(c_uint)),
-            flip,
             sector,
         )
     )
@@ -215,12 +213,12 @@ class Symmetry:
     """Symmetry operator.
     """
 
-    def __init__(self, permutation: List[int], sector: int, flip: bool = False):
+    def __init__(self, permutation: List[int], sector: int):
         """Create a symmetry given a `permutation` of sites, `flip` indicating
         whether to apply global spin inversion, and `sector` specifying the
         eigenvalue
         """
-        self._payload = _create_symmetry(permutation, flip, sector)
+        self._payload = _create_symmetry(permutation, sector)
         self._finalizer = weakref.finalize(self, _lib.ls_destroy_symmetry, self._payload)
 
     @property
