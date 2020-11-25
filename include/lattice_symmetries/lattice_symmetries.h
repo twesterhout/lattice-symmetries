@@ -215,7 +215,7 @@ typedef struct ls_symmetry ls_symmetry;
 ///         #LS_INVALID_SECTOR if \p sector exceeds the periodicity of the symmetry.
 /// \see #ls_destroy_symmetry
 ls_error_code ls_create_symmetry(ls_symmetry** ptr, unsigned length, unsigned const permutation[],
-                                 bool flip, unsigned sector);
+                                 unsigned sector);
 /// \brief Destructs and deallocates the symmetry.
 ///
 /// This function **must** be called on objects constructed using #ls_create_symmetry.
@@ -234,7 +234,7 @@ unsigned ls_get_sector(ls_symmetry const* symmetry);
 /// \param symmetry pointer to symmetry. Must not be `nullptr`.
 /// \return `true` if \p symmetry applies spin inversion.
 /// \see #ls_get_sector, #ls_get_phase, #ls_get_periodicity, #ls_get_eigenvalue
-bool ls_get_flip(ls_symmetry const* symmetry);
+// bool ls_get_flip(ls_symmetry const* symmetry);
 /// \brief Get phase of the eigenvalue.
 ///
 /// Phase is simply `sector / periodicity`. This function is provided for convenience only.
@@ -377,6 +377,7 @@ unsigned ls_get_number_bits(ls_spin_basis const* basis);
 /// \return a non-negative Hamming weight or `-1` if any Hamming weight is allowed.
 /// \see #ls_get_number_spins, #ls_get_number_states, #ls_get_state_info, #ls_get_index, #ls_get_states
 int ls_get_hamming_weight(ls_spin_basis const* basis);
+int ls_get_spin_inversion(ls_spin_basis const* basis);
 /// \brief Return whether the basis is restricted to some symmetry sector.
 ///
 /// \param basis pointer to Hilbert space basis. Must not be `nullptr`.

@@ -40,6 +40,7 @@ struct basis_base_t {
     mutable atomic_count_t  refcount;
     unsigned                number_spins;
     std::optional<unsigned> hamming_weight;
+    int                     spin_inversion;
     bool                    has_symmetries;
 };
 

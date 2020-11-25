@@ -36,7 +36,6 @@ namespace lattice_symmetries {
 
 struct symmetry_spec_t {
     std::vector<uint16_t> permutation;
-    bool                  flip;
     uint16_t              sector;
     uint16_t              periodicity;
 };
@@ -62,7 +61,7 @@ namespace {
         if (x.periodicity != y.periodicity) { return false; }
         auto const r = std::equal(std::begin(x.permutation), std::end(x.permutation),
                                   std::begin(y.permutation));
-        if (r && x.flip == y.flip) {
+        if (r) {
             if (x.sector != y.sector) { return outcome::failure(LS_INCOMPATIBLE_SYMMETRIES); }
             return true;
         }
@@ -85,15 +84,13 @@ namespace {
         std::transform(std::begin(temp), std::end(temp), std::begin(permutation),
                        [&x](auto const i) { return x.permutation[i]; });
 
-        auto const flip        = static_cast<bool>(x.flip ^ y.flip);
-        auto       periodicity = compute_periodicity(tcb::span<uint16_t const>{permutation});
-        if (flip && periodicity % 2U != 0U) { periodicity *= 2U; }
+        auto periodicity = compute_periodicity(tcb::span<uint16_t const>{permutation});
         // auto const phase = multiply({x.sector, x.periodicity}, {y.sector, y.periodicity});
         auto const phase = rational_add({x.sector, x.periodicity}, {y.sector, y.periodicity});
         if (phase.second > periodicity) { return LS_INCOMPATIBLE_SYMMETRIES; }
         if (periodicity % phase.second != 0) { return LS_INCOMPATIBLE_SYMMETRIES; }
         auto const sector = phase.first * (periodicity / phase.second);
-        return symmetry_spec_t{std::move(permutation), flip, static_cast<uint16_t>(sector),
+        return symmetry_spec_t{std::move(permutation), static_cast<uint16_t>(sector),
                                static_cast<uint16_t>(periodicity)};
     }
 
@@ -134,10 +131,9 @@ namespace {
     {
         auto permutation = std::visit(
             [](auto const& x) { return reconstruct_permutation(x.network); }, symmetry.payload);
-        auto const flip        = ls_get_flip(&symmetry);
         auto const sector      = static_cast<uint16_t>(ls_get_sector(&symmetry));
         auto const periodicity = static_cast<uint16_t>(ls_get_periodicity(&symmetry));
-        return symmetry_spec_t{std::move(permutation), flip, sector, periodicity};
+        return symmetry_spec_t{std::move(permutation), sector, periodicity};
     }
 
     auto from_spec(symmetry_spec_t const& spec) -> ls_symmetry
@@ -147,19 +143,11 @@ namespace {
         auto const eigenvalue = compute_eigenvalue(spec.sector, spec.periodicity);
         // NOLINTNEXTLINE: 64 is the number of bits in uint64_t
         if (spec.permutation.size() > 64U) {
-            return ls_symmetry{std::in_place_type_t<big_symmetry_t>{},
-                               fat.value(),
-                               spec.flip,
-                               spec.sector,
-                               spec.periodicity,
-                               eigenvalue};
+            return ls_symmetry{std::in_place_type_t<big_symmetry_t>{}, fat.value(), spec.sector,
+                               spec.periodicity, eigenvalue};
         }
-        return ls_symmetry{std::in_place_type_t<small_symmetry_t>{},
-                           fat.value(),
-                           spec.flip,
-                           spec.sector,
-                           spec.periodicity,
-                           eigenvalue};
+        return ls_symmetry{std::in_place_type_t<small_symmetry_t>{}, fat.value(), spec.sector,
+                           spec.periodicity, eigenvalue};
     }
 
     auto make_group(tcb::span<ls_symmetry const* const> generators)

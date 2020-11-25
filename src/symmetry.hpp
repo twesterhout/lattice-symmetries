@@ -42,12 +42,9 @@ struct small_symmetry_t {
     unsigned             periodicity;
     std::complex<double> eigenvalue;
 
-    small_symmetry_t(fat_benes_network_t const& _network, bool _flip, unsigned _sector,
-                     unsigned _periodicity, std::complex<double> _eigenvalue) noexcept
-        : network{_network, _flip}
-        , sector{_sector}
-        , periodicity{_periodicity}
-        , eigenvalue{_eigenvalue}
+    small_symmetry_t(fat_benes_network_t const& _network, unsigned _sector, unsigned _periodicity,
+                     std::complex<double> _eigenvalue) noexcept
+        : network{_network}, sector{_sector}, periodicity{_periodicity}, eigenvalue{_eigenvalue}
     {}
 };
 
@@ -57,12 +54,9 @@ struct big_symmetry_t {
     unsigned             periodicity;
     std::complex<double> eigenvalue;
 
-    big_symmetry_t(fat_benes_network_t const& _network, bool _flip, unsigned _sector,
-                   unsigned _periodicity, std::complex<double> _eigenvalue) noexcept
-        : network{_network, _flip}
-        , sector{_sector}
-        , periodicity{_periodicity}
-        , eigenvalue{_eigenvalue}
+    big_symmetry_t(fat_benes_network_t const& _network, unsigned _sector, unsigned _periodicity,
+                   std::complex<double> _eigenvalue) noexcept
+        : network{_network}, sector{_sector}, periodicity{_periodicity}, eigenvalue{_eigenvalue}
     {}
 };
 

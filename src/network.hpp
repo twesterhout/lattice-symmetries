@@ -39,12 +39,10 @@ struct small_network_t {
 
     uint64_t masks[max_depth];
     uint16_t deltas[max_depth];
-    bool     flip;
-    uint64_t flip_mask;
     uint16_t depth;
     uint16_t width;
 
-    small_network_t(fat_benes_network_t const& fat, bool invert) noexcept;
+    small_network_t(fat_benes_network_t const& fat) noexcept;
     auto operator()(uint64_t bits) const noexcept -> uint64_t;
     auto operator()(tcb::span<unsigned> bits) const noexcept -> void;
 };
@@ -53,13 +51,11 @@ struct alignas(32) big_network_t {
     static constexpr auto max_depth = 17U;
 
     bits512  masks[max_depth];
-    bits512  flip_mask;
     uint16_t deltas[max_depth];
-    bool     flip;
     uint16_t depth;
     uint16_t width;
 
-    big_network_t(fat_benes_network_t const& fat, bool invert) noexcept;
+    big_network_t(fat_benes_network_t const& fat) noexcept;
     auto operator()(bits512& bits) const noexcept -> void;
     auto operator()(tcb::span<unsigned> bits) const noexcept -> void;
 };
@@ -82,9 +78,6 @@ struct alignas(32) batched_small_network_t {
 
     uint64_t masks[max_depth][batch_size];
     uint16_t deltas[max_depth];
-    uint64_t flip_masks[batch_size];
-    // bool     flips[batch_size];
-    // uint64_t flip_mask;
     uint16_t depth;
     uint16_t width;
 

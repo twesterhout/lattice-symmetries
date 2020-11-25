@@ -225,7 +225,6 @@ auto is_real(big_symmetry_t const& symmetry) noexcept -> bool
 extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_symmetry(ls_symmetry**  ptr,
                                                                       unsigned const length,
                                                                       unsigned const permutation[],
-                                                                      bool const     flip,
                                                                       unsigned const sector)
 {
     using namespace lattice_symmetries;
@@ -238,19 +237,18 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_symmetry(ls_symmetr
         return LS_SYSTEM_ERROR;
     }
     auto periodicity = compute_periodicity(tcb::span{permutation, length});
-    if (flip && periodicity % 2U != 0U) { periodicity *= 2U; }
     if (sector >= periodicity) { return LS_INVALID_SECTOR; }
     auto const eigenvalue = compute_eigenvalue(sector, periodicity);
 
     // NOLINTNEXTLINE: 64 spins is the max system size which can be represented by uint64_t
     if (length > 64U) {
         auto p = std::make_unique<ls_symmetry>(std::in_place_type_t<big_symmetry_t>{}, r.value(),
-                                               flip, sector, periodicity, eigenvalue);
+                                               sector, periodicity, eigenvalue);
         *ptr   = p.release();
     }
     else {
         auto p = std::make_unique<ls_symmetry>(std::in_place_type_t<small_symmetry_t>{}, r.value(),
-                                               flip, sector, periodicity, eigenvalue);
+                                               sector, periodicity, eigenvalue);
         *ptr   = p.release();
     }
     return LS_SUCCESS;
@@ -266,12 +264,6 @@ extern "C" LATTICE_SYMMETRIES_EXPORT unsigned ls_get_sector(ls_symmetry const* s
 {
     LATTICE_SYMMETRIES_CHECK(symmetry != nullptr, "trying to dereference a nullptr");
     return std::visit([](auto const& x) noexcept { return x.sector; }, symmetry->payload);
-}
-
-extern "C" LATTICE_SYMMETRIES_EXPORT bool ls_get_flip(ls_symmetry const* symmetry)
-{
-    LATTICE_SYMMETRIES_CHECK(symmetry != nullptr, "trying to dereference a nullptr");
-    return std::visit([](auto const& x) noexcept { return x.network.flip; }, symmetry->payload);
 }
 
 extern "C" LATTICE_SYMMETRIES_EXPORT unsigned ls_get_periodicity(ls_symmetry const* symmetry)

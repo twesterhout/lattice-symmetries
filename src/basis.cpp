@@ -89,7 +89,7 @@ struct ls_spin_basis {
     template <class T>
     explicit ls_spin_basis(std::in_place_type_t<T> tag, ls_group const& group,
                            unsigned const number_spins, std::optional<unsigned> hamming_weight)
-        : header{{}, number_spins, hamming_weight, ls_get_group_size(&group) > 0}
+        : header{{}, number_spins, hamming_weight, 0, ls_get_group_size(&group) > 0}
         , payload{tag, group}
     {}
 
@@ -186,6 +186,11 @@ extern "C" LATTICE_SYMMETRIES_EXPORT int ls_get_hamming_weight(ls_spin_basis con
     return m.has_value() ? static_cast<int>(*m) : -1;
 }
 
+extern "C" LATTICE_SYMMETRIES_EXPORT int ls_get_spin_inversion(ls_spin_basis const* basis)
+{
+    return basis->header.spin_inversion;
+}
+
 extern "C" LATTICE_SYMMETRIES_EXPORT bool ls_has_symmetries(ls_spin_basis const* basis)
 {
     return basis->header.has_symmetries;
@@ -231,32 +236,33 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_build(ls_spin_basis* basis
     return LS_SUCCESS;
 }
 
+namespace lattice_symmetries {
+struct get_state_info_visitor_t {
+    uint64_t const* const bits;
+    uint64_t* const       representative;
+    std::complex<double>& character;
+    double&               norm;
+
+    auto operator()(small_basis_t const& payload) const noexcept
+    {
+        get_state_info(payload.batched_symmetries, payload.other_symmetries, *bits, *representative,
+                       character, norm);
+    }
+    auto operator()(big_basis_t const& payload) const noexcept
+    {
+        // We do need reinterpret_casts here
+        get_state_info(payload.symmetries, *reinterpret_cast<bits512 const*>(bits),   // NOLINT
+                       *reinterpret_cast<bits512*>(representative), character, norm); // NOLINT
+    }
+};
+} // namespace lattice_symmetries
+
 extern "C" LATTICE_SYMMETRIES_EXPORT void
 ls_get_state_info(ls_spin_basis* basis, uint64_t const bits[], uint64_t representative[],
                   void* character, double* norm) // NOLINT: nope, norm can't be const
 {
-    struct visitor_t {
-        uint64_t const* const bits;
-        uint64_t* const       representative;
-        std::complex<double>& character;
-        double&               norm;
-
-        auto operator()(small_basis_t const& payload) const noexcept
-        {
-            get_state_info(payload.batched_symmetries, payload.other_symmetries, *bits,
-                           *representative, character, norm);
-        }
-        auto operator()(big_basis_t const& payload) const noexcept
-        {
-            // We do need reinterpret_casts here
-            get_state_info(payload.symmetries, *reinterpret_cast<bits512 const*>(bits),   // NOLINT
-                           *reinterpret_cast<bits512*>(representative), character, norm); // NOLINT
-        }
-    };
-    std::visit(visitor_t{bits, representative,
-                         *reinterpret_cast<std::complex<double>*>(character), // NOLINT
-                         *norm},
-               basis->payload);
+    auto& ch = *reinterpret_cast<std::complex<double>*>(character); // NOLINT
+    std::visit(get_state_info_visitor_t{bits, representative, ch, *norm}, basis->payload);
 }
 
 extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_get_states(ls_states**          ptr,

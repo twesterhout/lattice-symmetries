@@ -36,11 +36,9 @@ namespace {
     }
 } // namespace
 
-small_network_t::small_network_t(fat_benes_network_t const& fat, bool const invert) noexcept
+small_network_t::small_network_t(fat_benes_network_t const& fat) noexcept
     : masks{}
     , deltas{}
-    , flip{invert}
-    , flip_mask{}
     , depth{static_cast<uint16_t>(fat.masks.size())}
     , width{static_cast<uint16_t>(fat.size)}
 {
@@ -52,14 +50,11 @@ small_network_t::small_network_t(fat_benes_network_t const& fat, bool const inve
     std::copy(std::begin(fat.deltas), std::end(fat.deltas), std::begin(deltas));
     std::fill(std::next(std::begin(masks), depth), std::end(masks), uint64_t{0});
     std::fill(std::next(std::begin(deltas), depth), std::end(deltas), uint64_t{0});
-    init_flip_mask(flip_mask, width);
 }
 
-big_network_t::big_network_t(fat_benes_network_t const& fat, bool const invert) noexcept
+big_network_t::big_network_t(fat_benes_network_t const& fat) noexcept
     : masks{}
-    , flip_mask{}
     , deltas{}
-    , flip{invert}
     , depth{static_cast<uint16_t>(fat.masks.size())}
     , width{static_cast<uint16_t>(fat.size)}
 {
@@ -71,7 +66,6 @@ big_network_t::big_network_t(fat_benes_network_t const& fat, bool const invert) 
     std::for_each(std::next(std::begin(masks), depth), std::end(masks),
                   [](auto& m) { set_zero(m); });
     std::fill(std::next(std::begin(deltas), depth), std::end(deltas), uint64_t{0});
-    init_flip_mask(flip_mask, width);
 }
 
 constexpr auto bit_permute_step(uint64_t const x, uint64_t const m, unsigned const d) noexcept
@@ -86,14 +80,13 @@ auto small_network_t::operator()(uint64_t bits) const noexcept -> uint64_t
     for (auto i = 0U; i < depth; ++i) {
         bits = bit_permute_step(bits, masks[i], deltas[i]);
     }
-    if (flip) { bits ^= flip_mask; }
     return bits;
 }
 
 auto big_network_t::operator()(bits512& bits) const noexcept -> void
 {
     benes_forward(bits, static_cast<bits512 const*>(masks), depth,
-                  static_cast<uint16_t const*>(deltas), flip, flip_mask);
+                  static_cast<uint16_t const*>(deltas));
 }
 
 inline auto next_pow_of_2(uint64_t const x) noexcept -> uint64_t
@@ -164,7 +157,7 @@ auto compose_helper(Network const& x, Network const& y) -> outcome::result<Netwo
     x(permutation);
     auto r = compile(permutation);
     if (!r) { return r.as_failure(); }
-    return Network{r.value(), /*invert=*/static_cast<bool>(x.flip ^ y.flip)};
+    return Network{std::move(r).value()};
 }
 
 auto compose(small_network_t const& x, small_network_t const& y) -> outcome::result<small_network_t>
@@ -176,13 +169,13 @@ auto compose(small_network_t const& x, small_network_t const& y) -> outcome::res
 
 batched_small_network_t::batched_small_network_t(
     std::array<small_network_t const*, batch_size> const& networks) noexcept
-    : masks{}, deltas{}, flip_masks{}, depth{}, width{}
+    : masks{}, deltas{}, depth{}, width{}
 {
     // Make sure that it is safe to access members
     for (auto const* network : networks) {
         LATTICE_SYMMETRIES_CHECK(network != nullptr, "");
     }
-    // Determine depth and flip_mask
+    // Determine depth and width
     depth = networks[0]->depth;
     width = networks[0]->width;
     for (auto const* network : networks) {
@@ -209,12 +202,6 @@ batched_small_network_t::batched_small_network_t(
             LATTICE_SYMMETRIES_CHECK(network->deltas[i] == deltas[i], "");
         }
     });
-    // Determine flips
-    // std::transform(std::begin(networks), std::end(networks), std::data(flips),
-    //                [](auto const* network) { return network->flip; });
-    std::transform(
-        std::begin(networks), std::end(networks), std::data(flip_masks),
-        [](auto const* network) { return network->flip ? network->flip_mask : uint64_t{0}; });
 }
 
 #if 0
@@ -242,7 +229,7 @@ batched_small_network_t::batched_small_network_t(small_network_t const& small) n
 auto batched_small_network_t::operator()(uint64_t bits[batch_size]) const noexcept -> void
 {
     // NOLINTNEXTLINE: we do want implicit decays of arrays to pointers here
-    benes_forward(bits, masks, depth, deltas, flip_masks);
+    benes_forward(bits, masks, depth, deltas);
 }
 
 } // namespace lattice_symmetries
