@@ -1,0 +1,3 @@
+[submodule "third_party/version2"]
+	path = third_party/version2
+	url = https://github.com/vectorclass/version2
