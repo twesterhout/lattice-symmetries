@@ -75,12 +75,15 @@ namespace {
         auto update(vcl::Vec8uq const& x, vcl::Vec8d const& real, vcl::Vec8d const& imag) noexcept
             -> void
         {
-            auto const smaller = x < r;
+            n = vcl::if_add(x == original, n, real);
 
-            r    = vcl::select(smaller, x, r);
-            e_re = vcl::select(smaller, real, e_re);
-            e_im = vcl::select(smaller, imag, e_im);
-            n    = vcl::if_add(x == original, n, real);
+            auto const smaller = x < r;
+            if (vcl::horizontal_or(smaller)) {
+                r    = vcl::select(smaller, x, r);
+                auto const float_mask = vcl::Vec8db{smaller};
+                e_re = vcl::select(float_mask, real, e_re);
+                e_im = vcl::select(float_mask, imag, e_im);
+            }
         }
 
         auto update_first_few(vcl::Vec8uq const& x, vcl::Vec8d const& real, vcl::Vec8d const& imag,
@@ -90,9 +93,11 @@ namespace {
             auto const include = vcl::Vec8uq{0, 1, 2, 3, 4, 5, 6, 7} < count;
             auto const smaller = (x < r) && include;
 
-            r    = vcl::select(smaller, x, r);
-            e_re = vcl::select(smaller, real, e_re);
-            e_im = vcl::select(smaller, imag, e_im);
+            if (vcl::horizontal_or(smaller)) {
+                r    = vcl::select(smaller, x, r);
+                e_re = vcl::select(smaller, real, e_re);
+                e_im = vcl::select(smaller, imag, e_im);
+            }
             n    = vcl::if_add((x == original) && include, n, real);
         }
 
