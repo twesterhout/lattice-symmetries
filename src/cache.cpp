@@ -28,6 +28,7 @@
 
 #include "cache.hpp"
 #include "error_handling.hpp"
+#include "kernels.hpp"
 #include "state_info.hpp"
 
 #if defined(__APPLE__)
@@ -59,15 +60,38 @@
 #include <cstdio>
 #include <numeric>
 
+#include <unordered_map>
+
 namespace lattice_symmetries {
 
 namespace {
+    auto save_histogram(char const* filename, std::unordered_map<uint64_t, uint64_t> const& data)
+        -> void
+    {
+        std::vector<std::pair<uint64_t, uint64_t>> table;
+        table.reserve(data.size());
+        for (auto const& e : data) {
+            table.push_back(e);
+        }
+        std::sort(std::begin(table), std::end(table),
+                  [](auto const& x, auto const& y) { return x.first < y.first; });
+
+        auto* file = std::fopen(filename, "w");
+        LATTICE_SYMMETRIES_CHECK(file != nullptr, "failed to open file");
+        for (auto const& e : table) {
+            std::fprintf(file, "%zu\t%zu\n", e.first, e.second);
+        }
+        std::fclose(file);
+    }
+
     auto generate_ranges(tcb::span<uint64_t const> states, unsigned const bits,
                          unsigned const shift)
     {
         LATTICE_SYMMETRIES_ASSERT(0 < bits && bits <= 32, "invalid bits");
         constexpr auto empty = std::make_pair(~uint64_t{0}, uint64_t{0});
         auto const     size  = uint64_t{1} << bits;
+
+        std::unordered_map<uint64_t, uint64_t> histogram;
 
         std::vector<std::pair<uint64_t, uint64_t>> ranges;
         ranges.reserve(size);
@@ -86,8 +110,11 @@ namespace {
                 }
             }
             ranges.push_back(element);
+            histogram[element.second] += uint64_t{1};
         }
         LATTICE_SYMMETRIES_CHECK(first == last, "not all states checked");
+
+        save_histogram("ranges_histogram.dat", histogram);
         return ranges;
     }
 
@@ -295,12 +322,13 @@ auto basis_cache_t::index(uint64_t const x) const noexcept -> outcome::result<ui
 {
     using std::begin, std::end;
     auto const& range = _ranges[x >> _shift];
-    auto const  first = std::next(begin(_states), static_cast<ptrdiff_t>(range.first));
-    auto const  last  = std::next(first, static_cast<ptrdiff_t>(range.second));
-    auto const  i     = std::lower_bound(first, last, x);
+    auto const  first = _states.data() + range.first;
+    auto const  last  = first + range.second;
+    auto const  i     = search_sorted(first, last, x);
+    // auto const  i     = std::lower_bound(first, last, x);
     if (i == last) { return outcome::failure(LS_NOT_A_REPRESENTATIVE); }
-    LATTICE_SYMMETRIES_ASSERT(*i == x, "");
-    return static_cast<uint64_t>(std::distance(begin(_states), i));
+    // LATTICE_SYMMETRIES_ASSERT(*i == x, "");
+    return static_cast<uint64_t>(i - _states.data());
 }
 
 namespace {

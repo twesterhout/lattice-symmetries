@@ -49,6 +49,14 @@
 #    error "unsupported architecture"
 #endif
 
+#if LATTICE_SYMMETRIES_HAS_AVX2()
+#    define search_sorted_arch search_sorted_avx2
+#elif LATTICE_SYMMETRIES_HAS_AVX()
+#    define search_sorted_arch search_sorted_avx
+#else
+#    define search_sorted_arch search_sorted_sse2
+#endif
+
 namespace lattice_symmetries {
 
 namespace {
@@ -83,6 +91,44 @@ namespace detail {
         x_v.load(x);
         benes_forward_simd(&x_v, masks, size, deltas);
         x_v.store(x);
+    }
+} // namespace detail
+
+namespace detail {
+    auto search_sorted_arch(uint64_t const* first, uint64_t const* last,
+                            uint64_t const key) noexcept -> uint64_t const*
+    {
+        constexpr auto cutoff_size = 16;
+        constexpr auto vector_size = vcl::Vec8uq::size();
+        static_assert(cutoff_size >= 2 * vector_size);
+        auto const key_v = vcl::Vec8uq{key};
+        auto       size  = last - first;
+        if (size <= 0) { return last; }
+        while (size > cutoff_size) {
+            auto const half = size / 2;
+            auto const x    = first[half];
+            if (x == key) { return first + half; }
+            if (x < key) {
+                first += half + 1;
+                auto const mask = vcl::to_bits(vcl::Vec8uq{}.load(first) == key_v);
+                if (mask != 0) { return first + __builtin_ctz(mask); }
+            }
+            else {
+                size            = half - vector_size;
+                auto const mask = vcl::to_bits(vcl::Vec8uq{}.load(first + size) == key_v);
+                if (mask != 0) { return first + size + __builtin_ctz(mask); }
+            }
+        }
+        for (; size >= vector_size; first += vector_size, size -= vector_size) {
+            auto const mask = vcl::to_bits(vcl::Vec8uq{}.load(first) == key_v);
+            if (mask != 0) { return first + __builtin_ctz(mask); }
+        }
+        if (size > 0) {
+            auto const mask = vcl::to_bits(vcl::Vec8uq{}.load_partial(size, first) == key_v);
+            if (mask != 0) { return first + __builtin_ctz(mask); }
+        }
+        LATTICE_SYMMETRIES_ASSERT(first + size == last, "");
+        return last;
     }
 } // namespace detail
 
@@ -336,6 +382,26 @@ auto benes_forward(bits512& x, bits512 const masks[], unsigned size,
     else {
         detail::benes_forward_512_sse2(x, masks, size, deltas);
     }
+}
+
+auto search_sorted(uint64_t const* first, uint64_t const* last, uint64_t const key) noexcept
+    -> uint64_t const*
+{
+    uint64_t const* r;
+    if constexpr (false) {
+        if (__builtin_cpu_supports("avx2")) { r = detail::search_sorted_avx2(first, last, key); }
+        else if (__builtin_cpu_supports("avx")) {
+            r = detail::search_sorted_avx(first, last, key);
+        }
+        else {
+            r = detail::search_sorted_sse2(first, last, key);
+        }
+    }
+    else {
+        r = std::lower_bound(first, last, key);
+        if (r != last && *r != key) { r = last; }
+    }
+    return r;
 }
 #endif
 

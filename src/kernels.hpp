@@ -45,6 +45,9 @@ auto benes_forward(uint64_t x[batch_size], uint64_t const (*masks)[batch_size], 
 auto benes_forward(bits512& x, bits512 const masks[], unsigned size,
                    uint16_t const deltas[]) noexcept -> void;
 
+auto search_sorted(uint64_t const* first, uint64_t const* last, uint64_t key) noexcept
+    -> uint64_t const*;
+
 namespace detail {
     auto benes_forward_sse2(uint64_t x[batch_size], uint64_t const (*masks)[batch_size],
                             unsigned size, uint16_t const deltas[]) noexcept -> void;
@@ -66,6 +69,14 @@ namespace detail {
                                uint16_t const deltas[]) noexcept -> void;
     auto benes_forward_512_avx2(bits512& x, bits512 const masks[], unsigned size,
                                 uint16_t const deltas[]) noexcept -> void;
+
+    auto search_sorted_avx2(uint64_t const* first, uint64_t const* last, uint64_t key) noexcept
+        -> uint64_t const*;
+    auto search_sorted_avx(uint64_t const* first, uint64_t const* last, uint64_t key) noexcept
+        -> uint64_t const*;
+    auto search_sorted_sse2(uint64_t const* first, uint64_t const* last, uint64_t key) noexcept
+        -> uint64_t const*;
+
 } // namespace detail
 
 } // namespace lattice_symmetries
