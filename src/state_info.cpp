@@ -64,41 +64,38 @@ namespace {
     struct alignas(32) batch_acc_64_arch_t {
         vcl::Vec8uq const original;
         vcl::Vec8uq       r;
+        vcl::Vec8q        i;
         vcl::Vec8d        n;
-        vcl::Vec8d        e_re;
-        vcl::Vec8d        e_im;
 
         explicit batch_acc_64_arch_t(uint64_t const bits) noexcept
-            : original{bits}, r{original}, n{0.0}, e_re{1.0}, e_im{0.0}
+            : original{bits}, r{original}, i{std::numeric_limits<int64_t>::max()}, n{0.0}
         {}
 
-        auto update(vcl::Vec8uq const& x, vcl::Vec8d const& real, vcl::Vec8d const& imag) noexcept
+        auto update(vcl::Vec8uq const& x, vcl::Vec8q const& index, vcl::Vec8d const& real) noexcept
             -> void
         {
             n = vcl::if_add(x == original, n, real);
 
             auto const smaller = x < r;
             if (vcl::horizontal_or(smaller)) {
-                r    = vcl::select(smaller, x, r);
-                auto const float_mask = vcl::Vec8db{smaller};
-                e_re = vcl::select(float_mask, real, e_re);
-                e_im = vcl::select(float_mask, imag, e_im);
+                r = vcl::select(smaller, x, r);
+                i = vcl::select(smaller, index, i);
             }
         }
 
-        auto update_first_few(vcl::Vec8uq const& x, vcl::Vec8d const& real, vcl::Vec8d const& imag,
+        auto update_first_few(vcl::Vec8uq const& x, vcl::Vec8q const& index, vcl::Vec8d const& real,
                               unsigned const count) noexcept -> void
         {
             LATTICE_SYMMETRIES_ASSERT(count < 8, "");
             auto const include = vcl::Vec8uq{0, 1, 2, 3, 4, 5, 6, 7} < count;
-            auto const smaller = (x < r) && include;
 
+            n = vcl::if_add((x == original) && include, n, real);
+
+            auto const smaller = (x < r) && include;
             if (vcl::horizontal_or(smaller)) {
-                r    = vcl::select(smaller, x, r);
-                e_re = vcl::select(smaller, real, e_re);
-                e_im = vcl::select(smaller, imag, e_im);
+                r = vcl::select(smaller, x, r);
+                i = vcl::select(smaller, index, i);
             }
-            n    = vcl::if_add((x == original) && include, n, real);
         }
 
         auto update_norm_only(vcl::Vec8uq const& x, vcl::Vec8d const& real) noexcept -> bool
@@ -119,46 +116,44 @@ namespace {
             return true;
         }
 
-        auto reduce_norm_only() const noexcept -> double { return vcl::horizontal_add(n); }
+        [[nodiscard]] auto reduce_norm_only() const noexcept -> double
+        {
+            return vcl::horizontal_add(n);
+        }
 
-        auto reduce(uint64_t& repr, std::complex<double>& character, double& norm) noexcept -> void;
+        auto reduce(uint64_t& repr) const noexcept -> std::tuple<int64_t, double>;
     };
 
     LATTICE_SYMMETRIES_NOINLINE
-    auto batch_acc_64_arch_t::reduce(uint64_t& repr, std::complex<double>& character,
-                                     double& norm) noexcept -> void
+    auto batch_acc_64_arch_t::reduce(uint64_t& repr) const noexcept -> std::tuple<int64_t, double>
     {
         // Compute norm
-        norm = reduce_norm_only();
+        auto const norm = reduce_norm_only();
 
         // Reduce from 512 to 256
         auto const r256_low   = r.get_low();
         auto const r256_high  = r.get_high();
         auto const smaller256 = r256_low < r256_high;
         auto const r256       = vcl::select(smaller256, r256_low, r256_high);
-        auto const e_re256    = vcl::select(smaller256, e_re.get_low(), e_re.get_high());
-        auto const e_im256    = vcl::select(smaller256, e_im.get_low(), e_im.get_high());
+        auto const i256       = vcl::select(smaller256, i.get_low(), i.get_high());
 
         // Reduce from 526 to 128
         auto const r128_low   = r256.get_low();
         auto const r128_high  = r256.get_high();
         auto const smaller128 = r128_low < r128_high;
         auto const r128       = vcl::select(smaller128, r128_low, r128_high);
-        auto const e_re128    = vcl::select(smaller128, e_re256.get_low(), e_re256.get_high());
-        auto const e_im128    = vcl::select(smaller128, e_im256.get_low(), e_im256.get_high());
+        auto const i128       = vcl::select(smaller128, i256.get_low(), i256.get_high());
 
         // Reduce from 128 to 64
         auto const r64_low   = r128.extract(0);
         auto const r64_high  = r128.extract(1);
         auto const smaller64 = r64_low < r64_high;
         if (smaller64) {
-            repr      = r64_low;
-            character = std::complex{e_re128.extract(0), e_im128.extract(0)};
+            repr = r64_low;
+            return {i128.extract(0), norm};
         }
-        else {
-            repr      = r64_high;
-            character = std::complex{e_re128.extract(1), e_im128.extract(1)};
-        }
+        repr = r64_high;
+        return {i128.extract(1), norm};
     }
 } // namespace
 
@@ -167,33 +162,37 @@ namespace detail {
                              uint64_t bits, uint64_t& representative,
                              std::complex<double>& character, double& norm) noexcept -> void
     {
+        // std::printf("get_state_info_arch(%zu)\n", bits);
         if (!basis_header.has_symmetries) {
             representative = bits;
             character      = {1.0, 0.0};
             norm           = 1.0;
             return;
         }
-        auto const flip_mask  = vcl::Vec8uq{get_flip_mask_64(basis_header.number_spins)};
-        auto const flip_coeff = vcl::Vec8d{static_cast<double>(basis_header.spin_inversion)};
+        vcl::Vec8uq flip_mask;
+        vcl::Vec8d  flip_coeff;
+        if (basis_header.spin_inversion != 0) {
+            flip_mask  = vcl::Vec8uq{get_flip_mask_64(basis_header.number_spins)};
+            flip_coeff = vcl::Vec8d{static_cast<double>(basis_header.spin_inversion)};
+        }
 
         batch_acc_64_arch_t acc{bits};
+
+        vcl::Vec8q i_v{0, 1, 2, 3, 4, 5, 6, 7};
+        vcl::Vec8q constant_8{8};
         for (auto const& symmetry : basis_body.batched_symmetries) {
             auto x = acc.original;
             benes_forward_arch(&x, symmetry.network.masks, symmetry.network.depth,
                                symmetry.network.deltas);
             vcl::Vec8d real;
-            vcl::Vec8d imag;
             real.load_a(symmetry.eigenvalues_real.data());
-            imag.load_a(symmetry.eigenvalues_imag.data());
-            acc.update(x, real, imag);
+            acc.update(x, i_v, real);
             if (basis_header.spin_inversion != 0) {
                 x ^= flip_mask;
-                if (basis_header.spin_inversion != 1) {
-                    real *= flip_coeff;
-                    imag *= flip_coeff;
-                }
-                acc.update(x, real, imag);
+                if (basis_header.spin_inversion != 1) { real = -real; }
+                acc.update(x, -i_v, real);
             }
+            i_v += constant_8;
         }
         if (basis_body.other_symmetries.has_value()) {
             auto const& symmetry = *basis_body.other_symmetries;
@@ -202,21 +201,29 @@ namespace detail {
             benes_forward_arch(&x, symmetry.network.masks, symmetry.network.depth,
                                symmetry.network.deltas);
             vcl::Vec8d real;
-            vcl::Vec8d imag;
             real.load_a(symmetry.eigenvalues_real.data());
-            imag.load_a(symmetry.eigenvalues_imag.data());
-            acc.update_first_few(x, real, imag, basis_body.number_other_symmetries);
+            acc.update_first_few(x, i_v, real, basis_body.number_other_symmetries);
             if (basis_header.spin_inversion != 0) {
                 x ^= flip_mask;
-                if (basis_header.spin_inversion != 1) {
-                    real *= flip_coeff;
-                    imag *= flip_coeff;
-                }
-                acc.update_first_few(x, real, imag, basis_body.number_other_symmetries);
+                if (basis_header.spin_inversion != 1) { real = -real; }
+                acc.update_first_few(x, -i_v, real, basis_body.number_other_symmetries);
             }
         }
-        double n;
-        acc.reduce(representative, character, n);
+        auto [i, n] = acc.reduce(representative);
+
+        if (i == std::numeric_limits<int64_t>::max()) { character = {1.0, 0.0}; }
+        else {
+            auto const i_abs       = static_cast<uint64_t>(std::abs(i));
+            auto const batch_index = i_abs / 8;
+            auto const rest_index  = i_abs % 8;
+
+            auto const& s = batch_index == basis_body.batched_symmetries.size()
+                                ? *basis_body.other_symmetries
+                                : basis_body.batched_symmetries[batch_index];
+            auto const  e =
+                std::complex{s.eigenvalues_real[rest_index], s.eigenvalues_imag[rest_index]};
+            character = i < 0 ? (-e) : e;
+        }
 
         // We need to detect the case when norm is not zero, but only because of
         // inaccurate arithmetics
