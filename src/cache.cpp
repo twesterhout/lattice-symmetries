@@ -113,7 +113,6 @@ namespace {
             }
             ranges.push_back(element);
         }
-        if (first != last) { std::printf("remaining states %zi\n", last - first); }
         LATTICE_SYMMETRIES_CHECK(first == last, "not all states checked");
     }
 
@@ -134,9 +133,6 @@ namespace {
                 auto& r = ranges[i];
                 if (r.is_range() && r.size > cutoff) {
                     done = false;
-                    // std::printf(
-                    //     "splitting range: r.start=%zi, r.size=%zi, next_shift=%u, bits=%u\n",
-                    //     r.start, r.size, next_shift, bits);
                     LATTICE_SYMMETRIES_CHECK(next_shift <= 64, nullptr);
                     auto const next_states = states.subspan(static_cast<uint64_t>(r.start),
                                                             static_cast<uint64_t>(r.size));
@@ -146,19 +142,15 @@ namespace {
                     r.size  = 0;
                     generate_ranges_helper(next_states, bits, next_shift, ranges, offset);
                 }
-                // if (ranges.size() > 100 * (uint64_t{1} << bits)) { break; }
             }
-            // if (ranges.size() > 10000U) { break; }
             if (done) { break; }
-            std::printf("next iteration...\n");
         }
-        std::printf("ranges.size()=%zu\n", ranges.size());
 
-        std::unordered_map<uint64_t, uint64_t> histogram;
-        for (auto const& r : ranges) {
-            if (r.is_range()) { ++histogram[static_cast<uint64_t>(r.size)]; }
-        }
-        save_histogram("ranges_histogram_v2.dat", histogram);
+        // std::unordered_map<uint64_t, uint64_t> histogram;
+        // for (auto const& r : ranges) {
+        //     if (r.is_range()) { ++histogram[static_cast<uint64_t>(r.size)]; }
+        // }
+        // save_histogram("ranges_histogram_v2.dat", histogram);
         return ranges;
     }
 
@@ -168,8 +160,6 @@ namespace {
         LATTICE_SYMMETRIES_ASSERT(0 < bits && bits <= 32, "invalid bits");
         constexpr auto empty = std::make_pair(~uint64_t{0}, uint64_t{0});
         auto const     size  = uint64_t{1} << bits;
-
-        std::unordered_map<uint64_t, uint64_t> histogram;
 
         std::vector<std::pair<uint64_t, uint64_t>> ranges;
         ranges.reserve(size);
@@ -188,11 +178,14 @@ namespace {
                 }
             }
             ranges.push_back(element);
-            histogram[element.second] += uint64_t{1};
         }
         LATTICE_SYMMETRIES_CHECK(first == last, "not all states checked");
 
-        save_histogram("ranges_histogram.dat", histogram);
+        // std::unordered_map<uint64_t, uint64_t> histogram;
+        // for (auto const& r : ranges) {
+        //     ++histogram[r.second];
+        // }
+        // save_histogram("ranges_histogram.dat", histogram);
         return ranges;
     }
 
@@ -390,7 +383,7 @@ basis_cache_t::basis_cache_t(basis_base_t const& header, small_basis_t const& pa
     , _shift_v2{bits_v2 >= header.number_spins ? 0U : (header.number_spins - bits_v2)}
     , _states{_unsafe_states.empty() ? concatenate(generate_states(header, payload))
                                      : std::move(_unsafe_states)}
-    , _ranges{generate_ranges(_states, bits, _shift)}
+    , _ranges{} // generate_ranges(_states, bits, _shift)}
     , _ranges_v2{generate_ranges_v2(_states, bits_v2, _shift_v2)}
 {}
 
@@ -405,14 +398,12 @@ auto basis_cache_t::index_v2(uint64_t const x) const noexcept -> outcome::result
     auto        shift = _shift_v2;
     auto const* r     = _ranges_v2.data() + (x >> shift);
     while (!r->is_range()) {
-        // std::printf("in while: r->start=%zi, r->size=%zi\n", r->start, r->size);
         shift -= bits_v2;
         r = _ranges_v2.data() + (-r->start) + ((x >> shift) & mask);
     }
     auto const* first = _states.data() + r->start;
     auto const* last  = first + r->size;
-    // std::printf("r->start=%zi, r->size=%zi\n", r->start, r->size);
-    auto const* i = search_sorted(first, last, x);
+    auto const* i     = search_sorted(first, last, x);
     if (i == last) { return outcome::failure(LS_NOT_A_REPRESENTATIVE); }
     return static_cast<uint64_t>(i - _states.data());
 }
