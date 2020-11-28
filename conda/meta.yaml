@@ -8,6 +8,9 @@ source:
   # git_url: https://github.com/twesterhout/nqs-playground
   # git_rev: develop
   path: ../
+
+build:
+  number: 0
  
 requirements:
   build:
