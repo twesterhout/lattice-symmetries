@@ -120,7 +120,7 @@ namespace {
     auto generate_ranges_v2(tcb::span<uint64_t const> states, unsigned const bits,
                             unsigned const shift) -> std::vector<range_node_t>
     {
-        constexpr auto            cutoff = 128U;
+        constexpr auto            cutoff = 512U;
         std::vector<range_node_t> ranges;
         generate_ranges_helper(states, bits, shift, ranges, 0);
 
@@ -134,9 +134,9 @@ namespace {
                 auto& r = ranges[i];
                 if (r.is_range() && r.size > cutoff) {
                     done = false;
-                    std::printf(
-                        "splitting range: r.start=%zi, r.size=%zi, next_shift=%u, bits=%u\n",
-                        r.start, r.size, next_shift, bits);
+                    // std::printf(
+                    //     "splitting range: r.start=%zi, r.size=%zi, next_shift=%u, bits=%u\n",
+                    //     r.start, r.size, next_shift, bits);
                     LATTICE_SYMMETRIES_CHECK(next_shift <= 64, nullptr);
                     auto const next_states = states.subspan(static_cast<uint64_t>(r.start),
                                                             static_cast<uint64_t>(r.size));

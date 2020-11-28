@@ -58,8 +58,8 @@ struct range_node_t {
 
 struct basis_cache_t {
   private:
-    static constexpr auto bits    = 16U;
-    static constexpr auto bits_v2 = 4U;
+    static constexpr auto bits    = 22U;
+    static constexpr auto bits_v2 = 8U;
 
     unsigned                                   _shift;
     unsigned                                   _shift_v2;

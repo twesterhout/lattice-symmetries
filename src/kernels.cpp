@@ -98,32 +98,42 @@ namespace detail {
     auto search_sorted_arch(uint64_t const* first, uint64_t const* last,
                             uint64_t const key) noexcept -> uint64_t const*
     {
-        constexpr auto cutoff_size = 16;
+        constexpr auto cutoff_size = 32;
         constexpr auto vector_size = vcl::Vec8uq::size();
         static_assert(cutoff_size >= 2 * vector_size);
         auto const key_v = vcl::Vec8uq{key};
         auto       size  = last - first;
-        if (size <= 0) { return last; }
+        auto const original_size = size;
+        if (LATTICE_SYMMETRIES_UNLIKELY(size <= 0)) { return last; }
         while (size > cutoff_size) {
             auto const half = size / 2;
             auto const x    = first[half];
             if (x == key) { return first + half; }
             if (x < key) {
                 first += half + 1;
+                size -= half + 1;
+                // LATTICE_SYMMETRIES_CHECK(first + vector_size <= last, "");
                 auto const mask = vcl::to_bits(vcl::Vec8uq{}.load(first) == key_v);
                 if (mask != 0) { return first + __builtin_ctz(mask); }
             }
             else {
+                // LATTICE_SYMMETRIES_CHECK(half >= vector_size, "");
                 size            = half - vector_size;
+                // if (first + size + vector_size > last) {
+                //     std::printf("first=%p, size=%zi, original_size=%zi, vector_size=%i, last=%p\n", first, size, original_size, vector_size, last);
+                // }
+                // LATTICE_SYMMETRIES_CHECK(first + size + vector_size <= last, "");
                 auto const mask = vcl::to_bits(vcl::Vec8uq{}.load(first + size) == key_v);
                 if (mask != 0) { return first + size + __builtin_ctz(mask); }
             }
         }
         for (; size >= vector_size; first += vector_size, size -= vector_size) {
+            LATTICE_SYMMETRIES_CHECK(first + vector_size <= last, "");
             auto const mask = vcl::to_bits(vcl::Vec8uq{}.load(first) == key_v);
             if (mask != 0) { return first + __builtin_ctz(mask); }
         }
         if (size > 0) {
+            LATTICE_SYMMETRIES_CHECK(first + size <= last, "");
             auto const mask = vcl::to_bits(vcl::Vec8uq{}.load_partial(size, first) == key_v);
             if (mask != 0) { return first + __builtin_ctz(mask); }
         }
@@ -388,7 +398,7 @@ auto search_sorted(uint64_t const* first, uint64_t const* last, uint64_t const k
     -> uint64_t const*
 {
     uint64_t const* r;
-    if constexpr (false) {
+    if constexpr (true) {
         if (__builtin_cpu_supports("avx2")) { r = detail::search_sorted_avx2(first, last, key); }
         else if (__builtin_cpu_supports("avx")) {
             r = detail::search_sorted_avx(first, last, key);
@@ -397,10 +407,11 @@ auto search_sorted(uint64_t const* first, uint64_t const* last, uint64_t const k
             r = detail::search_sorted_sse2(first, last, key);
         }
     }
-    else {
-        r = std::lower_bound(first, last, key);
-        if (r != last && *r != key) { r = last; }
-    }
+    // else {
+    // auto const* r2 = std::lower_bound(first, last, key);
+    // if (r2 != last && *r2 != key) { r2 = last; }
+    // LATTICE_SYMMETRIES_CHECK(r == r2, "");
+    // }
     return r;
 }
 #endif
