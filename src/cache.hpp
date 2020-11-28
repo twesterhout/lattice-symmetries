@@ -43,13 +43,29 @@ auto split_into_tasks(unsigned number_spins, std::optional<unsigned> hamming_wei
 //                      tcb::span<small_symmetry_t const> other, unsigned number_spins,
 //                      std::optional<unsigned> hamming_weight) -> std::vector<std::vector<uint64_t>>;
 
+struct range_node_t {
+    int64_t start;
+    int64_t size;
+
+    [[nodiscard]] constexpr auto is_range() const noexcept -> bool { return start >= 0; }
+    [[nodiscard]] constexpr auto is_pointer() const noexcept -> bool { return !is_range(); }
+
+    static constexpr auto make_empty() noexcept -> range_node_t
+    {
+        return range_node_t{std::numeric_limits<int64_t>::max(), int64_t{0}};
+    }
+};
+
 struct basis_cache_t {
   private:
-    static constexpr auto bits = 16U;
+    static constexpr auto bits    = 16U;
+    static constexpr auto bits_v2 = 4U;
 
     unsigned                                   _shift;
+    unsigned                                   _shift_v2;
     std::vector<uint64_t>                      _states;
     std::vector<std::pair<uint64_t, uint64_t>> _ranges;
+    std::vector<range_node_t>                  _ranges_v2;
 
   public:
     // basis_cache_t(tcb::span<batched_small_symmetry_t const> batched,
@@ -62,6 +78,7 @@ struct basis_cache_t {
 
     [[nodiscard]] auto states() const noexcept -> tcb::span<uint64_t const>;
     [[nodiscard]] auto number_states() const noexcept -> uint64_t;
+    [[nodiscard]] auto index_v2(uint64_t x) const noexcept -> outcome::result<uint64_t>;
     [[nodiscard]] auto index(uint64_t x) const noexcept -> outcome::result<uint64_t>;
 };
 
