@@ -355,12 +355,12 @@ auto apply_helper(ls_operator const& op, ls_bits512 const& spin, Callback callba
     auto                 repr = spin;
     std::complex<double> eigenvalue;
     double               norm; // NOLINT: norm is initialized by ls_get_state_info
-    ls_get_state_info(op.basis.get(), spin.words, repr.words, &eigenvalue, &norm);
+    ls_get_state_info(op.basis.get(), &spin, &repr, &eigenvalue, &norm);
     if (norm == 0.0) { return LS_INVALID_STATE; }
     auto const old_norm = norm;
     auto       diagonal = std::complex<double>{0.0, 0.0};
     auto const off_diag = [&](ls_bits512 const& x, std::complex<double> const& c) {
-        ls_get_state_info(op.basis.get(), x.words, repr.words, &eigenvalue, &norm);
+        ls_get_state_info(op.basis.get(), &x, &repr, &eigenvalue, &norm);
         if (norm > 0.0) {
             auto const status = callback(repr, c * norm / old_norm * eigenvalue);
             if (LATTICE_SYMMETRIES_UNLIKELY(status != LS_SUCCESS)) { return status; }

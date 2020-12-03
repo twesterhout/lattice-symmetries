@@ -251,29 +251,27 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_build(ls_spin_basis* basis
 namespace lattice_symmetries {
 namespace {
     struct get_state_info_visitor_t {
-        basis_base_t const&   header;
-        uint64_t const* const bits;
-        uint64_t* const       representative;
-        std::complex<double>& character;
-        double&               norm;
+        basis_base_t const&     header;
+        ls_bits512 const* const bits;
+        ls_bits512* const       representative;
+        std::complex<double>&   character;
+        double&                 norm;
 
         auto operator()(small_basis_t const& payload) const noexcept
         {
-            get_state_info(header, payload, *bits, *representative, character, norm);
+            get_state_info(header, payload, bits->words[0], representative->words[0], character,
+                           norm);
         }
         auto operator()(big_basis_t const& payload) const noexcept
         {
-            // We do need reinterpret_casts here
-            get_state_info(header, payload, *reinterpret_cast<ls_bits512 const*>(bits), // NOLINT
-                           *reinterpret_cast<ls_bits512*>(representative), character,
-                           norm); // NOLINT
+            get_state_info(header, payload, *bits, *representative, character, norm);
         }
     };
 } // namespace
 } // namespace lattice_symmetries
 
 extern "C" LATTICE_SYMMETRIES_EXPORT void
-ls_get_state_info(ls_spin_basis* basis, uint64_t const bits[], uint64_t representative[],
+ls_get_state_info(ls_spin_basis* basis, ls_bits512 const* bits, ls_bits512* representative,
                   void* character, double* norm) // NOLINT: nope, norm can't be const
 {
     auto& ch = *reinterpret_cast<std::complex<double>*>(character); // NOLINT

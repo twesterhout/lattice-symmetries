@@ -422,7 +422,7 @@ ls_error_code ls_build(ls_spin_basis* basis);
 /// \param character a pointer to `std::complex<double>` (`_Complex double` in C) where the
 ///                  character will be written to.
 /// \param norm where the norm of the orbit will be written to.
-void ls_get_state_info(ls_spin_basis* basis, uint64_t const bits[8], uint64_t representative[8],
+void ls_get_state_info(ls_spin_basis* basis, ls_bits512 const* bits, ls_bits512* representative,
                        void* character, double* norm);
 /// \brief Get index of a basis representative.
 ///
