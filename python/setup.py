@@ -1,8 +1,20 @@
 from setuptools import setup
+import os
+import re
+
+
+def get_version(package):
+    pwd = os.path.dirname(os.path.realpath(__file__))
+    with open(os.path.join(pwd, package, "__init__.py"), "r") as input:
+        result = re.search(r'__version__\s*=\s*[\'"]([^\'"]*)[\'"]', input.read())
+    if not result:
+        raise ValueError("failed to determine {} version".format(package))
+    return result.group(1)
+
 
 setup(
     name="lattice-symmetries",
-    version="0.2.0",
+    version=get_version("lattice_symmetries"),
     description="Easily work with quantum many-body bases taking all lattice symmetries into account",
     classifiers=[
         "Development Status :: 2 - Pre-Alpha",

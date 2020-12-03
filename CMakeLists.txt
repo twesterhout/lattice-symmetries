@@ -1,10 +1,19 @@
 cmake_minimum_required(VERSION 3.15)
 
+# Read version from __init__.py file
+file(STRINGS "${CMAKE_CURRENT_LIST_DIR}/python/lattice_symmetries/__init__.py" _init_py_contents)
+set(_version_regex "^__version__[ \t\r\n]*=[ \t\r\n]*['\"]([^'\"]*)['\"]")
+# Pick the correct line
+list(FILTER _init_py_contents INCLUDE REGEX "${_version_regex}")
+# Extract the version
+string(REGEX REPLACE ${_version_regex} "\\1" _version "${_init_py_contents}")
+
 project(
   LatticeSymmetries
-  VERSION 0.2.0
+  VERSION ${_version}
   LANGUAGES C CXX
 )
+
 
 #
 # Prevent building in the source directory
