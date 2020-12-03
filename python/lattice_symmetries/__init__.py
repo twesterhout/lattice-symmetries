@@ -37,7 +37,7 @@ import weakref
 from typing import List, Optional, Tuple
 import numpy as np
 
-__version__ = '0.2.1'
+__version__ = "0.2.1"
 
 # Enable import warnings
 warnings.filterwarnings("default", category=ImportWarning)
@@ -89,6 +89,8 @@ def __load_shared_library():
 
 _lib = __load_shared_library()
 
+ls_bits512 = c_uint64 * 8
+
 
 def __preprocess_library():
     # fmt: off
@@ -117,7 +119,7 @@ def __preprocess_library():
         ("ls_has_symmetries", [c_void_p], c_bool),
         ("ls_get_number_states", [c_void_p, POINTER(c_uint64)], c_int),
         ("ls_build", [c_void_p], c_int),
-        ("ls_get_state_info", [c_void_p, POINTER(c_uint64), POINTER(c_uint64), c_double * 2, POINTER(c_double)], None),
+        ("ls_get_state_info", [c_void_p, POINTER(ls_bits512), POINTER(ls_bits512), c_double * 2, POINTER(c_double)], None),
         ("ls_get_index", [c_void_p, POINTER(c_uint64), POINTER(c_uint64)], c_int),
         ("ls_get_states", [POINTER(c_void_p), c_void_p], c_int),
         ("ls_destroy_states", [c_void_p], None),
@@ -228,11 +230,6 @@ class Symmetry:
         return _lib.ls_get_sector(self._payload)
 
     @property
-    def flip(self) -> bool:
-        """Return whether symmetry applies spin inversion"""
-        return _lib.ls_get_flip(self._payload)
-
-    @property
     def phase(self) -> float:
         """Return phase of symmetry eigenvalue"""
         return _lib.ls_get_phase(self._payload)
@@ -297,26 +294,20 @@ def _create_spin_basis(group, number_spins, hamming_weight, spin_inversion) -> c
     return basis
 
 
-def _int_to_bits(x: int, is_big: bool) -> ctypes.Array:
+def _int_to_ls_bits512(x: int) -> ls_bits512:
     x = int(x)
-    if is_big:
-        bits = (c_uint64 * 8)()
-        for i in range(8):
-            bits[i] = x & 0xFFFFFFFFFFFFFFFF
-            x >>= 64
-    else:
-        bits = (c_uint64 * 1)(x)
+    bits = (c_uint64 * 8)()
+    for i in range(8):
+        bits[i] = x & 0xFFFFFFFFFFFFFFFF
+        x >>= 64
     return bits
 
 
-def _bits_to_int(bits: ctypes.Array) -> int:
-    if len(bits) > 1:
-        x = int(bits[7])
-        for i in range(6, -1, -1):
-            x <<= 64
-            x |= int(bits[i])
-    else:
-        x = int(bits[0])
+def _ls_bits512_to_int(bits: ls_bits512) -> int:
+    x = int(bits[7])
+    for i in range(6, -1, -1):
+        x <<= 64
+        x |= int(bits[i])
     return x
 
 
@@ -373,18 +364,17 @@ class SpinBasis:
         """For a spin configuration `bits` obtain its representative, corresponding
         group character, and orbit norm
         """
-        is_big = self.number_bits > 64
-        bits = _int_to_bits(bits, is_big)
-        representative = (c_uint64 * 8)() if is_big else (c_uint64 * 1)()
+        bits = _int_to_ls_bits512(bits)
+        representative = ls_bits512()
         character = (c_double * 2)()
         norm = c_double()
-        _lib.ls_get_state_info(self._payload, bits, representative, character, byref(norm))
-        return _bits_to_int(representative), complex(character[0], character[1]), norm.value
+        _lib.ls_get_state_info(self._payload, byref(bits), byref(representative), character, byref(norm))
+        return _ls_bits512_to_int(representative), complex(character[0], character[1]), norm.value
 
     def index(self, bits: int) -> int:
         """Obtain index of a representative in `self.states` array"""
         i = c_uint64()
-        _check_error(_lib.ls_get_index(self._payload, _int_to_bits(bits, False), byref(i)))
+        _check_error(_lib.ls_get_index(self._payload, byref(bits), byref(i)))
         return i.value
 
     @property
