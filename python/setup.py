@@ -29,6 +29,6 @@ setup(
     author_email="14264576+twesterhout@users.noreply.github.com",
     license="BSD3",
     packages=["lattice_symmetries"],
-    install_requires=["numpy"],
+    install_requires=["numpy", "scipy"],
     zip_safe=False,
 )
