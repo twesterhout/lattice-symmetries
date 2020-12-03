@@ -271,7 +271,7 @@ unsigned ls_get_periodicity(ls_symmetry const* symmetry);
 /// \param bits spin configuration. It is modified in-place. Size of \p bits array is at least
 ///             `ceil(number_spins / 64)`. `i`'th spin is determined as `(bits[i / 64] >> (i % 64)) & 0x1`.
 /// \see #ls_get_number_spins
-void ls_apply_symmetry(ls_symmetry const* symmetry, uint64_t bits[]);
+void ls_apply_symmetry(ls_symmetry const* symmetry, ls_bits512* bits);
 
 /// \brief Get number of spins in the system.
 ///

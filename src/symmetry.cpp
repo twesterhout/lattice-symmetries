@@ -306,28 +306,22 @@ ls_symmetry_get_number_spins(ls_symmetry const* symmetry)
 
 namespace lattice_symmetries {
 struct symmetry_apply_fn_t {
-    uint64_t* bits;
+    ls_bits512* bits;
 
     auto operator()(small_symmetry_t const& symmetry) const noexcept -> void
     {
-        bits[0] = symmetry.network(bits[0]);
+        bits->words[0] = symmetry.network(bits->words[0]);
     }
 
     auto operator()(big_symmetry_t const& symmetry) const noexcept -> void
     {
-        auto const n    = symmetry.network.width;
-        auto const size = (n + 63U) / 64U;
-        ls_bits512 buffer; // NOLINT: buffer is initialized on the next line
-        std::copy(bits, bits + size, static_cast<uint64_t*>(buffer.words));
-        symmetry.network(buffer);
-        std::copy(static_cast<uint64_t const*>(buffer.words),
-                  static_cast<uint64_t const*>(buffer.words) + size, bits);
+        symmetry.network(*bits);
     }
 };
 } // namespace lattice_symmetries
 
 extern "C" LATTICE_SYMMETRIES_EXPORT void ls_apply_symmetry(ls_symmetry const* symmetry,
-                                                            uint64_t           bits[])
+                                                            ls_bits512*        bits)
 {
     return std::visit(lattice_symmetries::symmetry_apply_fn_t{bits}, symmetry->payload);
 }
