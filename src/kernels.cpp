@@ -101,8 +101,8 @@ namespace detail {
         constexpr auto cutoff_size = 32;
         constexpr auto vector_size = vcl::Vec8uq::size();
         static_assert(cutoff_size >= 2 * vector_size);
-        auto const key_v = vcl::Vec8uq{key};
-        auto       size  = last - first;
+        auto const key_v         = vcl::Vec8uq{key};
+        auto       size          = last - first;
         auto const original_size = size;
         if (LATTICE_SYMMETRIES_UNLIKELY(size <= 0)) { return last; }
         while (size > cutoff_size) {
@@ -118,7 +118,7 @@ namespace detail {
             }
             else {
                 // LATTICE_SYMMETRIES_CHECK(half >= vector_size, "");
-                size            = half - vector_size;
+                size = half - vector_size;
                 // if (first + size + vector_size > last) {
                 //     std::printf("first=%p, size=%zi, original_size=%zi, vector_size=%i, last=%p\n", first, size, original_size, vector_size, last);
                 // }
@@ -345,7 +345,7 @@ namespace detail {
     }
 #    endif
 
-    auto benes_forward_512_simd(bits512& x, bits512 const masks[], unsigned size,
+    auto benes_forward_512_simd(ls_bits512& x, ls_bits512 const masks[], unsigned size,
                                 uint16_t const deltas[]) noexcept -> void
     {
         __m128i x0, x1, x2, x3;                                              // NOLINT
@@ -385,7 +385,7 @@ auto benes_forward(uint64_t x[batch_size], uint64_t const (*masks)[batch_size], 
     }
 }
 
-auto benes_forward(bits512& x, bits512 const masks[], unsigned size,
+auto benes_forward(ls_bits512& x, ls_bits512 const masks[], unsigned size,
                    uint16_t const deltas[]) noexcept -> void
 {
     if (__builtin_cpu_supports("avx")) { detail::benes_forward_512_avx(x, masks, size, deltas); }

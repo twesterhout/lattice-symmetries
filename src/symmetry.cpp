@@ -170,8 +170,8 @@ auto is_representative(tcb::span<batched_small_symmetry_t const> const batched_s
 #endif
 
 #if 0
-auto get_state_info(std::vector<big_symmetry_t> const& symmetries, bits512 const& bits,
-                    bits512& representative, std::complex<double>& character, double& norm) noexcept
+auto get_state_info(std::vector<big_symmetry_t> const& symmetries, ls_bits512 const& bits,
+                    ls_bits512& representative, std::complex<double>& character, double& norm) noexcept
     -> void
 {
     if (symmetries.empty()) {
@@ -180,7 +180,7 @@ auto get_state_info(std::vector<big_symmetry_t> const& symmetries, bits512 const
         norm           = 1.0;
         return;
     }
-    bits512 buffer; // NOLINT: buffer is initialized inside the loop before it is used
+    ls_bits512 buffer; // NOLINT: buffer is initialized inside the loop before it is used
     auto    r = bits;
     auto    n = 0.0;
     auto    e = std::complex<double>{1.0};
@@ -317,7 +317,7 @@ struct symmetry_apply_fn_t {
     {
         auto const n    = symmetry.network.width;
         auto const size = (n + 63U) / 64U;
-        bits512    buffer; // NOLINT: buffer is initialized on the next line
+        ls_bits512 buffer; // NOLINT: buffer is initialized on the next line
         std::copy(bits, bits + size, static_cast<uint64_t*>(buffer.words));
         symmetry.network(buffer);
         std::copy(static_cast<uint64_t const*>(buffer.words),

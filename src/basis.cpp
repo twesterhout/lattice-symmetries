@@ -137,7 +137,7 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_spin_basis(ls_spin_
                                                                         int const hamming_weight,
                                                                         int const spin_inversion)
 {
-    // NOLINTNEXTLINE: 512 is the max supported system size (i.e. number of bits in bits512)
+    // NOLINTNEXTLINE: 512 is the max supported system size (i.e. number of bits in ls_bits512)
     if (number_spins == 0 || number_spins > 512) { return LS_INVALID_NUMBER_SPINS; }
     if (auto n = get_number_spins(*group); n.has_value() && number_spins != *n) {
         return LS_INVALID_NUMBER_SPINS;
@@ -191,7 +191,7 @@ extern "C" LATTICE_SYMMETRIES_EXPORT unsigned ls_get_number_spins(ls_spin_basis 
 extern "C" LATTICE_SYMMETRIES_EXPORT unsigned ls_get_number_bits(ls_spin_basis const* basis)
 {
     if (std::holds_alternative<big_basis_t>(basis->payload)) {
-        return 512U; // NOLINT: number of bits in bits512
+        return 512U; // NOLINT: number of bits in ls_bits512
     }
     return 64U; // NOLINT: number of bits in uint64_t
 }
@@ -264,8 +264,9 @@ namespace {
         auto operator()(big_basis_t const& payload) const noexcept
         {
             // We do need reinterpret_casts here
-            get_state_info(header, payload, *reinterpret_cast<bits512 const*>(bits),      // NOLINT
-                           *reinterpret_cast<bits512*>(representative), character, norm); // NOLINT
+            get_state_info(header, payload, *reinterpret_cast<ls_bits512 const*>(bits), // NOLINT
+                           *reinterpret_cast<ls_bits512*>(representative), character,
+                           norm); // NOLINT
         }
     };
 } // namespace

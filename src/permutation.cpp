@@ -27,6 +27,7 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "permutation.hpp"
+#include "bits.hpp"
 #include "error_handling.hpp"
 #include "macros.hpp"
 #include <algorithm>
@@ -60,9 +61,9 @@ struct solver_t {
     };
 
     struct scratch_t {
-        bits512                   visited;
-        bits512                   source_mask;
-        bits512                   target_mask;
+        ls_bits512                visited;
+        ls_bits512                source_mask;
+        ls_bits512                target_mask;
         std::vector<index_type_t> types;
         int                       delta;
 
@@ -172,7 +173,7 @@ struct solver_t {
     [[nodiscard]] auto _swap_in(uint16_t const index, index_type_t const type,
                                 tcb::span<uint16_t> const perm,
                                 tcb::span<uint16_t> const inverse_perm,
-                                bits512&                  mask) const noexcept -> status_t
+                                ls_bits512&               mask) const noexcept -> status_t
     {
         auto const other = other_index(index, type);
         if (other >= size()) { return status_t::swap_impossible; }
@@ -246,7 +247,7 @@ struct solver_t {
 
   public:
     auto solve_stage(tcb::span<std::pair<uint16_t, uint16_t> const> const pairs,
-                     bits512& source_mask, bits512& target_mask) noexcept -> status_t
+                     ls_bits512& source_mask, ls_bits512& target_mask) noexcept -> status_t
     {
         _cxt.reset(pairs);
         auto backup = _info;
@@ -280,8 +281,8 @@ struct solver_t {
             return fat_benes_network_t{{}, {}, 0U};
         }
 
-        std::vector<bits512> left;
-        std::vector<bits512> right;
+        std::vector<ls_bits512> left;
+        std::vector<ls_bits512> right;
         left.reserve(stages.size());
         right.reserve(stages.size());
         for (auto const delta : stages) {
@@ -325,7 +326,7 @@ template <class Int>
 auto compile_helper(tcb::span<Int const> const permutation) -> outcome::result<fat_benes_network_t>
 {
     if (!is_permutation(permutation)) { return LS_INVALID_PERMUTATION; }
-    // NOLINTNEXTLINE: 512 is the number of bits in bits512, not a magic constant
+    // NOLINTNEXTLINE: 512 is the number of bits in ls_bits512, not a magic constant
     if (permutation.size() > 512U) { return LS_PERMUTATION_TOO_LONG; }
     if (permutation.empty()) { return fat_benes_network_t{{}, {}, 0U}; }
     auto const working_size = next_pow_of_2(permutation.size());

@@ -24,16 +24,19 @@ struct is_complex<std::complex<T>, std::enable_if_t<std::is_floating_point<T>::v
     : std::true_type {};
 template <class T> inline constexpr bool is_complex_v = is_complex<T>::value;
 
-constexpr auto to_bits(bits512 const& x) noexcept -> uint64_t const*
+constexpr auto to_bits(ls_bits512 const& x) noexcept -> uint64_t const*
 {
     return static_cast<uint64_t const*>(x.words);
 }
-constexpr auto to_bits(bits512& x) noexcept -> uint64_t* { return static_cast<uint64_t*>(x.words); }
-constexpr auto to_bits(bits64 const& x) noexcept -> uint64_t const* { return &x; }
-constexpr auto to_bits(bits64& x) noexcept -> uint64_t* { return &x; }
+constexpr auto to_bits(ls_bits512& x) noexcept -> uint64_t*
+{
+    return static_cast<uint64_t*>(x.words);
+}
+constexpr auto to_bits(ls_bits64 const& x) noexcept -> uint64_t const* { return &x; }
+constexpr auto to_bits(ls_bits64& x) noexcept -> uint64_t* { return &x; }
 
-constexpr auto set_bits(bits512& x, bits512 const& y) noexcept -> void { x = y; }
-constexpr auto set_bits(bits512& x, uint64_t const y) noexcept -> void
+constexpr auto set_bits(ls_bits512& x, ls_bits512 const& y) noexcept -> void { x = y; }
+constexpr auto set_bits(ls_bits512& x, uint64_t const y) noexcept -> void
 {
     set_zero(x);
     x.words[0] = y;
@@ -95,8 +98,8 @@ template <unsigned NumberSpins> struct interaction_t {
 
 namespace {
     template <std::size_t N>
-    constexpr auto gather_bits(bits512 const& bits, std::array<uint16_t, N> const& indices) noexcept
-        -> unsigned
+    constexpr auto gather_bits(ls_bits512 const&              bits,
+                               std::array<uint16_t, N> const& indices) noexcept -> unsigned
     {
         // ============================= IMPORTANT ==============================
         // The order is REALLY important here. This is done to adhere to the
@@ -122,7 +125,7 @@ namespace {
     }
 
     template <std::size_t N>
-    auto scatter_bits(bits512& bits, unsigned r, std::array<uint16_t, N> const& indices) -> void
+    auto scatter_bits(ls_bits512& bits, unsigned r, std::array<uint16_t, N> const& indices) -> void
     {
         for (auto i = N; i-- > 0;) {
             LATTICE_SYMMETRIES_ASSERT(indices[i] < 64, "index out of bounds");
@@ -132,12 +135,12 @@ namespace {
     }
 
     template <class OffDiag> struct interaction_apply_fn_t {
-        bits512 const&        x;
+        ls_bits512 const&     x;
         std::complex<double>& diagonal;
         OffDiag               off_diag;
 
         static constexpr bool is_noexcept = noexcept(std::declval<OffDiag const&>()(
-            std::declval<bits512 const&>(), std::declval<std::complex<double> const&>()));
+            std::declval<ls_bits512 const&>(), std::declval<std::complex<double> const&>()));
 
         template <unsigned N>
         auto operator()(interaction_t<N> const& self) const noexcept(is_noexcept) -> ls_error_code
@@ -188,7 +191,7 @@ struct ls_interaction {
 namespace lattice_symmetries {
 namespace {
     template <class OffDiag>
-    auto apply(ls_interaction const& interaction, bits512 const& spin,
+    auto apply(ls_interaction const& interaction, ls_bits512 const& spin,
                std::complex<double>& diagonal,
                OffDiag off_diag) noexcept(interaction_apply_fn_t<OffDiag>::is_noexcept)
         -> ls_error_code
@@ -344,9 +347,10 @@ extern "C" LATTICE_SYMMETRIES_EXPORT bool ls_operator_is_real(ls_operator const*
 namespace lattice_symmetries {
 
 template <class Callback>
-auto apply_helper(ls_operator const& op, bits512 const& spin, Callback callback) noexcept(noexcept(
-    std::declval<Callback&>()(std::declval<bits512 const&>(),
-                              std::declval<std::complex<double> const&>()))) -> ls_error_code
+auto apply_helper(ls_operator const& op, ls_bits512 const& spin, Callback callback) noexcept(
+    noexcept(std::declval<Callback&>()(std::declval<ls_bits512 const&>(),
+                                       std::declval<std::complex<double> const&>())))
+    -> ls_error_code
 {
     auto                 repr = spin;
     std::complex<double> eigenvalue;
@@ -355,7 +359,7 @@ auto apply_helper(ls_operator const& op, bits512 const& spin, Callback callback)
     if (norm == 0.0) { return LS_INVALID_STATE; }
     auto const old_norm = norm;
     auto       diagonal = std::complex<double>{0.0, 0.0};
-    auto const off_diag = [&](bits512 const& x, std::complex<double> const& c) {
+    auto const off_diag = [&](ls_bits512 const& x, std::complex<double> const& c) {
         ls_get_state_info(op.basis.get(), x.words, repr.words, &eigenvalue, &norm);
         if (norm > 0.0) {
             auto const status = callback(repr, c * norm / old_norm * eigenvalue);
@@ -381,7 +385,7 @@ extern "C" ls_error_code ls_operator_apply(ls_operator const* op, uint64_t const
     using namespace lattice_symmetries;
     auto const number_spins = ls_get_number_spins(op->basis.get());
     auto const number_words = (number_spins + 64U - 1U) / 64U;
-    bits512    spin; // NOLINT: spin is initialized in the following loops
+    ls_bits512 spin; // NOLINT: spin is initialized in the following loops
     auto       i = 0U;
     for (; i < number_words; ++i) {
         spin.words[i] = bits[i];
@@ -389,7 +393,7 @@ extern "C" ls_error_code ls_operator_apply(ls_operator const* op, uint64_t const
     for (; i < std::size(spin.words); ++i) {
         spin.words[i] = 0U;
     }
-    return apply_helper(*op, spin, [func, cxt](bits512 const& x, std::complex<double> const& c) {
+    return apply_helper(*op, spin, [func, cxt](ls_bits512 const& x, std::complex<double> const& c) {
         return (*func)(x.words, &c, cxt);
     });
 }
@@ -498,8 +502,8 @@ auto matmat_helper(ls_operator const& op, uint64_t const size, uint64_t const bl
 #pragma omp atomic read
         local_status = status;
         if (LATTICE_SYMMETRIES_UNLIKELY(local_status != LS_SUCCESS)) { continue; }
-        // Load the representative into bits512
-        bits512 local_state; // NOLINT: initialized by set_zero
+        // Load the representative into ls_bits512
+        ls_bits512 local_state; // NOLINT: initialized by set_zero
         set_zero(local_state);
         local_state.words[0] = representatives[i];
         // Reset the accumulator
@@ -572,8 +576,8 @@ auto expectation_helper(ls_operator const& op, uint64_t const size, uint64_t con
 #pragma omp atomic read
         local_status = status;
         if (LATTICE_SYMMETRIES_UNLIKELY(local_status != LS_SUCCESS)) { continue; }
-        // Load the representative into bits512
-        bits512 local_state; // NOLINT: initialized by set_zero
+        // Load the representative into ls_bits512
+        ls_bits512 local_state; // NOLINT: initialized by set_zero
         set_zero(local_state);
         local_state.words[0] = representatives[i];
         // Reset the accumulator

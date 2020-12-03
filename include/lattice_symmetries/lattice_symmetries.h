@@ -189,6 +189,12 @@ void ls_destroy_string(char const* message);
 /// @}
 // end of errors group
 
+typedef uint64_t ls_bits64;
+
+typedef struct _ls_bits512 {
+    ls_bits64 words[8];
+} ls_bits512;
+
 /// \defgroup symmetries Symmetries
 /// \brief Working with individual symmetries
 ///

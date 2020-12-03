@@ -28,7 +28,7 @@
 
 #pragma once
 
-#include "bits.hpp"
+#include "lattice_symmetries/lattice_symmetries.h"
 #include "permutation.hpp"
 #include <array>
 
@@ -55,13 +55,13 @@ struct small_network_t {
 struct alignas(32) big_network_t {
     static constexpr auto max_depth = 17U;
 
-    bits512  masks[max_depth];
-    uint16_t deltas[max_depth];
-    uint16_t depth;
-    uint16_t width;
+    ls_bits512 masks[max_depth];
+    uint16_t   deltas[max_depth];
+    uint16_t   depth;
+    uint16_t   width;
 
     explicit big_network_t(fat_benes_network_t const& fat) noexcept;
-    auto operator()(bits512& bits) const noexcept -> void;
+    auto operator()(ls_bits512& bits) const noexcept -> void;
     auto operator()(tcb::span<unsigned> bits) const noexcept -> void;
 };
 

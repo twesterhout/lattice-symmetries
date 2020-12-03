@@ -27,17 +27,17 @@ namespace {
     //     0000....0011....1111
     //               ~~~~~~~~~~
     //                   n
-    auto get_flip_mask_64(unsigned const n) noexcept -> bits64
+    auto get_flip_mask_64(unsigned const n) noexcept -> ls_bits64
     {
         // Play nice and do not shift by 64 bits
-        // NOLINTNEXTLINE: 64 is the number of bits in bits64
+        // NOLINTNEXTLINE: 64 is the number of bits in ls_bits64
         return n == 0U ? uint64_t{0} : ((~uint64_t{0}) >> (64U - n));
     }
 
-    auto get_flip_mask_512(unsigned n) noexcept -> bits512
+    auto get_flip_mask_512(unsigned n) noexcept -> ls_bits512
     {
-        bits512 mask;
-        auto    i = 0U;
+        ls_bits512 mask;
+        auto       i = 0U;
         // NOLINTNEXTLINE: 64 is the number of bits in uint64_t
         for (; n >= 64U; ++i, n -= 64) {
             mask.words[i] = ~uint64_t{0};
@@ -53,7 +53,7 @@ namespace {
     }
 
     LATTICE_SYMMETRIES_FORCEINLINE
-    auto operator^=(bits512& x, bits512 const& y) noexcept -> bits512&
+    auto operator^=(ls_bits512& x, ls_bits512 const& y) noexcept -> ls_bits512&
     {
         for (auto i = 0; i < static_cast<int>(std::size(x.words)); ++i) {
             x.words[i] ^= y.words[i];
@@ -287,7 +287,7 @@ namespace detail {
     }
 
     auto get_state_info_arch(basis_base_t const& basis_header, big_basis_t const& basis_body,
-                             bits512 const& bits, bits512& representative,
+                             ls_bits512 const& bits, ls_bits512& representative,
                              std::complex<double>& character, double& norm) noexcept -> void
     {
         if (!basis_header.has_symmetries) {
@@ -299,10 +299,10 @@ namespace detail {
         auto const flip_mask  = get_flip_mask_512(basis_header.number_spins);
         auto const flip_coeff = static_cast<double>(basis_header.spin_inversion);
 
-        bits512 buffer; // NOLINT: buffer is initialized inside the loop before it is used
-        auto    r = bits;
-        auto    n = 0.0;
-        auto    e = std::complex<double>{1.0};
+        ls_bits512 buffer; // NOLINT: buffer is initialized inside the loop before it is used
+        auto       r = bits;
+        auto       n = 0.0;
+        auto       e = std::complex<double>{1.0};
 
         for (auto const& symmetry : basis_body.symmetries) {
             buffer = bits;
@@ -375,8 +375,8 @@ auto is_representative(basis_base_t const& basis_header, small_basis_t const& ba
 }
 
 auto get_state_info(basis_base_t const& basis_header, big_basis_t const& basis_body,
-                    bits512 const& bits, bits512& representative, std::complex<double>& character,
-                    double& norm) noexcept -> void
+                    ls_bits512 const& bits, ls_bits512& representative,
+                    std::complex<double>& character, double& norm) noexcept -> void
 {
     if (__builtin_cpu_supports("avx2")) {
         detail::get_state_info_avx2(basis_header, basis_body, bits, representative, character,

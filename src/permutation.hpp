@@ -28,7 +28,8 @@
 
 #pragma once
 
-#include "bits.hpp"
+#include "error_handling.hpp"
+#include "lattice_symmetries/lattice_symmetries.h"
 #include <outcome.hpp>
 #include <span.hpp>
 #include <vector>
@@ -39,9 +40,9 @@ namespace lattice_symmetries {
 ///
 /// This is the product of compilation of permutations.
 struct fat_benes_network_t {
-    std::vector<bits512>  masks;
-    std::vector<unsigned> deltas;
-    unsigned              size;
+    std::vector<ls_bits512> masks;
+    std::vector<unsigned>   deltas;
+    unsigned                size;
 };
 
 /// Returns true when `xs` is a permutation of `{0, ..., xs.size() - 1}`.

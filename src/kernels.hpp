@@ -42,7 +42,7 @@ static_assert(2 * sizeof(__m256i) == batch_size * sizeof(uint64_t));
 auto benes_forward(uint64_t x[batch_size], uint64_t const (*masks)[batch_size], unsigned size,
                    uint16_t const deltas[]) noexcept -> void;
 
-auto benes_forward(bits512& x, bits512 const masks[], unsigned size,
+auto benes_forward(ls_bits512& x, ls_bits512 const masks[], unsigned size,
                    uint16_t const deltas[]) noexcept -> void;
 
 auto search_sorted(uint64_t const* first, uint64_t const* last, uint64_t key) noexcept
@@ -63,11 +63,11 @@ namespace detail {
     auto benes_forward_avx2(void* x, uint64_t const (*masks)[batch_size], unsigned size,
                             uint16_t const deltas[]) noexcept -> void;
 
-    auto benes_forward_512_sse2(bits512& x, bits512 const masks[], unsigned size,
+    auto benes_forward_512_sse2(ls_bits512& x, ls_bits512 const masks[], unsigned size,
                                 uint16_t const deltas[]) noexcept -> void;
-    auto benes_forward_512_avx(bits512& x, bits512 const masks[], unsigned size,
+    auto benes_forward_512_avx(ls_bits512& x, ls_bits512 const masks[], unsigned size,
                                uint16_t const deltas[]) noexcept -> void;
-    auto benes_forward_512_avx2(bits512& x, bits512 const masks[], unsigned size,
+    auto benes_forward_512_avx2(ls_bits512& x, ls_bits512 const masks[], unsigned size,
                                 uint16_t const deltas[]) noexcept -> void;
 
     auto search_sorted_avx2(uint64_t const* first, uint64_t const* last, uint64_t key) noexcept

@@ -12,14 +12,14 @@ namespace {
     //     0000....0011....1111
     //               ~~~~~~~~~~
     //                   n
-    auto init_flip_mask(bits64& mask, unsigned const n) noexcept -> void
+    auto init_flip_mask(ls_bits64& mask, unsigned const n) noexcept -> void
     {
         // Play nice and do not shift by 64 bits
-        // NOLINTNEXTLINE: 64 is the number of bits in bits64
+        // NOLINTNEXTLINE: 64 is the number of bits in ls_bits64
         mask = n == 0U ? uint64_t{0} : ((~uint64_t{0}) >> (64U - n));
     }
 
-    auto init_flip_mask(bits512& mask, unsigned n) noexcept -> void
+    auto init_flip_mask(ls_bits512& mask, unsigned n) noexcept -> void
     {
         auto i = 0U;
         // NOLINTNEXTLINE: 64 is the number of bits in uint64_t
@@ -111,9 +111,9 @@ auto small_network_t::operator()(uint64_t bits) const noexcept -> uint64_t
     return bits;
 }
 
-auto big_network_t::operator()(bits512& bits) const noexcept -> void
+auto big_network_t::operator()(ls_bits512& bits) const noexcept -> void
 {
-    benes_forward(bits, static_cast<bits512 const*>(masks), depth,
+    benes_forward(bits, static_cast<ls_bits512 const*>(masks), depth,
                   static_cast<uint16_t const*>(deltas));
 }
 
