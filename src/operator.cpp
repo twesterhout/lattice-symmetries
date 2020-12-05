@@ -379,23 +379,14 @@ auto apply_helper(ls_operator const& op, ls_bits512 const& spin, Callback callba
 
 } // namespace lattice_symmetries
 
-extern "C" ls_error_code ls_operator_apply(ls_operator const* op, uint64_t const* bits,
+extern "C" ls_error_code ls_operator_apply(ls_operator const* op, ls_bits512 const* bits,
                                            ls_callback func, void* cxt)
 {
     using namespace lattice_symmetries;
-    auto const number_spins = ls_get_number_spins(op->basis.get());
-    auto const number_words = (number_spins + 64U - 1U) / 64U;
-    ls_bits512 spin; // NOLINT: spin is initialized in the following loops
-    auto       i = 0U;
-    for (; i < number_words; ++i) {
-        spin.words[i] = bits[i];
-    }
-    for (; i < std::size(spin.words); ++i) {
-        spin.words[i] = 0U;
-    }
-    return apply_helper(*op, spin, [func, cxt](ls_bits512 const& x, std::complex<double> const& c) {
-        return (*func)(x.words, &c, cxt);
-    });
+    return apply_helper(*op, *bits,
+                        [func, cxt](ls_bits512 const& x, std::complex<double> const& c) {
+                            return (*func)(&x, &c, cxt);
+                        });
 }
 
 namespace lattice_symmetries {
@@ -517,10 +508,10 @@ auto matmat_helper(ls_operator const& op, uint64_t const size, uint64_t const bl
             uint64_t const             x_stride;
         };
         auto cxt  = cxt_t{block_acc[thread_num], op.basis.get(), x, x_stride};
-        auto func = [](uint64_t const* spin, void const* coeff, void* raw_cxt) noexcept {
+        auto func = [](ls_bits512 const* spin, void const* coeff, void* raw_cxt) noexcept {
             auto const& _cxt = *static_cast<cxt_t*>(raw_cxt);
             uint64_t    index; // NOLINT: index is initialized by ls_get_index
-            auto const  _status = ls_get_index(_cxt.basis, spin, &index);
+            auto const  _status = ls_get_index(_cxt.basis, spin->words[0], &index);
             if (LATTICE_SYMMETRIES_LIKELY(_status == LS_SUCCESS)) {
                 for (auto j = uint64_t{0}; j < _cxt.acc.size(); ++j) {
                     if constexpr (is_complex_v<T>) {
@@ -536,7 +527,7 @@ auto matmat_helper(ls_operator const& op, uint64_t const size, uint64_t const bl
             return _status;
         };
         // Apply the operator to local_state
-        local_status = ls_operator_apply(&op, local_state.words, func, &cxt);
+        local_status = ls_operator_apply(&op, &local_state, func, &cxt);
         // Store the results
         if (LATTICE_SYMMETRIES_UNLIKELY(local_status != LS_SUCCESS)) {
 #pragma omp atomic write
@@ -591,10 +582,10 @@ auto expectation_helper(ls_operator const& op, uint64_t const size, uint64_t con
             uint64_t const             x_stride;
         };
         auto cxt  = cxt_t{block_acc[thread_num], op.basis.get(), x, x_stride};
-        auto func = [](uint64_t const* spin, void const* coeff, void* raw_cxt) noexcept {
+        auto func = [](ls_bits512 const* spin, void const* coeff, void* raw_cxt) noexcept {
             auto const& _cxt = *static_cast<cxt_t*>(raw_cxt);
             uint64_t    index; // NOLINT: index is initialized by ls_get_index
-            auto const  _status = ls_get_index(_cxt.basis, spin, &index);
+            auto const  _status = ls_get_index(_cxt.basis, spin->words[0], &index);
             if (LATTICE_SYMMETRIES_LIKELY(_status == LS_SUCCESS)) {
                 for (auto j = uint64_t{0}; j < _cxt.acc.size(); ++j) {
                     using T_ = typename block_acc_t<T>::acc_t;
@@ -605,7 +596,7 @@ auto expectation_helper(ls_operator const& op, uint64_t const size, uint64_t con
             return _status;
         };
         // Apply the operator to local_state
-        local_status = ls_operator_apply(&op, local_state.words, func, &cxt);
+        local_status = ls_operator_apply(&op, &local_state, func, &cxt);
         if (LATTICE_SYMMETRIES_UNLIKELY(local_status != LS_SUCCESS)) {
 #pragma omp atomic write
             status = local_status;

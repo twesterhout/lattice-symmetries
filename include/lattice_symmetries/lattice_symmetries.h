@@ -434,7 +434,7 @@ void ls_get_state_info(ls_spin_basis* basis, ls_bits512 const* bits, ls_bits512*
 /// \param basis pointer to Hilbert space basis. Must not be `nullptr`.
 /// \param bits basis representative. Since this function only works for small systems, \p bits has
 ///             length 1.
-ls_error_code ls_get_index(ls_spin_basis const* basis, uint64_t const bits[1], uint64_t* index);
+ls_error_code ls_get_index(ls_spin_basis const* basis, uint64_t bits, uint64_t* index);
 
 // NOLINTNEXTLINE(modernize-use-trailing-return-type)
 ls_error_code ls_get_states(ls_states** ptr, ls_spin_basis const* basis);
@@ -486,9 +486,9 @@ typedef enum {
     LS_COMPLEX128,
 } ls_datatype;
 
-typedef ls_error_code (*ls_callback)(uint64_t const* bits, void const* coeff, void* cxt);
+typedef ls_error_code (*ls_callback)(ls_bits512 const* bits, void const* coeff, void* cxt);
 
-ls_error_code ls_operator_apply(ls_operator const* op, uint64_t const* bits, ls_callback func,
+ls_error_code ls_operator_apply(ls_operator const* op, ls_bits512 const* bits, ls_callback func,
                                 void* cxt);
 
 ls_error_code ls_operator_matmat(ls_operator const* op, ls_datatype dtype, uint64_t size,
