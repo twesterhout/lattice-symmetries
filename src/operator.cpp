@@ -379,8 +379,9 @@ auto apply_helper(ls_operator const& op, ls_bits512 const& spin, Callback callba
 
 } // namespace lattice_symmetries
 
-extern "C" ls_error_code ls_operator_apply(ls_operator const* op, ls_bits512 const* bits,
-                                           ls_callback func, void* cxt)
+extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_operator_apply(ls_operator const* op,
+                                                                     ls_bits512 const*  bits,
+                                                                     ls_callback func, void* cxt)
 {
     using namespace lattice_symmetries;
     return apply_helper(*op, *bits,
