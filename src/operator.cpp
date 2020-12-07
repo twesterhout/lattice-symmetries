@@ -214,17 +214,26 @@ namespace {
         return count;
     }
 
+#if 0
     constexpr auto max_nonzeros(ls_interaction const& interaction) noexcept -> uint64_t
     {
         return std::visit([](auto const& x) noexcept { return max_nonzeros(x.matrix->payload); },
                           interaction.payload);
+    }
+#endif
+
+    auto max_buffer_size(ls_interaction const& interaction) noexcept -> uint64_t
+    {
+        return std::visit(
+            [](auto const& x) noexcept { return x.sites.size() * max_nonzeros(x.matrix->payload); },
+            interaction.payload);
     }
 
     auto max_buffer_size(tcb::span<ls_interaction const> interactions) noexcept -> uint64_t
     {
         return std::accumulate(std::begin(interactions), std::end(interactions), uint64_t{0},
                                [](auto const total, auto const& interaction) {
-                                   return total + max_nonzeros(interaction);
+                                   return total + max_buffer_size(interaction);
                                });
     }
 
