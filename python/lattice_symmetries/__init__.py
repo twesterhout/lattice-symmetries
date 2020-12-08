@@ -90,6 +90,7 @@ def __load_shared_library():
 _lib = __load_shared_library()
 
 ls_bits512 = c_uint64 * 8
+ls_callback = CFUNCTYPE(c_int, POINTER(ls_bits512), POINTER(c_double * 2), c_void_p)
 
 
 def __preprocess_library():
@@ -120,7 +121,7 @@ def __preprocess_library():
         ("ls_get_number_states", [c_void_p, POINTER(c_uint64)], c_int),
         ("ls_build", [c_void_p], c_int),
         ("ls_get_state_info", [c_void_p, POINTER(ls_bits512), POINTER(ls_bits512), c_double * 2, POINTER(c_double)], None),
-        ("ls_get_index", [c_void_p, POINTER(c_uint64), POINTER(c_uint64)], c_int),
+        ("ls_get_index", [c_void_p, c_uint64, POINTER(c_uint64)], c_int),
         ("ls_get_states", [POINTER(c_void_p), c_void_p], c_int),
         ("ls_destroy_states", [c_void_p], None),
         ("ls_states_get_data", [c_void_p], POINTER(c_uint64)),
@@ -136,10 +137,8 @@ def __preprocess_library():
         # Operator
         ("ls_create_operator", [POINTER(c_void_p), c_void_p, c_uint, POINTER(c_void_p)], c_int),
         ("ls_destroy_operator", [c_void_p], None),
-        # ("ls_operator_matvec_f64", [c_void_p, c_uint64, POINTER(c_double), POINTER(c_double)], c_int),
-        # ("ls_operator_matvec_f32", [c_void_p, c_uint64, POINTER(c_float), POINTER(c_float)], c_int),
-        # ("ls_operator_matvec_c64", [c_void_p, c_uint64, c_void_p, c_void_p], c_int),
-        # ("ls_operator_matvec_c128", [c_void_p, c_uint64, c_void_p, c_void_p], c_int),
+        ("ls_operator_max_buffer_size", [c_void_p], c_uint64),
+        ("ls_operator_apply", [c_void_p, POINTER(ls_bits512), ls_callback, c_void_p], c_int),
         ("ls_operator_matmat", [c_void_p, c_int, c_uint64, c_uint64, c_void_p, c_uint64, c_void_p, c_uint64], c_int),
         ("ls_operator_expectation", [c_void_p, c_int, c_uint64, c_uint64, c_void_p, c_uint64, c_void_p], c_int),
     ]
@@ -368,13 +367,15 @@ class SpinBasis:
         representative = ls_bits512()
         character = (c_double * 2)()
         norm = c_double()
-        _lib.ls_get_state_info(self._payload, byref(bits), byref(representative), character, byref(norm))
+        _lib.ls_get_state_info(
+            self._payload, byref(bits), byref(representative), character, byref(norm)
+        )
         return _ls_bits512_to_int(representative), complex(character[0], character[1]), norm.value
 
     def index(self, bits: int) -> int:
         """Obtain index of a representative in `self.states` array"""
         i = c_uint64()
-        _check_error(_lib.ls_get_index(self._payload, byref(bits), byref(i)))
+        _check_error(_lib.ls_get_index(self._payload, bits, byref(i)))
         return i.value
 
     @property
@@ -556,6 +557,38 @@ class Operator:
         if x_was_a_vector:
             out = complex(out)
         return out
+
+    @property
+    def max_buffer_size(self):
+        return int(_lib.ls_operator_max_buffer_size(self._payload))
+
+    def apply(self, x: int):
+        max_size = self.max_buffer_size
+        spins = np.empty((max_size, 8), dtype=np.uint64)
+        coeffs = np.empty((max_size, 2), dtype=np.float64)
+        i = 0
+        e = None
+
+        def callback(spin, coeff, cxt):
+            nonlocal i, e
+            try:
+                spins[i] = spin.contents
+                coeffs[i] = coeff.contents
+                i += 1
+                return 0
+            except Exception as _e:
+                e = _e
+                return -1
+
+        status = _lib.ls_operator_apply(
+            self._payload, byref(_int_to_ls_bits512(x)), ls_callback(callback), None
+        )
+        if status == -1:
+            assert e is not None
+            raise e
+        _check_error(status)
+        coeffs = coeffs.view(np.complex128).reshape(-1)
+        return spins[:i], coeffs[:i]
 
 
 def diagonalize(hamiltonian: Operator, k: int = 1, dtype=None, **kwargs):

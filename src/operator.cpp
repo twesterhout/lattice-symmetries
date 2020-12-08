@@ -371,19 +371,19 @@ auto apply_helper(ls_operator const& op, ls_bits512 const& spin, Callback callba
     auto const off_diag = [&](ls_bits512 const& x, std::complex<double> const& c) {
         ls_get_state_info(op.basis.get(), &x, &repr, &eigenvalue, &norm);
         if (norm > 0.0) {
+            LATTICE_SYMMETRIES_ASSERT(c * norm / old_norm * eigenvalue != 0.0, "");
             auto const status = callback(repr, c * norm / old_norm * eigenvalue);
             if (LATTICE_SYMMETRIES_UNLIKELY(status != LS_SUCCESS)) { return status; }
         }
         return LS_SUCCESS;
     };
+    auto status = LS_SUCCESS;
     for (auto const& term : op.terms) {
-        auto const status = apply(term, spin, diagonal, std::cref(off_diag));
+        status = apply(term, spin, diagonal, std::cref(off_diag));
         if (LATTICE_SYMMETRIES_UNLIKELY(status != LS_SUCCESS)) { return status; }
     }
-    {
-        auto const status = callback(spin, diagonal);
-        return status;
-    }
+    if (diagonal != 0.0) { status = callback(spin, diagonal); }
+    return status;
 }
 
 } // namespace lattice_symmetries
