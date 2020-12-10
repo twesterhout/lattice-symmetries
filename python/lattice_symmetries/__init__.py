@@ -120,7 +120,8 @@ def __preprocess_library():
         ("ls_has_symmetries", [c_void_p], c_bool),
         ("ls_get_number_states", [c_void_p, POINTER(c_uint64)], c_int),
         ("ls_build", [c_void_p], c_int),
-        ("ls_get_state_info", [c_void_p, POINTER(ls_bits512), POINTER(ls_bits512), c_double * 2, POINTER(c_double)], None),
+        # ("ls_get_state_info", [c_void_p, POINTER(ls_bits512), POINTER(ls_bits512), c_double * 2, POINTER(c_double)], None),
+        ("ls_get_state_info", [c_void_p, POINTER(c_uint64), POINTER(c_uint64), c_void_p, POINTER(c_double)], None),
         ("ls_get_index", [c_void_p, c_uint64, POINTER(c_uint64)], c_int),
         ("ls_get_states", [POINTER(c_void_p), c_void_p], c_int),
         ("ls_destroy_states", [c_void_p], None),
@@ -392,6 +393,98 @@ class SpinBasis:
 
     def load_cache(self, filename: str):
         _check_error(_lib.ls_load_cache(self._payload, bytes(filename, "utf-8")))
+
+
+import numba
+
+_ls_get_index = _lib.ls_get_index
+_ls_get_state_info = _lib.ls_get_state_info
+
+
+def _int_to_ptr_generator(pointer_type):
+    @numba.extending.intrinsic
+    def _int_to_ptr(typingctx, src):
+        from numba import types
+
+        # Check for accepted types
+        if isinstance(src, types.Integer):
+            # Custom code generation
+            def codegen(context, builder, signature, args):
+                [src] = args
+                llrtype = context.get_value_type(signature.return_type)
+                return builder.inttoptr(src, llrtype)
+
+            # Create expected type signature
+            _signature = pointer_type(types.intp)
+            return _signature, codegen
+
+    return _int_to_ptr
+
+
+_int_to_uint64_ptr = _int_to_ptr_generator(numba.types.CPointer(numba.types.uint64))
+_int_to_void_ptr = _int_to_ptr_generator(numba.types.voidptr)
+_int_to_float64_ptr = _int_to_ptr_generator(numba.types.CPointer(numba.types.float64))
+
+# @numba.extending.intrinsic
+# def _int_to_uint64_ptr(typingctx, src):
+#     from numba import types
+#
+#     # check for accepted types
+#     if isinstance(src, types.Integer):
+#         # defines the custom code generation
+#         def codegen(context, builder, signature, args):
+#             [src] = args
+#             llrtype = context.get_value_type(signature.return_type)
+#             return builder.inttoptr(src, llrtype)
+#
+#         # create the expected type signature
+#         _signature = types.CPointer(types.uint64)(types.intp)
+#         return _signature, codegen
+
+
+@numba.jit(nopython=True, nogil=True, parallel=True)
+def _batched_index_helper(basis, spins):
+    basis_ptr = _int_to_void_ptr(basis)
+    batch_size = spins.shape[0]
+    indices = np.empty((batch_size,), dtype=np.uint64)
+    stride = indices.strides[0]
+    status = 0
+    for i in numba.prange(batch_size):
+        index_ptr = _int_to_uint64_ptr(indices.ctypes.data + i * stride)
+        local_status = _ls_get_index(basis_ptr, spins[i], index_ptr)
+        if local_status != 0:
+            status = max(status, local_status)
+    return status, indices
+
+
+@numba.jit(nopython=True)
+def _batched_state_info_helper(basis, spins):
+    basis_ptr = _int_to_void_ptr(basis)
+    batch_size = spins.shape[0]
+    representative = np.zeros((batch_size, 8), dtype=np.uint64)
+    eigenvalue = np.empty((batch_size,), dtype=np.complex128)
+    norm = np.empty((batch_size,), dtype=np.float64)
+    for i in numba.prange(batch_size):
+        _ls_get_state_info(
+            basis_ptr,
+            _int_to_uint64_ptr(spins.ctypes.data + i * spins.strides[0]),
+            _int_to_uint64_ptr(representative.ctypes.data + i * representative.strides[0]),
+            _int_to_void_ptr(eigenvalue.ctypes.data + i * eigenvalue.strides[0]),
+            _int_to_float64_ptr(norm.ctypes.data + i * norm.strides[0]),
+        )
+    return representative, eigenvalue, norm
+
+
+def batched_index(basis: SpinBasis, spins: np.ndarray) -> np.ndarray:
+    if not isinstance(basis, SpinBasis):
+        raise TypeError("basis must be a SpinBasis, but got {}".format(type(basis)))
+    if not isinstance(spins, np.ndarray) or spins.dtype != np.uint64:
+        raise TypeError("spins must be a 1D NumPy array of uint64")
+    if spins.ndim != 1:
+        raise ValueError("spins has wrong shape: {}; expected a 1D array".format(spins.shape))
+    status, indices = _batched_index_helper(basis._payload.value, spins)
+    _check_error(status)
+    return indices
 
 
 # def _create_spin_basis(group, number_spins, hamming_weight) -> c_void_p:
