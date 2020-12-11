@@ -222,7 +222,7 @@ namespace detail {
                                 : basis_body.batched_symmetries[batch_index];
             auto const  e =
                 std::complex{s.eigenvalues_real[rest_index], s.eigenvalues_imag[rest_index]};
-            character = i < 0 ? (-e) : e;
+            character = i < 0 ? (static_cast<double>(basis_header.spin_inversion) * e) : e;
         }
 
         // We need to detect the case when norm is not zero, but only because of
@@ -257,7 +257,7 @@ namespace detail {
             if (basis_header.spin_inversion != 0) {
                 x ^= flip_mask;
                 real *= flip_coeff;
-                if (!acc.update_norm_only(x, real)) { return false; };
+                if (!acc.update_norm_only(x, real)) { return false; }
             }
         }
         if (basis_body.other_symmetries.has_value()) {
