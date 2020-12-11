@@ -309,6 +309,7 @@ typedef struct ls_group ls_group;
 ///         incompatible with each other.
 /// \see #ls_destroy_group
 ls_error_code ls_create_group(ls_group** ptr, unsigned size, ls_symmetry const* generators[]);
+ls_error_code ls_create_trivial_group(ls_group** ptr, unsigned number_spins);
 /// \brief Destructs and deallocates the symmetry group.
 ///
 /// This function **must** be called on objects constructed using #ls_create_group.

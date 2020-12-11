@@ -160,6 +160,15 @@ namespace {
         return make_group(specs);
     }
 
+    auto make_identity_spec(unsigned number_spins) -> symmetry_spec_t
+    {
+        std::vector<uint16_t> permutation;
+        permutation.reserve(number_spins);
+        for (auto i = 0U; i < number_spins; ++i) {
+            permutation.push_back(i);
+        }
+        return symmetry_spec_t{std::move(permutation), 0, 1};
+    }
 } // namespace
 
 } // namespace lattice_symmetries
@@ -189,6 +198,17 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_group(ls_group** pt
                    [](auto const& x) { return from_spec(x); });
     auto p = std::make_unique<ls_group>(std::move(group));
     *ptr   = p.release();
+    return LS_SUCCESS;
+}
+
+extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code
+ls_create_trivial_group(ls_group** ptr, unsigned const number_spins)
+{
+    if (number_spins == 0) { return LS_INVALID_NUMBER_SPINS; }
+    using namespace lattice_symmetries;
+    auto p = std::make_unique<ls_group>(
+        std::vector<ls_symmetry>{{from_spec(make_identity_spec(number_spins))}});
+    *ptr = p.release();
     return LS_SUCCESS;
 }
 
