@@ -100,7 +100,11 @@ struct ls_spin_basis {
     explicit ls_spin_basis(std::in_place_type_t<T> tag, ls_group const& group,
                            unsigned const                number_spins,
                            std::optional<unsigned> const hamming_weight, int const spin_inversion)
-        : header{{}, number_spins, hamming_weight, spin_inversion, ls_get_group_size(&group) > 0}
+        : header{{},
+                 number_spins,
+                 hamming_weight,
+                 spin_inversion,
+                 ls_get_group_size(&group) > 1 || spin_inversion != 0}
         , payload{tag, group}
     {}
 
@@ -150,6 +154,14 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_spin_basis(ls_spin_
         return LS_INVALID_SPIN_INVERSION;
     }
 
+    auto const using_trivial_group = ls_get_group_size(group) == 0 && spin_inversion != 0;
+    ls_group*  trivial_group       = nullptr;
+    if (using_trivial_group) {
+        auto const status = ls_create_trivial_group(&trivial_group, number_spins);
+        LATTICE_SYMMETRIES_CHECK(status == LS_SUCCESS, "failed to create trivial group");
+    }
+    auto const& group_ref = using_trivial_group ? *trivial_group : *group;
+
     auto need_big = [group, number_spins]() {
         if (ls_get_group_size(group) > 0) {
             return std::holds_alternative<big_symmetry_t>(group->payload.front().payload);
@@ -159,10 +171,11 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_spin_basis(ls_spin_
     auto const _hamming_weight =
         hamming_weight == -1 ? std::nullopt : std::optional<unsigned>{hamming_weight};
     auto p = need_big
-                 ? std::make_unique<ls_spin_basis>(std::in_place_type_t<big_basis_t>{}, *group,
+                 ? std::make_unique<ls_spin_basis>(std::in_place_type_t<big_basis_t>{}, group_ref,
                                                    number_spins, _hamming_weight, spin_inversion)
-                 : std::make_unique<ls_spin_basis>(std::in_place_type_t<small_basis_t>{}, *group,
+                 : std::make_unique<ls_spin_basis>(std::in_place_type_t<small_basis_t>{}, group_ref,
                                                    number_spins, _hamming_weight, spin_inversion);
+    if (using_trivial_group) { ls_destroy_group(trivial_group); }
     increment(p->header.refcount);
     *ptr = p.release();
     return LS_SUCCESS;
