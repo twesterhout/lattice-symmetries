@@ -369,7 +369,11 @@ class SpinBasis:
         character = (c_double * 2)()
         norm = c_double()
         _lib.ls_get_state_info(
-            self._payload, byref(bits), byref(representative), character, byref(norm)
+            self._payload,
+            cast(byref(bits), POINTER(c_uint64)),
+            cast(byref(representative), POINTER(c_uint64)),
+            character,
+            byref(norm),
         )
         return _ls_bits512_to_int(representative), complex(character[0], character[1]), norm.value
 
@@ -457,7 +461,19 @@ def _batched_index_helper(basis, spins):
     return status, indices
 
 
-@numba.jit(nopython=True)
+def batched_index(basis: SpinBasis, spins: np.ndarray) -> np.ndarray:
+    if not isinstance(basis, SpinBasis):
+        raise TypeError("basis must be a SpinBasis, but got {}".format(type(basis)))
+    if not isinstance(spins, np.ndarray) or spins.dtype != np.uint64:
+        raise TypeError("spins must be a 1D NumPy array of uint64")
+    if spins.ndim != 1:
+        raise ValueError("spins has wrong shape: {}; expected a 1D array".format(spins.shape))
+    status, indices = _batched_index_helper(basis._payload.value, spins)
+    _check_error(status)
+    return indices
+
+
+@numba.jit(nopython=True, nogil=True, parallel=True)
 def _batched_state_info_helper(basis, spins):
     basis_ptr = _int_to_void_ptr(basis)
     batch_size = spins.shape[0]
@@ -475,28 +491,18 @@ def _batched_state_info_helper(basis, spins):
     return representative, eigenvalue, norm
 
 
-def batched_index(basis: SpinBasis, spins: np.ndarray) -> np.ndarray:
+def batched_state_info(
+    basis: SpinBasis, spins: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     if not isinstance(basis, SpinBasis):
         raise TypeError("basis must be a SpinBasis, but got {}".format(type(basis)))
     if not isinstance(spins, np.ndarray) or spins.dtype != np.uint64:
-        raise TypeError("spins must be a 1D NumPy array of uint64")
-    if spins.ndim != 1:
-        raise ValueError("spins has wrong shape: {}; expected a 1D array".format(spins.shape))
-    status, indices = _batched_index_helper(basis._payload.value, spins)
-    _check_error(status)
-    return indices
-
-
-# def _create_spin_basis(group, number_spins, hamming_weight) -> c_void_p:
-#     if not isinstance(group, Group):
-#         raise TypeError("expected Group, but got {}".format(type(group)))
-#     if hamming_weight is None:
-#         hamming_weight = -1
-#     basis = c_void_p()
-#     _check_error(
-#         _lib.ls_create_spin_basis(ctypes.byref(basis), group._payload, number_spins, hamming_weight)
-#     )
-#     return basis
+        raise TypeError("spins must be a 2D NumPy array of uint64")
+    if spins.ndim == 1:
+        spins = spins.reshape(-1, 1)
+    elif spins.ndim != 2:
+        raise ValueError("spins has wrong shape: {}; expected a 2D array".format(spins.shape))
+    return _batched_state_info_helper(basis._payload.value, spins)
 
 
 def _deduce_number_spins(matrix) -> int:
