@@ -59,7 +59,7 @@ struct range_node_t {
 struct basis_cache_t {
   private:
     static constexpr auto bits    = 22U;
-    static constexpr auto bits_v2 = 8U;
+    static constexpr auto bits_v2 = std::array<unsigned, 3>{{16U, 8U, 4U}};
 
     unsigned                                   _shift;
     unsigned                                   _shift_v2;

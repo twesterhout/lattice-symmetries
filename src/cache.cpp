@@ -89,10 +89,15 @@ namespace {
                                 int64_t const offset) -> void
     {
         LATTICE_SYMMETRIES_ASSERT(0 < bits && bits <= 32, "invalid bits");
-        constexpr auto empty            = range_node_t::make_empty();
-        auto const     size             = uint64_t{1} << bits;
-        auto const     mask             = size - 1;
-        auto const     extract_relevant = [shift, mask](auto const x) noexcept {
+        constexpr auto empty = range_node_t::make_empty();
+        auto const     size  = uint64_t{1} << bits;
+        auto const     mask  = size - 1;
+        // If x looks like this
+        //    XXXXXXXXXXAAAAAAAAXXXXXXX
+        //              <------><----->
+        //                bits   shift
+        // we extract the part marked with A's.
+        auto const extract_relevant = [shift, mask](auto const x) noexcept {
             return (x >> shift) & mask;
         };
 
@@ -116,35 +121,51 @@ namespace {
         LATTICE_SYMMETRIES_CHECK(first == last, "not all states checked");
     }
 
-    auto generate_ranges_v2(tcb::span<uint64_t const> states, unsigned const bits,
+    template <size_t N>
+    auto generate_ranges_v2(tcb::span<uint64_t const> states, std::array<unsigned, N> const& bits,
                             unsigned const shift) -> std::vector<range_node_t>
     {
-        constexpr auto            cutoff = 512U;
+        static_assert(N > 0);
+        constexpr auto            cutoff = 2048U;
         std::vector<range_node_t> ranges;
-        generate_ranges_helper(states, bits, shift, ranges, 0);
+        ranges.reserve(1024U * 1024U);
+        generate_ranges_helper(states, bits[0], shift, ranges, 0);
+        LATTICE_SYMMETRIES_LOG_DEBUG("Tree depth %u, accumulated %zu slices...\n", 0,
+                                     ranges.size());
 
         auto next_shift = shift;
-        for (;;) {
-            auto       done = true;
+        auto done       = true;
+        for (auto depth = 1U; depth < N; ++depth) {
+            // depth acts as the second stopping condition. If if within three iterations we fail to
+            // reach cutoff, we stop anyway.
             auto const size = ranges.size();
 
-            next_shift -= bits;
+            next_shift -= bits[depth];
+            done = true;
+            LATTICE_SYMMETRIES_CHECK(next_shift < 64, nullptr);
             for (auto i = uint64_t{0}; i < size; ++i) {
                 auto& r = ranges[i];
                 if (r.is_range() && r.size > cutoff) {
-                    done = false;
-                    LATTICE_SYMMETRIES_CHECK(next_shift <= 64, nullptr);
+                    done                   = false;
                     auto const next_states = states.subspan(static_cast<uint64_t>(r.start),
                                                             static_cast<uint64_t>(r.size));
                     auto const offset      = r.start;
 
                     r.start = -static_cast<int64_t>(ranges.size());
                     r.size  = 0;
-                    generate_ranges_helper(next_states, bits, next_shift, ranges, offset);
+                    generate_ranges_helper(next_states, bits[depth], next_shift, ranges, offset);
                 }
             }
-            if (done) { break; }
+            LATTICE_SYMMETRIES_LOG_DEBUG("Tree depth %u, accumulated %zu slices...\n", depth,
+                                         ranges.size());
+            if (done) {
+                LATTICE_SYMMETRIES_LOG_DEBUG(
+                    "All slices are shorter than %u! Required tree depth is %u...\n", cutoff,
+                    depth);
+                break;
+            }
         }
+        if (!done) { LATTICE_SYMMETRIES_LOG_DEBUG("There are slices longer than %u...\n", cutoff); }
 
         // std::unordered_map<uint64_t, uint64_t> histogram;
         // for (auto const& r : ranges) {
@@ -380,10 +401,10 @@ namespace {
 basis_cache_t::basis_cache_t(basis_base_t const& header, small_basis_t const& payload,
                              std::vector<uint64_t> _unsafe_states)
     : _shift{bits >= header.number_spins ? 0U : (header.number_spins - bits)}
-    , _shift_v2{bits_v2 >= header.number_spins ? 0U : (header.number_spins - bits_v2)}
+    , _shift_v2{bits_v2[0] >= header.number_spins ? 0U : (header.number_spins - bits_v2[0])}
     , _states{_unsafe_states.empty() ? concatenate(generate_states(header, payload))
                                      : std::move(_unsafe_states)}
-    , _ranges{} // generate_ranges(_states, bits, _shift)}
+    , _ranges{generate_ranges(_states, bits, _shift)}
     , _ranges_v2{generate_ranges_v2(_states, bits_v2, _shift_v2)}
 {}
 
@@ -393,12 +414,11 @@ auto basis_cache_t::number_states() const noexcept -> uint64_t { return _states.
 
 auto basis_cache_t::index_v2(uint64_t const x) const noexcept -> outcome::result<uint64_t>
 {
-    using std::begin, std::end;
-    auto const  mask  = (uint64_t{1} << bits_v2) - 1;
     auto        shift = _shift_v2;
     auto const* r     = _ranges_v2.data() + (x >> shift);
-    while (!r->is_range()) {
-        shift -= bits_v2;
+    for (auto i = 1U; !r->is_range() && i < bits_v2.size(); ++i) {
+        auto const mask = (uint64_t{1} << bits_v2[i]) - 1;
+        shift -= bits_v2[i - 1];
         r = _ranges_v2.data() + (-r->start) + ((x >> shift) & mask);
     }
     auto const* first = _states.data() + r->start;
@@ -410,7 +430,7 @@ auto basis_cache_t::index_v2(uint64_t const x) const noexcept -> outcome::result
 
 auto basis_cache_t::index(uint64_t const x) const noexcept -> outcome::result<uint64_t>
 {
-    if constexpr (false) {
+    if constexpr (true) {
         using std::begin, std::end;
         auto const& range = _ranges[x >> _shift];
         auto const* first = _states.data() + range.first;
