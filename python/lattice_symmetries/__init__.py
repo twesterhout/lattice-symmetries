@@ -37,7 +37,7 @@ import weakref
 from typing import List, Optional, Tuple
 import numpy as np
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 # Enable import warnings
 warnings.filterwarnings("default", category=ImportWarning)
@@ -96,6 +96,9 @@ ls_callback = CFUNCTYPE(c_int, POINTER(ls_bits512), POINTER(c_double * 2), c_voi
 def __preprocess_library():
     # fmt: off
     info = [
+        # Debug logging
+        ("ls_enable_logging", [], None),
+        ("ls_disable_logging", [], None),
         # Error messages
         ("ls_error_to_string", [c_int], POINTER(c_char)),
         ("ls_destroy_string", [POINTER(c_char)], None),
@@ -151,6 +154,14 @@ def __preprocess_library():
 
 
 __preprocess_library()
+
+
+def enable_logging():
+    _lib.ls_enable_logging()
+
+
+def disable_logging():
+    _lib.ls_disable_logging()
 
 
 def _get_error_message(status: int) -> str:

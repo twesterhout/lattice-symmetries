@@ -27,12 +27,51 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "error_handling.hpp"
+#include <sys/time.h> // for gettimeofday
+#include <cmath>
+#include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <memory>
 
 namespace lattice_symmetries {
+
+auto get_logging_state() noexcept -> logging_state_t&
+{
+    static logging_state_t state;
+    return state;
+}
+
+inline auto print_current_time(std::FILE* out) noexcept -> void
+{
+    struct timeval tv;
+    gettimeofday(&tv, nullptr);
+    auto milliseconds = static_cast<int>(std::rint(tv.tv_usec / 1000.0));
+    if (milliseconds >= 1000) {
+        milliseconds -= 1000;
+        ++tv.tv_sec;
+    }
+    char       time_buffer[16];
+    auto const time_info = localtime(&tv.tv_sec);
+    std::strftime(time_buffer, std::size(time_buffer), "%H:%M:%S", time_info);
+    std::fprintf(out, "%s.%03d", time_buffer, milliseconds);
+}
+
+auto log_debug(char const* file, unsigned line, char const* function, char const* fmt, ...) noexcept
+    -> void
+{
+    if (ls_is_logging_enabled()) {
+        std::fprintf(stderr, "\x1b[1m\x1b[97m[Debug]\x1b[0m [");
+        print_current_time(stderr);
+        std::fprintf(stderr, "] [%s:%u:%s] ", file, line, function);
+        va_list args;
+        va_start(args, fmt);
+        std::vfprintf(stderr, fmt, args);
+        va_end(args);
+    }
+}
 
 [[noreturn]] auto check_fail(char const* expr, char const* file, unsigned line,
                              char const* function, char const* msg) noexcept -> void
@@ -140,6 +179,21 @@ auto get_error_category() noexcept -> ls_error_category const&
 }
 
 } // namespace lattice_symmetries
+
+extern "C" LATTICE_SYMMETRIES_EXPORT bool ls_is_logging_enabled()
+{
+    return lattice_symmetries::get_logging_state().do_log.load(std::memory_order_acquire);
+}
+
+extern "C" LATTICE_SYMMETRIES_EXPORT void ls_enable_logging()
+{
+    return lattice_symmetries::get_logging_state().do_log.store(true, std::memory_order_release);
+}
+
+extern "C" LATTICE_SYMMETRIES_EXPORT void ls_disable_logging()
+{
+    return lattice_symmetries::get_logging_state().do_log.store(false, std::memory_order_release);
+}
 
 extern "C" LATTICE_SYMMETRIES_EXPORT auto ls_error_to_string(ls_error_code code) -> char const*
 {

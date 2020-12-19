@@ -189,6 +189,10 @@ void ls_destroy_string(char const* message);
 /// @}
 // end of errors group
 
+bool ls_is_logging_enabled();
+void ls_enable_logging();
+void ls_disable_logging();
+
 typedef uint64_t ls_bits64;
 
 typedef struct _ls_bits512 {

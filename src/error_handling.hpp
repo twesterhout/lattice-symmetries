@@ -30,6 +30,7 @@
 
 #include "lattice_symmetries/lattice_symmetries.h"
 #include "macros.hpp"
+#include <atomic>
 #include <outcome.hpp>
 #include <string_view>
 #include <system_error>
@@ -41,6 +42,15 @@ template <> struct is_error_code_enum<ls_error_code> : true_type {};
 } // namespace std
 
 namespace lattice_symmetries {
+
+struct logging_state_t {
+    std::atomic<bool> do_log;
+
+    logging_state_t() noexcept : do_log{false} {}
+};
+
+auto log_debug(char const* file, unsigned line, char const* function, char const* fmt, ...) noexcept
+    -> void;
 
 [[noreturn]] auto check_fail(char const* expr, char const* file, unsigned line,
                              char const* function, char const* msg) noexcept -> void;
@@ -57,6 +67,7 @@ class ls_error_category : public std::error_category {
 };
 
 auto get_error_category() noexcept -> ls_error_category const&;
+auto get_logging_state() noexcept -> logging_state_t&;
 
 } // namespace lattice_symmetries
 
@@ -70,6 +81,10 @@ inline auto make_error_code(ls_error_code const e) noexcept -> std::error_code
          ? static_cast<void>(0)                                                                    \
          : ::lattice_symmetries::check_fail(#cond, __FILE__, __LINE__,                             \
                                             static_cast<char const*>(__FUNCTION__), msg))
+
+#define LATTICE_SYMMETRIES_LOG_DEBUG(fmt, ...)                                                     \
+    ::lattice_symmetries::log_debug(__FILE__, __LINE__, static_cast<char const*>(__FUNCTION__),    \
+                                    fmt, __VA_ARGS__)
 
 #if !defined(NDEBUG)
 #    define LATTICE_SYMMETRIES_ASSERT(cond, msg)                                                   \
