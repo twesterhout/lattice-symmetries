@@ -5,8 +5,9 @@ project(${CMAKE_PROJECT_NAME}Tests LANGUAGES C CXX)
 set(test_sources 
     src/test_main.cpp
     src/test_api.cpp
-    src/test_permutation.cpp
-    src/test_network.cpp
+    # src/test_permutation.cpp
+    # src/test_network.cpp
+    # src/test_cache.cpp
 )
 add_executable(${PROJECT_NAME} ${test_sources})
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)

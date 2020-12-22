@@ -86,7 +86,7 @@ namespace {
 
     auto generate_ranges_helper(tcb::span<uint64_t const> states, unsigned const bits,
                                 unsigned const shift, std::vector<range_node_t>& ranges,
-                                int64_t const offset) -> void
+                                int64_t const offset, uint64_t const cutoff) -> bool
     {
         LATTICE_SYMMETRIES_ASSERT(0 < bits && bits <= 32, "invalid bits");
         constexpr auto empty = range_node_t::make_empty();
@@ -105,6 +105,7 @@ namespace {
         auto const*       first = states.data();
         auto const* const last  = first + states.size();
         auto const* const begin = first;
+        auto              done  = true;
         for (auto i = uint64_t{0}; i < size; ++i) {
             auto element = range_node_t::make_empty();
             if (first != last && extract_relevant(*first) == i) {
@@ -116,9 +117,11 @@ namespace {
                     ++element.size;
                 }
             }
+            if (element.size > static_cast<int64_t>(cutoff)) { done = false; }
             ranges.push_back(element);
         }
         LATTICE_SYMMETRIES_CHECK(first == last, "not all states checked");
+        return done;
     }
 
     template <size_t N>
@@ -129,49 +132,46 @@ namespace {
         constexpr auto            cutoff = 2048U;
         std::vector<range_node_t> ranges;
         ranges.reserve(1024U * 1024U);
-        generate_ranges_helper(states, bits[0], shift, ranges, 0);
+        auto done = generate_ranges_helper(states, bits[0], shift, ranges, 0, cutoff);
         LATTICE_SYMMETRIES_LOG_DEBUG("Tree depth %u, accumulated %zu slices...\n", 0,
                                      ranges.size());
 
         auto next_shift = shift;
-        auto done       = true;
-        for (auto depth = 1U; depth < N; ++depth) {
+        auto depth      = 1U;
+        for (; !done && depth < N; ++depth) {
             // depth acts as the second stopping condition. If if within three iterations we fail to
             // reach cutoff, we stop anyway.
             auto const size = ranges.size();
 
+            LATTICE_SYMMETRIES_CHECK(next_shift >= bits[depth], nullptr);
             next_shift -= bits[depth];
             done = true;
             LATTICE_SYMMETRIES_CHECK(next_shift < 64, nullptr);
             for (auto i = uint64_t{0}; i < size; ++i) {
                 auto& r = ranges[i];
                 if (r.is_range() && r.size > cutoff) {
-                    done                   = false;
                     auto const next_states = states.subspan(static_cast<uint64_t>(r.start),
                                                             static_cast<uint64_t>(r.size));
                     auto const offset      = r.start;
 
                     r.start = -static_cast<int64_t>(ranges.size());
                     r.size  = 0;
-                    generate_ranges_helper(next_states, bits[depth], next_shift, ranges, offset);
+                    if (!generate_ranges_helper(next_states, bits[depth], next_shift, ranges,
+                                                offset, cutoff)) {
+                        done = false;
+                    }
                 }
             }
             LATTICE_SYMMETRIES_LOG_DEBUG("Tree depth %u, accumulated %zu slices...\n", depth,
                                          ranges.size());
-            if (done) {
-                LATTICE_SYMMETRIES_LOG_DEBUG(
-                    "All slices are shorter than %u! Required tree depth is %u...\n", cutoff,
-                    depth);
-                break;
-            }
         }
-        if (!done) { LATTICE_SYMMETRIES_LOG_DEBUG("There are slices longer than %u...\n", cutoff); }
-
-        // std::unordered_map<uint64_t, uint64_t> histogram;
-        // for (auto const& r : ranges) {
-        //     if (r.is_range()) { ++histogram[static_cast<uint64_t>(r.size)]; }
-        // }
-        // save_histogram("ranges_histogram_v2.dat", histogram);
+        if (done) {
+            LATTICE_SYMMETRIES_LOG_DEBUG(
+                "All slices are shorter than %u! Required tree depth is %u...\n", cutoff, depth);
+        }
+        else {
+            LATTICE_SYMMETRIES_LOG_DEBUG("There are slices longer than %u...\n", cutoff);
+        }
         return ranges;
     }
 
@@ -430,7 +430,7 @@ auto basis_cache_t::index_v2(uint64_t const x) const noexcept -> outcome::result
 
 auto basis_cache_t::index(uint64_t const x) const noexcept -> outcome::result<uint64_t>
 {
-    if constexpr (true) {
+    if constexpr (false) {
         using std::begin, std::end;
         auto const& range = _ranges[x >> _shift];
         auto const* first = _states.data() + range.first;
