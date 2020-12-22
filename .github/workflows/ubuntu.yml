@@ -20,6 +20,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
+        submodules: true
       
     - name: configure
       run: |
