@@ -1,5 +1,5 @@
 # lattice_symmetries ![Linux](https://github.com/twesterhout/lattice-symmetries/workflows/Ubuntu/badge.svg)![OS X](https://github.com/twesterhout/lattice-symmetries/workflows/OS%20X/badge.svg)
-![License](https://img.shields.io/github/license/twesterhout/lattice-symmetries)![Conda](https://img.shields.io/conda/v/twesterhout/lattice-symmetries)
+[![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)![Conda](https://img.shields.io/conda/v/twesterhout/lattice-symmetries)
 
 **WARNING** This is work-in-progress
 
