@@ -7,14 +7,33 @@ A package to simplify working with symmetry-adapted quantum many-body bases
 (think spin systems). This package is written with two main applications in
 mind:
 
-  * Exact diagonalization;
-  * Experiments with neural quantum states and symmetries.
+* Exact diagonalization;
+* Experiments with neural quantum states and symmetries.
 
 `lattice_symmetries` provides a relatively low-level and high-performance
 interface to working with symmetries and Hilbert space bases and operators. If
-all you want to do it to diagonalize a spin Hamiltonian, have a loop at
-[`SpinED`](...) application which uses `lattice_symmetries` under the hood and
-provides a high-level and user-friendly interface to exact diagonalization.
+all you want to do it to diagonalize a spin Hamiltonian, have a look at
+[`SpinED`](https://github.com/twesterhout/spin-ed) application which uses
+`lattice_symmetries` under the hood and provides a high-level and user-friendly
+interface to exact diagonalization.
+
+
+> **Help wanted!** There are a few improvements to this package which could
+> benefit a lot of people, but I don't really have time to do them all myself...
+>
+> 1) Implement distributed matrix-vector products. It would be nice to be able
+> to run this code on, say, 4 nodes to have a bits more memory. (note however, I
+> do not want to make it really "large-scale" and run it on hundreds of nodes)
+> 2) Implement fermion basis which still handles symmetries properly. This is a
+> matter of plugging `-1` in the right places, but should be done carefully!
+> 3) Implemente sublattice-coding techniques. This could potentially speed-up
+> `ls_get_state_info` function even more. Whether it will actually help is not
+> clear at all since batching of symmetries already does a great job of
+> improving performance...
+>
+> If you're interested in working on one of these ideas, please, don't hesitate
+> to contact me. I'd be happy to discuss it further and guide you through it.
+
 
 ## Contents
 
@@ -64,7 +83,7 @@ conda install -c twesterhout lattice-symmetries
 
 Since Python interface is written entirely in Python using `ctypes` module, C code is not linked
 against Python or any other libraries like `numpy`. The above command should thus in principle
-work in any environment with **Python version 3.7 or above**.
+work in any environment with **Python version 3.6 or above**.
 
 The package contains both C and Python interfaces, so even if you do not need the Python
 interface, using `conda` is the simplest way to get started.
@@ -91,6 +110,7 @@ First step is to clone the repository:
 ```{.sh}
 git clone https://github.com/twesterhout/lattice-symmetries.git
 cd lattice-symmetries
+git submodule update --init --recursive
 ```
 
 Create a directory where build artifacts will be stored (we do not support in-source
@@ -134,11 +154,18 @@ And finally install it:
 cmake --build . --target install
 ```
 
+Afterwards you can install Python wrappers using `pip`. Note also that Python
+code uses `pkg-config` to determine the location of `liblattice_symmetries.so`
+(or `.dylib`). Make sure you either set `PKG_CONFIG_PATH` appropriately or
+install into a location known to `pkg-config`.
 
 
 ## Example
 
-Have a look into [example/getting_started](https://github.com/twesterhout/lattice-symmetries/tree/master/example/getting_started). It provides very simple examples how to use `lattice_symmetries` from both Python and C.
+Have a look into
+[example/getting_started](https://github.com/twesterhout/lattice-symmetries/tree/master/example/getting_started).
+It provides very simple examples how to use `lattice_symmetries` from both
+Python and C.
 
 
 
@@ -171,14 +198,13 @@ typedef struct ls_symmetry ls_symmetry;
 Symmetries are created and destructed using the following two functions:
 ```c
 ls_error_code ls_create_symmetry(ls_symmetry** ptr, unsigned length, unsigned const permutation[],
-                                 bool flip, unsigned sector);
+                                 unsigned sector);
 void ls_destroy_symmetry(ls_symmetry* symmetry);
 ```
-`ls_create_symmetry` accepts a `permutation` of indices `{0, 1, ..., length-1}`,
-a flag which indicates whether to apply global spin inversion, and `sector`
-specifying the eigenvalue. Upon successful completion (indicated by returning
-`LS_SUCCESS`), `*ptr` is set to point to the newly allocated `ls_symmetry`
-object.
+`ls_create_symmetry` accepts a `permutation` of indices `{0, 1, ..., length-1}`
+and `sector` specifying the eigenvalue. Upon successful completion (indicated by
+returning `LS_SUCCESS`), `*ptr` is set to point to the newly allocated
+`ls_symmetry` object.
 
 *Periodicity* of the symmetry operator `T` is the smallest positive integer `N`
 such that <code>T<sup>N</sup> = 1</code>. It then follows that eigenvalues of
@@ -189,7 +215,6 @@ Various properties of the symmetry operator can be accessed using the getter
 functions:
 ```c
 unsigned ls_get_sector(ls_symmetry const* symmetry);
-bool ls_get_flip(ls_symmetry const* symmetry);
 double ls_get_phase(ls_symmetry const* symmetry);
 void ls_get_eigenvalue(ls_symmetry const* symmetry, void* out); // _Complex double*
 unsigned ls_get_periodicity(ls_symmetry const* symmetry);
@@ -330,22 +355,22 @@ efficient, and the implementation in QuSpin is not quite there yet.
 The code can be roughly divided into a few layers. At the very bottom we have
 error handling (`error_handling.*` files) and utilities (`bits512.hpp`,
 `intrusive_ptr.hpp` files). Next, we have the permutation-to-Benes-network
-compiler (`permutation.*` files). Intermediate representation if these networks
+compiler (`permutation.*` files). Intermediate representation of these networks
 are then converted into more compact form optimized for forward propagation
 (`network.*` files define the representation and `kernel.*` files implement the
  forward propagation). Using Benes networks we build symmetries (`symmetry.*`).
 They keep track of the characters of the symmetry group, allow to find
-representative vectors, etc. Given a bunch of symmetry operators, we construct
-the symmetry group (`group.*` files). Finally, this symmetry group is used to
-construct a Hilbert space basis (`basis.*` files). For small systems, one can
-explicitly construct a list of all representative vectors of the basis. We call
-it "cache" (`cache.*` files). It allows one to determine the Hilbert space
-dimension, assigns indices to representative vectors etc.
+representative vectors (`state_info.*` files), etc. Given a bunch of symmetry
+operators, we construct the symmetry group (`group.*` files). Finally, this
+symmetry group is used to construct a Hilbert space basis (`basis.*` files). For
+small systems, one can explicitly construct a list of all representative vectors
+of the basis. We call it "cache" (`cache.*` files). It allows one to determine
+the Hilbert space dimension, assigns indices to representative vectors etc.
 
 Having a Hilbert space basis is typically not enough. We need to define a
 Hamiltonian. All operators in `lattice_symmetries` are assumed to be Hermitian
 and are defined as sums of "interaction" terms (`operator.*` files). These are
 just small operators defined on 1-, 2-, 3-, or 4-spin subsystems. Operators can
-then be applied to explicit vectors (e.g. for exact diagonalization) of in a CPS
+then be applied to explicit vectors (e.g. for exact diagonalization) or in a CPS
 (continuation-passing-style) for more general applications (e.g. neural quantum
 states).
