@@ -4,7 +4,11 @@ import time
 from loguru import logger
 import numpy as np
 
-sys.path.insert(0, "/home/tom/src/lattice-symmetries/python")
+try:
+    import lattice_symmetries as ls
+except ImportError:
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "python"))
+    import lattice_symmetries as ls
 
 
 def get_processor_name():
@@ -98,8 +102,6 @@ def _quspin_make_basis(symmetries, number_spins, hamming_weight=None, build=True
 
 
 def _ls_make_basis(symmetries, number_spins, hamming_weight=None, build=True):
-    import lattice_symmetries
-
     spin_inversion = None
     processed_symmetries = []
     for s in symmetries:
@@ -108,11 +110,11 @@ def _ls_make_basis(symmetries, number_spins, hamming_weight=None, build=True):
             assert x2 == 0 or x2 == 1
             spin_inversion = 1 if x2 == 0 else -1
         else:
-            processed_symmetries.append(lattice_symmetries.Symmetry(x1, sector=x2))
+            processed_symmetries.append(ls.Symmetry(x1, sector=x2))
 
-    group = lattice_symmetries.Group(processed_symmetries)
+    group = ls.Group(processed_symmetries)
     logger.info("Symmetry group contains {} elements", len(group))
-    basis = lattice_symmetries.SpinBasis(
+    basis = ls.SpinBasis(
         group,
         number_spins=number_spins,
         hamming_weight=hamming_weight,
@@ -132,7 +134,7 @@ def make_basis(*args, backend="ls", **kwargs):
         raise ValueError("invalid backend: {}; expected either 'ls' or 'quspin'".format(backend))
 
 
-def _quspin_make_heisenberg(basis, nearest, next_nearest=None, j2=None, dtype=np.float64):
+def _quspin_make_heisenberg(basis, nearest, next_nearest=None, j2=None, dtype=np.float64, matrix=False):
     from quspin.operators import quantum_LinearOperator, hamiltonian
 
     static = [
@@ -147,18 +149,18 @@ def _quspin_make_heisenberg(basis, nearest, next_nearest=None, j2=None, dtype=np
             ["-+", [[0.5 * j2, i, j] for (i, j) in next_nearest]],
             ["zz", [[1.0 * j2, i, j] for (i, j) in next_nearest]],
         ]
+    if matrix:
+        return hamiltonian(static, [], basis=basis, dtype=dtype)
     return quantum_LinearOperator(static, basis=basis, dtype=dtype)
 
 
 def _ls_make_heisenberg(basis, nearest, next_nearest=None, j2=None, dtype=None):
-    import lattice_symmetries
-
     matrix = [[1, 0, 0, 0], [0, -1, 2, 0], [0, 2, -1, 0], [0, 0, 0, 1]]
-    interactions = [lattice_symmetries.Interaction(matrix, nearest)]
+    interactions = [ls.Interaction(matrix, nearest)]
     if next_nearest is not None:
         assert j2 is not None
-        interactions.append(lattice_symmetries.Interaction(j2 * matrix, next_nearest))
-    return lattice_symmetries.Operator(basis, interactions)
+        interactions.append(ls.Interaction(j2 * matrix, next_nearest))
+    return ls.Operator(basis, interactions)
 
 
 def make_heisenberg(*args, backend="ls", **kwargs):
