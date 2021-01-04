@@ -423,7 +423,7 @@ auto basis_cache_t::states() const noexcept -> tcb::span<uint64_t const> { retur
 
 auto basis_cache_t::number_states() const noexcept -> uint64_t { return _states.size(); }
 
-auto basis_cache_t::index_v2(uint64_t const x) const noexcept -> outcome::result<uint64_t>
+auto basis_cache_t::index_v2(uint64_t const x, uint64_t* out) const noexcept -> ls_error_code
 {
     auto const* r = _ranges_v2.data();
     for (auto i = 0U; i < bits_v2.size(); ++i) {
@@ -433,8 +433,9 @@ auto basis_cache_t::index_v2(uint64_t const x) const noexcept -> outcome::result
             auto const* first = _states.data() + r->start;
             auto const* last  = first + r->size;
             auto const* index = search_sorted(first, last, x);
-            if (index == last) { return outcome::failure(LS_NOT_A_REPRESENTATIVE); }
-            return static_cast<uint64_t>(index - _states.data());
+            if (index == last) { return LS_NOT_A_REPRESENTATIVE; }
+            *out = static_cast<uint64_t>(index - _states.data());
+            return LS_SUCCESS;
         }
         r = _ranges_v2.data() + (-r->start);
     }
@@ -442,7 +443,7 @@ auto basis_cache_t::index_v2(uint64_t const x) const noexcept -> outcome::result
     LATTICE_SYMMETRIES_CHECK(false, "this should never have happened");
 }
 
-auto basis_cache_t::index(uint64_t const x) const noexcept -> outcome::result<uint64_t>
+auto basis_cache_t::index(uint64_t const x, uint64_t* out) const noexcept -> ls_error_code
 {
     if constexpr (false) {
         using std::begin, std::end;
@@ -450,11 +451,12 @@ auto basis_cache_t::index(uint64_t const x) const noexcept -> outcome::result<ui
         auto const* first = _states.data() + range.first;
         auto const* last  = first + range.second;
         auto const* i     = search_sorted(first, last, x);
-        if (i == last) { return outcome::failure(LS_NOT_A_REPRESENTATIVE); }
-        return static_cast<uint64_t>(i - _states.data());
+        if (i == last) { return LS_NOT_A_REPRESENTATIVE; }
+        *out = static_cast<uint64_t>(i - _states.data());
+        return LS_SUCCESS;
     }
     else {
-        return index_v2(x);
+        return index_v2(x, out);
     }
 }
 

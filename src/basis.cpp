@@ -242,15 +242,7 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_get_index(ls_spin_basis co
     auto const* p = std::get_if<small_basis_t>(&basis->payload);
     if (LATTICE_SYMMETRIES_UNLIKELY(p == nullptr)) { return LS_WRONG_BASIS_TYPE; }
     if (LATTICE_SYMMETRIES_UNLIKELY(p->cache == nullptr)) { return LS_CACHE_NOT_BUILT; }
-    auto r = p->cache->index(bits);
-    if (LATTICE_SYMMETRIES_UNLIKELY(!r)) {
-        if (r.error().category() == get_error_category()) {
-            return static_cast<ls_error_code>(r.error().value());
-        }
-        return LS_SYSTEM_ERROR;
-    }
-    *index = r.value();
-    return LS_SUCCESS;
+    return p->cache->index(bits, index);
 }
 
 extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_build(ls_spin_basis* basis)

@@ -78,8 +78,8 @@ struct basis_cache_t {
 
     [[nodiscard]] auto states() const noexcept -> tcb::span<uint64_t const>;
     [[nodiscard]] auto number_states() const noexcept -> uint64_t;
-    [[nodiscard]] auto index_v2(uint64_t x) const noexcept -> outcome::result<uint64_t>;
-    [[nodiscard]] auto index(uint64_t x) const noexcept -> outcome::result<uint64_t>;
+    [[nodiscard]] auto index_v2(uint64_t x, uint64_t* out) const noexcept -> ls_error_code;
+    [[nodiscard]] auto index(uint64_t x, uint64_t* out) const noexcept -> ls_error_code;
 };
 
 auto save_states(tcb::span<uint64_t const> states, char const* filename) -> outcome::result<void>;

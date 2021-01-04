@@ -1,5 +1,8 @@
 import numpy as np
 import lattice_symmetries as ls
+ls.enable_logging()
+
+import systems
 
 
 def test_4_spins():
@@ -31,4 +34,29 @@ def test_4_spins():
     operator = ls.Operator(basis, [ls.Interaction(matrix, edges)])
     assert np.isclose(ls.diagonalize(operator, k=1)[0], -8)
 
-test_4_spins()
+
+def test_index():
+    L_x, L_y = (6, 6)
+    backend = "ls"
+    symmetries = systems.square_lattice_symmetries(L_x, L_y)
+    nearest, _ = systems.square_lattice_edges(L_x, L_y)
+    basis = systems.make_basis(
+        symmetries,
+        backend=backend,
+        number_spins=L_x * L_y,
+        hamming_weight=(L_x * L_y) // 2,
+    )
+    print(basis.number_states)
+    hamiltonian = systems.make_heisenberg(basis, nearest, backend=backend)
+   
+    indices = ls.batched_index(basis, basis.states)
+    assert np.all(indices == np.arange(basis.number_states, dtype=np.uint64))
+    # for i in range(basis.number_states):
+    #     index = basis.index(basis.states[i])
+    #     assert index == i
+    # evals, evecs = hamiltonian.eigsh(k=1, which='SA')
+    # evals, evecs = ls.diagonalize(hamiltonian)
+    # print(evals)
+
+test_index()
+# test_4_spins()
