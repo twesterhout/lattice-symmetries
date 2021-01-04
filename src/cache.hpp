@@ -62,7 +62,7 @@ struct basis_cache_t {
     static constexpr auto bits_v2 = std::array<unsigned, 3>{{16U, 8U, 4U}};
 
     unsigned                                   _shift;
-    unsigned                                   _shift_v2;
+    std::array<unsigned, 3>                    _shifts_v2;
     std::vector<uint64_t>                      _states;
     std::vector<std::pair<uint64_t, uint64_t>> _ranges;
     std::vector<range_node_t>                  _ranges_v2;

@@ -465,10 +465,11 @@ def _batched_index_helper(basis, spins):
     stride = indices.strides[0]
     status = 0
     for i in numba.prange(batch_size):
-        index_ptr = _int_to_uint64_ptr(indices.ctypes.data + i * stride)
-        local_status = _ls_get_index(basis_ptr, spins[i], index_ptr)
-        if local_status != 0:
-            status = max(status, local_status)
+        if status == 0:
+            index_ptr = _int_to_uint64_ptr(indices.ctypes.data + i * stride)
+            local_status = _ls_get_index(basis_ptr, spins[i], index_ptr)
+            if local_status != 0:
+                status = max(status, local_status)
     return status, indices
 
 
