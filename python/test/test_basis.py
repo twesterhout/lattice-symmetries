@@ -36,7 +36,7 @@ def test_4_spins():
 
 
 def test_index():
-    L_x, L_y = (6, 6)
+    L_x, L_y = (4, 6)
     backend = "ls"
     symmetries = systems.square_lattice_symmetries(L_x, L_y)
     nearest, _ = systems.square_lattice_edges(L_x, L_y)
@@ -49,11 +49,11 @@ def test_index():
     print(basis.number_states)
     hamiltonian = systems.make_heisenberg(basis, nearest, backend=backend)
    
-    indices = ls.batched_index(basis, basis.states)
-    assert np.all(indices == np.arange(basis.number_states, dtype=np.uint64))
-    # for i in range(basis.number_states):
-    #     index = basis.index(basis.states[i])
-    #     assert index == i
+    # indices = ls.batched_index(basis, basis.states)
+    # assert np.all(indices == np.arange(basis.number_states, dtype=np.uint64))
+    for i in range(basis.number_states):
+        index = basis.index(basis.states[i])
+        assert index == i
     # evals, evecs = hamiltonian.eigsh(k=1, which='SA')
     # evals, evecs = ls.diagonalize(hamiltonian)
     # print(evals)

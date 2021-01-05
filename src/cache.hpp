@@ -43,29 +43,14 @@ auto split_into_tasks(unsigned number_spins, std::optional<unsigned> hamming_wei
 //                      tcb::span<small_symmetry_t const> other, unsigned number_spins,
 //                      std::optional<unsigned> hamming_weight) -> std::vector<std::vector<uint64_t>>;
 
-struct range_node_t {
-    int64_t start;
-    int64_t size;
-
-    [[nodiscard]] constexpr auto is_range() const noexcept -> bool { return start >= 0; }
-    [[nodiscard]] constexpr auto is_pointer() const noexcept -> bool { return !is_range(); }
-
-    static constexpr auto make_empty() noexcept -> range_node_t
-    {
-        return range_node_t{std::numeric_limits<int64_t>::max(), int64_t{0}};
-    }
-};
-
 struct basis_cache_t {
   private:
-    static constexpr auto bits    = 22U;
-    static constexpr auto bits_v2 = std::array<unsigned, 3>{{16U, 8U, 4U}};
+    static constexpr auto bits = 22U;
 
     unsigned                                   _shift;
-    std::array<unsigned, 3>                    _shifts_v2;
     std::vector<uint64_t>                      _states;
     std::vector<std::pair<uint64_t, uint64_t>> _ranges;
-    std::vector<range_node_t>                  _ranges_v2;
+    std::vector<uint64_t>                      _ranges_v2;
 
   public:
     // basis_cache_t(tcb::span<batched_small_symmetry_t const> batched,
