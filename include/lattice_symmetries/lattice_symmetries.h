@@ -427,8 +427,8 @@ ls_error_code ls_build(ls_spin_basis* basis);
 /// \param character a pointer to `std::complex<double>` (`_Complex double` in C) where the
 ///                  character will be written to.
 /// \param norm where the norm of the orbit will be written to.
-void ls_get_state_info(ls_spin_basis* basis, ls_bits512 const* bits, ls_bits512* representative,
-                       void* character, double* norm);
+void ls_get_state_info(ls_spin_basis const* basis, ls_bits512 const* bits,
+                       ls_bits512* representative, void* character, double* norm);
 /// \brief Get index of a basis representative.
 ///
 /// \note \p bits must be a basis representative. If you just have a spin configuration, call

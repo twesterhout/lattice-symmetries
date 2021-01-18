@@ -37,7 +37,7 @@ import weakref
 from typing import List, Optional, Tuple
 import numpy as np
 
-__version__ = "0.3.1"
+__version__ = "0.3.3"
 
 # Enable import warnings
 warnings.filterwarnings("default", category=ImportWarning)
