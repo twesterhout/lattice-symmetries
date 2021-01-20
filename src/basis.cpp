@@ -276,7 +276,7 @@ namespace {
 } // namespace lattice_symmetries
 
 extern "C" LATTICE_SYMMETRIES_EXPORT void
-ls_get_state_info(ls_spin_basis* basis, ls_bits512 const* bits, ls_bits512* representative,
+ls_get_state_info(ls_spin_basis const* basis, ls_bits512 const* bits, ls_bits512* representative,
                   void* character, double* norm) // NOLINT: nope, norm can't be const
 {
     auto& ch = *reinterpret_cast<std::complex<double>*>(character); // NOLINT

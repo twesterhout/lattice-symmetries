@@ -262,6 +262,11 @@ class Symmetry:
         """Return number of spins on which the operator acts"""
         return _lib.ls_symmetry_get_number_spins(self._payload)
 
+    @staticmethod
+    def load_from_yaml(src):
+        """Load Symmetry from a parsed YAML document."""
+        return Symmetry(src["permutation"], src["sector"])
+
 
 def _create_group(generators) -> c_void_p:
     # Things will break really badly if an element of the generators list
@@ -408,6 +413,15 @@ class SpinBasis:
 
     def load_cache(self, filename: str):
         _check_error(_lib.ls_load_cache(self._payload, bytes(filename, "utf-8")))
+
+    @staticmethod
+    def load_from_yaml(src):
+        """Load SpinBasis from a parsed YAML document."""
+        number_spins = src["number_spins"]
+        hamming_weight = src.get("hamming_weight")
+        spin_inversion = src.get("spin_inversion")
+        group = Group(list(map(Symmetry.load_from_yaml, src["symmetries"])))
+        return SpinBasis(group, number_spins, hamming_weight, spin_inversion)
 
 
 import numba
@@ -569,6 +583,11 @@ class Interaction:
         self._payload = _create_interaction(matrix, sites)
         self._finalizer = weakref.finalize(self, _lib.ls_destroy_interaction, self._payload)
 
+    @staticmethod
+    def load_from_yaml(src):
+        """Load Interaction from a parsed YAML document."""
+        return Interaction(src["matrix"], src["sites"])
+
 
 def _create_operator(basis: SpinBasis, terms: List[Interaction]) -> c_void_p:
     if not isinstance(basis, SpinBasis):
@@ -700,6 +719,12 @@ class Operator:
         _check_error(status)
         coeffs = coeffs.view(np.complex128).reshape(-1)
         return spins[:i], coeffs[:i]
+
+    @staticmethod
+    def load_from_yaml(src, basis: SpinBasis):
+        """Load Operator from a parsed YAML document."""
+        terms = list(map(Interaction.load_from_yaml, src["terms"]))
+        return Operator(basis, terms)
 
 
 def diagonalize(hamiltonian: Operator, k: int = 1, dtype=None, **kwargs):
