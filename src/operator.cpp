@@ -331,6 +331,7 @@ ls_create_interaction4(ls_interaction** ptr, void const* matrix_16x16,
 
 extern "C" LATTICE_SYMMETRIES_EXPORT void ls_destroy_interaction(ls_interaction* interaction)
 {
+    LATTICE_SYMMETRIES_LOG_DEBUG("Destroying interaction %p\n", static_cast<void*>(interaction));
     std::default_delete<ls_interaction>{}(interaction);
 }
 
@@ -641,6 +642,7 @@ ls_create_operator(ls_operator** ptr, ls_spin_basis const* basis, unsigned const
 
 extern "C" LATTICE_SYMMETRIES_EXPORT void ls_destroy_operator(ls_operator* op)
 {
+    LATTICE_SYMMETRIES_LOG_DEBUG("Destroying operator %p\n", static_cast<void*>(op));
     std::default_delete<ls_operator>{}(op);
 }
 

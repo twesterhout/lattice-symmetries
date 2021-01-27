@@ -28,16 +28,18 @@
 
 import ctypes
 from ctypes import *
+import inspect
 import os
 import sys
 import math
 import subprocess
 import warnings
 import weakref
+import time
 from typing import List, Optional, Tuple
 import numpy as np
 
-__version__ = "0.3.3"
+__version__ = "0.4.3"
 
 # Enable import warnings
 warnings.filterwarnings("default", category=ImportWarning)
@@ -99,6 +101,7 @@ def __preprocess_library():
         # Debug logging
         ("ls_enable_logging", [], None),
         ("ls_disable_logging", [], None),
+        ("ls_is_logging_enabled", [], c_bool),
         # Error messages
         ("ls_error_to_string", [c_int], POINTER(c_char)),
         ("ls_destroy_string", [POINTER(c_char)], None),
@@ -123,6 +126,7 @@ def __preprocess_library():
         ("ls_has_symmetries", [c_void_p], c_bool),
         ("ls_get_number_states", [c_void_p, POINTER(c_uint64)], c_int),
         ("ls_build", [c_void_p], c_int),
+        ("ls_build_unsafe", [c_void_p, c_uint64, POINTER(c_uint64)], c_int),
         # ("ls_get_state_info", [c_void_p, POINTER(ls_bits512), POINTER(ls_bits512), c_double * 2, POINTER(c_double)], None),
         ("ls_get_state_info", [c_void_p, POINTER(c_uint64), POINTER(c_uint64), c_void_p, POINTER(c_double)], None),
         ("ls_get_index", [c_void_p, c_uint64, POINTER(c_uint64)], c_int),
@@ -162,6 +166,34 @@ def enable_logging():
 
 def disable_logging():
     _lib.ls_disable_logging()
+
+
+def is_logging_enabled():
+    return _lib.ls_is_logging_enabled()
+
+
+def debug_log(msg, end="\n"):
+    if is_logging_enabled():
+        current_frame = inspect.currentframe()
+        parent_frame = inspect.getouterframes(current_frame)[1]
+        try:
+            filename = parent_frame.filename
+            line = parent_frame.lineno
+            function = parent_frame.function
+        finally:
+            del parent_frame
+            del current_frame
+
+        if len(filename) > 40:
+            filename = "..." + filename[-37:]
+        current_time = time.time()
+        millisec = int(round(1000 * (current_time - int(current_time))))
+        time_str = time.strftime("%H:%M:%S", time.localtime(int(current_time)))
+        sys.stderr.write(
+            "\x1b[1m\x1b[97m[Debug]\x1b[0m [{}.{:03d}] [{}:{}:{}] {}{}".format(
+                time_str, millisec, filename, line, function, msg, end
+            )
+        )
 
 
 def _get_error_message(status: int) -> str:
@@ -224,6 +256,31 @@ def _create_symmetry(permutation, sector) -> c_void_p:
     return symmetry
 
 
+def _destroy(fn):
+    known_destructors = [
+        (_lib.ls_destroy_symmetry, "Symmetry"),
+        (_lib.ls_destroy_group, "Group"),
+        (_lib.ls_destroy_spin_basis, "SpinBasis"),
+        (_lib.ls_destroy_states, "states array"),
+        (_lib.ls_destroy_interaction, "Interaction"),
+        (_lib.ls_destroy_operator, "Operator"),
+        (_lib.ls_destroy_string, "C-string"),
+    ]
+    name = None
+    for (k, v) in known_destructors:
+        if k == fn:
+            name = v
+            break
+    if name is None:
+        raise ValueError("Unknown destructor: {}".format(fn))
+
+    def wrapper(*args, **kwargs):
+        debug_log("Destroying {} on Python side...".format(name))
+        return fn(*args, **kwargs)
+
+    return wrapper
+
+
 class Symmetry:
     """Symmetry operator."""
 
@@ -233,7 +290,7 @@ class Symmetry:
         eigenvalue
         """
         self._payload = _create_symmetry(permutation, sector)
-        self._finalizer = weakref.finalize(self, _lib.ls_destroy_symmetry, self._payload)
+        self._finalizer = weakref.finalize(self, _destroy(_lib.ls_destroy_symmetry), self._payload)
 
     @property
     def sector(self) -> int:
@@ -288,7 +345,7 @@ class Group:
     def __init__(self, generators: List[Symmetry]):
         """Construct a symmetry group from a list of generators"""
         self._payload = _create_group(generators)
-        self._finalizer = weakref.finalize(self, _lib.ls_destroy_group, self._payload)
+        self._finalizer = weakref.finalize(self, _destroy(_lib.ls_destroy_group), self._payload)
 
     def __len__(self):
         return _lib.ls_get_group_size(self._payload)
@@ -342,7 +399,9 @@ class SpinBasis:
         the Hilbert space.
         """
         self._payload = _create_spin_basis(group, number_spins, hamming_weight, spin_inversion)
-        self._finalizer = weakref.finalize(self, _lib.ls_destroy_spin_basis, self._payload)
+        self._finalizer = weakref.finalize(
+            self, _destroy(_lib.ls_destroy_spin_basis), self._payload
+        )
 
     @property
     def number_spins(self) -> int:
@@ -372,9 +431,30 @@ class SpinBasis:
         _check_error(_lib.ls_get_number_states(self._payload, ctypes.byref(r)))
         return r.value
 
-    def build(self):
+    def build(self, representatives=None):
         """Build internal cache"""
-        _check_error(_lib.ls_build(self._payload))
+        if representatives is None:
+            _check_error(_lib.ls_build(self._payload))
+        else:
+            if not isinstance(representatives, np.ndarray) or representatives.dtype != np.uint64:
+                raise TypeError(
+                    "representatives must be a 1D NumPy array of uint64, but got {}"
+                    "".format(type(representatives))
+                )
+            if not representatives.flags["C_CONTIGUOUS"]:
+                warnings.warn(
+                    "SpinBasis.build expects 'representatives' to be C-contiguous. A copy of "
+                    "'representatives' will be created with proper memory order, but note that "
+                    "this will memory (!) overhead..."
+                )
+                representatives = np.ascontiguousarray(representatives)
+            _check_error(
+                _lib.ls_build_unsafe(
+                    self._payload,
+                    len(representatives),
+                    representatives.ctypes.data_as(POINTER(c_uint64)),
+                )
+            )
 
     def state_info(self, bits: int) -> Tuple[int, complex, float]:
         """For a spin configuration `bits` obtain its representative, corresponding
@@ -405,7 +485,7 @@ class SpinBasis:
         _check_error(_lib.ls_get_states(byref(states), self._payload))
         Array = c_uint64 * _lib.ls_states_get_size(states)
         array = Array.from_address(cast(_lib.ls_states_get_data(states), c_void_p).value)
-        weakref.finalize(array, _lib.ls_destroy_states, states)
+        weakref.finalize(array, _destroy(_lib.ls_destroy_states), states)
         return np.frombuffer(array, dtype=np.uint64)
 
     def save_cache(self, filename: str):
@@ -581,7 +661,9 @@ def _create_interaction(matrix, sites) -> c_void_p:
 class Interaction:
     def __init__(self, matrix, sites):
         self._payload = _create_interaction(matrix, sites)
-        self._finalizer = weakref.finalize(self, _lib.ls_destroy_interaction, self._payload)
+        self._finalizer = weakref.finalize(
+            self, _destroy(_lib.ls_destroy_interaction), self._payload
+        )
 
     @staticmethod
     def load_from_yaml(src):
@@ -605,7 +687,7 @@ def _create_operator(basis: SpinBasis, terms: List[Interaction]) -> c_void_p:
 class Operator:
     def __init__(self, basis, terms):
         self._payload = _create_operator(basis, terms)
-        self._finalizer = weakref.finalize(self, _lib.ls_destroy_operator, self._payload)
+        self._finalizer = weakref.finalize(self, _destroy(_lib.ls_destroy_operator), self._payload)
         self.basis = basis
 
     def __call__(self, x, out=None):

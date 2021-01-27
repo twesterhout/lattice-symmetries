@@ -414,6 +414,8 @@ ls_error_code ls_get_number_states(ls_spin_basis const* basis, uint64_t* out);
 /// \param basis pointer to Hilbert space basis. Must not be `nullptr`.
 /// \return #LS_SUCCESS on success or other status code on error.
 ls_error_code ls_build(ls_spin_basis* basis);
+ls_error_code ls_build_unsafe(ls_spin_basis* basis, uint64_t size,
+                              uint64_t const representatives[]);
 /// \brief Get information about a spin configuration.
 ///
 /// Given a spin configuration, computes its representative, character, and norm of the orbit.

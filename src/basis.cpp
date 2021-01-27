@@ -193,7 +193,10 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_spin_basis* ls_copy_spin_basis(ls_spin_b
 
 extern "C" LATTICE_SYMMETRIES_EXPORT void ls_destroy_spin_basis(ls_spin_basis* basis)
 {
-    if (decrement(basis->header.refcount) == 0) { std::default_delete<ls_spin_basis>{}(basis); }
+    if (decrement(basis->header.refcount) == 0) {
+        LATTICE_SYMMETRIES_LOG_DEBUG("Destroying basis %p\n", static_cast<void*>(basis));
+        std::default_delete<ls_spin_basis>{}(basis);
+    }
 }
 
 extern "C" LATTICE_SYMMETRIES_EXPORT unsigned ls_get_number_spins(ls_spin_basis const* basis)
@@ -250,6 +253,19 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_build(ls_spin_basis* basis
     auto* p = std::get_if<small_basis_t>(&basis->payload);
     if (p == nullptr) { return LS_WRONG_BASIS_TYPE; }
     if (p->cache == nullptr) { p->cache = std::make_unique<basis_cache_t>(basis->header, *p); }
+    return LS_SUCCESS;
+}
+
+extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_build_unsafe(ls_spin_basis* basis,
+                                                                   uint64_t const size,
+                                                                   uint64_t const representatives[])
+{
+    auto* p = std::get_if<small_basis_t>(&basis->payload);
+    if (p == nullptr) { return LS_WRONG_BASIS_TYPE; }
+    if (p->cache == nullptr) {
+        std::vector<uint64_t> rs{representatives, representatives + size};
+        p->cache = std::make_unique<basis_cache_t>(basis->header, *p, std::move(rs));
+    }
     return LS_SUCCESS;
 }
 
