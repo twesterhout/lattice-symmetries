@@ -1,5 +1,4 @@
 #include "symmetry.hpp"
-#include "macros.hpp"
 #include <algorithm>
 #include <cstring>
 #include <memory>
@@ -14,7 +13,7 @@ auto get_projection(tcb::span<small_symmetry_t const> symmetries, Proj proj) noe
     LATTICE_SYMMETRIES_CHECK(symmetries.size() == batched_small_symmetry_t::batch_size,
                              "symmetries has wrong length");
     using element_type = decltype(std::declval<Proj>()(std::declval<small_symmetry_t const&>()));
-    // NOLINTNEXTLINE: batch is initialized in std::transform
+    // NOLINTNEXTLINE: batch is initialized by std::transform
     std::array<element_type, batched_small_symmetry_t::batch_size> batch;
     std::transform(std::begin(symmetries), std::end(symmetries), std::begin(batch),
                    std::cref(proj));
@@ -74,143 +73,6 @@ auto compute_eigenvalue(unsigned sector, unsigned periodicity) noexcept -> std::
     return {re, im};
 }
 
-#if 0
-auto get_state_info(tcb::span<batched_small_symmetry_t const> const batched_symmetries,
-                    tcb::span<small_symmetry_t const> const symmetries, uint64_t bits,
-                    uint64_t& representative, std::complex<double>& character,
-                    double& norm) noexcept -> void
-{
-    if (batched_symmetries.empty() && symmetries.empty()) {
-        representative = bits;
-        character      = {1.0, 0.0};
-        norm           = 1.0;
-        return;
-    }
-    constexpr auto       batch_size = batched_small_symmetry_t::batch_size;
-    alignas(32) uint64_t initial[batch_size]; // NOLINT: 32-byte alignment for AVX
-    alignas(32) uint64_t buffer[batch_size];  // NOLINT: same
-    std::fill(std::begin(initial), std::end(initial), bits);
-
-    auto r = bits;
-    auto n = 0.0;
-    auto e = std::complex<double>{1.0};
-
-    for (auto const& symmetry : batched_symmetries) {
-        std::copy(std::begin(initial), std::end(initial), std::begin(buffer));
-        symmetry.network(static_cast<uint64_t*>(buffer));
-        for (auto i = 0U; i < batch_size; ++i) {
-            if (buffer[i] < r) {
-                r = buffer[i];
-                e = std::complex{symmetry.eigenvalues_real[i], symmetry.eigenvalues_imag[i]};
-            }
-            else if (buffer[i] == bits) {
-                n += symmetry.eigenvalues_real[i];
-            }
-        }
-    }
-    for (auto const& symmetry : symmetries) {
-        auto const y = symmetry.network(bits);
-        if (y < r) {
-            r = y;
-            e = symmetry.eigenvalue;
-        }
-        else if (y == bits) {
-            n += symmetry.eigenvalue.real();
-        }
-    }
-
-    // We need to detect the case when norm is not zero, but only because of
-    // inaccurate arithmetics
-    constexpr auto norm_threshold = 1.0e-5;
-    if (std::abs(n) <= norm_threshold) { n = 0.0; }
-    LATTICE_SYMMETRIES_ASSERT(n >= 0.0, "");
-    auto const group_size = batch_size * batched_symmetries.size() + symmetries.size();
-    n                     = std::sqrt(n / static_cast<double>(group_size));
-
-    // Save results
-    representative = r;
-    character      = e;
-    norm           = n;
-}
-
-auto is_representative(tcb::span<batched_small_symmetry_t const> const batched_symmetries,
-                       tcb::span<small_symmetry_t const> const symmetries, uint64_t bits) noexcept
-    -> bool
-{
-    if (batched_symmetries.empty() && symmetries.empty()) { return true; }
-    constexpr auto       batch_size = batched_small_symmetry_t::batch_size;
-    alignas(32) uint64_t initial[batch_size]; // NOLINT: 32-byte alignment for AVX
-    alignas(32) uint64_t buffer[batch_size];  // NOLINT: same
-    std::fill(std::begin(initial), std::end(initial), bits);
-
-    auto r = bits;
-    auto n = 0.0;
-
-    for (auto const& symmetry : batched_symmetries) {
-        std::copy(std::begin(initial), std::end(initial), std::begin(buffer));
-        symmetry.network(static_cast<uint64_t*>(buffer));
-        for (auto i = 0U; i < batch_size; ++i) {
-            if (buffer[i] < r) { return false; }
-            if (buffer[i] == bits) { n += symmetry.eigenvalues_real[i]; }
-        }
-    }
-    for (auto const& symmetry : symmetries) {
-        auto const y = symmetry.network(bits);
-        if (y < r) { return false; }
-        if (y == bits) { n += symmetry.eigenvalue.real(); }
-    }
-
-    // We need to detect the case when norm is not zero, but only because of
-    // inaccurate arithmetics
-    constexpr auto norm_threshold = 1.0e-5;
-    if (std::abs(n) <= norm_threshold) { n = 0.0; }
-    LATTICE_SYMMETRIES_ASSERT(n >= 0.0, "");
-    return n > 0.0;
-}
-#endif
-
-#if 0
-auto get_state_info(std::vector<big_symmetry_t> const& symmetries, ls_bits512 const& bits,
-                    ls_bits512& representative, std::complex<double>& character, double& norm) noexcept
-    -> void
-{
-    if (symmetries.empty()) {
-        representative = bits;
-        character      = {1.0, 0.0};
-        norm           = 1.0;
-        return;
-    }
-    ls_bits512 buffer; // NOLINT: buffer is initialized inside the loop before it is used
-    auto    r = bits;
-    auto    n = 0.0;
-    auto    e = std::complex<double>{1.0};
-
-    for (auto const& symmetry : symmetries) {
-        buffer = bits;
-        symmetry.network(buffer);
-        if (buffer < r) {
-            r = buffer;
-            e = symmetry.eigenvalue;
-        }
-        else if (buffer == bits) {
-            n += symmetry.eigenvalue.real();
-        }
-    }
-
-    // We need to detect the case when norm is not zero, but only because of
-    // inaccurate arithmetics
-    constexpr auto norm_threshold = 1.0e-5;
-    if (std::abs(n) <= norm_threshold) { n = 0.0; }
-    LATTICE_SYMMETRIES_ASSERT(n >= 0.0, "");
-    n = std::sqrt(n / static_cast<double>(symmetries.size()));
-
-    // Save results
-    representative = r;
-    character      = e;
-    norm           = n;
-}
-#endif
-
 auto is_real(small_symmetry_t const& symmetry) noexcept -> bool
 {
     return symmetry.eigenvalue.imag() == 0.0;
@@ -229,14 +91,15 @@ auto is_real(big_symmetry_t const& symmetry) noexcept -> bool
 
 } // namespace lattice_symmetries
 
-extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_symmetry(ls_symmetry**  ptr,
-                                                                      unsigned const length,
-                                                                      unsigned const permutation[],
-                                                                      unsigned const sector)
+extern "C" {
+
+LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_symmetry(ls_symmetry** ptr, unsigned const length,
+                                                           unsigned const permutation[],
+                                                           unsigned const sector)
 {
     using namespace lattice_symmetries;
     if (ptr == nullptr) { return LS_INVALID_ARGUMENT; }
-    auto const r = compile(tcb::span{permutation, length});
+    auto r = compile(tcb::span{permutation, length});
     if (!r) {
         if (r.error().category() == get_error_category()) {
             return static_cast<ls_error_code>(r.error().value());
@@ -249,48 +112,46 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_symmetry(ls_symmetr
 
     // NOLINTNEXTLINE: 64 spins is the max system size which can be represented by uint64_t
     if (length > 64U) {
-        auto p = std::make_unique<ls_symmetry>(std::in_place_type_t<big_symmetry_t>{}, r.value(),
-                                               sector, periodicity, eigenvalue);
-        *ptr   = p.release();
+        auto p =
+            std::make_unique<ls_symmetry>(std::in_place_type_t<big_symmetry_t>{},
+                                          std::move(r).value(), sector, periodicity, eigenvalue);
+        *ptr = p.release();
     }
     else {
-        auto p = std::make_unique<ls_symmetry>(std::in_place_type_t<small_symmetry_t>{}, r.value(),
-                                               sector, periodicity, eigenvalue);
-        *ptr   = p.release();
+        auto p =
+            std::make_unique<ls_symmetry>(std::in_place_type_t<small_symmetry_t>{},
+                                          std::move(r).value(), sector, periodicity, eigenvalue);
+        *ptr = p.release();
     }
     return LS_SUCCESS;
 }
 
-extern "C" LATTICE_SYMMETRIES_EXPORT void ls_destroy_symmetry(ls_symmetry* symmetry)
+LATTICE_SYMMETRIES_EXPORT void ls_destroy_symmetry(ls_symmetry* symmetry)
 {
     LATTICE_SYMMETRIES_CHECK(symmetry != nullptr, "trying to destroy a nullptr");
     std::default_delete<ls_symmetry>{}(symmetry);
 }
 
-extern "C" LATTICE_SYMMETRIES_EXPORT unsigned ls_get_sector(ls_symmetry const* symmetry)
+LATTICE_SYMMETRIES_EXPORT unsigned ls_get_sector(ls_symmetry const* symmetry)
 {
-    LATTICE_SYMMETRIES_CHECK(symmetry != nullptr, "trying to dereference a nullptr");
     return std::visit([](auto const& x) noexcept { return x.sector; }, symmetry->payload);
 }
 
-extern "C" LATTICE_SYMMETRIES_EXPORT unsigned ls_get_periodicity(ls_symmetry const* symmetry)
+LATTICE_SYMMETRIES_EXPORT unsigned ls_get_periodicity(ls_symmetry const* symmetry)
 {
-    LATTICE_SYMMETRIES_CHECK(symmetry != nullptr, "trying to dereference a nullptr");
     return std::visit([](auto const& x) noexcept { return x.periodicity; }, symmetry->payload);
 }
 
-extern "C" LATTICE_SYMMETRIES_EXPORT void ls_get_eigenvalue(ls_symmetry const* symmetry, void* out)
+LATTICE_SYMMETRIES_EXPORT void ls_get_eigenvalue(ls_symmetry const* symmetry, void* out)
 {
-    LATTICE_SYMMETRIES_CHECK(symmetry != nullptr, "trying to dereference a nullptr");
     auto const value =
         std::visit([](auto const& x) noexcept -> std::complex<double> { return x.eigenvalue; },
                    symmetry->payload);
     std::memcpy(out, &value, sizeof(std::complex<double>));
 }
 
-extern "C" LATTICE_SYMMETRIES_EXPORT double ls_get_phase(ls_symmetry const* symmetry)
+LATTICE_SYMMETRIES_EXPORT double ls_get_phase(ls_symmetry const* symmetry)
 {
-    LATTICE_SYMMETRIES_CHECK(symmetry != nullptr, "trying to dereference a nullptr");
     return std::visit(
         [](auto const& x) noexcept {
             return static_cast<double>(x.sector) / static_cast<double>(x.periodicity);
@@ -298,11 +159,12 @@ extern "C" LATTICE_SYMMETRIES_EXPORT double ls_get_phase(ls_symmetry const* symm
         symmetry->payload);
 }
 
-extern "C" LATTICE_SYMMETRIES_EXPORT unsigned
-ls_symmetry_get_number_spins(ls_symmetry const* symmetry)
+LATTICE_SYMMETRIES_EXPORT unsigned ls_symmetry_get_number_spins(ls_symmetry const* symmetry)
 {
     return std::visit([](auto const& x) noexcept { return x.network.width; }, symmetry->payload);
 }
+
+} // extern "C"
 
 namespace lattice_symmetries {
 struct symmetry_apply_fn_t {
@@ -320,8 +182,11 @@ struct symmetry_apply_fn_t {
 };
 } // namespace lattice_symmetries
 
-extern "C" LATTICE_SYMMETRIES_EXPORT void ls_apply_symmetry(ls_symmetry const* symmetry,
-                                                            ls_bits512*        bits)
+extern "C" {
+
+LATTICE_SYMMETRIES_EXPORT void ls_apply_symmetry(ls_symmetry const* symmetry, ls_bits512* bits)
 {
     return std::visit(lattice_symmetries::symmetry_apply_fn_t{bits}, symmetry->payload);
 }
+
+} // extern "C"

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020, Tom Westerhout
+// Copyright (c) 2019-2021, Tom Westerhout
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -74,21 +74,6 @@ struct batched_small_symmetry_t {
 
 template <class Int> auto compute_periodicity(tcb::span<Int const> permutation) -> unsigned;
 auto compute_eigenvalue(unsigned sector, unsigned periodicity) noexcept -> std::complex<double>;
-
-#if 0
-auto get_state_info(tcb::span<batched_small_symmetry_t const> batched_symmetries,
-                    tcb::span<small_symmetry_t const> symmetries, uint64_t bits,
-                    uint64_t& representative, std::complex<double>& character,
-                    double& norm) noexcept -> void;
-
-auto is_representative(tcb::span<batched_small_symmetry_t const> batched_symmetries,
-                       tcb::span<small_symmetry_t const> symmetries, uint64_t bits) noexcept
-    -> bool;
-
-auto get_state_info(std::vector<big_symmetry_t> const& symmetries, bits512 const& bits,
-                    bits512& representative, std::complex<double>& character, double& norm) noexcept
-    -> void;
-#endif
 
 auto is_real(small_symmetry_t const&) noexcept -> bool;
 auto is_real(batched_small_symmetry_t const&) noexcept -> bool;

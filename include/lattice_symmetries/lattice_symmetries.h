@@ -29,97 +29,48 @@
 #ifndef LATTICE_SYMMETRIES_H
 #define LATTICE_SYMMETRIES_H
 
-/// \file
-/// \brief Public API
-///
-/// **TODO:** To be written.
+#define LATTICE_SYMMETRIES_UNREACHABLE __builtin_unreachable()
+#define LATTICE_SYMMETRIES_LIKELY(x) __builtin_expect(x, 1)
+#define LATTICE_SYMMETRIES_UNLIKELY(x) __builtin_expect(x, 0)
+#define LATTICE_SYMMETRIES_EXPORT __attribute__((visibility("default")))
+#define LATTICE_SYMMETRIES_NORETURN __attribute__((noreturn))
 
-/// \mainpage Lattice Symmetries
-///
-/// \section intro_sec Introduction
-///
-/// **TODO:** To be written.
-///
-/// \section install_sec Installation
-///
-/// \subsection using_conda Installing from Conda
-///
-/// If you are mainly going to use the Python interface to the library, using
-/// [Conda](https://docs.conda.io/en/latest/) is the suggested way of installing the package.
-///
-/// ```{.sh}
-/// conda install -c twesterhout lattice-symmetries
-/// ```
-///
-/// Since Python interface is written entirely in Python using `ctypes` module, C code is not linked
-/// against Python or any other libraries like `numpy`. The above command should thus in principle
-/// work in any environment with Python version 3.7 or above.
-///
-/// The package contains both C and Python interfaces, so even if you do not need the Python
-/// interface, using conda is the simplest way to get started.
-///
-/// \subsection from_source_sec Compiling from source
-///
-/// If you are purely using the C interface, then the suggested way of installing
-/// `lattice_symmetries` library is compiling it from source. There are almost no external
-/// dependencies so the process is quite simple. To compile the code, you will need the following:
-///
-///   * C & C++ compiler (with C++17 support);
-///   * GNU Make or Ninja;
-///   * CMake (3.15+);
-///   * Git
-///
-/// We also provide a [Conda environment
-/// file](https://github.com/twesterhout/lattice-symmetries/blob/master/conda-devel.yml) which
-/// contains all required dependencies (except Git).
-///
-/// First step is to clone the repository:
-///
-/// ```{.sh}
-/// git clone https://github.com/twesterhout/lattice-symmetries.git
-/// cd lattice-symmetries
-/// ```
-///
-/// Next, create a directory where build artifacts will be stored (we do not support in-source
-/// builds):
-///
-/// ```{.sh}
-/// mkdir build
-/// cd build
-/// ```
-///
-/// Run the configure step which will determine the compilers to use, download dependencies etc.
-///
-/// ```{.sh}
-/// cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=</where/to/install> ..
-/// ```
-///
-/// The following CMake parameters affect the build:
-///
-///   * `BUILD_SHARED_LIBS`: when `ON` shared version of the library will be built, otherwise --
-///     static. Note that static library does not include the dependencies. It is thus suggested to
-///     use the shared version unless you know what you are doing.
-///   * `CMAKE_INSTALL_PREFIX`: where to install the library.
-///   * `CMAKE_BUILD_TYPE`: typically `Release` for optimized builds and `Debug` for development and
-///     testing.
-///   * `LatticeSymmetries_ENABLE_UNIT_TESTING`: when `ON` unit tests will be compiled (default:
-///     `ON`).
-///   * `LatticeSymmetries_ENABLE_CLANG_TIDY`: when `ON`, `clang-tidy` will be used for static
-///     analysis.
-///
-///
-/// Build the library:
-///
-/// ```{.sh}
-/// cmake --build .
-/// ```
-///
-/// And finally install it:
-///
-/// ```{.sh}
-/// cmake --build . --target install
-/// ```
-///
+#if !defined(LATTICE_SYMMETRIES_FORCEINLINE)
+#    if defined(_MSC_VER)
+#        define LATTICE_SYMMETRIES_FORCEINLINE __forceinline
+#    elif defined(__GNUC__) && __GNUC__ > 3 // Clang also defines __GNUC__ (as 4)
+#        define LATTICE_SYMMETRIES_FORCEINLINE inline __attribute__((__always_inline__))
+#    else
+#        define LATTICE_SYMMETRIES_FORCEINLINE inline
+#    endif
+#endif
+
+#if !defined(LATTICE_SYMMETRIES_NOINLINE)
+#    if defined(_MSC_VER)
+#        define LATTICE_SYMMETRIES_NOINLINE __declspec(noinline)
+#    elif defined(__GNUC__) && __GNUC__ > 3 // Clang also defines __GNUC__ (as 4)
+#        if defined(__CUDACC__)             // nvcc doesn't always parse __noinline__,
+#            define LATTICE_SYMMETRIES_NOINLINE __attribute__((noinline))
+#        else
+#            define LATTICE_SYMMETRIES_NOINLINE __attribute__((__noinline__))
+#        endif
+#    else
+#        define LATTICE_SYMMETRIES_NOINLINE
+#    endif
+#endif
+
+#if defined(__AVX2__)
+#    define LATTICE_SYMMETRIES_HAS_AVX2() 1
+#    define LATTICE_SYMMETRIES_HAS_AVX() 1
+#elif defined(__AVX__)
+#    define LATTICE_SYMMETRIES_HAS_AVX2() 0
+#    define LATTICE_SYMMETRIES_HAS_AVX() 1
+#elif defined(__SSE2__) || defined(__x86_64__)
+#    define LATTICE_SYMMETRIES_HAS_AVX2() 0
+#    define LATTICE_SYMMETRIES_HAS_AVX() 0
+#else
+#    error "unsupported architecture; lattice-symmetries currently only works on x86_64"
+#endif
 
 #if defined(__cplusplus)
 #    include <cstdint>
@@ -172,19 +123,36 @@ typedef enum ls_error_code {
     LS_SYSTEM_ERROR,            ///< Unknown error
 } ls_error_code;
 
-/// \brief Given an error code, obtains the corresponding error message.
-///
-/// \warning C-string is dynamically allocated and must be freed using #ls_destroy_string.
-///
-/// \param code status code returned by one of the library functions.
-/// \return human readable description of the error.
-/// \see #ls_error_code, #ls_destroy_string
 char const* ls_error_to_string(ls_error_code code);
-/// \brief Deallocates the error message.
-///
-/// \param message string obtained from #ls_error_to_string.
-/// \see #ls_error_code, #ls_error_to_string
-void ls_destroy_string(char const* message);
+void        ls_destroy_string(char const* message);
+
+typedef void (*ls_error_handler)(char const* expr, char const* file, unsigned line,
+                                 char const* function, char const* msg);
+
+void ls_set_check_fail_handler(ls_error_handler func);
+void ls_set_assert_fail_handler(ls_error_handler func);
+
+LATTICE_SYMMETRIES_NORETURN
+void ls_assert_fail(char const* expr, char const* file, unsigned line, char const* function,
+                    char const* msg);
+
+LATTICE_SYMMETRIES_NORETURN
+void ls_check_fail(char const* expr, char const* file, unsigned line, char const* function,
+                   char const* msg);
+
+#define LATTICE_SYMMETRIES_CHECK(cond, msg)                                                        \
+    (LATTICE_SYMMETRIES_LIKELY(cond)                                                               \
+         ? ((void)0)                                                                               \
+         : ls_check_fail(#cond, __FILE__, __LINE__, __FUNCTION__, msg))
+
+#if !defined(NDEBUG)
+#    define LATTICE_SYMMETRIES_ASSERT(cond, msg)                                                   \
+        (LATTICE_SYMMETRIES_LIKELY(cond)                                                           \
+             ? ((void)0)                                                                           \
+             : ls_assert_fail(#cond, __FILE__, __LINE__, __FUNCTION__, msg))
+#else
+#    define LATTICE_SYMMETRIES_ASSERT(cond, msg) ((void)0)
+#endif
 
 /// @}
 // end of errors group
@@ -192,6 +160,13 @@ void ls_destroy_string(char const* message);
 bool ls_is_logging_enabled();
 void ls_enable_logging();
 void ls_disable_logging();
+
+// This is an internal function!
+void ls_private_log_debug(char const* file, unsigned line, char const* function, char const* fmt,
+                          ...);
+
+#define LATTICE_SYMMETRIES_LOG_DEBUG(fmt, ...)                                                     \
+    ls_private_log_debug(__FILE__, __LINE__, __FUNCTION__, fmt, __VA_ARGS__)
 
 typedef uint64_t ls_bits64;
 
@@ -326,6 +301,11 @@ void ls_destroy_group(ls_group* group);
 /// \param group pointer to symmetry group. Must not be `nullptr`.
 /// \return number of elements in the group.
 unsigned ls_get_group_size(ls_group const* group);
+
+ls_symmetry const* ls_group_get_symmetries(ls_group const* group);
+
+// Return value -1 means that the group is empty and number of spins could not be determined
+int ls_group_get_number_spins(ls_group const* group);
 
 /// @}
 // end of group group
@@ -512,6 +492,28 @@ bool ls_operator_is_real(ls_operator const* op);
 
 #if defined(__cplusplus)
 } // extern "C"
+#endif
+
+#if defined(__cplusplus)
+#    include <system_error>
+
+namespace std {
+template <> struct is_error_code_enum<ls_error_code> : true_type {};
+} // namespace std
+
+namespace lattice_symmetries {
+class ls_error_category : public std::error_category {
+  public:
+    [[nodiscard]] auto name() const noexcept -> const char* final;
+    [[nodiscard]] auto message(int c) const -> std::string final;
+};
+auto get_error_category() noexcept -> ls_error_category const&;
+} // namespace lattice_symmetries
+
+inline auto make_error_code(ls_error_code const e) noexcept -> std::error_code
+{
+    return {static_cast<int>(e), lattice_symmetries::get_error_category()};
+}
 #endif
 
 #endif // LATTICE_SYMMETRIES_H

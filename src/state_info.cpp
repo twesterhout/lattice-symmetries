@@ -1,6 +1,6 @@
 #include "state_info.hpp"
+#include "bits.hpp"
 #include "kernels.hpp"
-#include "macros.hpp"
 #include <vectorclass.h>
 
 #if LATTICE_SYMMETRIES_HAS_AVX2()
@@ -21,6 +21,8 @@
 #endif
 
 namespace lattice_symmetries {
+namespace vcl = VCL_NAMESPACE;
+
 namespace {
     // We set 64-bit mask to
     //

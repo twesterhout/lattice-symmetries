@@ -28,8 +28,6 @@
 
 #include "permutation.hpp"
 #include "bits.hpp"
-#include "error_handling.hpp"
-#include "macros.hpp"
 #include <algorithm>
 #include <cmath>
 #include <numeric>
@@ -37,16 +35,12 @@
 
 namespace lattice_symmetries {
 
-template <class Int> auto is_permutation_helper(tcb::span<Int const> xs) -> bool
+template <class Int> auto is_permutation(tcb::span<Int const> xs) -> bool
 {
     std::vector<Int> range(xs.size());
     std::iota(std::begin(range), std::end(range), Int{0});
     return std::is_permutation(std::begin(xs), std::end(xs), std::begin(range));
 }
-
-LATTICE_SYMMETRIES_EXPORT
-auto is_permutation(tcb::span<unsigned const> xs) -> bool { return is_permutation_helper(xs); }
-auto is_permutation(tcb::span<uint16_t const> xs) -> bool { return is_permutation_helper(xs); }
 
 enum class status_t { success, invalid_argument, no_solution, swap_impossible };
 enum class index_type_t { small, big };
@@ -323,11 +317,11 @@ inline auto next_pow_of_2(uint64_t const x) noexcept -> uint64_t
 }
 
 template <class Int>
-auto compile_helper(tcb::span<Int const> const permutation) -> outcome::result<fat_benes_network_t>
+auto compile(tcb::span<Int const> const permutation) -> outcome::result<fat_benes_network_t>
 {
-    if (!is_permutation(permutation)) { return LS_INVALID_PERMUTATION; }
+    if (!is_permutation(permutation)) { return outcome::failure(LS_INVALID_PERMUTATION); }
     // NOLINTNEXTLINE: 512 is the number of bits in ls_bits512, not a magic constant
-    if (permutation.size() > 512U) { return LS_PERMUTATION_TOO_LONG; }
+    if (permutation.size() > 512U) { return outcome::failure(LS_PERMUTATION_TOO_LONG); }
     if (permutation.empty()) { return fat_benes_network_t{{}, {}, 0U}; }
     auto const working_size = next_pow_of_2(permutation.size());
 
@@ -340,49 +334,47 @@ auto compile_helper(tcb::span<Int const> const permutation) -> outcome::result<f
 
     auto network = solver_t{std::move(source), std::move(target)}.solve();
     network.size = static_cast<unsigned>(permutation.size());
-    return network;
+    return outcome::success(std::move(network));
 }
 
-LATTICE_SYMMETRIES_EXPORT
-auto compile(tcb::span<unsigned const> const permutation) -> outcome::result<fat_benes_network_t>
-{
-    return compile_helper(permutation);
-}
+template auto compile(tcb::span<unsigned const> const permutation)
+    -> outcome::result<fat_benes_network_t>;
+template auto compile(tcb::span<uint16_t const> const permutation)
+    -> outcome::result<fat_benes_network_t>;
 
-auto compile(tcb::span<uint16_t const> const permutation) -> outcome::result<fat_benes_network_t>
+template <class Int> auto fat_benes_network_t::operator()(tcb::span<Int> bits) const -> void
 {
-    return compile_helper(permutation);
-}
+    LATTICE_SYMMETRIES_CHECK(bits.size() == size, "bits has wrong size");
 
-#if 0
-auto fat_benes_network_t::optimize() -> void
-{
-    auto       first = size_t{0};
-    auto const last  = masks.size();
-    for (; first != last && !is_zero(masks[first]); ++first) {}
-    if (first == last) { return; }
-    for (auto i = first + 1; i != last; ++i) {
-        if (!is_zero(masks[i])) {
-            masks[first]  = masks[i];
-            deltas[first] = deltas[i];
-            ++first;
+    auto workspace = std::vector<Int>(next_pow_of_2(bits.size()));
+    auto _i        = std::copy(std::begin(bits), std::end(bits), std::begin(workspace));
+    std::iota(_i, std::end(workspace), static_cast<Int>(bits.size()));
+
+    LATTICE_SYMMETRIES_ASSERT(masks.size() == deltas.size(),
+                              "sizes of masks and deltas do not match");
+    for (auto i = 0U; i < masks.size(); ++i) {
+        auto const& mask  = masks[i];
+        auto const  delta = deltas[i];
+        for (auto j = 0U; j < workspace.size(); ++j) {
+            if (test_bit(mask, j)) {
+                LATTICE_SYMMETRIES_CHECK(j + delta < workspace.size(), "");
+                std::swap(workspace[j], workspace[j + delta]);
+            }
         }
     }
-    masks.resize(first);
-    deltas.resize(first);
+    std::copy(std::begin(workspace),
+              std::next(std::begin(workspace), static_cast<ptrdiff_t>(bits.size())),
+              std::begin(bits));
 }
 
-auto fat_benes_network_t::operator()(std::vector<int> x) const -> std::vector<int>
+template <class Int> auto fat_benes_network_t::permutation() const -> std::vector<Int>
 {
-    for (auto _i = 0; _i < masks.size(); ++_i) {
-        auto const& mask  = masks[_i];
-        auto const  delta = deltas[_i];
-        for (auto j = 0; j < x.size() - delta; ++j) {
-            if (test_bit(mask, j)) { std::swap(x[j], x[j + delta]); }
-        }
-    }
-    return x;
+    std::vector<Int> r(size);
+    std::iota(std::begin(r), std::end(r), Int{0});
+    operator()(tcb::span{r});
+    return r;
 }
-#endif
+
+template auto fat_benes_network_t::permutation() const -> std::vector<uint16_t>;
 
 } // namespace lattice_symmetries

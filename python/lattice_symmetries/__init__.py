@@ -39,7 +39,7 @@ import time
 from typing import List, Optional, Tuple
 import numpy as np
 
-__version__ = "0.4.3"
+__version__ = "0.5.0"
 
 # Enable import warnings
 warnings.filterwarnings("default", category=ImportWarning)
@@ -485,7 +485,7 @@ class SpinBasis:
         _check_error(_lib.ls_get_states(byref(states), self._payload))
         Array = c_uint64 * _lib.ls_states_get_size(states)
         array = Array.from_address(cast(_lib.ls_states_get_data(states), c_void_p).value)
-        weakref.finalize(array, _destroy(_lib.ls_destroy_states), states)
+        weakref.finalize(array, _lib.ls_destroy_states, states)
         return np.frombuffer(array, dtype=np.uint64)
 
     def save_cache(self, filename: str):

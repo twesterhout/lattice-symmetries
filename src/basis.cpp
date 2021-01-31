@@ -28,8 +28,6 @@
 
 #include "basis.hpp"
 #include "cache.hpp"
-#include "group.hpp"
-#include "macros.hpp"
 #include "state_info.hpp"
 #include <algorithm>
 
@@ -69,23 +67,19 @@ namespace {
         return std::make_tuple(std::move(batched), std::optional{batched_small_symmetry_t{other}},
                                count);
     }
-
-    auto get_number_spins(ls_group const& group) noexcept -> std::optional<unsigned>
-    {
-        if (group.payload.empty()) { return std::nullopt; }
-        return std::visit([](auto const& x) noexcept { return x.network.width; },
-                          group.payload.front().payload);
-    }
 } // namespace
 
 small_basis_t::small_basis_t(ls_group const& group) : cache{nullptr}
 {
-    auto symmetries = extract<small_symmetry_t>(group.payload);
+    auto symmetries = extract<small_symmetry_t>(
+        tcb::span{ls_group_get_symmetries(&group), ls_get_group_size(&group)});
     std::tie(batched_symmetries, other_symmetries, number_other_symmetries) =
         split_into_batches(symmetries);
 }
 
-big_basis_t::big_basis_t(ls_group const& group) : symmetries{extract<big_symmetry_t>(group.payload)}
+big_basis_t::big_basis_t(ls_group const& group)
+    : symmetries{extract<big_symmetry_t>(
+        tcb::span{ls_group_get_symmetries(&group), ls_get_group_size(&group)})}
 {}
 
 } // namespace lattice_symmetries
@@ -143,7 +137,8 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_spin_basis(ls_spin_
 {
     // NOLINTNEXTLINE: 512 is the max supported system size (i.e. number of bits in ls_bits512)
     if (number_spins == 0 || number_spins > 512) { return LS_INVALID_NUMBER_SPINS; }
-    if (auto n = get_number_spins(*group); n.has_value() && number_spins != *n) {
+    if (auto const n = ls_group_get_number_spins(group);
+        n != -1 && number_spins != static_cast<unsigned>(n)) {
         return LS_INVALID_NUMBER_SPINS;
     }
     if (!(hamming_weight == -1
@@ -160,14 +155,10 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_spin_basis(ls_spin_
         auto const status = ls_create_trivial_group(&trivial_group, number_spins);
         LATTICE_SYMMETRIES_CHECK(status == LS_SUCCESS, "failed to create trivial group");
     }
-    auto const& group_ref = using_trivial_group ? *trivial_group : *group;
+    auto const& group_ref =
+        using_trivial_group ? *static_cast<ls_group const*>(trivial_group) : *group;
 
-    auto need_big = [group, number_spins]() {
-        if (ls_get_group_size(group) > 0) {
-            return std::holds_alternative<big_symmetry_t>(group->payload.front().payload);
-        }
-        return number_spins > 64; // NOLINT: 64 is number of bits in uint64_t
-    }();
+    auto const need_big = number_spins > 64; // NOLINT: 64 is number of bits in uint64_t
     auto const _hamming_weight =
         hamming_weight == -1 ? std::nullopt : std::optional<unsigned>{hamming_weight};
     auto p = need_big

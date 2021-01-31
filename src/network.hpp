@@ -43,8 +43,9 @@ struct small_network_t {
     uint16_t width;
 
     explicit small_network_t(fat_benes_network_t const& fat) noexcept;
+    explicit operator fat_benes_network_t() const;
+
     auto operator()(uint64_t bits) const noexcept -> uint64_t;
-    auto operator()(tcb::span<unsigned> bits) const noexcept -> void;
 
     static auto make_fake(uint16_t depth, uint16_t width) noexcept -> small_network_t;
 
@@ -61,21 +62,10 @@ struct alignas(32) big_network_t {
     uint16_t   width;
 
     explicit big_network_t(fat_benes_network_t const& fat) noexcept;
+    explicit operator fat_benes_network_t() const;
+
     auto operator()(ls_bits512& bits) const noexcept -> void;
-    auto operator()(tcb::span<unsigned> bits) const noexcept -> void;
 };
-
-auto reconstruct_permutation(small_network_t const& network) -> std::vector<uint16_t>;
-auto reconstruct_permutation(big_network_t const& network) -> std::vector<uint16_t>;
-
-auto compose(small_network_t const& x, small_network_t const& y)
-    -> outcome::result<small_network_t>;
-auto compose(big_network_t const& x, big_network_t const& y) -> outcome::result<small_network_t>;
-
-// auto operator==(small_network_t const& x, small_network_t const& y) -> bool;
-// auto operator!=(small_network_t const& x, small_network_t const& y) -> bool;
-// auto operator==(big_network_t const& x, big_network_t const& y) -> bool;
-// auto operator!=(big_network_t const& x, big_network_t const& y) -> bool;
 
 struct alignas(32) batched_small_network_t {
     static constexpr auto max_depth  = 11U;
@@ -88,6 +78,7 @@ struct alignas(32) batched_small_network_t {
 
     explicit batched_small_network_t(
         std::array<small_network_t const*, batch_size> const& networks) noexcept;
+
     auto operator()(uint64_t bits[batch_size]) const noexcept -> void;
 };
 

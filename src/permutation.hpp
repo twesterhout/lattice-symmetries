@@ -28,29 +28,25 @@
 
 #pragma once
 
-#include "error_handling.hpp"
 #include "lattice_symmetries/lattice_symmetries.h"
 #include <outcome.hpp>
 #include <span.hpp>
 #include <vector>
 
+namespace outcome = OUTCOME_V2_NAMESPACE;
+
 namespace lattice_symmetries {
 
-/// Benes network IR (Intermediate Representation).
-///
-/// This is the product of compilation of permutations.
 struct fat_benes_network_t {
     std::vector<ls_bits512> masks;
     std::vector<unsigned>   deltas;
     unsigned                size;
+
+    template <class Int> auto operator()(tcb::span<Int> bits) const -> void;
+    template <class Int> auto permutation() const -> std::vector<Int>;
 };
 
-/// Returns true when `xs` is a permutation of `{0, ..., xs.size() - 1}`.
-auto is_permutation(tcb::span<unsigned const> xs) -> bool;
-auto is_permutation(tcb::span<uint16_t const> xs) -> bool;
-
-/// Compiles the \p permutation to a standard Benes network.
-auto compile(tcb::span<unsigned const> permutation) -> outcome::result<fat_benes_network_t>;
-auto compile(tcb::span<uint16_t const> permutation) -> outcome::result<fat_benes_network_t>;
+template <class Int>
+auto compile(tcb::span<Int const> permutation) -> outcome::result<fat_benes_network_t>;
 
 } // namespace lattice_symmetries

@@ -1,7 +1,6 @@
 #include "operator.hpp"
 #include "basis.hpp"
 #include "bits.hpp"
-#include "error_handling.hpp"
 #include "lattice_symmetries/lattice_symmetries.h"
 #include <omp.h>
 #include <algorithm>

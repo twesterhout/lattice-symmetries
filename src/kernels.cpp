@@ -58,6 +58,7 @@
 #endif
 
 namespace lattice_symmetries {
+namespace vcl = VCL_NAMESPACE;
 
 namespace {
     LATTICE_SYMMETRIES_FORCEINLINE
@@ -370,6 +371,21 @@ namespace detail {
 #endif
 
 #if defined(LATTICE_SYMMETRIES_ADD_DISPATCH_CODE)
+constexpr auto bit_permute_step(uint64_t const x, uint64_t const m, unsigned const d) noexcept
+    -> uint64_t
+{
+    auto const y = (x ^ (x >> d)) & m;
+    return x ^ y ^ (y << d);
+}
+
+auto benes_forward(uint64_t& x, uint64_t const masks[], unsigned size,
+                   uint16_t const deltas[]) noexcept -> void
+{
+    for (auto i = 0U; i < size; ++i) {
+        x = bit_permute_step(x, masks[i], deltas[i]);
+    }
+}
+
 auto benes_forward(uint64_t x[batch_size], uint64_t const (*masks)[batch_size], unsigned size,
                    uint16_t const deltas[]) noexcept -> void
 {

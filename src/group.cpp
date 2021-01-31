@@ -26,7 +26,6 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "error_handling.hpp"
 #include "symmetry.hpp"
 #include <algorithm>
 #include <memory>
@@ -53,7 +52,7 @@ namespace {
         return std::make_pair(p % q, q);
     }
 
-    auto equal(symmetry_spec_t const& x, symmetry_spec_t const& y) -> outcome::result<bool>
+    auto equal(symmetry_spec_t const& x, symmetry_spec_t const& y) noexcept -> outcome::result<bool>
     {
         if (x.permutation.size() != y.permutation.size()) {
             return outcome::failure(LS_INCOMPATIBLE_SYMMETRIES);
@@ -130,7 +129,10 @@ namespace {
     auto to_spec(ls_symmetry const& symmetry) -> symmetry_spec_t
     {
         auto permutation = std::visit(
-            [](auto const& x) { return reconstruct_permutation(x.network); }, symmetry.payload);
+            [](auto const& x) {
+                return static_cast<fat_benes_network_t>(x.network).permutation<uint16_t>();
+            },
+            symmetry.payload);
         auto const sector      = static_cast<uint16_t>(ls_get_sector(&symmetry));
         auto const periodicity = static_cast<uint16_t>(ls_get_periodicity(&symmetry));
         return symmetry_spec_t{std::move(permutation), sector, periodicity};
@@ -138,16 +140,16 @@ namespace {
 
     auto from_spec(symmetry_spec_t const& spec) -> ls_symmetry
     {
-        auto fat = compile(spec.permutation);
-        LATTICE_SYMMETRIES_CHECK(fat.has_value(), "compilation failed");
+        auto&& fat = compile(tcb::span{spec.permutation});
+        LATTICE_SYMMETRIES_CHECK(fat.has_value(), "compilation from symmetry_spec_t failed");
         auto const eigenvalue = compute_eigenvalue(spec.sector, spec.periodicity);
         // NOLINTNEXTLINE: 64 is the number of bits in uint64_t
         if (spec.permutation.size() > 64U) {
-            return ls_symmetry{std::in_place_type_t<big_symmetry_t>{}, fat.value(), spec.sector,
-                               spec.periodicity, eigenvalue};
+            return ls_symmetry{std::in_place_type_t<big_symmetry_t>{}, std::move(fat).value(),
+                               spec.sector, spec.periodicity, eigenvalue};
         }
-        return ls_symmetry{std::in_place_type_t<small_symmetry_t>{}, fat.value(), spec.sector,
-                           spec.periodicity, eigenvalue};
+        return ls_symmetry{std::in_place_type_t<small_symmetry_t>{}, std::move(fat).value(),
+                           spec.sector, spec.periodicity, eigenvalue};
     }
 
     auto make_group(tcb::span<ls_symmetry const* const> generators)
@@ -179,8 +181,10 @@ struct ls_group {
     explicit ls_group(std::vector<ls_symmetry> gs) noexcept : payload{std::move(gs)} {}
 };
 
-extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_group(ls_group** ptr, unsigned size,
-                                                                   ls_symmetry const* generators[])
+extern "C" {
+
+LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_group(ls_group** ptr, unsigned size,
+                                                        ls_symmetry const* generators[])
 {
     using namespace lattice_symmetries;
     auto r = make_group(tcb::span{generators, size});
@@ -201,8 +205,8 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_group(ls_group** pt
     return LS_SUCCESS;
 }
 
-extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code
-ls_create_trivial_group(ls_group** ptr, unsigned const number_spins)
+LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_trivial_group(ls_group**     ptr,
+                                                                unsigned const number_spins)
 {
     if (number_spins == 0) { return LS_INVALID_NUMBER_SPINS; }
     using namespace lattice_symmetries;
@@ -212,12 +216,25 @@ ls_create_trivial_group(ls_group** ptr, unsigned const number_spins)
     return LS_SUCCESS;
 }
 
-extern "C" LATTICE_SYMMETRIES_EXPORT void ls_destroy_group(ls_group* group)
+LATTICE_SYMMETRIES_EXPORT void ls_destroy_group(ls_group* group)
 {
     std::default_delete<ls_group>{}(group);
 }
 
-extern "C" LATTICE_SYMMETRIES_EXPORT unsigned ls_get_group_size(ls_group const* group)
+LATTICE_SYMMETRIES_EXPORT unsigned ls_get_group_size(ls_group const* group)
 {
     return static_cast<unsigned>(group->payload.size());
 }
+
+LATTICE_SYMMETRIES_EXPORT int ls_group_get_number_spins(ls_group const* group)
+{
+    if (ls_get_group_size(group) == 0) { return -1; }
+    return static_cast<int>(ls_symmetry_get_number_spins(&group->payload.front()));
+}
+
+LATTICE_SYMMETRIES_EXPORT ls_symmetry const* ls_group_get_symmetries(ls_group const* group)
+{
+    return group->payload.data();
+}
+
+} // extern "C"

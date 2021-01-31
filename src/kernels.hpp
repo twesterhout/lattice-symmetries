@@ -28,8 +28,7 @@
 
 #pragma once
 
-#include "bits.hpp"
-#include "macros.hpp"
+#include "lattice_symmetries/lattice_symmetries.h"
 #include <immintrin.h>
 #include <cstdint>
 
@@ -38,6 +37,9 @@ namespace lattice_symmetries {
 inline constexpr int batch_size = 8;
 static_assert(4 * sizeof(__m128i) == batch_size * sizeof(uint64_t));
 static_assert(2 * sizeof(__m256i) == batch_size * sizeof(uint64_t));
+
+auto benes_forward(uint64_t& x, uint64_t const masks[], unsigned size,
+                   uint16_t const deltas[]) noexcept -> void;
 
 auto benes_forward(uint64_t x[batch_size], uint64_t const (*masks)[batch_size], unsigned size,
                    uint16_t const deltas[]) noexcept -> void;

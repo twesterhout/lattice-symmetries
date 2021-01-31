@@ -27,7 +27,7 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "cache.hpp"
-#include "error_handling.hpp"
+#include "bits.hpp"
 #include "kernels.hpp"
 #include "state_info.hpp"
 

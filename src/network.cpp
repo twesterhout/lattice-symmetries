@@ -1,40 +1,10 @@
 #include "network.hpp"
+#include "bits.hpp"
 #include "kernels.hpp"
 #include <algorithm>
-#include <iostream>
 #include <numeric>
 
 namespace lattice_symmetries {
-
-namespace {
-    // We set 64-bit mask to
-    //
-    //     0000....0011....1111
-    //               ~~~~~~~~~~
-    //                   n
-    auto init_flip_mask(ls_bits64& mask, unsigned const n) noexcept -> void
-    {
-        // Play nice and do not shift by 64 bits
-        // NOLINTNEXTLINE: 64 is the number of bits in ls_bits64
-        mask = n == 0U ? uint64_t{0} : ((~uint64_t{0}) >> (64U - n));
-    }
-
-    auto init_flip_mask(ls_bits512& mask, unsigned n) noexcept -> void
-    {
-        auto i = 0U;
-        // NOLINTNEXTLINE: 64 is the number of bits in uint64_t
-        for (; n >= 64U; ++i, n -= 64) {
-            mask.words[i] = ~uint64_t{0};
-        }
-        if (n != 0U) {
-            init_flip_mask(mask.words[i], n);
-            ++i;
-        }
-        for (; i < std::size(mask.words); ++i) {
-            mask.words[i] = uint64_t{0};
-        }
-    }
-} // namespace
 
 small_network_t::small_network_t(fat_benes_network_t const& fat) noexcept
     : masks{}
@@ -80,6 +50,20 @@ auto small_network_t::make_fake(uint16_t depth, uint16_t width) noexcept -> smal
     return small_network_t{depth, width};
 }
 
+small_network_t::operator fat_benes_network_t() const
+{
+    std::vector<ls_bits512> new_masks(depth);
+    std::transform(std::begin(masks), std::end(masks), std::begin(new_masks), [](auto const m) {
+        ls_bits512 r;
+        set_zero(r);
+        r.words[0] = m;
+        return r;
+    });
+    std::vector<unsigned> new_deltas(depth);
+    std::copy(std::begin(deltas), std::end(deltas), std::begin(new_deltas));
+    return fat_benes_network_t{std::move(new_masks), std::move(new_deltas), width};
+}
+
 big_network_t::big_network_t(fat_benes_network_t const& fat) noexcept
     : masks{}
     , deltas{}
@@ -96,18 +80,18 @@ big_network_t::big_network_t(fat_benes_network_t const& fat) noexcept
     std::fill(std::next(std::begin(deltas), depth), std::end(deltas), uint64_t{0});
 }
 
-constexpr auto bit_permute_step(uint64_t const x, uint64_t const m, unsigned const d) noexcept
-    -> uint64_t
+big_network_t::operator fat_benes_network_t() const
 {
-    auto const y = (x ^ (x >> d)) & m;
-    return x ^ y ^ (y << d);
+    std::vector<ls_bits512> new_masks(depth);
+    std::copy(std::begin(masks), std::end(masks), std::begin(new_masks));
+    std::vector<unsigned> new_deltas(depth);
+    std::copy(std::begin(deltas), std::end(deltas), std::begin(new_deltas));
+    return fat_benes_network_t{std::move(new_masks), std::move(new_deltas), width};
 }
 
 auto small_network_t::operator()(uint64_t bits) const noexcept -> uint64_t
 {
-    for (auto i = 0U; i < depth; ++i) {
-        bits = bit_permute_step(bits, masks[i], deltas[i]);
-    }
+    benes_forward(bits, masks, depth, deltas);
     return bits;
 }
 
@@ -116,84 +100,6 @@ auto big_network_t::operator()(ls_bits512& bits) const noexcept -> void
     benes_forward(bits, static_cast<ls_bits512 const*>(masks), depth,
                   static_cast<uint16_t const*>(deltas));
 }
-
-inline auto next_pow_of_2(uint64_t const x) noexcept -> uint64_t
-{
-    return x <= 1U ? uint64_t{1}
-                   // NOLINTNEXTLINE: 64 is the number of bits in uint64_t, not a magic constant
-                   : uint64_t{1} << static_cast<unsigned>(64 - __builtin_clzl(x - 1U));
-}
-
-template <class Network, class Int>
-auto permutation_helper(Network const& network, tcb::span<Int> const bits) noexcept -> void
-{
-    LATTICE_SYMMETRIES_CHECK(bits.size() == network.width, "bits has wrong size");
-
-    auto workspace = std::vector<Int>(next_pow_of_2(bits.size()));
-    auto _i        = std::copy(std::begin(bits), std::end(bits), std::begin(workspace));
-    std::iota(_i, std::end(workspace), bits.size());
-
-    for (auto i = 0U; i < network.depth; ++i) {
-        auto const& mask  = network.masks[i];
-        auto const  delta = network.deltas[i];
-        for (auto j = 0U; j < workspace.size(); ++j) {
-            if (test_bit(mask, j)) {
-                LATTICE_SYMMETRIES_CHECK(j + delta < workspace.size(), "");
-                std::swap(workspace[j], workspace[j + delta]);
-            }
-        }
-    }
-    std::copy(std::begin(workspace),
-              std::next(std::begin(workspace), static_cast<ptrdiff_t>(bits.size())),
-              std::begin(bits));
-}
-
-auto small_network_t::operator()(tcb::span<unsigned> const bits) const noexcept -> void
-{
-    permutation_helper(*this, bits);
-}
-
-auto big_network_t::operator()(tcb::span<unsigned> const bits) const noexcept -> void
-{
-    permutation_helper(*this, bits);
-}
-
-template <class Network>
-auto reconstruct_permutation_helper(Network const& network) -> std::vector<uint16_t>
-{
-    std::vector<unsigned> permutation(network.width);
-    std::iota(std::begin(permutation), std::end(permutation), 0U);
-    network(permutation);
-    return std::vector<uint16_t>{std::begin(permutation), std::end(permutation)};
-}
-auto reconstruct_permutation(small_network_t const& network) -> std::vector<uint16_t>
-{
-    return reconstruct_permutation_helper(network);
-}
-auto reconstruct_permutation(big_network_t const& network) -> std::vector<uint16_t>
-{
-    return reconstruct_permutation_helper(network);
-}
-
-template <class Network>
-auto compose_helper(Network const& x, Network const& y) -> outcome::result<Network>
-{
-    if (x.width != y.width) { return LS_INCOMPATIBLE_SYMMETRIES; }
-    std::vector<unsigned> permutation(x.width);
-    std::iota(std::begin(permutation), std::end(permutation), 0U);
-    y(permutation);
-    x(permutation);
-    auto r = compile(permutation);
-    if (!r) { return r.as_failure(); }
-    return Network{std::move(r).value()};
-}
-
-auto compose(small_network_t const& x, small_network_t const& y) -> outcome::result<small_network_t>
-{
-    return compose_helper(x, y);
-}
-
-// auto compose(big_network_t const& x, big_network_t const& y) -> small_network_t;
 
 batched_small_network_t::batched_small_network_t(
     std::array<small_network_t const*, batch_size> const& networks) noexcept
@@ -231,28 +137,6 @@ batched_small_network_t::batched_small_network_t(
         }
     });
 }
-
-#if 0
-batched_small_network_t::batched_small_network_t(small_network_t const& small) noexcept
-    : masks{}, deltas{}, flip{}, flip_mask{small.flip_mask}, depth{small.depth}
-{
-    for (auto i = 0; i < depth; ++i) {
-        for (auto j = 0U; j < batch_size; ++j) {
-            masks[i][j] = small.masks[i];
-        }
-        deltas[i] = small.deltas[i];
-    }
-    for (auto i = depth; i < max_depth; ++i) {
-        for (auto j = 0U; j < batch_size; ++j) {
-            masks[i][j] = 0;
-        }
-        deltas[i] = 0;
-    }
-    for (auto j = 0U; j < batch_size; ++j) {
-        flip[j] = small.flip;
-    }
-}
-#endif
 
 auto batched_small_network_t::operator()(uint64_t bits[batch_size]) const noexcept -> void
 {

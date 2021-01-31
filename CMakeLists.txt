@@ -53,25 +53,37 @@ include(cmake/StaticAnalyzers.cmake)
 # Library sources
 #
 set(LatticeSymmetries_sources
-    src/permutation.cpp
-    src/network.cpp
-    src/symmetry.cpp
-    src/group.cpp
-    src/cache.cpp
     src/basis.cpp
+    src/cache.cpp
+    src/error_handling.cpp
+    src/group.cpp
+    # src/kernels.cpp
+    src/network.cpp
     src/operator.cpp
-    src/error_handling.cpp)
+    src/permutation.cpp
+    # src/state_info.cpp
+    src/symmetry.cpp
+)
+set(LatticeSymmetries_portable_sources
+    src/error_handling.cpp
+    src/group.cpp
+    src/permutation.cpp
+    src/symmetry.cpp
+)
 
 set(LatticeSymmetries_headers
     include/lattice_symmetries/lattice_symmetries.h
-    src/permutation.hpp
-    src/network.hpp
-    src/symmetry.hpp
-    src/cache.hpp
     src/basis.hpp
+    src/bits.hpp
+    src/cache.hpp
+    src/intrusive_ptr.hpp
+    src/kernels.hpp
+    src/network.hpp
     src/operator.hpp
-    src/error_handling.hpp
-    src/macros.hpp)
+    src/permutation.hpp
+    src/state_info.hpp
+    src/symmetry.hpp
+)
 
 set(LatticeSymmetries_all_files
     ${LatticeSymmetries_sources}
@@ -107,6 +119,40 @@ add_clang_format_target()
 function(disable_rtti_and_exceptions _target)
     target_compile_options(${_target} PUBLIC -fno-rtti -fno-exceptions)
 endfunction()
+
+if(FALSE)
+foreach(arch sse2 sse4 avx avx2)
+    set(_local_target "lattice_symmetries_${arch}")
+    add_library(${_local_target} SHARED
+        ${LatticeSymmetries_headers}
+        ${LatticeSymmetries_sources}
+        src/kernels.cpp
+        src/state_info.cpp
+    )
+    target_include_directories(${_local_target}
+      PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_include_directories(${_local_target}
+      SYSTEM PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/version2
+    )
+    target_compile_features(${_local_target} PRIVATE cxx_std_17)
+    target_compile_definitions(${_local_target} PRIVATE VCL_NAMESPACE=vcl_${arch})
+    set_project_warnings(${_local_target})
+    disable_rtti_and_exceptions(${_local_target})
+    set_property(TARGET ${_local_target} PROPERTY POSITION_INDEPENDENT_CODE ON)
+    target_link_libraries(${_local_target} PUBLIC OpenMP::OpenMP_CXX)
+endforeach()
+target_compile_options(lattice_symmetries_sse2 PRIVATE -march=nocona -mtune=nehalem)
+# target_compile_options(lattice_symmetries_sse4 PRIVATE -march=nehalem -mtune=nehalem)
+# target_compile_options(lattice_symmetries_avx PRIVATE -march=sandybridge -mtune=sandybridge)
+# target_compile_options(lattice_symmetries_avx2 PRIVATE -march=haswell -mtune=haswell)
+endif()
+
+
 
 #
 # CPU kernels for various architectures
@@ -146,6 +192,16 @@ add_library(lattice_symmetries
     ${LatticeSymmetries_headers}
     ${LatticeSymmetries_sources}
 )
+add_library(lattice_symmetries_c_sources OBJECT src/error_handling.c)
+set_property(TARGET lattice_symmetries_c_sources PROPERTY POSITION_INDEPENDENT_CODE ON)
+target_include_directories(lattice_symmetries_c_sources
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_link_libraries(lattice_symmetries PRIVATE lattice_symmetries_c_sources)
+
+
 target_compile_features(lattice_symmetries PRIVATE cxx_std_17)
 set_project_warnings(lattice_symmetries)
 disable_rtti_and_exceptions(lattice_symmetries)

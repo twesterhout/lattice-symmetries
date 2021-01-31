@@ -28,7 +28,6 @@
 
 #pragma once
 
-#include "error_handling.hpp"
 #include <cstdint>
 
 namespace lattice_symmetries {
