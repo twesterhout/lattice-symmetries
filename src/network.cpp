@@ -53,14 +53,11 @@ auto small_network_t::make_fake(uint16_t depth, uint16_t width) noexcept -> smal
 small_network_t::operator fat_benes_network_t() const
 {
     std::vector<ls_bits512> new_masks(depth);
-    std::transform(std::begin(masks), std::end(masks), std::begin(new_masks), [](auto const m) {
-        ls_bits512 r;
-        set_zero(r);
-        r.words[0] = m;
-        return r;
-    });
-    std::vector<unsigned> new_deltas(depth);
-    std::copy(std::begin(deltas), std::end(deltas), std::begin(new_deltas));
+    std::vector<unsigned>   new_deltas(depth);
+    for (auto i = 0U; i < depth; ++i) {
+        new_masks[i]  = widen(masks[i]);
+        new_deltas[i] = deltas[i];
+    }
     return fat_benes_network_t{std::move(new_masks), std::move(new_deltas), width};
 }
 
@@ -83,9 +80,11 @@ big_network_t::big_network_t(fat_benes_network_t const& fat) noexcept
 big_network_t::operator fat_benes_network_t() const
 {
     std::vector<ls_bits512> new_masks(depth);
-    std::copy(std::begin(masks), std::end(masks), std::begin(new_masks));
-    std::vector<unsigned> new_deltas(depth);
-    std::copy(std::begin(deltas), std::end(deltas), std::begin(new_deltas));
+    std::vector<unsigned>   new_deltas(depth);
+    for (auto i = 0U; i < depth; ++i) {
+        new_masks[i]  = masks[i];
+        new_deltas[i] = deltas[i];
+    }
     return fat_benes_network_t{std::move(new_masks), std::move(new_deltas), width};
 }
 

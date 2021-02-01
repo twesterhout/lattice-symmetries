@@ -75,13 +75,14 @@ namespace {
 } // namespace
 
 namespace detail {
-    auto benes_forward_simd(void* x, uint64_t const (*masks)[batch_size], unsigned size,
+    auto benes_forward_simd(void* _x, uint64_t const (*masks)[batch_size], unsigned size,
                             uint16_t const deltas[]) noexcept -> void
     {
+        auto&       x = *static_cast<vcl::Vec8uq*>(_x);
         vcl::Vec8uq m;
         for (auto i = 0; i < static_cast<int>(size); ++i) {
             m.load(masks[i]);
-            bit_permute_step(*static_cast<vcl::Vec8uq*>(x), m, deltas[i]);
+            bit_permute_step(x, m, deltas[i]);
         }
     }
 

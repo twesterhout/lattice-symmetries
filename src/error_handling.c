@@ -173,7 +173,7 @@ static void print_current_time(FILE* out)
 {
     struct timeval tv;
     gettimeofday(&tv, NULL);
-    double milliseconds = rint(tv.tv_usec / 1000.0);
+    int milliseconds = rint(tv.tv_usec / 1000.0);
     if (milliseconds >= 1000) {
         milliseconds -= 1000;
         ++tv.tv_sec;

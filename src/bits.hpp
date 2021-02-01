@@ -72,6 +72,8 @@ constexpr auto set_zero(ls_bits512& bits) noexcept -> void
         set_zero(w);
     }
 }
+constexpr auto widen(ls_bits64 bits) noexcept -> ls_bits512 { return {bits, 0, 0, 0, 0, 0, 0, 0}; }
+
 constexpr auto is_zero(ls_bits64 const bits) noexcept -> bool { return bits == 0; }
 constexpr auto is_zero(ls_bits512 const& bits) noexcept -> bool
 {

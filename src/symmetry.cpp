@@ -101,8 +101,8 @@ LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_symmetry(ls_symmetry** ptr, un
     if (ptr == nullptr) { return LS_INVALID_ARGUMENT; }
     auto r = compile(tcb::span{permutation, length});
     if (!r) {
-        if (r.error().category() == get_error_category()) {
-            return static_cast<ls_error_code>(r.error().value());
+        if (r.assume_error().category() == get_error_category()) {
+            return static_cast<ls_error_code>(r.assume_error().value());
         }
         return LS_SYSTEM_ERROR;
     }
@@ -112,16 +112,16 @@ LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_symmetry(ls_symmetry** ptr, un
 
     // NOLINTNEXTLINE: 64 spins is the max system size which can be represented by uint64_t
     if (length > 64U) {
-        auto p =
-            std::make_unique<ls_symmetry>(std::in_place_type_t<big_symmetry_t>{},
-                                          std::move(r).value(), sector, periodicity, eigenvalue);
-        *ptr = p.release();
+        auto p = std::make_unique<ls_symmetry>(std::in_place_type_t<big_symmetry_t>{},
+                                               std::move(r).assume_value(), sector, periodicity,
+                                               eigenvalue);
+        *ptr   = p.release();
     }
     else {
-        auto p =
-            std::make_unique<ls_symmetry>(std::in_place_type_t<small_symmetry_t>{},
-                                          std::move(r).value(), sector, periodicity, eigenvalue);
-        *ptr = p.release();
+        auto p = std::make_unique<ls_symmetry>(std::in_place_type_t<small_symmetry_t>{},
+                                               std::move(r).assume_value(), sector, periodicity,
+                                               eigenvalue);
+        *ptr   = p.release();
     }
     return LS_SUCCESS;
 }

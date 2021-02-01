@@ -140,16 +140,19 @@ namespace {
 
     auto from_spec(symmetry_spec_t const& spec) -> ls_symmetry
     {
-        auto&& fat = compile(tcb::span{spec.permutation});
-        LATTICE_SYMMETRIES_CHECK(fat.has_value(), "compilation from symmetry_spec_t failed");
+        auto fat = [&spec]() {
+            auto&& _r = compile(tcb::span{spec.permutation});
+            LATTICE_SYMMETRIES_CHECK(_r.has_value(), "compilation from symmetry_spec_t failed");
+            return std::forward<decltype(_r)>(_r).assume_value();
+        }();
         auto const eigenvalue = compute_eigenvalue(spec.sector, spec.periodicity);
         // NOLINTNEXTLINE: 64 is the number of bits in uint64_t
         if (spec.permutation.size() > 64U) {
-            return ls_symmetry{std::in_place_type_t<big_symmetry_t>{}, std::move(fat).value(),
-                               spec.sector, spec.periodicity, eigenvalue};
+            return ls_symmetry{std::in_place_type_t<big_symmetry_t>{}, std::move(fat), spec.sector,
+                               spec.periodicity, eigenvalue};
         }
-        return ls_symmetry{std::in_place_type_t<small_symmetry_t>{}, std::move(fat).value(),
-                           spec.sector, spec.periodicity, eigenvalue};
+        return ls_symmetry{std::in_place_type_t<small_symmetry_t>{}, std::move(fat), spec.sector,
+                           spec.periodicity, eigenvalue};
     }
 
     auto make_group(tcb::span<ls_symmetry const* const> generators)
@@ -189,12 +192,12 @@ LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_group(ls_group** ptr, unsigned
     using namespace lattice_symmetries;
     auto r = make_group(tcb::span{generators, size});
     if (!r) {
-        if (r.error().category() == get_error_category()) {
-            return static_cast<ls_error_code>(r.error().value());
+        if (r.assume_error().category() == get_error_category()) {
+            return static_cast<ls_error_code>(r.assume_error().value());
         }
         return LS_SYSTEM_ERROR;
     }
-    auto const& specs = r.value();
+    auto const& specs = r.assume_value();
 
     std::vector<ls_symmetry> group;
     group.reserve(specs.size());
