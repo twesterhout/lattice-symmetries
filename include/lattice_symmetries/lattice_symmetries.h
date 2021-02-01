@@ -61,14 +61,23 @@
 
 #if defined(__AVX2__)
 #    define LATTICE_SYMMETRIES_HAS_AVX2() 1
-#    define LATTICE_SYMMETRIES_HAS_AVX() 1
-#elif defined(__AVX__)
-#    define LATTICE_SYMMETRIES_HAS_AVX2() 0
-#    define LATTICE_SYMMETRIES_HAS_AVX() 1
-#elif defined(__SSE2__) || defined(__x86_64__)
-#    define LATTICE_SYMMETRIES_HAS_AVX2() 0
-#    define LATTICE_SYMMETRIES_HAS_AVX() 0
 #else
+#    define LATTICE_SYMMETRIES_HAS_AVX2() 0
+#endif
+
+#if defined(__AVX__)
+#    define LATTICE_SYMMETRIES_HAS_AVX() 1
+#else
+#    define LATTICE_SYMMETRIES_HAS_AVX() 0
+#endif
+
+#if defined(__SSE4_1__) && defined(__SSE4_2__)
+#    define LATTICE_SYMMETRIES_HAS_SSE4() 1
+#else
+#    define LATTICE_SYMMETRIES_HAS_SSE4() 0
+#endif
+
+#if !defined(__SSE2__) && !defined(__x86_64__)
 #    error "unsupported architecture; lattice-symmetries currently only works on x86_64"
 #endif
 
@@ -170,7 +179,7 @@ void ls_private_log_debug(char const* file, unsigned line, char const* function,
 
 typedef uint64_t ls_bits64;
 
-typedef struct _ls_bits512 {
+typedef struct ls_bits512 {
     ls_bits64 words[8];
 } ls_bits512;
 
