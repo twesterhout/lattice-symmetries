@@ -1,3 +1,4 @@
+#include "cpu/search_sorted.hpp"
 #include "lattice_symmetries/lattice_symmetries.h"
 #include <catch2/catch.hpp>
 #include <complex>
@@ -294,6 +295,9 @@ TEST_CASE("finds correct states", "[api]")
             status = ls_get_index(basis, begin[i], &index);
             REQUIRE(status == LS_SUCCESS);
             REQUIRE(index == i);
+
+            uint64_t const other_index = ls_private_search_sorted(begin, count, begin[i]);
+            REQUIRE(other_index == i);
         }
 
         ls_destroy_states(states);

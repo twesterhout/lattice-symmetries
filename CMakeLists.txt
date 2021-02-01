@@ -120,19 +120,15 @@ function(disable_rtti_and_exceptions _target)
     target_compile_options(${_target} PUBLIC -fno-rtti -fno-exceptions)
 endfunction()
 
-if(FALSE)
+if(TRUE)
 foreach(arch sse2 sse4 avx avx2)
-    set(_local_target "lattice_symmetries_${arch}")
-    add_library(${_local_target} SHARED
-        ${LatticeSymmetries_headers}
-        ${LatticeSymmetries_sources}
-        src/kernels.cpp
-        src/state_info.cpp
+    set(_local_target "lattice_symmetries_search_sorted_${arch}")
+    add_library(${_local_target} OBJECT
+        src/cpu/search_sorted.cpp
     )
     target_include_directories(${_local_target}
       PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
     )
     target_include_directories(${_local_target}
       SYSTEM PRIVATE
@@ -144,12 +140,20 @@ foreach(arch sse2 sse4 avx avx2)
     set_project_warnings(${_local_target})
     disable_rtti_and_exceptions(${_local_target})
     set_property(TARGET ${_local_target} PROPERTY POSITION_INDEPENDENT_CODE ON)
-    target_link_libraries(${_local_target} PUBLIC OpenMP::OpenMP_CXX)
+    # target_link_libraries(${_local_target} PUBLIC OpenMP::OpenMP_CXX)
 endforeach()
-target_compile_options(lattice_symmetries_sse2 PRIVATE -march=nocona -mtune=nehalem)
-# target_compile_options(lattice_symmetries_sse4 PRIVATE -march=nehalem -mtune=nehalem)
-# target_compile_options(lattice_symmetries_avx PRIVATE -march=sandybridge -mtune=sandybridge)
-# target_compile_options(lattice_symmetries_avx2 PRIVATE -march=haswell -mtune=haswell)
+target_compile_definitions(lattice_symmetries_search_sorted_sse2 PRIVATE LATTICE_SYMMETRIES_ADD_DISPATCH_CODE=1)
+target_compile_options(lattice_symmetries_search_sorted_sse2 PRIVATE -m64 -march=nocona)
+target_compile_options(lattice_symmetries_search_sorted_sse4 PRIVATE -msse4.1 -msse4.2 -mpopcnt)
+target_compile_options(lattice_symmetries_search_sorted_avx PRIVATE -mavx)
+target_compile_options(lattice_symmetries_search_sorted_avx2 PRIVATE -mavx2 -mbmi2 -mfma)
+add_library(lattice_symmetries_search_sorted STATIC)
+target_link_libraries(lattice_symmetries_search_sorted PRIVATE
+    lattice_symmetries_search_sorted_avx2
+    lattice_symmetries_search_sorted_avx
+    lattice_symmetries_search_sorted_sse4
+    lattice_symmetries_search_sorted_sse2
+)
 endif()
 
 
