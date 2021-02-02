@@ -295,7 +295,7 @@ TEST_CASE("finds correct states", "[api]")
             REQUIRE(status == LS_SUCCESS);
             REQUIRE(index == i);
 
-            uint64_t const other_index = ls_private_search_sorted(begin, count, begin[i]);
+            uint64_t const other_index = lattice_symmetries::search_sorted(begin, count, begin[i]);
             REQUIRE(other_index == i);
         }
 

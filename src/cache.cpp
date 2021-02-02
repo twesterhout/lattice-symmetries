@@ -28,8 +28,9 @@
 
 #include "cache.hpp"
 #include "bits.hpp"
-#include "kernels.hpp"
-#include "state_info.hpp"
+#include "cpu/search_sorted.hpp"
+#include "cpu/state_info.hpp"
+// #include "kernels.hpp"
 
 #if defined(__APPLE__)
 #    include <libkern/OSByteOrder.h>
@@ -170,7 +171,7 @@ namespace {
             // std::complex<double> character;
             // double               norm;
             // auto const is_repr = is_representative(payload.batched_symmetries, payload.other_symmetries, x);
-            auto const is_repr = is_representative(header, payload, x);
+            auto const is_repr = is_representative_64(header, payload, x);
             if (is_repr) { states.push_back(x); }
             // get_state_info(batched_symmetries, symmetries, x, repr, character, norm);
             // if (repr == x && norm > 0.0) { states.push_back(x); }
@@ -358,21 +359,29 @@ auto basis_cache_t::index_v2(uint64_t const x, uint64_t* out) const noexcept -> 
     auto const  i     = (x >> _shift) & mask;
     auto const* first = _states.data() + _ranges_v2[i];
     auto const* last  = _states.data() + _ranges_v2[i + 1];
-    auto const* index = search_sorted(first, last, x);
-    if (index == last) { return LS_NOT_A_REPRESENTATIVE; }
-    *out = static_cast<uint64_t>(index - _states.data());
-    return LS_SUCCESS;
+    if constexpr (false) {
+        auto const index = std::lower_bound(first, last, x);
+        if (index == last || *index != x) { return LS_NOT_A_REPRESENTATIVE; }
+        *out = index - _states.data();
+        return LS_SUCCESS;
+    }
+    else {
+        auto const n     = static_cast<uint64_t>(last - first);
+        auto const index = search_sorted(first, n, x);
+        if (index == n) { return LS_NOT_A_REPRESENTATIVE; }
+        *out = _ranges_v2[i] + index;
+        return LS_SUCCESS;
+    }
 }
 
 auto basis_cache_t::index(uint64_t const x, uint64_t* out) const noexcept -> ls_error_code
 {
     if constexpr (false) {
-        using std::begin, std::end;
-        auto const& range = _ranges[x >> _shift];
+        auto const& range = _ranges.at(x >> _shift);
         auto const* first = _states.data() + range.first;
         auto const* last  = first + range.second;
-        auto const* i     = search_sorted(first, last, x);
-        if (i == last) { return LS_NOT_A_REPRESENTATIVE; }
+        auto const* i     = std::lower_bound(first, last, x);
+        if (i == last || *i != x) { return LS_NOT_A_REPRESENTATIVE; }
         *out = static_cast<uint64_t>(i - _states.data());
         return LS_SUCCESS;
     }

@@ -30,17 +30,22 @@
 
 #include <cstdint>
 
+#define LATTICE_SYMMETRIES_DECLARE()                                                               \
+    auto search_sorted(uint64_t const* data, uint64_t size, uint64_t key) noexcept->uint64_t;
+#define LATTICE_SYMMETRIES_DECLARE_FOR_ARCH(arch)                                                  \
+    namespace arch {                                                                               \
+    LATTICE_SYMMETRIES_DECLARE()                                                                   \
+    } /*namespace arch*/
+
 namespace lattice_symmetries {
 
-auto search_sorted_avx2(uint64_t const* data, uint64_t size, uint64_t key) noexcept -> uint64_t;
-auto search_sorted_avx(uint64_t const* first, uint64_t size, uint64_t key) noexcept -> uint64_t;
-auto search_sorted_sse4(uint64_t const* data, uint64_t size, uint64_t key) noexcept -> uint64_t;
-auto search_sorted_sse2(uint64_t const* data, uint64_t size, uint64_t key) noexcept -> uint64_t;
+LATTICE_SYMMETRIES_DECLARE()
+LATTICE_SYMMETRIES_DECLARE_FOR_ARCH(avx2)
+LATTICE_SYMMETRIES_DECLARE_FOR_ARCH(avx)
+LATTICE_SYMMETRIES_DECLARE_FOR_ARCH(sse4)
+LATTICE_SYMMETRIES_DECLARE_FOR_ARCH(sse2)
 
 } // namespace lattice_symmetries
 
-extern "C" {
-
-uint64_t ls_private_search_sorted(uint64_t const* data, uint64_t size, uint64_t key);
-
-} // extern "C"
+#undef LATTICE_SYMMETRIES_DECLARE
+#undef LATTICE_SYMMETRIES_DECLARE_FOR_ARCH

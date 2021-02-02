@@ -81,17 +81,17 @@ set(LatticeSymmetries_headers
     src/network.hpp
     src/operator.hpp
     src/permutation.hpp
-    src/state_info.hpp
+    # src/state_info.hpp
     src/symmetry.hpp
 )
 
 set(LatticeSymmetries_all_files
     ${LatticeSymmetries_sources}
     ${LatticeSymmetries_headers}
-    src/kernels.hpp
-    src/kernels.cpp
-    src/state_info.hpp
-    src/state_info.cpp
+    # src/kernels.hpp
+    # src/kernels.cpp
+    # src/state_info.hpp
+    # src/state_info.cpp
 )
 
 
@@ -120,11 +120,16 @@ function(disable_rtti_and_exceptions _target)
     target_compile_options(${_target} PUBLIC -fno-rtti -fno-exceptions)
 endfunction()
 
-if(TRUE)
+#
+# CPU kernels for various architectures
+#
 foreach(arch sse2 sse4 avx avx2)
-    set(_local_target "lattice_symmetries_search_sorted_${arch}")
+    set(_local_target "lattice_symmetries_kernels_${arch}")
     add_library(${_local_target} OBJECT
         src/cpu/search_sorted.cpp
+        src/cpu/benes_forward_64.cpp
+        src/cpu/benes_forward_512.cpp
+        src/cpu/state_info.cpp
     )
     target_include_directories(${_local_target}
       PRIVATE
@@ -142,52 +147,53 @@ foreach(arch sse2 sse4 avx avx2)
     set_property(TARGET ${_local_target} PROPERTY POSITION_INDEPENDENT_CODE ON)
     # target_link_libraries(${_local_target} PUBLIC OpenMP::OpenMP_CXX)
 endforeach()
-target_compile_definitions(lattice_symmetries_search_sorted_sse2 PRIVATE LATTICE_SYMMETRIES_ADD_DISPATCH_CODE=1)
-target_compile_options(lattice_symmetries_search_sorted_sse2 PRIVATE -m64 -march=nocona)
-target_compile_options(lattice_symmetries_search_sorted_sse4 PRIVATE -msse4.1 -msse4.2 -mpopcnt)
-target_compile_options(lattice_symmetries_search_sorted_avx PRIVATE -mavx)
-target_compile_options(lattice_symmetries_search_sorted_avx2 PRIVATE -mavx2 -mbmi2 -mfma)
-add_library(lattice_symmetries_search_sorted STATIC)
-target_link_libraries(lattice_symmetries_search_sorted PRIVATE
-    lattice_symmetries_search_sorted_avx2
-    lattice_symmetries_search_sorted_avx
-    lattice_symmetries_search_sorted_sse4
-    lattice_symmetries_search_sorted_sse2
-)
-endif()
-
-
-
-#
-# CPU kernels for various architectures
-#
-foreach(_target sse2 avx avx2)
-    add_library(lattice_symmetries_kernels_${_target}
-        OBJECT src/kernels.hpp
-               src/kernels.cpp
-               src/state_info.hpp
-               src/state_info.cpp)
-    target_include_directories(lattice_symmetries_kernels_${_target}
-      PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-    )
-    target_include_directories(lattice_symmetries_kernels_${_target}
-      SYSTEM PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/third_party
-        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/version2
-    )
-    target_compile_features(lattice_symmetries_kernels_${_target} PRIVATE cxx_std_17)
-    target_compile_definitions(lattice_symmetries_kernels_${_target} PRIVATE VCL_NAMESPACE=vcl_${_target})
-    set_project_warnings(lattice_symmetries_kernels_${_target})
-    disable_rtti_and_exceptions(lattice_symmetries_kernels_${_target})
-    set_property(TARGET lattice_symmetries_kernels_${_target} PROPERTY
-        POSITION_INDEPENDENT_CODE ON)
-endforeach()
 target_compile_definitions(lattice_symmetries_kernels_sse2 PRIVATE LATTICE_SYMMETRIES_ADD_DISPATCH_CODE=1)
-target_compile_options(lattice_symmetries_kernels_sse2 PRIVATE -m64 -msse2)
-target_compile_options(lattice_symmetries_kernels_avx PRIVATE -m64 -mavx)
-target_compile_options(lattice_symmetries_kernels_avx2 PRIVATE -m64 -mavx2 -mfma)
+target_compile_options(lattice_symmetries_kernels_sse2 PRIVATE -m64 -march=nocona)
+target_compile_options(lattice_symmetries_kernels_sse4 PRIVATE -msse4.1 -msse4.2 -mpopcnt)
+target_compile_options(lattice_symmetries_kernels_avx PRIVATE -mavx)
+target_compile_options(lattice_symmetries_kernels_avx2 PRIVATE -mavx2 -mbmi2 -mfma)
+
+
+# foreach(_target sse2 avx avx2)
+#     add_library(lattice_symmetries_kernels_${_target}
+#         OBJECT src/kernels.hpp
+#                src/kernels.cpp
+#                # src/state_info.hpp
+#                # src/state_info.cpp
+#     )
+#     target_include_directories(lattice_symmetries_kernels_${_target}
+#       PRIVATE
+#         ${CMAKE_CURRENT_SOURCE_DIR}/include
+#         ${CMAKE_CURRENT_SOURCE_DIR}/src
+#     )
+#     target_include_directories(lattice_symmetries_kernels_${_target}
+#       SYSTEM PRIVATE
+#         ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+#         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/version2
+#     )
+#     target_compile_features(lattice_symmetries_kernels_${_target} PRIVATE cxx_std_17)
+#     target_compile_definitions(lattice_symmetries_kernels_${_target} PRIVATE VCL_NAMESPACE=vcl_${_target})
+#     set_project_warnings(lattice_symmetries_kernels_${_target})
+#     disable_rtti_and_exceptions(lattice_symmetries_kernels_${_target})
+#     set_property(TARGET lattice_symmetries_kernels_${_target} PROPERTY
+#         POSITION_INDEPENDENT_CODE ON)
+# endforeach()
+# target_compile_definitions(lattice_symmetries_kernels_sse2 PRIVATE LATTICE_SYMMETRIES_ADD_DISPATCH_CODE=1)
+# target_compile_options(lattice_symmetries_kernels_sse2 PRIVATE -m64 -msse2)
+# target_compile_options(lattice_symmetries_kernels_avx PRIVATE -m64 -mavx)
+# target_compile_options(lattice_symmetries_kernels_avx2 PRIVATE -m64 -mavx2 -mfma)
+
+
+#
+# Pure C code
+#
+add_library(lattice_symmetries_c_sources OBJECT src/error_handling.c)
+set_property(TARGET lattice_symmetries_c_sources PROPERTY POSITION_INDEPENDENT_CODE ON)
+target_include_directories(lattice_symmetries_c_sources
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
 
 #
 # Create library
@@ -196,14 +202,10 @@ add_library(lattice_symmetries
     ${LatticeSymmetries_headers}
     ${LatticeSymmetries_sources}
 )
-add_library(lattice_symmetries_c_sources OBJECT src/error_handling.c)
-set_property(TARGET lattice_symmetries_c_sources PROPERTY POSITION_INDEPENDENT_CODE ON)
-target_include_directories(lattice_symmetries_c_sources
-  PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-)
 target_link_libraries(lattice_symmetries PRIVATE lattice_symmetries_c_sources)
+foreach(arch sse2 sse4 avx avx2)
+    target_link_libraries(lattice_symmetries PRIVATE lattice_symmetries_kernels_${arch})
+endforeach()
 
 
 target_compile_features(lattice_symmetries PRIVATE cxx_std_17)

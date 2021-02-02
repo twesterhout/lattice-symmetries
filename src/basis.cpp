@@ -28,7 +28,7 @@
 
 #include "basis.hpp"
 #include "cache.hpp"
-#include "state_info.hpp"
+#include "cpu/state_info.hpp"
 #include <algorithm>
 
 namespace lattice_symmetries {
@@ -271,12 +271,12 @@ namespace {
 
         auto operator()(small_basis_t const& payload) const noexcept
         {
-            get_state_info(header, payload, bits->words[0], representative->words[0], character,
-                           norm);
+            get_state_info_64(header, payload, bits->words[0], representative->words[0], character,
+                              norm);
         }
         auto operator()(big_basis_t const& payload) const noexcept
         {
-            get_state_info(header, payload, *bits, *representative, character, norm);
+            get_state_info_512(header, payload, *bits, *representative, character, norm);
         }
     };
 } // namespace

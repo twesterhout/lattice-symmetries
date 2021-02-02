@@ -43,8 +43,6 @@ target_link_libraries(
   PUBLIC
     Catch2::Catch2
     lattice_symmetries
-  PRIVATE
-    lattice_symmetries_search_sorted
 )
 # Header files in src/ are not part of the external interface, but we still
 # need to test them.
