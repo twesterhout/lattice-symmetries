@@ -1,6 +1,7 @@
 #include "network.hpp"
 #include "bits.hpp"
-#include "kernels.hpp"
+#include "cpu/benes_forward_512.hpp"
+#include "cpu/benes_forward_64.hpp"
 #include <algorithm>
 #include <numeric>
 
@@ -90,14 +91,13 @@ big_network_t::operator fat_benes_network_t() const
 
 auto small_network_t::operator()(uint64_t bits) const noexcept -> uint64_t
 {
-    benes_forward(bits, masks, depth, deltas);
+    benes_forward_64(bits, *this);
     return bits;
 }
 
 auto big_network_t::operator()(ls_bits512& bits) const noexcept -> void
 {
-    benes_forward(bits, static_cast<ls_bits512 const*>(masks), depth,
-                  static_cast<uint16_t const*>(deltas));
+    benes_forward_512(bits, *this);
 }
 
 batched_small_network_t::batched_small_network_t(
@@ -139,8 +139,7 @@ batched_small_network_t::batched_small_network_t(
 
 auto batched_small_network_t::operator()(uint64_t bits[batch_size]) const noexcept -> void
 {
-    // NOLINTNEXTLINE: we do want implicit decays of arrays to pointers here
-    benes_forward(bits, masks, depth, deltas);
+    benes_forward_64(bits, *this);
 }
 
 } // namespace lattice_symmetries
