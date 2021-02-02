@@ -57,11 +57,9 @@ set(LatticeSymmetries_sources
     src/cache.cpp
     src/error_handling.cpp
     src/group.cpp
-    # src/kernels.cpp
     src/network.cpp
     src/operator.cpp
     src/permutation.cpp
-    # src/state_info.cpp
     src/symmetry.cpp
 )
 set(LatticeSymmetries_portable_sources
@@ -77,21 +75,15 @@ set(LatticeSymmetries_headers
     src/bits.hpp
     src/cache.hpp
     src/intrusive_ptr.hpp
-    src/kernels.hpp
     src/network.hpp
     src/operator.hpp
     src/permutation.hpp
-    # src/state_info.hpp
     src/symmetry.hpp
 )
 
 set(LatticeSymmetries_all_files
     ${LatticeSymmetries_sources}
     ${LatticeSymmetries_headers}
-    # src/kernels.hpp
-    # src/kernels.cpp
-    # src/state_info.hpp
-    # src/state_info.cpp
 )
 
 
