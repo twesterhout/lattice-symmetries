@@ -166,7 +166,6 @@ TEST_CASE("constructs basis", "[api]")
         REQUIRE(ls_get_spin_inversion(basis) == 0);
         REQUIRE(ls_has_symmetries(basis) == true);
 
-        ls_enable_logging();
         status = ls_build(basis);
         REQUIRE(status == LS_SUCCESS);
 
