@@ -27,6 +27,7 @@ endif()
 #
 option(${PROJECT_NAME}_WARNINGS_AS_ERRORS "Treat compiler warnings as errors." OFF)
 option(${PROJECT_NAME}_ENABLE_UNIT_TESTING "Enable unit tests for the project." ON)
+option(${PROJECT_NAME}_ENABLE_PROFILING "Enable profiling" ON)
 option(${PROJECT_NAME}_ENABLE_CLANG_TIDY "Enable static analysis with clang-tidy." OFF)
 option(${PROJECT_NAME}_ENABLE_CPPCHECK "Enable static analysis with Cppcheck." OFF)
 option(${PROJECT_NAME}_ENABLE_CODE_COVERAGE "Enable code coverage through GCC." OFF)
@@ -109,7 +110,7 @@ endfunction()
 add_clang_format_target()
 
 function(disable_rtti_and_exceptions _target)
-    target_compile_options(${_target} PUBLIC -fno-rtti -fno-exceptions)
+    target_compile_options(${_target} PRIVATE -fno-rtti -fno-exceptions)
 endfunction()
 
 #
@@ -207,11 +208,6 @@ target_compile_features(lattice_symmetries PRIVATE cxx_std_17)
 set_project_warnings(lattice_symmetries)
 disable_rtti_and_exceptions(lattice_symmetries)
 set_property(TARGET lattice_symmetries PROPERTY POSITION_INDEPENDENT_CODE ON)
-target_sources(lattice_symmetries
-    PRIVATE
-        $<TARGET_OBJECTS:lattice_symmetries_kernels_sse2>
-        $<TARGET_OBJECTS:lattice_symmetries_kernels_avx>
-        $<TARGET_OBJECTS:lattice_symmetries_kernels_avx2>)
 if(APPLE)
     message(WARNING "C++ standard library will be linked dynamically")
 else()
@@ -293,6 +289,10 @@ install(
 if(${PROJECT_NAME}_ENABLE_UNIT_TESTING)
   enable_testing()
   add_subdirectory(test)
+endif()
+
+if(${PROJECT_NAME}_ENABLE_PROFILING)
+  add_subdirectory(profile)
 endif()
 
 #
