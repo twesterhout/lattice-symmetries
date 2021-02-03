@@ -147,7 +147,10 @@ using func_type = auto (*)(uint64_t const*, uint64_t, uint64_t) noexcept -> uint
 static auto resolve_search_sorted() noexcept -> func_type
 {
     using namespace lattice_symmetries;
-    return &sse4::search_sorted;
+    if (ls_has_avx2()) { return &avx2::search_sorted; }
+    if (ls_has_avx()) { return &avx::search_sorted; }
+    if (ls_has_sse4()) { return &sse4::search_sorted; }
+    return &sse2::search_sorted;
 }
 
 } // extern "C"

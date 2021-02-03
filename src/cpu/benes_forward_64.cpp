@@ -104,7 +104,10 @@ using func_type = auto (*)(uint64_t[lattice_symmetries::batch_size],
 static auto resolve_benes_forward_64() -> func_type
 {
     using namespace lattice_symmetries;
-    return &sse4::benes_forward_64;
+    if (ls_has_avx2()) { return &avx2::benes_forward_64; }
+    if (ls_has_avx()) { return &avx::benes_forward_64; }
+    if (ls_has_sse4()) { return &sse4::benes_forward_64; }
+    return &sse2::benes_forward_64;
 }
 } // extern "C"
 

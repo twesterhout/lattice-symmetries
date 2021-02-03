@@ -302,4 +302,10 @@ TEST_CASE("finds correct states", "[api]")
         ls_destroy_states(states);
         ls_destroy_spin_basis(basis);
     }
+
+    {
+        ls_enable_logging();
+        LATTICE_SYMMETRIES_LOG_DEBUG("avx2: %i\navx:  %i\nsse4: %i\n", ls_has_avx2(), ls_has_avx(),
+                                     ls_has_sse4());
+    }
 }

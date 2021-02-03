@@ -366,7 +366,10 @@ using get_state_info_64_type = auto (*)(lattice_symmetries::basis_base_t const& 
 static auto resolve_get_state_info_64() noexcept -> get_state_info_64_type
 {
     using namespace lattice_symmetries;
-    return &sse4::get_state_info_64;
+    if (ls_has_avx2()) { return &avx2::get_state_info_64; }
+    if (ls_has_avx()) { return &avx::get_state_info_64; }
+    if (ls_has_sse4()) { return &sse4::get_state_info_64; }
+    return &sse2::get_state_info_64;
 }
 
 using is_representative_64_type = auto (*)(lattice_symmetries::basis_base_t const&  basis_header,
@@ -376,7 +379,10 @@ using is_representative_64_type = auto (*)(lattice_symmetries::basis_base_t cons
 static auto resolve_is_representative_64() noexcept -> is_representative_64_type
 {
     using namespace lattice_symmetries;
-    return &sse4::is_representative_64;
+    if (ls_has_avx2()) { return &avx2::is_representative_64; }
+    if (ls_has_avx()) { return &avx::is_representative_64; }
+    if (ls_has_sse4()) { return &sse4::is_representative_64; }
+    return &sse2::is_representative_64;
 }
 
 using get_state_info_512_type = auto (*)(lattice_symmetries::basis_base_t const& basis_header,
@@ -388,7 +394,10 @@ using get_state_info_512_type = auto (*)(lattice_symmetries::basis_base_t const&
 static auto resolve_get_state_info_512() noexcept -> get_state_info_512_type
 {
     using namespace lattice_symmetries;
-    return &sse4::get_state_info_512;
+    if (ls_has_avx2()) { return &avx2::get_state_info_512; }
+    if (ls_has_avx()) { return &avx::get_state_info_512; }
+    if (ls_has_sse4()) { return &sse4::get_state_info_512; }
+    return &sse2::get_state_info_512;
 }
 } // extern "C"
 

@@ -170,6 +170,10 @@ bool ls_is_logging_enabled();
 void ls_enable_logging();
 void ls_disable_logging();
 
+bool ls_has_avx2();
+bool ls_has_avx();
+bool ls_has_sse4();
+
 // This is an internal function!
 void ls_private_log_debug(char const* file, unsigned line, char const* function, char const* fmt,
                           ...);

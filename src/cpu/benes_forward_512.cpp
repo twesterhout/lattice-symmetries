@@ -156,7 +156,10 @@ using func_type = auto (*)(ls_bits512&, lattice_symmetries::big_network_t const&
 static auto resolve_benes_forward_512() -> func_type
 {
     using namespace lattice_symmetries;
-    return &sse4::benes_forward_512;
+    if (ls_has_avx2()) { return &avx2::benes_forward_512; }
+    if (ls_has_avx()) { return &avx::benes_forward_512; }
+    if (ls_has_sse4()) { return &sse4::benes_forward_512; }
+    return &sse2::benes_forward_512;
 }
 } // extern "C"
 
