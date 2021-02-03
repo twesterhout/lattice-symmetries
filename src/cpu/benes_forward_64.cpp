@@ -126,7 +126,16 @@ auto benes_forward_64(uint64_t& x, small_network_t const& network) noexcept -> v
     }
 }
 
-__attribute__((visibility("default"))) __attribute__((ifunc("resolve_benes_forward_64"))) auto
+#    if defined(__APPLE__) && __APPLE__
+auto benes_forward_64(uint64_t x[batch_size], batched_small_network_t const& network) noexcept
+    -> void
+{
+    (*resolve_benes_forward_64())(x, network);
+}
+#    else
+__attribute__((ifunc("resolve_benes_forward_64"))) auto
 benes_forward_64(uint64_t x[batch_size], batched_small_network_t const& network) noexcept -> void;
+#    endif
+
 } // namespace lattice_symmetries
 #endif

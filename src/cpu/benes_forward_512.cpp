@@ -164,9 +164,16 @@ static auto resolve_benes_forward_512() -> func_type
 } // extern "C"
 
 namespace lattice_symmetries {
-
+// No ifunc attribute in Apple Clang, hence we do dispatching manually
+#    if defined(__APPLE__) && __APPLE__
+auto benes_forward_512(ls_bits512& x, lattice_symmetries::big_network_t const& network) noexcept
+    -> void
+{
+    (*resolve_benes_forward_512())(x, network);
+}
+#    else
 __attribute__((ifunc("resolve_benes_forward_512"))) auto
-benes_forward_512(ls_bits512&, lattice_symmetries::big_network_t const& network) noexcept -> void;
-
+benes_forward_512(ls_bits512&, lattice_symmetries::big_network_t const&) noexcept -> void;
+#    endif
 } // namespace lattice_symmetries
 #endif

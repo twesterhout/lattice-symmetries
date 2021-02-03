@@ -402,6 +402,29 @@ static auto resolve_get_state_info_512() noexcept -> get_state_info_512_type
 } // extern "C"
 
 namespace lattice_symmetries {
+#    if defined(__APPLE__) && __APPLE__
+auto get_state_info_64(basis_base_t const& basis_header, small_basis_t const& basis_body,
+                       uint64_t bits, uint64_t& representative, std::complex<double>& character,
+                       double& norm) noexcept -> void
+{
+    return (*resolve_get_state_info_64())(basis_header, basis_body, bits, representative, character,
+                                          norm);
+}
+
+auto is_representative_64(basis_base_t const& basis_header, small_basis_t const& basis_body,
+                          uint64_t bits) noexcept -> bool
+{
+    return (*resolve_is_representative_64())(basis_header, basis_body, bits);
+}
+
+auto get_state_info_512(basis_base_t const& basis_header, big_basis_t const& basis_body,
+                        ls_bits512 const& bits, ls_bits512& representative,
+                        std::complex<double>& character, double& norm) noexcept -> void
+{
+    return (*resolve_get_state_info_512())(basis_header, basis_body, bits, representative,
+                                           character, norm);
+}
+#    else
 __attribute__((ifunc("resolve_get_state_info_64"))) auto
 get_state_info_64(basis_base_t const& basis_header, small_basis_t const& basis_body, uint64_t bits,
                   uint64_t& representative, std::complex<double>& character, double& norm) noexcept
@@ -415,5 +438,7 @@ __attribute__((ifunc("resolve_get_state_info_512"))) auto
 get_state_info_512(basis_base_t const& basis_header, big_basis_t const& basis_body,
                    ls_bits512 const& bits, ls_bits512& representative,
                    std::complex<double>& character, double& norm) noexcept -> void;
+#    endif
+
 } // namespace lattice_symmetries
 #endif
