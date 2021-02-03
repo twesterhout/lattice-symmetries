@@ -47,19 +47,19 @@ static void init_cpu_info(void)
         __builtin_cpu_supports("sse4.1") > 0 && __builtin_cpu_supports("sse4.2") > 0;
 }
 
-bool ls_has_avx2()
+LATTICE_SYMMETRIES_EXPORT bool ls_has_avx2()
 {
     pthread_once(&cpu_info_once_control, &init_cpu_info);
     return cpu_info.has_avx2;
 }
 
-bool ls_has_avx()
+LATTICE_SYMMETRIES_EXPORT bool ls_has_avx()
 {
     pthread_once(&cpu_info_once_control, &init_cpu_info);
     return cpu_info.has_avx2;
 }
 
-bool ls_has_sse4()
+LATTICE_SYMMETRIES_EXPORT bool ls_has_sse4()
 {
     pthread_once(&cpu_info_once_control, &init_cpu_info);
     return cpu_info.has_avx2;

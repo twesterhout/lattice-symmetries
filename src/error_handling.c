@@ -82,7 +82,7 @@ LATTICE_SYMMETRIES_EXPORT void ls_set_check_fail_handler(ls_error_handler const 
     pthread_mutex_unlock(&check_fail_handler_mutex);
 }
 
-LATTICE_SYMMETRIES_NORETURN
+LATTICE_SYMMETRIES_EXPORT
 void ls_assert_fail(char const* const expr, char const* const file, unsigned const line,
                     char const* const function, char const* const msg)
 {
@@ -90,7 +90,7 @@ void ls_assert_fail(char const* const expr, char const* const file, unsigned con
     abort();
 }
 
-LATTICE_SYMMETRIES_NORETURN
+LATTICE_SYMMETRIES_EXPORT
 void ls_check_fail(char const* const expr, char const* const file, unsigned const line,
                    char const* const function, char const* const msg)
 {
