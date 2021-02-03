@@ -160,7 +160,7 @@ namespace lattice_symmetries {
 #    if defined(__APPLE__) && __APPLE__
 auto search_sorted(uint64_t const* data, uint64_t size, uint64_t key) noexcept -> uint64_t
 {
-    (*resolve_search_sorted())(data, size, key);
+    return (*resolve_search_sorted())(data, size, key);
 }
 #    else
 __attribute__((visibility("default"))) __attribute__((ifunc("resolve_search_sorted"))) auto
