@@ -27,7 +27,7 @@ endif()
 #
 option(${PROJECT_NAME}_WARNINGS_AS_ERRORS "Treat compiler warnings as errors." OFF)
 option(${PROJECT_NAME}_ENABLE_UNIT_TESTING "Enable unit tests for the project." ON)
-option(${PROJECT_NAME}_ENABLE_PROFILING "Enable profiling" ON)
+option(${PROJECT_NAME}_ENABLE_PROFILING "Enable profiling" OFF)
 option(${PROJECT_NAME}_ENABLE_CLANG_TIDY "Enable static analysis with clang-tidy." OFF)
 option(${PROJECT_NAME}_ENABLE_CPPCHECK "Enable static analysis with Cppcheck." OFF)
 option(${PROJECT_NAME}_ENABLE_CODE_COVERAGE "Enable code coverage through GCC." OFF)
