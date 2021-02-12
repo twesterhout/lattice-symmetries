@@ -259,8 +259,10 @@ add_library(LatticeSymmetries::LatticeSymmetries ALIAS lattice_symmetries)
 include(GNUInstallDirs)
 
 set(LATTICE_SYMMETRIES_PC_PREFIX ${CMAKE_INSTALL_PREFIX})
+set(LATTICE_SYMMETRIES_PC_LIBDIR ${CMAKE_INSTALL_FULL_LIBDIR})
+set(LATTICE_SYMMETRIES_PC_INCLUDEDIR ${CMAKE_INSTALL_FULL_INCLUDEDIR})
 set(LATTICE_SYMMETRIES_PC_VERSION ${PROJECT_VERSION})
-set(LATTICE_SYMMETRIES_PC_LIBS "-L\${libdir} -Wl,-rpath=\${libdir} -llattice_symmetries")
+set(LATTICE_SYMMETRIES_PC_LIBS "-L\${libdir} -llattice_symmetries")
 set(LATTICE_SYMMETRIES_PC_LIBS_PRIVATE "")
 configure_file(
     "${CMAKE_CURRENT_LIST_DIR}/cmake/lattice_symmetries.pc.in"
@@ -276,7 +278,7 @@ install(
   FILES
     "${CMAKE_BINARY_DIR}/lattice_symmetries.pc"
   DESTINATION
-    lib/pkgconfig
+    "${CMAKE_INSTALL_FULL_LIBDIR}/pkgconfig"
 )
 install(
   DIRECTORY

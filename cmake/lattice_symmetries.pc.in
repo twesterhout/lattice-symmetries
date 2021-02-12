@@ -1,9 +1,8 @@
 # Package Information for pkg-config
 
 prefix=@LATTICE_SYMMETRIES_PC_PREFIX@
-exec_prefix=${prefix}
-libdir=${prefix}/lib
-includedir=${prefix}/include
+libdir=@LATTICE_SYMMETRIES_PC_LIBDIR@
+includedir=@LATTICE_SYMMETRIES_PC_INCLUDEDIR@
 
 Name: Lattice Symmetries
 Description: Library for quantum many-body bases with support for arbitrary lattice symmetries
