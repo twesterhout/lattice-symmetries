@@ -97,20 +97,6 @@ auto benes_forward_64(uint64_t x[batch_size], batched_small_network_t const& net
 } // namespace lattice_symmetries::ARCH
 
 #if defined(LATTICE_SYMMETRIES_ADD_DISPATCH_CODE)
-extern "C" {
-using func_type = auto (*)(uint64_t[lattice_symmetries::batch_size],
-                           lattice_symmetries::batched_small_network_t const&) noexcept -> void;
-
-static auto resolve_benes_forward_64() -> func_type
-{
-    using namespace lattice_symmetries;
-    if (ls_has_avx2()) { return &avx2::benes_forward_64; }
-    if (ls_has_avx()) { return &avx::benes_forward_64; }
-    if (ls_has_sse4()) { return &sse4::benes_forward_64; }
-    return &sse2::benes_forward_64;
-}
-} // extern "C"
-
 namespace lattice_symmetries {
 constexpr auto bit_permute_step_64(uint64_t const x, uint64_t const m, unsigned const d) noexcept
     -> uint64_t
@@ -126,16 +112,10 @@ auto benes_forward_64(uint64_t& x, small_network_t const& network) noexcept -> v
     }
 }
 
-#    if defined(__APPLE__) && __APPLE__
 auto benes_forward_64(uint64_t x[batch_size], batched_small_network_t const& network) noexcept
     -> void
 {
-    (*resolve_benes_forward_64())(x, network);
+    LATTICE_SYMMETRIES_DISPATCH(benes_forward_64, x, network);
 }
-#    else
-__attribute__((ifunc("resolve_benes_forward_64"))) auto
-benes_forward_64(uint64_t x[batch_size], batched_small_network_t const& network) noexcept -> void;
-#    endif
-
 } // namespace lattice_symmetries
 #endif

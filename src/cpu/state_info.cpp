@@ -356,89 +356,27 @@ auto get_state_info_512(basis_base_t const& basis_header, big_basis_t const& bas
 } // namespace lattice_symmetries::ARCH
 
 #if defined(LATTICE_SYMMETRIES_ADD_DISPATCH_CODE)
-extern "C" {
-using get_state_info_64_type = auto (*)(lattice_symmetries::basis_base_t const&  basis_header,
-                                        lattice_symmetries::small_basis_t const& basis_body,
-                                        uint64_t bits, uint64_t& representative,
-                                        std::complex<double>& character, double& norm) noexcept
-                               -> void;
-
-static auto resolve_get_state_info_64() noexcept -> get_state_info_64_type
-{
-    using namespace lattice_symmetries;
-    if (ls_has_avx2()) { return &avx2::get_state_info_64; }
-    if (ls_has_avx()) { return &avx::get_state_info_64; }
-    if (ls_has_sse4()) { return &sse4::get_state_info_64; }
-    return &sse2::get_state_info_64;
-}
-
-using is_representative_64_type = auto (*)(lattice_symmetries::basis_base_t const&  basis_header,
-                                           lattice_symmetries::small_basis_t const& basis_body,
-                                           uint64_t bits) noexcept -> bool;
-
-static auto resolve_is_representative_64() noexcept -> is_representative_64_type
-{
-    using namespace lattice_symmetries;
-    if (ls_has_avx2()) { return &avx2::is_representative_64; }
-    if (ls_has_avx()) { return &avx::is_representative_64; }
-    if (ls_has_sse4()) { return &sse4::is_representative_64; }
-    return &sse2::is_representative_64;
-}
-
-using get_state_info_512_type = auto (*)(lattice_symmetries::basis_base_t const& basis_header,
-                                         lattice_symmetries::big_basis_t const&  basis_body,
-                                         ls_bits512 const& bits, ls_bits512& representative,
-                                         std::complex<double>& character, double& norm) noexcept
-                                -> void;
-
-static auto resolve_get_state_info_512() noexcept -> get_state_info_512_type
-{
-    using namespace lattice_symmetries;
-    if (ls_has_avx2()) { return &avx2::get_state_info_512; }
-    if (ls_has_avx()) { return &avx::get_state_info_512; }
-    if (ls_has_sse4()) { return &sse4::get_state_info_512; }
-    return &sse2::get_state_info_512;
-}
-} // extern "C"
-
 namespace lattice_symmetries {
-#    if defined(__APPLE__) && __APPLE__
 auto get_state_info_64(basis_base_t const& basis_header, small_basis_t const& basis_body,
                        uint64_t bits, uint64_t& representative, std::complex<double>& character,
                        double& norm) noexcept -> void
 {
-    return (*resolve_get_state_info_64())(basis_header, basis_body, bits, representative, character,
-                                          norm);
+    LATTICE_SYMMETRIES_DISPATCH(get_state_info_64, basis_header, basis_body, bits, representative,
+                                character, norm);
 }
 
 auto is_representative_64(basis_base_t const& basis_header, small_basis_t const& basis_body,
                           uint64_t bits) noexcept -> bool
 {
-    return (*resolve_is_representative_64())(basis_header, basis_body, bits);
+    LATTICE_SYMMETRIES_DISPATCH(is_representative_64, basis_header, basis_body, bits);
 }
 
 auto get_state_info_512(basis_base_t const& basis_header, big_basis_t const& basis_body,
                         ls_bits512 const& bits, ls_bits512& representative,
                         std::complex<double>& character, double& norm) noexcept -> void
 {
-    return (*resolve_get_state_info_512())(basis_header, basis_body, bits, representative,
-                                           character, norm);
+    LATTICE_SYMMETRIES_DISPATCH(get_state_info_512, basis_header, basis_body, bits, representative,
+                                character, norm);
 }
-#    else
-__attribute__((ifunc("resolve_get_state_info_64"))) auto
-get_state_info_64(basis_base_t const& basis_header, small_basis_t const& basis_body, uint64_t bits,
-                  uint64_t& representative, std::complex<double>& character, double& norm) noexcept
-    -> void;
-
-__attribute__((ifunc("resolve_is_representative_64"))) auto
-is_representative_64(basis_base_t const& basis_header, small_basis_t const& basis_body,
-                     uint64_t bits) noexcept -> bool;
-
-__attribute__((ifunc("resolve_get_state_info_512"))) auto
-get_state_info_512(basis_base_t const& basis_header, big_basis_t const& basis_body,
-                   ls_bits512 const& bits, ls_bits512& representative,
-                   std::complex<double>& character, double& norm) noexcept -> void;
-#    endif
-
 } // namespace lattice_symmetries
 #endif

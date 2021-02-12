@@ -174,6 +174,12 @@ bool ls_has_avx2();
 bool ls_has_avx();
 bool ls_has_sse4();
 
+#define LATTICE_SYMMETRIES_DISPATCH(func, ...)                                                     \
+    if (ls_has_avx2()) { return ::lattice_symmetries::avx2::func(__VA_ARGS__); }                   \
+    if (ls_has_avx()) { return ::lattice_symmetries::avx::func(__VA_ARGS__); }                     \
+    if (ls_has_sse4()) { return ::lattice_symmetries::sse4::func(__VA_ARGS__); }                   \
+    return ::lattice_symmetries::sse2::func(__VA_ARGS__)
+
 // This is an internal function!
 void ls_private_log_debug(char const* file, unsigned line, char const* function, char const* fmt,
                           ...);

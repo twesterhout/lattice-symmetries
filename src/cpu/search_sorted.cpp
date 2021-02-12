@@ -141,31 +141,11 @@ auto search_sorted(uint64_t const* data, uint64_t size, uint64_t const key) noex
 } // namespace lattice_symmetries::ARCH
 
 #if defined(LATTICE_SYMMETRIES_ADD_DISPATCH_CODE)
-extern "C" {
-using func_type = auto (*)(uint64_t const*, uint64_t, uint64_t) noexcept -> uint64_t;
-
-static auto resolve_search_sorted() noexcept -> func_type
-{
-    using namespace lattice_symmetries;
-    if (ls_has_avx2()) { return &avx2::search_sorted; }
-    if (ls_has_avx()) { return &avx::search_sorted; }
-    if (ls_has_sse4()) { return &sse4::search_sorted; }
-    return &sse2::search_sorted;
-}
-
-} // extern "C"
-
 namespace lattice_symmetries {
-
-#    if defined(__APPLE__) && __APPLE__
+LATTICE_SYMMETRIES_EXPORT
 auto search_sorted(uint64_t const* data, uint64_t size, uint64_t key) noexcept -> uint64_t
 {
-    return (*resolve_search_sorted())(data, size, key);
+    LATTICE_SYMMETRIES_DISPATCH(search_sorted, data, size, key);
 }
-#    else
-__attribute__((visibility("default"))) __attribute__((ifunc("resolve_search_sorted"))) auto
-search_sorted(uint64_t const* data, uint64_t size, uint64_t key) noexcept -> uint64_t;
-#    endif
-
 } // namespace lattice_symmetries
 #endif
