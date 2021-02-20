@@ -4,13 +4,12 @@
 **WARNING** This is work-in-progress
 
 A package to simplify working with symmetry-adapted quantum many-body bases
-(think spin systems). This package is written with two main applications in
-mind:
+(think spin systems). It is written with two main applications in mind:
 
 * Exact diagonalization;
 * Experiments with neural quantum states and symmetries.
 
-`lattice_symmetries` provides a relatively low-level and high-performance
+`lattice_symmetries` provides a relatively low-level (and high-performance)
 interface to working with symmetries and Hilbert space bases and operators. If
 all you want to do it to diagonalize a spin Hamiltonian, have a look at
 [`SpinED`](https://github.com/twesterhout/spin-ed) application which uses
@@ -18,29 +17,30 @@ all you want to do it to diagonalize a spin Hamiltonian, have a look at
 interface to exact diagonalization.
 
 
-> **Help wanted!** There are a few improvements to this package which could
-> benefit a lot of people, but I don't really have time to do them all myself...
->
-> 1) Implement distributed matrix-vector products. It would be nice to be able
-> to run this code on, say, 4 nodes to have a bits more memory. (note however, I
-> do not want to make it really "large-scale" and run it on hundreds of nodes)
-> 2) Implement fermion basis which still handles symmetries properly. This is a
-> matter of plugging `-1` in the right places, but should be done carefully!
-> 3) Implemente sublattice-coding techniques. This could potentially speed-up
-> `ls_get_state_info` function even more. Whether it will actually help is not
-> clear at all since batching of symmetries already does a great job of
-> improving performance...
->
-> If you're interested in working on one of these ideas, please, don't hesitate
-> to contact me. I'd be happy to discuss it further and guide you through it.
+## 🙏 Help wanted!
+
+There are a few improvements to this package which could benefit a lot of
+people, but I don't really have time to do them all myself...
+
+1) Implement distributed matrix-vector products. It would be nice to be able to
+run this code on, say, 4 nodes to have a bit more memory.
+2) Implement fermion basis which handles symmetries properly. This is a matter
+of plugging `-1`s in the right places, but should be done carefully!
+3) Consider implementing sublattice-coding techniques. This *could* potentially
+speed-up `ls_get_state_info` function. Whether it *will* actually help is not
+clear at all since batching of symmetries already does a great job of improving
+performance...
+
+If you're interested in working on one of these ideas, please, don't hesitate to
+contact me. I'd be happy to discuss it further and guide you through it.
 
 
 ## Contents
 
 * [Citing](#citing)
-* [Installation](#installation)
-    * [Installing from Conda](#installing-from-conda)
-    * [Building from source](#building-from-source)
+* [Installing](#installing)
+    * [Conda](#conda)
+    * [Compiling from source](#compiling-from-source)
 * [Example](#example)
 * [Performance](#performance)
 * [Reference](#reference)
@@ -50,7 +50,7 @@ interface to exact diagonalization.
 * [Other software](#other-software)
 
 
-## Citing
+## 🖋 Citing
 
 If you are using this package in your research, please, consider citing the
 following paper (**WIP**):
@@ -64,29 +64,31 @@ following paper (**WIP**):
   annote = "".
 }
 ```
-Also, the paper introduces all the basic concepts like symmetry-adapted basis,
-spin configuration etc. If you are not yet familiar with the terminology it
-is advised to have a look at the paper first before reading the reference
-documentation or trying to use the code.
 
 
-## Installation
+## 🚀 Installation
 
-### Installing from Conda
+System requirements:
 
-If you are mainly going to use the Python interface to the library, using
-[Conda](https://docs.conda.io/en/latest/) is the suggested way of installing the package.
+  * Linux or OS X operating system;
+  * x86-64 processor with
+  [nehalem](https://en.wikipedia.org/wiki/Nehalem_(microarchitecture)) (released
+  in 2008) or newer microarchitecture. But no, it's not Intel only. The code
+  will work on AMD processors just fine.
 
-```{.sh}
+
+### Conda
+
+If you are mainly going to use the Python interface, using
+[Conda](https://docs.conda.io/en/latest/) is the suggested way of installing the
+package.
+
+```sh
 conda install -c twesterhout lattice-symmetries
 ```
 
-Since Python interface is written entirely in Python using `ctypes` module, C code is not linked
-against Python or any other libraries like `numpy`. The above command should thus in principle
-work in any environment with **Python version 3.6 or above**.
-
-The package contains both C and Python interfaces, so even if you do not need the Python
-interface, using `conda` is the simplest way to get started.
+**Note:** Conda package installs both C and Python interfaces, so even if you do
+not need the Python interface, using `conda` is the simplest way to get started.
 
 
 ### Compiling from source
@@ -107,16 +109,15 @@ which contains the required dependencies (except Git).
 
 First step is to clone the repository:
 
-```{.sh}
+```sh
 git clone https://github.com/twesterhout/lattice-symmetries.git
 cd lattice-symmetries
 git submodule update --init --recursive
 ```
 
-Create a directory where build artifacts will be stored (we do not support in-source
-builds):
+Create a directory where build artifacts will be stored:
 
-```{.sh}
+```sh
 mkdir build
 cd build
 ```
@@ -124,27 +125,30 @@ cd build
 Run the configure step which will determine the compilers to use, download
 dependencies etc.
 
-```{.sh}
-cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=</where/to/install> ..
+```sh
+cmake -DCMAKE_BUILD_TYPE=Release ..
 ```
 
 The following CMake parameters affect the build:
 
-  * `BUILD_SHARED_LIBS`: when `ON` shared version of the library will be built, otherwise --
-    static. Note that static library does not include the dependencies. It is thus suggested to
-    use the shared version unless you know what you are doing.
+  * `BUILD_SHARED_LIBS`: when `ON` shared version of the library will be built,
+  otherwise -- static. Note that static library cannot be loaded from Python. It
+  is thus suggested to use the shared version unless you know what you are
+  doing.
   * `CMAKE_INSTALL_PREFIX`: where to install the library.
-  * `CMAKE_BUILD_TYPE`: typically `Release` for optimized builds and `Debug` for development and
-    testing.
-  * `LatticeSymmetries_ENABLE_UNIT_TESTING`: when `ON` unit tests will be compiled (default:
-    `ON`).
-  * `LatticeSymmetries_ENABLE_CLANG_TIDY`: when `ON`, `clang-tidy` will be used for static
-    analysis.
+  * `CMAKE_BUILD_TYPE`: typically `Release` for optimized builds and `Debug` for
+  development and testing.
+  * `LatticeSymmetries_ENABLE_UNIT_TESTING`: when `ON` unit tests will be
+  compiled (default: `ON`).
+  * `LatticeSymmetries_ENABLE_CLANG_TIDY`: when `ON`, `clang-tidy` will be used
+  for static analysis. Note that this slows down the compilation quite a bit.
+  * Other standard CMake flags such as `CMAKE_CXX_COMPILER`, `CMAKE_CXX_FLAGS`,
+  etc.
 
 
 Build the library:
 
-```{.sh}
+```sh
 cmake --build .
 ```
 
@@ -154,83 +158,213 @@ And finally install it:
 cmake --build . --target install
 ```
 
-Afterwards you can install Python wrappers using `pip`. Note also that Python
-code uses `pkg-config` to determine the location of `liblattice_symmetries.so`
-(or `.dylib`). Make sure you either set `PKG_CONFIG_PATH` appropriately or
-install into a location known to `pkg-config`.
+Now you can install Python wrappers using `pip`. Note that Python code uses
+`pkg-config` to determine the location of `liblattice_symmetries.so` (or
+`.dylib`). Make sure you either set `PKG_CONFIG_PATH` appropriately or install
+into a location known to `pkg-config`.
 
 
-## Example
+## 🏄‍♀️ Example
 
-Have a look into
-[example/getting_started](https://github.com/twesterhout/lattice-symmetries/tree/master/example/getting_started).
-It provides very simple examples how to use `lattice_symmetries` from both
-Python and C.
+[`example/getting_started`](https://github.com/twesterhout/lattice-symmetries/tree/master/example/getting_started)
+folder contains `main.py` and `main.c` files which illustrate very basic usage
+of the package from both Python and C. The code contains explanatory comments.
+
+To run the example from Python simply type:
+
+```console
+$ cd example/getting_started
+$ python3 main.py
+Symmetry group contains 20 elements
+Hilbert space dimension is 13
+Ground state energy is -18.0617854180
+```
+
+To run the example from C we first need to compile it:
+```console
+$ # (Optionally) tell pkg-config where lattice_symmetries library was installed.
+$ # If you installed the package using Conda, it's already taken care of for you.
+$ #
+$ # export PKG_CONFIG_PATH=/path/to/lib/pkgconfig:$PKG_CONFIG_PATH
+$ cc `pkg-config --cflags lattice_symmetries` -o main main.c `pkg-config --libs lattice_symmetries`
+```
+
+Now we can run it as well:
+```console
+$ # (Optionally) tell ld where lattice_symmetries library was installed:
+$ # If you installed the package using Conda, it's already taken care of for you.
+$ #
+$ # export LD_LIBRARY_PATH=/path/to/lib:$LD_LIBRARY_PATH
+$ ./main
+Symmetry group contains 20 elements
+Hilbert space dimension is 13
+Ground state energy is -18.0617854180
+```
 
 
-
-## Performance
+## 🚴 Performance
 
 ![basis construction](benchmark/01_basis_construction.png)
 ![operator application](benchmark/02_operator_application.png)
 
 
-## Reference
+## C API
 
-### C interface
+1) Add the following include your source file
 
-1. Add the following include your source file
-```c
-#include <lattice_symmetries/lattice_symmetries.h>
-```
+   ~~~~c
+   #include <lattice_symmetries/lattice_symmetries.h>
+   ~~~~
 
 2. Link against `liblattice_symmetries.so` (or `.dylib` if you're on OS X, or
-   `.a` if you're using the static version).
+   `.a` if you're using the static version). `pkg-config` can take care of it
+   for you.
 
 
-#### Symmetries
+### Error handling
+
+`lattice_symmetries` library uses status codes for reporting errors. `ls_error_code` specifies all
+possible status codes which can be returned by library functions:
+
+```c
+typedef enum ls_error_code {
+    LS_SUCCESS = 0,             ///< No error
+    LS_OUT_OF_MEMORY,           ///< Memory allocation failed
+    LS_INVALID_ARGUMENT,        ///< Argument to a function is invalid
+    LS_INVALID_HAMMING_WEIGHT,  ///< Invalid Hamming weight
+    LS_INVALID_SPIN_INVERSION,  ///< Invalid value for spin_inversion
+    LS_INVALID_NUMBER_SPINS,    ///< Invalid number of spins
+    LS_INVALID_PERMUTATION,     ///< Argument is not a valid permutation
+    LS_INVALID_SECTOR,          ///< Sector exceeds the periodicity of the operator
+    LS_INVALID_STATE,           ///< Invalid basis state
+    LS_INVALID_DATATYPE,        ///< Invalid datatype
+    LS_PERMUTATION_TOO_LONG,    ///< Such long permutations are not supported
+    LS_INCOMPATIBLE_SYMMETRIES, ///< Symmetries are incompatible
+    LS_NOT_A_REPRESENTATIVE,    ///< Spin configuration is not a representative
+    LS_WRONG_BASIS_TYPE,        ///< Expected a basis of different type
+    LS_CACHE_NOT_BUILT,         ///< List of representatives is not yet built
+    LS_COULD_NOT_OPEN_FILE,     ///< Failed to open file
+    LS_FILE_IO_FAILED,          ///< File input/output failed
+    LS_CACHE_IS_CORRUPT,        ///< File does not contain a list of representatives
+    LS_OPERATOR_IS_COMPLEX,     ///< Trying to apply complex operator to real vector
+    LS_DIMENSION_MISMATCH,      ///< Operator dimension does not match vector length
+    LS_SYSTEM_ERROR,            ///< Unknown error
+} ls_error_code;
+```
+
+Names of the constants should explain errors pretty well, however for
+higher-level wrappers it is useful to convert these status codes to
+human-readable messages. `ls_error_to_string` function provides such
+functionality:
+
+```c
+char const* ls_error_to_string(ls_error_code code);
+```
+
+ℹ️ **Note:** Even though internally the library is written in C++17, exceptions are disabled
+during compilation. I.e. we never throw exceptions, all errors are reported
+using status codes. This makes it easy and safe to use the library inside OpenMP
+loops.
+
+
+### Spin configurations
+
+Depending on the context (i.e. whether it is known if the system size is less
+than 64) one of the following two types is used to represent spin
+configurations:
+
+```c
+typedef uint64_t ls_bits64;
+
+typedef struct ls_bits512 {
+    ls_bits64 words[8];
+} ls_bits512;
+```
+
+‼️ **Warning:** we do not support systems with more than 512 spins. This is a
+design decision to limit the memory footprint of a single spin configuration. If
+you really want to use `lattice_symmetries` for larger systems, please, let us
+know by opening an issue.
+
+Each spin is represented by a single bit. The order of spins is determined by
+the underlying hardware [endianness](https://en.wikipedia.org/wiki/Endianness).
+For example, you can use the following functions to get the value (`+1` or `-1`)
+of the `n`th spin:
+
+```c
+int get_nth_spin_64(ls_bits64 const bits, unsigned const n)
+{
+    return 2 * (int)((bits >> n) & 1U) - 1;
+}
+
+int get_nth_spin_512(ls_bits512 const* bits, unsigned const n)
+{
+    return get_nth_spin_64(bits->words[n / 64U], n % 64U);
+}
+```
+
+
+### Symmetries
 
 Opaque struct representing a symmetry operator:
+
 ```c
 typedef struct ls_symmetry ls_symmetry;
 ```
 
-Symmetries are created and destructed using the following two functions:
+* * *
+
+Symmetries are constructed and destructed using the following two functions:
+
 ```c
 ls_error_code ls_create_symmetry(ls_symmetry** ptr, unsigned length, unsigned const permutation[],
                                  unsigned sector);
 void ls_destroy_symmetry(ls_symmetry* symmetry);
 ```
+
 `ls_create_symmetry` accepts a `permutation` of indices `{0, 1, ..., length-1}`
-and `sector` specifying the eigenvalue. Upon successful completion (indicated by
-returning `LS_SUCCESS`), `*ptr` is set to point to the newly allocated
-`ls_symmetry` object.
+and `sector` specifying the eigenvalue. *Periodicity* of a permutation operator
+`T` is the smallest positive integer `N` such that <code>T<sup>N</sup> =
+𝟙</code>. It then follows that eigenvalues of `T` are roots of unity: `-2πⅈk/N`
+for `k ∈ {0, ..., N-1}`. `sector` argument specifies the value of `k`.
 
-*Periodicity* of the symmetry operator `T` is the smallest positive integer `N`
-such that <code>T<sup>N</sup> = 1</code>. It then follows that eigenvalues of
-`T` are roots of unity: `2πik/N` for `k ∈ {0, ..., N-1}`. `sector` argument
-specifies the value of `k`.
+Upon successful completion of `ls_create_symmetry` (indicated by returning
+`LS_SUCCESS`), `*ptr` is set to point to the newly allocated `ls_symmetry`
+object. All pointers created using `ls_create_symmetry` must be destroyed using
+`ls_destroy_symmetry` to avoid memory leaks.
 
-Various properties of the symmetry operator can be accessed using the getter
-functions:
+
+* * *
+
+Various properties can be accessed using getter functions:
 ```c
+unsigned ls_get_periodicity(ls_symmetry const* symmetry);
+void ls_get_eigenvalue(ls_symmetry const* symmetry, _Complex double* out);
 unsigned ls_get_sector(ls_symmetry const* symmetry);
 double ls_get_phase(ls_symmetry const* symmetry);
-void ls_get_eigenvalue(ls_symmetry const* symmetry, void* out); // _Complex double*
-unsigned ls_get_periodicity(ls_symmetry const* symmetry);
 unsigned ls_symmetry_get_number_spins(ls_symmetry const* symmetry);
 ```
-`ls_get_eigenvalue` function stores the eigenvalue in `out` parameter using
-`_Complex double` datatype (same as `std::complex<double>` in C++).
 
-Finally, symmetry operators can also be applied to spin configurations:
+`ls_get_periodicity` returns the periodicity `N` such that applying the symmetry
+`N` times results in identity. `ls_get_eigenvalue` stores the eigenvalue
+`-2πⅈk/N` in `out`. `k` is the sector which can be obtained with
+`ls_get_sector`. `ls_get_phase` returns `k / N`. `ls_symmetry_get_number_spins`
+returns the number of spins for which the symmetry was constructed (i.e.  length
+of the permutation passed to `ls_create_symmetry`)
+
+* * *
+
+Symmetry operators can also be applied to spin configurations:
+
 ```c
-void ls_apply_symmetry(ls_symmetry const* symmetry, uint64_t bits[]);
+void ls_apply_symmetry(ls_symmetry const* symmetry, ls_bits512* bits);
 ```
-**TODO:** document length of `bits`.
+
+`ls_apply_symmetry` will permute `bits` in-place according to the permutation
+with which it was constructed.
 
 
-#### Symmetry groups
+### Symmetry groups
 
 Opaque struct representing a symmetry group:
 ```c

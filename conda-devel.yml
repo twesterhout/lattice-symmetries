@@ -7,8 +7,9 @@ dependencies:
   - pip
   - pip:
     - black
-    - neovim
+    - grip
     - loguru
+    - neovim
   - numpy
   - scipy
   - anaconda-client
