@@ -43,10 +43,13 @@ contact me. I'd be happy to discuss it further and guide you through it.
     * [Compiling from source](#compiling-from-source)
 * [Example](#example)
 * [Performance](#performance)
-* [Reference](#reference)
-    * [C interface](#c-interface)
-    * [Python interface](#python-interface)
-* [Reading the source code](#reading-the-source-code)
+* [C API](#c-api)
+    * [Error handling](#error-handling)
+    * [Spin configuration](#spin-configuration)
+    * [Symmetry](#symmetry)
+    * [Symmetry group](#symmetry-group)
+    * [Spin basis](#spin-basis)
+* [Python interface](#python-interface)
 * [Other software](#other-software)
 
 
@@ -181,6 +184,7 @@ Ground state energy is -18.0617854180
 ```
 
 To run the example from C we first need to compile it:
+
 ```console
 $ # (Optionally) tell pkg-config where lattice_symmetries library was installed.
 $ # If you installed the package using Conda, it's already taken care of for you.
@@ -190,6 +194,7 @@ $ cc `pkg-config --cflags lattice_symmetries` -o main main.c `pkg-config --libs 
 ```
 
 Now we can run it as well:
+
 ```console
 $ # (Optionally) tell ld where lattice_symmetries library was installed:
 $ # If you installed the package using Conda, it's already taken care of for you.
@@ -267,7 +272,7 @@ using status codes. This makes it easy and safe to use the library inside OpenMP
 loops.
 
 
-### Spin configurations
+### Spin configuration
 
 Depending on the context (i.e. whether it is known if the system size is less
 than 64) one of the following two types is used to represent spin
@@ -304,7 +309,7 @@ int get_nth_spin_512(ls_bits512 const* bits, unsigned const n)
 ```
 
 
-### Symmetries
+### Symmetry
 
 Opaque struct representing a symmetry operator:
 
@@ -337,6 +342,7 @@ object. All pointers created using `ls_create_symmetry` must be destroyed using
 * * *
 
 Various properties can be accessed using getter functions:
+
 ```c
 unsigned ls_get_periodicity(ls_symmetry const* symmetry);
 void ls_get_eigenvalue(ls_symmetry const* symmetry, _Complex double* out);
@@ -361,45 +367,72 @@ void ls_apply_symmetry(ls_symmetry const* symmetry, ls_bits512* bits);
 ```
 
 `ls_apply_symmetry` will permute `bits` in-place according to the permutation
-with which it was constructed.
+with which the symmetry was constructed.
 
 
-### Symmetry groups
+### Symmetry group
 
 Opaque struct representing a symmetry group:
+
 ```c
 typedef struct ls_group ls_group;
 ```
 
+Groups are meant to be used mostly as intermediate data structured for
+constructing the bases. We do not provide many functions for working with them.
+
+* * *
+
 Symmetry groups are constructed and destructed using the following functions:
+
 ```c
 ls_error_code ls_create_group(ls_group** ptr, unsigned size, ls_symmetry const* generators[]);
 void ls_destroy_group(ls_group* group);
 ```
+
 `ls_create_group` receives an array of `size` symmetry generators and tries to
 build a group from them. If symmetries are incommensurable an error will be
 returned. Note that `ls_create_group` **does not take ownership** of `generators`.
 
-There is currently just one getter which allows to obtain the size of the group:
+* * *
+
+Some information about a symmetry group can be obtained using the following
+getter functions:
+
 ```c
 unsigned ls_get_group_size(ls_group const* group);
+ls_symmetry const* ls_group_get_symmetries(ls_group const* group);
+int ls_group_get_number_spins(ls_group const* group);
 ```
 
+`ls_get_group_size` returns the number of elements in the group.
+`ls_group_get_symmetries` returns a pointer to an array of symmetries. This
+array is internal and owned by `ls_group`. Do not try to `free` it, and make
+sure **that `ls_group` stays alive as long as you are using this pointer**.
+`ls_group_get_number_spins` returns the number of spins in the system. If it
+cannot be determined (because the group is empty), `-1` is returned.
 
-#### Spin basis
+
+### Spin basis
 
 Opaque struct representing a spin basis:
+
 ```c
 typedef struct ls_spin_basis ls_spin_basis;
 ```
 
+* * *
+
 Bases are created and destructed using the following functions:
+
 ```c
 ls_error_code ls_create_spin_basis(ls_spin_basis** ptr, ls_group const* group,
-                                   unsigned number_spins, int hamming_weight);
+                                   unsigned number_spins, int hamming_weight,
+                                   int spin_inversion);
 ls_spin_basis* ls_copy_spin_basis(ls_spin_basis const* basis);
 void ls_destroy_spin_basis(ls_spin_basis* basis);
 ```
+
 `ls_create_spin_basis` receives a symmetry group, the number of spins in the
 system, and Hamming weight. Symmetry group may be empty (i.e. if
 `ls_create_group` was called with no symmetries), but must not be `NULL`. If one
