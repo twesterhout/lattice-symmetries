@@ -4,11 +4,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void print_error_message_and_exit(ls_error_code const status)
+static void print_error_message_and_exit(ls_error_code const status)
 {
-    char const* msg = ls_error_to_string(status);
-    fprintf(stderr, "Error (%i): %s\n", status, msg);
-    ls_destroy_string(msg);
+    fprintf(stderr, "Error (%i): %s\n", status, ls_error_to_string(status));
     exit(1);
 }
 
@@ -28,8 +26,8 @@ int main(void)
         permutation[i] = (i + 1U) % number_spins;
     }
     ls_symmetry*  momentum;
-    ls_error_code status = ls_create_symmetry(&momentum, number_spins, permutation, /*flip=*/false,
-                                              /*sector=*/number_spins / 2);
+    ls_error_code status =
+        ls_create_symmetry(&momentum, number_spins, permutation, /*sector=*/number_spins / 2);
     if (status != LS_SUCCESS) { goto fail1; }
 
     // Parity with eigenvalue π
@@ -37,39 +35,31 @@ int main(void)
         permutation[i] = number_spins - 1U - i;
     }
     ls_symmetry* parity;
-    status = ls_create_symmetry(&parity, number_spins, permutation, /*flip=*/false, /*sector=*/1);
+    status = ls_create_symmetry(&parity, number_spins, permutation, /*sector=*/1);
     if (status != LS_SUCCESS) { goto fail2; }
 
-    // Global spin inversion with eigenvalue π
-    for (unsigned i = 0U; i < number_spins; ++i) {
-        permutation[i] = i;
-    }
-    ls_symmetry* inversion;
-    status = ls_create_symmetry(&inversion, number_spins, permutation, /*flip=*/true, /*sector=*/1);
-    if (status != LS_SUCCESS) { goto fail3; }
-
-    // Constructing the group
-    ls_symmetry const* generators[] = {momentum, parity, inversion};
+    // Constructing the symmetry group
+    ls_symmetry const* generators[] = {momentum, parity};
     ls_group*          group;
-    status = ls_create_group(&group, 3, generators);
+    status = ls_create_group(&group, sizeof(generators) / sizeof(void*), generators);
     if (status != LS_SUCCESS) { goto fail4; }
     printf("Symmetry group contains %u elements\n", ls_get_group_size(group));
 
     // Constructing the basis
     ls_spin_basis* basis;
-    status = ls_create_spin_basis(&basis, group, number_spins, hamming_weight);
+    status =
+        ls_create_spin_basis(&basis, group, number_spins, hamming_weight, /*spin_inversion=*/-1);
     if (status != LS_SUCCESS) { goto fail5; }
     status = ls_build(basis);
     if (status != LS_SUCCESS) { goto fail6; }
 
+    // Get number of representatives
     uint64_t number_states;
     status = ls_get_number_states(basis, &number_states);
     if (status != LS_SUCCESS) { goto fail6; }
     printf("Hilbert space dimension is %zu\n", number_states);
 
     // Heisenberg Hamiltonian
-    // It is easier to compute kronecker product of Pauli matrices in Mathematica or Python and just
-    // hardcode the result here.
     // clang-format off
     _Complex double const matrix[] = {1.0,  0.0,  0.0, 0.0,
                                       0.0, -1.0,  2.0, 0.0,
@@ -106,7 +96,7 @@ int main(void)
         status = ls_operator_expectation(hamiltonian, LS_FLOAT64, number_states, 1, ground_state, 1,
                                          &energy);
         if (status != LS_SUCCESS) { goto fail9; }
-        printf("Ground state energy is %f\n", creal(energy));
+        printf("Ground state energy is %.10f\n", creal(energy));
     }
 
     // Cleaning up
@@ -121,8 +111,6 @@ fail6:
 fail5:
     ls_destroy_group(group);
 fail4:
-    ls_destroy_symmetry(inversion);
-fail3:
     ls_destroy_symmetry(parity);
 fail2:
     ls_destroy_symmetry(momentum);

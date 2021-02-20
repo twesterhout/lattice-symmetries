@@ -1,12 +1,16 @@
-# The following three lines can be commented out
-import sys
-import os
-
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..", "python"))
-
 import numpy as np
 import scipy.sparse.linalg
-import lattice_symmetries as ls
+
+try:
+    import lattice_symmetries as ls
+except ImportError:
+    # Assume we're doing development locally and don't have the package installed yet.
+    import sys
+    import os
+
+    sys.path.insert(
+        0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..", "python")
+    )
 
 
 def main():
@@ -22,9 +26,6 @@ def main():
     # Parity with eigenvalue π
     P = sites[::-1]
     symmetries.append(ls.Symmetry(P, sector=1))
-    # Global spin inversion with eigenvalue π
-    # Z = sites  # no permutation
-    # symmetries.append(ls.Symmetry(Z, flip=True, sector=1))
 
     # Constructing the group
     symmetry_group = ls.Group(symmetries)
@@ -34,7 +35,7 @@ def main():
     basis = ls.SpinBasis(
         symmetry_group, number_spins=number_spins, hamming_weight=hamming_weight, spin_inversion=-1
     )
-    basis.build()  # Build the cache, we need it since we're doing ED
+    basis.build()  # Build the list of representatives, we need it since we're doing ED
     print("Hilbert space dimension is {}".format(basis.number_states))
 
     # Heisenberg Hamiltonian
@@ -50,15 +51,12 @@ def main():
     σ_m = σ_x - 1j * σ_y
 
     matrix = 0.5 * (np.kron(σ_p, σ_m) + np.kron(σ_m, σ_p)) + np.kron(σ_z, σ_z)
-    edges = [
-        (i, (i + 1) % number_spins) for i in range(number_spins)
-    ]  # periodic boundary conditions
-    interaction = ls.Interaction(matrix, edges)
-    hamiltonian = ls.Operator(basis, [interaction])
+    edges = [(i, (i + 1) % number_spins) for i in range(number_spins)]
+    hamiltonian = ls.Operator(basis, [ls.Interaction(matrix, edges)])
 
     # Diagonalize the Hamiltonian using ARPACK
     eigenvalues, eigenstates = ls.diagonalize(hamiltonian, k=1)
-    print("Ground state energy is {}".format(eigenvalues[0]))
+    print("Ground state energy is {:.10f}".format(eigenvalues[0]))
     assert np.isclose(eigenvalues[0], -18.06178542)
 
 
