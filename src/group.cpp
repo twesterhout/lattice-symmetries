@@ -190,6 +190,7 @@ struct ls_group {
 
 extern "C" {
 
+// cppcheck-suppress unusedFunction
 LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_group(ls_group** ptr, unsigned size,
                                                         ls_symmetry const* generators[])
 {

@@ -93,6 +93,7 @@ auto is_real(big_symmetry_t const& symmetry) noexcept -> bool
 
 extern "C" {
 
+// cppcheck-suppress unusedFunction
 LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_symmetry(ls_symmetry** ptr, unsigned const length,
                                                            unsigned const permutation[],
                                                            unsigned const sector)
@@ -126,6 +127,7 @@ LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_symmetry(ls_symmetry** ptr, un
     return LS_SUCCESS;
 }
 
+// cppcheck-suppress unusedFunction
 LATTICE_SYMMETRIES_EXPORT void ls_destroy_symmetry(ls_symmetry* symmetry)
 {
     LATTICE_SYMMETRIES_CHECK(symmetry != nullptr, "trying to destroy a nullptr");
@@ -142,6 +144,7 @@ LATTICE_SYMMETRIES_EXPORT unsigned ls_get_periodicity(ls_symmetry const* symmetr
     return std::visit([](auto const& x) noexcept { return x.periodicity; }, symmetry->payload);
 }
 
+// cppcheck-suppress unusedFunction
 LATTICE_SYMMETRIES_EXPORT void ls_get_eigenvalue(ls_symmetry const* symmetry, void* out)
 {
     auto const value =
@@ -150,6 +153,7 @@ LATTICE_SYMMETRIES_EXPORT void ls_get_eigenvalue(ls_symmetry const* symmetry, vo
     std::memcpy(out, &value, sizeof(std::complex<double>));
 }
 
+// cppcheck-suppress unusedFunction
 LATTICE_SYMMETRIES_EXPORT double ls_get_phase(ls_symmetry const* symmetry)
 {
     return std::visit(

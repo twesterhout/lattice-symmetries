@@ -64,8 +64,8 @@ struct alignas(required_alignment) batch_acc_64_t {
     vcl::Vec8q        i;
     vcl::Vec8d        n;
 
-    LATTICE_SYMMETRIES_FORCEINLINE
-    explicit batch_acc_64_t(uint64_t const bits) noexcept
+    // cppcheck-suppress unusedFunction ; batch_acc_64_t is used!
+    LATTICE_SYMMETRIES_FORCEINLINE explicit batch_acc_64_t(uint64_t const bits) noexcept
         : original{bits}, r{original}, i{std::numeric_limits<int64_t>::max()}, n{0.0}
     {}
 

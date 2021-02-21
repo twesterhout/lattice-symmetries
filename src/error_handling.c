@@ -71,6 +71,7 @@ static ls_error_handler check_fail_handler        = &default_check_fail_handler;
 static pthread_mutex_t  check_fail_handler_mutex  = PTHREAD_MUTEX_INITIALIZER;
 static bool             is_logging_enabled        = false;
 
+// cppcheck-suppress unusedFunction
 LATTICE_SYMMETRIES_EXPORT void ls_set_assert_fail_handler(ls_error_handler const func)
 {
     pthread_mutex_lock(&assert_fail_handler_mutex);
@@ -78,6 +79,7 @@ LATTICE_SYMMETRIES_EXPORT void ls_set_assert_fail_handler(ls_error_handler const
     pthread_mutex_unlock(&assert_fail_handler_mutex);
 }
 
+// cppcheck-suppress unusedFunction
 LATTICE_SYMMETRIES_EXPORT void ls_set_check_fail_handler(ls_error_handler const func)
 {
     pthread_mutex_lock(&check_fail_handler_mutex);
@@ -94,9 +96,10 @@ LATTICE_SYMMETRIES_EXPORT void ls_assert_fail(char const* const expr, char const
     abort();
 }
 
-LATTICE_SYMMETRIES_EXPORT
-void ls_check_fail(char const* const expr, char const* const file, unsigned const line,
-                   char const* const function, char const* const msg)
+// cppcheck-suppress unusedFunction
+LATTICE_SYMMETRIES_EXPORT void ls_check_fail(char const* const expr, char const* const file,
+                                             unsigned const line, char const* const function,
+                                             char const* const msg)
 {
     (*check_fail_handler)(expr, file, line, function, msg);
     abort();
@@ -156,6 +159,7 @@ LATTICE_SYMMETRIES_EXPORT char const* ls_error_to_string(ls_error_code code)
     }
 }
 
+// cppcheck-suppress unusedFunction
 LATTICE_SYMMETRIES_EXPORT void ls_destroy_string(char const* message) {}
 
 LATTICE_SYMMETRIES_EXPORT bool ls_is_logging_enabled()
@@ -163,11 +167,13 @@ LATTICE_SYMMETRIES_EXPORT bool ls_is_logging_enabled()
     return __atomic_load_n(&is_logging_enabled, __ATOMIC_ACQUIRE);
 }
 
+// cppcheck-suppress unusedFunction
 LATTICE_SYMMETRIES_EXPORT void ls_enable_logging()
 {
     return __atomic_store_n(&is_logging_enabled, true, __ATOMIC_RELEASE);
 }
 
+// cppcheck-suppress unusedFunction
 LATTICE_SYMMETRIES_EXPORT void ls_disable_logging()
 {
     return __atomic_store_n(&is_logging_enabled, false, __ATOMIC_RELEASE);
@@ -188,6 +194,7 @@ static void print_current_time(FILE* out)
     fprintf(out, "%s.%03d", time_buffer, milliseconds);
 }
 
+// cppcheck-suppress unusedFunction
 LATTICE_SYMMETRIES_EXPORT void ls_private_log_debug(char const* file, unsigned const line,
                                                     char const* const function,
                                                     char const* const fmt, ...)

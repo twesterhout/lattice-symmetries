@@ -46,6 +46,7 @@ small_network_t::small_network_t(uint16_t _depth, uint16_t _width) noexcept
     }
 }
 
+// cppcheck-suppress unusedFunction
 auto small_network_t::make_fake(uint16_t depth, uint16_t width) noexcept -> small_network_t
 {
     return small_network_t{depth, width};
