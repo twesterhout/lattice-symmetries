@@ -129,6 +129,7 @@ struct ls_states {
     ~ls_states() { ls_destroy_spin_basis(parent); }
 };
 
+// cppcheck-suppress unusedFunction
 extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_spin_basis(ls_spin_basis** ptr,
                                                                         ls_group const* group,
                                                                         unsigned const number_spins,
@@ -190,11 +191,13 @@ extern "C" LATTICE_SYMMETRIES_EXPORT void ls_destroy_spin_basis(ls_spin_basis* b
     }
 }
 
+// cppcheck-suppress unusedFunction
 extern "C" LATTICE_SYMMETRIES_EXPORT unsigned ls_get_number_spins(ls_spin_basis const* basis)
 {
     return basis->header.number_spins;
 }
 
+// cppcheck-suppress unusedFunction
 extern "C" LATTICE_SYMMETRIES_EXPORT unsigned ls_get_number_bits(ls_spin_basis const* basis)
 {
     if (std::holds_alternative<big_basis_t>(basis->payload)) {
@@ -203,22 +206,26 @@ extern "C" LATTICE_SYMMETRIES_EXPORT unsigned ls_get_number_bits(ls_spin_basis c
     return 64U; // NOLINT: number of bits in uint64_t
 }
 
+// cppcheck-suppress unusedFunction
 extern "C" LATTICE_SYMMETRIES_EXPORT int ls_get_hamming_weight(ls_spin_basis const* basis)
 {
     auto const& m = basis->header.hamming_weight;
     return m.has_value() ? static_cast<int>(*m) : -1;
 }
 
+// cppcheck-suppress unusedFunction
 extern "C" LATTICE_SYMMETRIES_EXPORT int ls_get_spin_inversion(ls_spin_basis const* basis)
 {
     return basis->header.spin_inversion;
 }
 
+// cppcheck-suppress unusedFunction
 extern "C" LATTICE_SYMMETRIES_EXPORT bool ls_has_symmetries(ls_spin_basis const* basis)
 {
     return basis->header.has_symmetries;
 }
 
+// cppcheck-suppress unusedFunction
 extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_get_number_states(ls_spin_basis const* basis,
                                                                         uint64_t*            out)
 {
@@ -229,6 +236,7 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_get_number_states(ls_spin_
     return LS_SUCCESS;
 }
 
+// cppcheck-suppress unusedFunction
 extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_get_index(ls_spin_basis const* basis,
                                                                 uint64_t const       bits,
                                                                 uint64_t*            index)
@@ -239,6 +247,7 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_get_index(ls_spin_basis co
     return p->cache->index(bits, index);
 }
 
+// cppcheck-suppress unusedFunction
 extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_build(ls_spin_basis* basis)
 {
     auto* p = std::get_if<small_basis_t>(&basis->payload);
@@ -247,6 +256,7 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_build(ls_spin_basis* basis
     return LS_SUCCESS;
 }
 
+// cppcheck-suppress unusedFunction
 extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_build_unsafe(ls_spin_basis* basis,
                                                                    uint64_t const size,
                                                                    uint64_t const representatives[])
@@ -282,15 +292,18 @@ namespace {
 } // namespace
 } // namespace lattice_symmetries
 
-extern "C" LATTICE_SYMMETRIES_EXPORT void
-ls_get_state_info(ls_spin_basis const* basis, ls_bits512 const* bits, ls_bits512* representative,
-                  void* character, double* norm) // NOLINT: nope, norm can't be const
+// cppcheck-suppress unusedFunction
+extern "C" LATTICE_SYMMETRIES_EXPORT void ls_get_state_info(ls_spin_basis const* basis,
+                                                            ls_bits512 const*    bits,
+                                                            ls_bits512*          representative,
+                                                            void* character, double* norm)
 {
     auto& ch = *reinterpret_cast<std::complex<double>*>(character); // NOLINT
     std::visit(get_state_info_visitor_t{basis->header, bits, representative, ch, *norm},
                basis->payload);
 }
 
+// cppcheck-suppress unusedFunction
 extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_get_states(ls_states**          ptr,
                                                                  ls_spin_basis const* basis)
 {
@@ -303,21 +316,25 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_get_states(ls_states**    
     return LS_SUCCESS;
 }
 
+// cppcheck-suppress unusedFunction
 extern "C" LATTICE_SYMMETRIES_EXPORT void ls_destroy_states(ls_states* states)
 {
     std::default_delete<ls_states>{}(states);
 }
 
+// cppcheck-suppress unusedFunction
 extern "C" LATTICE_SYMMETRIES_EXPORT uint64_t const* ls_states_get_data(ls_states const* states)
 {
     return states->payload.data();
 }
 
+// cppcheck-suppress unusedFunction
 extern "C" LATTICE_SYMMETRIES_EXPORT uint64_t ls_states_get_size(ls_states const* states)
 {
     return states->payload.size();
 }
 
+// cppcheck-suppress unusedFunction
 extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_save_cache(ls_spin_basis const* basis,
                                                                  char const*          filename)
 {
@@ -335,6 +352,7 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_save_cache(ls_spin_basis c
     return LS_SUCCESS;
 }
 
+// cppcheck-suppress unusedFunction
 extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_load_cache(ls_spin_basis* basis,
                                                                  char const*    filename)
 {

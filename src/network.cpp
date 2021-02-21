@@ -17,7 +17,7 @@ small_network_t::small_network_t(fat_benes_network_t const& fat) noexcept
     LATTICE_SYMMETRIES_CHECK(fat.masks.size() == fat.deltas.size(), "invalid fat_benes_network_t");
     LATTICE_SYMMETRIES_CHECK(fat.masks.size() <= max_depth, "fat_benes_network_t is too deep");
     std::transform(std::begin(fat.masks), std::end(fat.masks), std::begin(masks),
-                   [](auto& m) { return m.words[0]; });
+                   [](auto const& m) { return m.words[0]; });
     std::copy(std::begin(fat.deltas), std::end(fat.deltas), std::begin(deltas));
     std::fill(std::next(std::begin(masks), depth), std::end(masks), uint64_t{0});
     std::fill(std::next(std::begin(deltas), depth), std::end(deltas), uint64_t{0});

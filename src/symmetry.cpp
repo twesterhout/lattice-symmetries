@@ -184,6 +184,7 @@ struct symmetry_apply_fn_t {
 
 extern "C" {
 
+// cppcheck-suppress unusedFunction
 LATTICE_SYMMETRIES_EXPORT void ls_apply_symmetry(ls_symmetry const* symmetry, ls_bits512* bits)
 {
     return std::visit(lattice_symmetries::symmetry_apply_fn_t{bits}, symmetry->payload);

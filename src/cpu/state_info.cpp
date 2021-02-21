@@ -187,10 +187,8 @@ auto get_state_info_64(basis_base_t const& basis_header, small_basis_t const& ba
         return;
     }
     vcl::Vec8uq flip_mask;
-    vcl::Vec8d  flip_coeff;
     if (basis_header.spin_inversion != 0) {
-        flip_mask  = vcl::Vec8uq{get_flip_mask_64(basis_header.number_spins)};
-        flip_coeff = vcl::Vec8d{static_cast<double>(basis_header.spin_inversion)};
+        flip_mask = vcl::Vec8uq{get_flip_mask_64(basis_header.number_spins)};
     }
 
     batch_acc_64_t acc{bits};

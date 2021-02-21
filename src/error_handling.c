@@ -85,9 +85,10 @@ LATTICE_SYMMETRIES_EXPORT void ls_set_check_fail_handler(ls_error_handler const 
     pthread_mutex_unlock(&check_fail_handler_mutex);
 }
 
-LATTICE_SYMMETRIES_EXPORT
-void ls_assert_fail(char const* const expr, char const* const file, unsigned const line,
-                    char const* const function, char const* const msg)
+// cppcheck-suppress unusedFunction
+LATTICE_SYMMETRIES_EXPORT void ls_assert_fail(char const* const expr, char const* const file,
+                                              unsigned const line, char const* const function,
+                                              char const* const msg)
 {
     (*assert_fail_handler)(expr, file, line, function, msg);
     abort();

@@ -78,6 +78,7 @@ constexpr auto is_zero(ls_bits64 const bits) noexcept -> bool { return bits == 0
 constexpr auto is_zero(ls_bits512 const& bits) noexcept -> bool
 {
     for (auto const word : bits.words) {
+        // cppcheck-suppress useStlAlgorithm ; std::all_of is not constexpr in C++17
         if (word != 0) { return false; }
     }
     return true;

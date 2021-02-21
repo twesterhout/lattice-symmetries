@@ -66,6 +66,7 @@
 namespace lattice_symmetries {
 
 namespace {
+#if 0
     auto save_histogram(char const* filename, std::unordered_map<uint64_t, uint64_t> const& data)
         -> void
     {
@@ -84,6 +85,7 @@ namespace {
         }
         std::fclose(file);
     }
+#endif
 
     auto generate_ranges_v2(tcb::span<uint64_t const> states, unsigned const bits,
                             unsigned const shift) -> std::vector<uint64_t>
@@ -150,6 +152,7 @@ namespace {
             // Next set to 1 the most significant bit to change,
             // set to 0 the least significant ones, and add the necessary 1 bits.
             return (t + 1U)
+                   // cppcheck-suppress oppositeExpression
                    | (((~t & -~t) - 1U) >> (static_cast<unsigned>(__builtin_ctzl(v)) + 1U));
         }
         else {

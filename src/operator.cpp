@@ -338,6 +338,7 @@ extern "C" LATTICE_SYMMETRIES_EXPORT bool ls_interaction_is_real(ls_interaction 
 {
     return std::visit(
         [](auto const& x) noexcept {
+            // cppcheck-suppress internalAstError ; cppcheck can't parse this
             for (auto const& column : x.matrix->payload) { // NOLINT: there's no decay :/
                 for (auto const& element : column) {
                     if (element.imag() != 0.0) { return false; }

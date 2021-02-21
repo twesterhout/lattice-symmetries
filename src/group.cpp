@@ -100,6 +100,8 @@ namespace {
 
         auto const contains = [](auto const& gs, auto const& x) -> outcome::result<bool> {
             for (auto const& g : gs) {
+                // cppcheck-suppress useStlAlgorithm ; no std::any_of here because OUTCOME_TRYX may
+                // return an error code rather than just a bool
                 if (OUTCOME_TRYX(equal(g, x))) { return true; }
             }
             return false;
@@ -181,6 +183,8 @@ namespace {
 struct ls_group {
     std::vector<ls_symmetry> payload;
 
+    // cppcheck-suppress [passedByValue] ; passing by value is actually preferable here since we
+    // need to copy anyway!
     explicit ls_group(std::vector<ls_symmetry> gs) noexcept : payload{std::move(gs)} {}
 };
 
