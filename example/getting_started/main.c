@@ -57,7 +57,7 @@ int main(void)
     uint64_t number_states;
     status = ls_get_number_states(basis, &number_states);
     if (status != LS_SUCCESS) { goto fail6; }
-    printf("Hilbert space dimension is %zu\n", number_states);
+    printf("Hilbert space dimension is %zu\n", (size_t)number_states);
 
     // Heisenberg Hamiltonian
     // clang-format off
