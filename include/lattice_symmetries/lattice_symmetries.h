@@ -92,22 +92,6 @@
 extern "C" {
 #endif
 
-/// \defgroup errors Error handling
-/// \brief Status codes and corresponding utility functions
-///
-/// LatticeSymmetries library uses status codes for reporting errors. #ls_error_code specifies all
-/// possible status codes which can be returned by library functions. Names of the constants should
-/// explain errors pretty well, however for higher-level wrappers it is useful to convert these
-/// status codes to human-readable messages. #ls_error_to_string function provides this
-/// functionality.
-///
-/// \note Even though internally the library is written in C++17, exceptions are disabled during
-///       compilation. I.e. we never throw exceptions, all errors are reported using status codes.
-///
-/// @{
-
-/// \brief Status codes used by the library
-///
 typedef enum ls_error_code {
     LS_SUCCESS = 0,             ///< No error
     LS_OUT_OF_MEMORY,           ///< Memory allocation failed
@@ -163,9 +147,6 @@ void ls_check_fail(char const* expr, char const* file, unsigned line, char const
 #    define LATTICE_SYMMETRIES_ASSERT(cond, msg) ((void)0)
 #endif
 
-/// @}
-// end of errors group
-
 bool ls_is_logging_enabled();
 void ls_enable_logging();
 void ls_disable_logging();
@@ -193,141 +174,26 @@ typedef struct ls_bits512 {
     ls_bits64 words[8];
 } ls_bits512;
 
-/// \defgroup symmetries Symmetries
-/// \brief Working with individual symmetries
-///
-/// @{
-
-/// \brief Symmetry operator
-///
-/// All lattice symmetries are built from two primitive operations: permutation and spin inversion.
-/// Furthermore, each symmetry has corresponding eigenvalue to which we restrict the Hilbert space.
 typedef struct ls_symmetry ls_symmetry;
 
-/// \brief Allocates and constructs a symmetry.
-///
-/// \warning #ls_symmetry must be destructed and deallocated using #ls_destroy_symmetry.
-///
-/// \param ptr upon successful completion \p ptr set to point to the newly constructed object. Must
-///            not be `nullptr`. In case of error, \p ptr is untouched.
-/// \param length length of the \p permutation array. Must not exceed 512.
-/// \param permutation permutation of `{0, 1, ..., length - 1}`.
-/// \param flip whether application of this symmetry inverts spins.
-/// \param sector symmetry sector to which we restrict the problem. It must be between zero
-//                (inclusive) and periodicity of the symmetry operator (exclusive).
-/// \return #LS_SUCCESS on successful completion. #LS_NOT_A_PERMUTATION if \p permutation does not
-///         form a valid permutation. #LS_PERMUTATION_TOO_LONG if \p length exceeds 512.
-///         #LS_INVALID_SECTOR if \p sector exceeds the periodicity of the symmetry.
-/// \see #ls_destroy_symmetry
 ls_error_code ls_create_symmetry(ls_symmetry** ptr, unsigned length, unsigned const permutation[],
                                  unsigned sector);
-/// \brief Destructs and deallocates the symmetry.
-///
-/// This function **must** be called on objects constructed using #ls_create_symmetry.
-///
-/// \param symmetry pointer to symmetry. Must not be `nullptr`.
-/// \see #ls_create_symmetry
-void ls_destroy_symmetry(ls_symmetry* symmetry);
-/// \brief Get symmetry sector.
-///
-/// \param symmetry pointer to symmetry. Must not be `nullptr`.
-/// \return symmetry sector.
-/// \see #ls_get_flip, #ls_get_phase, #ls_get_periodicity, #ls_get_eigenvalue
-unsigned ls_get_sector(ls_symmetry const* symmetry);
-/// \brief Get whether the symmetry applies spin inversion.
-///
-/// \param symmetry pointer to symmetry. Must not be `nullptr`.
-/// \return `true` if \p symmetry applies spin inversion.
-/// \see #ls_get_sector, #ls_get_phase, #ls_get_periodicity, #ls_get_eigenvalue
-// bool ls_get_flip(ls_symmetry const* symmetry);
-/// \brief Get phase of the eigenvalue.
-///
-/// Phase is simply `sector / periodicity`. This function is provided for convenience only.
-///
-/// \param symmetry pointer to symmetry. Must not be `nullptr`.
-/// \return complex phase of the eigenvalue of \p symmetry.
-/// \see #ls_get_sector, #ls_get_flip, #ls_get_periodicity, #ls_get_eigenvalue
-double ls_get_phase(ls_symmetry const* symmetry);
-/// \brief Get eigenvalue of the symmetry.
-///
-/// Eigenvalue is written to \p out.
-///
-/// \param symmetry pointer to symmetry. Must not be `nullptr`.
-/// \param out pointer to `std::complex<double>` or any other structure binary compatible
-///            with it (e.g. `double _Complex` or `double[2]`). Must not be `nullptr`.
-/// \see #ls_get_sector, #ls_get_flip, #ls_get_phase, #ls_get_periodicity
-void ls_get_eigenvalue(ls_symmetry const* symmetry, void* out);
-/// \brief Get periodicity of the symmetry.
-///
-/// \param symmetry pointer to symmetry. Must not be `nullptr`.
-/// \return periodicity of the symmetry.
-/// \see #ls_get_sector, #ls_get_flip, #ls_get_phase, #ls_get_eigenvalue
-unsigned ls_get_periodicity(ls_symmetry const* symmetry);
-/// \brief Apply symmetry to a spin configuration.
-///
-/// \param symmetry pointer to symmetry. Must not be `nullptr`.
-/// \param bits spin configuration. It is modified in-place. Size of \p bits array is at least
-///             `ceil(number_spins / 64)`. `i`'th spin is determined as `(bits[i / 64] >> (i % 64)) & 0x1`.
-/// \see #ls_get_number_spins
-void ls_apply_symmetry(ls_symmetry const* symmetry, ls_bits512* bits);
+void          ls_destroy_symmetry(ls_symmetry* symmetry);
+unsigned      ls_get_sector(ls_symmetry const* symmetry);
+double        ls_get_phase(ls_symmetry const* symmetry);
+void          ls_get_eigenvalue(ls_symmetry const* symmetry, void* out);
+unsigned      ls_get_periodicity(ls_symmetry const* symmetry);
+void          ls_apply_symmetry(ls_symmetry const* symmetry, ls_bits512* bits);
+unsigned      ls_symmetry_get_number_spins(ls_symmetry const* symmetry);
 
-/// \brief Get number of spins in the system.
-///
-/// \param symmetry pointer to symmetry. Must not be `nullptr`.
-/// \return number of spins for which the symmetry was constructed.
-/// \see #ls_apply_symmetry
-unsigned ls_symmetry_get_number_spins(ls_symmetry const* symmetry);
-
-/// @}
-// end of symmetries group
-
-/// \defgroup group Group
-/// \brief Defining symmetry groups
-///
-/// @{
-
-/// \brief Opaque structure representing a symmetry group.
-///
-/// This is basically a collection of #ls_symmetry which is closed under symmetry composition
-/// operation (**TODO**: make symmetry composition part of public interface).
 typedef struct ls_group ls_group;
 
-/// \brief Allocates and constructs a symmetry group.
-///
-/// After successful completion of this function \p ptr points to the newly constructed
-/// #ls_group.
-///
-/// \note #ls_group must be destructed and deallocated using #ls_destroy_group.
-///
-/// \param ptr after success \p ptr is set to point to the newly constructed object. In case of
-///            error, \p ptr is untouched.
-/// \param size length of the \p generators array.
-/// \param generators array of pointers to individual symmetries which act as group generators.
-/// \return #LS_SUCCESS on successful completion. #LS_INCOMPATIBLE_SYMMETRIES if some symmetries are
-///         incompatible with each other.
-/// \see #ls_destroy_group
-ls_error_code ls_create_group(ls_group** ptr, unsigned size, ls_symmetry const* generators[]);
-ls_error_code ls_create_trivial_group(ls_group** ptr, unsigned number_spins);
-/// \brief Destructs and deallocates the symmetry group.
-///
-/// This function **must** be called on objects constructed using #ls_create_group.
-///
-/// \param group pointer to the group. Must not be `nullptr`.
-/// \see #ls_create_group
-void ls_destroy_group(ls_group* group);
-/// \brief Get size of the symmetry sector.
-///
-/// \param group pointer to symmetry group. Must not be `nullptr`.
-/// \return number of elements in the group.
-unsigned ls_get_group_size(ls_group const* group);
-
+ls_error_code      ls_create_group(ls_group** ptr, unsigned size, ls_symmetry const* generators[]);
+ls_error_code      ls_create_trivial_group(ls_group** ptr, unsigned number_spins);
+void               ls_destroy_group(ls_group* group);
+unsigned           ls_get_group_size(ls_group const* group);
 ls_symmetry const* ls_group_get_symmetries(ls_group const* group);
-
-// Return value -1 means that the group is empty and number of spins could not be determined
-int ls_group_get_number_spins(ls_group const* group);
-
-/// @}
-// end of group group
+int                ls_group_get_number_spins(ls_group const* group);
 
 /// \defgroup basis Spin basis
 /// \brief Working with Hilbert space bases

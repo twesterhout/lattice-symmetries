@@ -54,7 +54,10 @@ static void default_check_fail_handler(char const* const expr, char const* const
             "\x1b[1m\x1b[97mAssertion failed\x1b[0m at "
             "%s:%u: %s: \"%s\" evaluated to false",
             file, line, function, expr);
-    if (msg != NULL && strlen(msg) > 0) { fprintf(stderr, ": \x1b[1m\x1b[97m%s\x1b[0m\n", msg); }
+    // msg is NULL-terminated
+    if (msg != NULL && strlen(msg) > 0) { // Flawfinder: ignore
+        fprintf(stderr, ": \x1b[1m\x1b[97m%s\x1b[0m\n", msg);
+    }
     else {
         fprintf(stderr, "\n");
     }

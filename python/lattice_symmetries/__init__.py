@@ -28,6 +28,7 @@
 
 import ctypes
 from ctypes import *
+from ctypes import CFUNCTYPE, POINTER, c_void_p, c_bool, c_int
 import inspect
 import os
 import sys
@@ -39,7 +40,7 @@ import time
 from typing import List, Optional, Tuple
 import numpy as np
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"
 
 # Enable import warnings
 warnings.filterwarnings("default", category=ImportWarning)
