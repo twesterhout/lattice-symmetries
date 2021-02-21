@@ -7,7 +7,7 @@ pushd build.shared
 rm -rf -- *
 cmake -GNinja \
   -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_INSTALL_PREFIX=$PREFIX \
+  -DCMAKE_INSTALL_PREFIX="$PREFIX" \
   -DBUILD_SHARED_LIBS=ON \
   -DLatticeSymmetries_ENABLE_UNIT_TESTING=OFF \
   -DLatticeSymmetries_ENABLE_CLANG_TIDY=OFF \
@@ -16,10 +16,12 @@ cmake -GNinja \
   -DLatticeSymmetries_LINK_STDLIB_STATICALLY=OFF \
   ..
 cmake --build .
-find . -name "*.so*" -maxdepth 1 -type f | while read sofile; do
+find . -name "*.so*" -maxdepth 1 -type f | while read -r sofile; do
+  # shellcheck disable=SC2016
   echo "Setting rpath of $sofile to" '$ORIGIN'
-  patchelf --set-rpath '$ORIGIN' --force-rpath $sofile
-  patchelf --print-rpath $sofile
+  # shellcheck disable=SC2016
+  patchelf --set-rpath '$ORIGIN' --force-rpath "$sofile"
+  patchelf --print-rpath "$sofile"
 done
 cmake --build . --target install
 popd
