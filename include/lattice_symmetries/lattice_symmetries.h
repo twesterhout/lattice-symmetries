@@ -195,89 +195,21 @@ unsigned           ls_get_group_size(ls_group const* group);
 ls_symmetry const* ls_group_get_symmetries(ls_group const* group);
 int                ls_group_get_number_spins(ls_group const* group);
 
-/// \defgroup basis Spin basis
-/// \brief Working with Hilbert space bases
-///
-/// @{
-
-/// \brief Basis for a Hilbert space consisting of `N` spins.
 typedef struct ls_spin_basis ls_spin_basis;
 
-/// \brief Opaque structure representing a vector of representative basis states.
 typedef struct ls_states ls_states;
 
-/// \brief Allocates and constructs a basis.
-///
-/// After successful completion of this function \p ptr points to the newly constructed
-/// #ls_spin_basis.
-///
-/// \note #ls_spin_basis must be destructed and deallocated using #ls_destroy_spin_basis.
-///
-/// \param ptr is set to point to the newly constructed object.
-/// \param group symmetry group. Group may be empty, but must not be `nullptr`.
-/// \param number_spins number of spins in the system. When \p group is not empty, number of spins
-///                     may be deduced from it. Deduced number of spins must match the value of \p
-///                     number_spins.
-/// \param hamming_weight allows to restrict to a sector with particular magnetisation. Hamming
-///                       weight is the number of spins pointing upward. If one does not wish to
-///                       restrict to a sector with given magnetisation, \p hamming_weight should
-///                       be set to `-1`.
-/// \return #LS_SUCCESS upon success; #LS_INVALID_HAMMING_WEIGHT if \p hamming_weight exceeds \p
-///         number_spins or has a negative value other than `-1`; #LS_INVALID_NUMBER_SPINS if number
-///         of spins does not match the one deduced from \p group.
-/// \see #ls_destroy_spin_basis, #ls_copy_spin_basis
-ls_error_code ls_create_spin_basis(ls_spin_basis** ptr, ls_group const* group,
-                                   unsigned number_spins, int hamming_weight, int spin_inversion);
-/// \brief Create a shallow copy of \p basis.
-///
-/// \see #ls_create_spin_basis, #ls_destroy_spin_basis
+ls_error_code  ls_create_spin_basis(ls_spin_basis** ptr, ls_group const* group,
+                                    unsigned number_spins, int hamming_weight, int spin_inversion);
 ls_spin_basis* ls_copy_spin_basis(ls_spin_basis const* basis);
-/// \brief Destructs and deallocates a #ls_spin_basis.
-///
-/// \param basis pointer to Hilbert space basis. Must not be `nullptr`.
-/// \see #ls_create_spin_basis, #ls_copy_spin_basis
-void ls_destroy_spin_basis(ls_spin_basis* basis);
-/// \brief Get number of spins in the system.
-///
-/// \param basis pointer to Hilbert space basis. Must not be `nullptr`.
-/// \return number of spins in the system.
-/// \see #ls_get_number_states, #ls_get_hamming_weight, #ls_get_state_info, #ls_get_index, #ls_get_states
-unsigned ls_get_number_spins(ls_spin_basis const* basis);
-/// \brief Get number of bits which is used to represent a spin configuration.
-///
-/// \param basis pointer to Hilbert space basis. Must not be `nullptr`.
-/// \return 64 or 512 depending on system size.
-unsigned ls_get_number_bits(ls_spin_basis const* basis);
-/// \brief Get Hamming weight of all basis states.
-///
-/// \param basis pointer to Hilbert space basis. Must not be `nullptr`.
-/// \return a non-negative Hamming weight or `-1` if any Hamming weight is allowed.
-/// \see #ls_get_number_spins, #ls_get_number_states, #ls_get_state_info, #ls_get_index, #ls_get_states
-int ls_get_hamming_weight(ls_spin_basis const* basis);
-int ls_get_spin_inversion(ls_spin_basis const* basis);
-/// \brief Return whether the basis is restricted to some symmetry sector.
-///
-/// \param basis pointer to Hilbert space basis. Must not be `nullptr`.
-/// \return `true` if the basis was constructed with a non-empty #ls_group and `false` otherwise.
-bool ls_has_symmetries(ls_spin_basis const* basis);
-/// \brief Get number of states in the basis (i.e. dimension of the Hilbert space).
-///
-/// \warning This operation is supported only *after* a call to #ls_build.
-///
-/// \param basis pointer to Hilbert space basis. Must not be `nullptr`.
-/// \param out on success, \p out is set to the number of states.
-/// \return #LS_SUCCESS on success and #LS_CACHE_NOT_BUILT if basis has not been built beforehand.
-/// \see #ls_build
+void           ls_destroy_spin_basis(ls_spin_basis* basis);
+unsigned       ls_get_number_spins(ls_spin_basis const* basis);
+unsigned       ls_get_number_bits(ls_spin_basis const* basis);
+int            ls_get_hamming_weight(ls_spin_basis const* basis);
+int            ls_get_spin_inversion(ls_spin_basis const* basis);
+bool           ls_has_symmetries(ls_spin_basis const* basis);
+
 ls_error_code ls_get_number_states(ls_spin_basis const* basis, uint64_t* out);
-/// \brief Construct list of all representatives.
-///
-/// \note This operation is supported only for small systems.
-///
-/// After a call to this function operations like #ls_get_index and #ls_get_number_states become
-/// available.
-///
-/// \param basis pointer to Hilbert space basis. Must not be `nullptr`.
-/// \return #LS_SUCCESS on success or other status code on error.
 ls_error_code ls_build(ls_spin_basis* basis);
 ls_error_code ls_build_unsafe(ls_spin_basis* basis, uint64_t size,
                               uint64_t const representatives[]);

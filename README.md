@@ -17,7 +17,7 @@ all you want to do it to diagonalize a spin Hamiltonian, have a look at
 interface to exact diagonalization.
 
 
-## 🙏 Help wanted!
+## :pray: Help wanted!
 
 There are a few improvements to this package which could benefit a lot of
 people, but I don't really have time to do them all myself...
@@ -37,23 +37,23 @@ contact me. I'd be happy to discuss it further and guide you through it.
 
 ## Contents
 
-* [Citing](#citing)
-* [Installing](#installing)
+* [Citing](#scroll-citing)
+* [Installing](#rocket-installing)
     * [Conda](#conda)
     * [Compiling from source](#compiling-from-source)
-* [Example](#example)
-* [Performance](#performance)
+* [Example](#surfing_woman-example)
+* [Performance](#bicyclist-performance)
 * [C API](#c-api)
     * [Error handling](#error-handling)
     * [Spin configuration](#spin-configuration)
     * [Symmetry](#symmetry)
     * [Symmetry group](#symmetry-group)
     * [Spin basis](#spin-basis)
-* [Python interface](#python-interface)
+* [Python API](#python-api)
 * [Other software](#other-software)
+* [Acknowledgements](#acknowledgements)
 
-
-## 🖋 Citing
+## :scroll: Citing
 
 If you are using this package in your research, please, consider citing the
 following paper (**WIP**):
@@ -69,15 +69,18 @@ following paper (**WIP**):
 ```
 
 
-## 🚀 Installation
+## :rocket: Installing
 
 System requirements:
 
   * Linux or OS X operating system;
   * x86-64 processor with
   [nehalem](https://en.wikipedia.org/wiki/Nehalem_(microarchitecture)) (released
-  in 2008) or newer microarchitecture. But no, it's not Intel only. The code
-  will work on AMD processors just fine.
+  in 2008) or newer microarchitecture.
+
+:information_source: **Note:** even though we list Nehalem as the oldest
+supported microarchitecture, the library is not Intel only. The code will work
+on AMD processors just fine (and just as fast).
 
 
 ### Conda
@@ -90,8 +93,9 @@ package.
 conda install -c twesterhout lattice-symmetries
 ```
 
-**Note:** Conda package installs both C and Python interfaces, so even if you do
-not need the Python interface, using `conda` is the simplest way to get started.
+:information_source: **Note:** Conda package installs both C and Python
+interfaces, so even if you do not need the Python interface, using `conda` is
+the simplest way to get started.
 
 
 ### Compiling from source
@@ -167,7 +171,7 @@ Now you can install Python wrappers using `pip`. Note that Python code uses
 into a location known to `pkg-config`.
 
 
-## 🏄‍♀️ Example
+## :surfing_woman: Example
 
 [`example/getting_started`](https://github.com/twesterhout/lattice-symmetries/tree/master/example/getting_started)
 folder contains `main.py` and `main.c` files which illustrate very basic usage
@@ -207,10 +211,19 @@ Ground state energy is -18.0617854180
 ```
 
 
-## 🚴 Performance
+## :bicyclist: Performance
 
-![basis construction](benchmark/01_basis_construction.png)
-![operator application](benchmark/02_operator_application.png)
+The only package (that I'm aware of) with similar functionality as
+`lattice_symmetries` is [`QuSpin`](https://github.com/weinbe58/QuSpin). Hence,
+we compare the performance of `lattice_symmetries` with that of `QuSpin`.
+
+* Time it takes to construct the basis (i.e. the list of representatives):
+
+  <img src="benchmark/01_basis_construction.png" width="640">
+
+* Time it takes to perform one matrix-vector product:
+
+  <img src="benchmark/02_operator_application.png" width="640">
 
 
 ## C API
@@ -266,7 +279,7 @@ functionality:
 char const* ls_error_to_string(ls_error_code code);
 ```
 
-ℹ️ **Note:** Even though internally the library is written in C++17, exceptions are disabled
+:information_source: **Note:** Even though internally the library is written in C++17, exceptions are disabled
 during compilation. I.e. we never throw exceptions, all errors are reported
 using status codes. This makes it easy and safe to use the library inside OpenMP
 loops.
@@ -286,7 +299,7 @@ typedef struct ls_bits512 {
 } ls_bits512;
 ```
 
-‼️ **Warning:** we do not support systems with more than 512 spins. This is a
+:bangbang: **Warning:** we do not support systems with more than 512 spins. This is a
 design decision to limit the memory footprint of a single spin configuration. If
 you really want to use `lattice_symmetries` for larger systems, please, let us
 know by opening an issue.
@@ -433,26 +446,35 @@ ls_spin_basis* ls_copy_spin_basis(ls_spin_basis const* basis);
 void ls_destroy_spin_basis(ls_spin_basis* basis);
 ```
 
-`ls_create_spin_basis` receives a symmetry group, the number of spins in the
-system, and Hamming weight. Symmetry group may be empty (i.e. if
-`ls_create_group` was called with no symmetries), but must not be `NULL`. If one
-does not wish to restrict the space to a particular Hamming weight, `-1` can be
-used for `hamming_weight`. Upon successful completion of the function `*ptr` is
-set to point to the newly constructed spin basis. The basis should later on be
-destroyed using `ls_destroy_spin_basis`, otherwise a memory leak will occur.
+`ls_create_spin_basis` creates a basis given a symmetry group. Symmetry group
+may be empty (i.e. if `ls_create_group` was called with no symmetries), but must
+not be `NULL`. `number_spins` must be a positive integer indicating the number
+of spins in the system. Hamming weight may be either a non-negative integer
+specifying the Hamming weight to which to restrict the Hilbert space, or `-1` to
+indicate that U(1) symmetry should not be used. `spin_inversion` may be `1` to
+indicate that the system is symmetric upon global spin inversion, `-1` to
+indicate that the system is anti-symmetric, or `0` to indicate that spin
+inversion symmetry should not be used. Upon successful completion of the
+function `*ptr` is set to point to the newly constructed spin basis. The basis
+should later on be destroyed using `ls_destroy_spin_basis` to avoid memory
+leaks.
 
 `ls_copy_spin_basis` allows one to create a shallow copy of the basis. A copy
 obtained from `ls_copy_spin_basis` must also be destroyed using
 `ls_destroy_spin_basis`. Internally, reference counting is used, so copying a
 basis even for a large system is a cheap operation.
 
+* * *
+
 The are a few functions to query basis properties:
+
 ```c
 unsigned ls_get_number_spins(ls_spin_basis const* basis);
 unsigned ls_get_number_bits(ls_spin_basis const* basis);
 int ls_get_hamming_weight(ls_spin_basis const* basis);
 bool ls_has_symmetries(ls_spin_basis const* basis);
 ```
+
 `ls_get_number_spins` returns the number of spins in the system.
 `ls_get_number_bits` returns the number of bits used to represent spin
 configurations. `ls_get_hamming_weight` returns the Hamming weight, `-1` is
@@ -476,10 +498,27 @@ ls_error_code ls_get_index(ls_spin_basis const* basis, uint64_t const bits[1], u
 `ls_build` function builds the internal cache. Is is a quite expensive operation.
 
 ```c
+unsigned ls_get_number_spins(ls_spin_basis const* basis);
+int ls_get_hamming_weight(ls_spin_basis const* basis);
+int ls_get_spin_inversion(ls_spin_basis const* basis);
+
 ls_error_code ls_get_states(ls_states** ptr, ls_spin_basis const* basis);
 void          ls_destroy_states(ls_states* states);
 uint64_t const* ls_states_get_data(ls_states const* states);
 uint64_t ls_states_get_size(ls_states const* states);
+```
+
+`ls_get_number_spins` returns the number of spins in the system.
+`ls_get_hamming_weight` returns a non-negative Hamming weight to which all basis
+states are restricted, or `-1` if no U(1) symmetry is used.
+`ls_get_spin_inversion` returns `1` if the system is symmetric upon global spin
+inversion, `-1` if the system is anti-symmetric, and `0` if no global spin
+inversion symmetry is used. These getter functions essentially return the values
+which were originally passed to `ls_create_spin_basis`.
+
+```c
+unsigned ls_get_number_bits(ls_spin_basis const* basis);
+bool ls_has_symmetries(ls_spin_basis const* basis);
 ```
 
 
@@ -495,49 +534,63 @@ uint64_t ls_states_get_size(ls_states const* states);
 
 
 
-### Python interface
+## Python API
 
 
 
+## Projects using `lattice_symmetries`
+
+Here are a few projects which are using `lattice_symmetries`:
+
+* [`SpinED`](https://github.com/twesterhout/spin-ed) exact diagonalization
+  package relies on `lattice_symmetries` to represent quantum spin bases and
+  observables;
+* [`nqs_playground`](https://github.com/twesterhout/nqs-playground) package for
+  working with Neural Quantum States uses `lattice_symmetries` to do Variational
+  Monte Carlo simulations in symmetrized bases.
+* [arXiv:2101.08787](https://arxiv.org/abs/2101.08787) used `lattice_symmetries`
+  for exact diagonalization.
+* [arXiv:2011.02986](https://arxiv.org/abs/2011.02986) used `lattice_symmetries`
+  for exact diagonalization and Monte Carlo studies.
+* [Nat Commun 11, 1593 (2020)](https://doi.org/10.1038/s41467-020-15402-w) used
+  an earlier version of `lattice_symmetries` code to do exact diagonalization.
+
+
+If want your project to be added to this list, feel free to submit a PR.
 
 
 ## Other software
 
-[QuSpin](...) is a very general Python package for working with many-body
-systems using exact-diagonalization-like methods. I am a big fan! However, it is
-very tightly coupled to Python and could not be easily incorporated into
-variational Monte Carlo code I was working on. This was my main reason for
-partially reimplementing QuSpin's functionality. Hence, this package provides a
-portable C interface with minimal dependencies.
+#### In the context of Neural Quantum States
 
-It turns out, however, that this package is also considerably faster than QuSpin
-and can thus handle larger systems. For systems larger than 32 spins, storing
-the Hamiltonian as a matrix (even sparse) is impractical. However, computing
-matrix elements on the fly requires that symmetry applications are very
-efficient, and the implementation in QuSpin is not quite there yet.
+As far as we know, `lattice_symmetries` is currently the only open-source
+package which allows one to run complete variational Monte Carlo simulations *in
+the symmetrized basis*. Currently, the most popular solution is to run you
+simulations in the *full* basis (i.e. without taking symmetries into account),
+and to symmetrize your variational state afterwards.
 
 
-## Reading the source code
+#### In the context of Exact Diagonalization
 
-The code can be roughly divided into a few layers. At the very bottom we have
-error handling (`error_handling.*` files) and utilities (`bits512.hpp`,
-`intrusive_ptr.hpp` files). Next, we have the permutation-to-Benes-network
-compiler (`permutation.*` files). Intermediate representation of these networks
-are then converted into more compact form optimized for forward propagation
-(`network.*` files define the representation and `kernel.*` files implement the
- forward propagation). Using Benes networks we build symmetries (`symmetry.*`).
-They keep track of the characters of the symmetry group, allow to find
-representative vectors (`state_info.*` files), etc. Given a bunch of symmetry
-operators, we construct the symmetry group (`group.*` files). Finally, this
-symmetry group is used to construct a Hilbert space basis (`basis.*` files). For
-small systems, one can explicitly construct a list of all representative vectors
-of the basis. We call it "cache" (`cache.*` files). It allows one to determine
-the Hilbert space dimension, assigns indices to representative vectors etc.
+* [`Pomerol`](https://github.com/aeantipov/pomerol) uses dense matrices and
+  as such targets a different set of problems than `lattice_symmetries`.
+* [`HPhi`](https://github.com/issp-center-dev/Hphi) supports a wider range of
+  systems than `lattice_symmetries`, but uses sparse matrices to represent that
+  Hamiltonian which makes it inapplicable for large systems.
+* [`EDLib`](https://github.com/Q-solvers/EDLib) also uses sparse matrices, and
+  does not support user-defined symmetries (which is the focus of
+  `lattice_symmetries`).
+* [`QuSpin`](https://github.com/weinbe58/QuSpin) supports a wider range of
+  systems than `lattice_symmetries`, but is considerably slower (see
+  [Performance](#bicyclist-performance) section for more info). It is also too
+  tightly coupled to Python which made it inapplicable for the Variational Monte
+  Carlo code for which `lattice_symmetries` was originally developed.
 
-Having a Hilbert space basis is typically not enough. We need to define a
-Hamiltonian. All operators in `lattice_symmetries` are assumed to be Hermitian
-and are defined as sums of "interaction" terms (`operator.*` files). These are
-just small operators defined on 1-, 2-, 3-, or 4-spin subsystems. Operators can
-then be applied to explicit vectors (e.g. for exact diagonalization) or in a CPS
-(continuation-passing-style) for more general applications (e.g. neural quantum
-states).
+
+## Acknowledgements
+
+* HUGE thanks to Nikita Astrakhantsev (@nikita-astronaut) for actively testing
+  all alpha en beta features in real-life projects (which led to fixing quite a
+  few bugs)!
+* Askar Iliasov (@asjosik1991) and Andrey Bagrov (@BagrovAndrey) were very
+  helpful in discussions related to group-theoretic aspects of this work.
