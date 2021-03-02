@@ -563,47 +563,62 @@ the normalization factor of the corresponding basis element *|S⟩*.
 
 There are a few functions which are only available for small systems after
 a list of representatives has been built:
-```c
-ls_error_code ls_build(ls_spin_basis* basis);
-ls_error_code ls_get_number_states(ls_spin_basis const* basis, uint64_t* out);
-ls_error_code ls_get_index(ls_spin_basis const* basis, uint64_t const bits[1], uint64_t* index);
-```
-`ls_build` function builds the internal cache. Is is a quite expensive operation.
 
 ```c
-unsigned ls_get_number_spins(ls_spin_basis const* basis);
-int ls_get_hamming_weight(ls_spin_basis const* basis);
-int ls_get_spin_inversion(ls_spin_basis const* basis);
+ls_error_code ls_get_number_states(ls_spin_basis const* basis, uint64_t* out);
+ls_error_code ls_get_index(ls_spin_basis const* basis, uint64_t representative, uint64_t* index);
+```
+
+`ls_get_number_states` returns the dimension of the Hilbert space, i.e. the
+total number of representatives. `ls_get_index` allows to find the index of a
+representative.
+
+Access to the list of all representatives is provided via the following opaque
+type:
+
+```c
+typedef struct ls_states ls_states;
 
 ls_error_code ls_get_states(ls_states** ptr, ls_spin_basis const* basis);
-void          ls_destroy_states(ls_states* states);
-uint64_t const* ls_states_get_data(ls_states const* states);
+void ls_destroy_states(ls_states* states);
+```
+
+Similarly to other `ls_create_*` functions, `ls_get_states` sets `*ptr` to point
+to the newly allocated `ls_states` object. This object must later on be
+destructed using `ls_destroy_states` to avoid memory leaks. Internally,
+`ls_states` is just a contiguous vector of `ls_bits64`. The following functions
+give provide access to it:
+
+```c
+ls_bits64 const* ls_states_get_data(ls_states const* states);
 uint64_t ls_states_get_size(ls_states const* states);
 ```
 
-`ls_get_number_spins` returns the number of spins in the system.
-`ls_get_hamming_weight` returns a non-negative Hamming weight to which all basis
-states are restricted, or `-1` if no U(1) symmetry is used.
-`ls_get_spin_inversion` returns `1` if the system is symmetric upon global spin
-inversion, `-1` if the system is anti-symmetric, and `0` if no global spin
-inversion symmetry is used. These getter functions essentially return the values
-which were originally passed to `ls_create_spin_basis`.
+* * *
+
+There are two functions for building internal cache of the basis (which also
+contains the list of representatives):
 
 ```c
-unsigned ls_get_number_bits(ls_spin_basis const* basis);
-bool ls_has_symmetries(ls_spin_basis const* basis);
+ls_error_code ls_build(ls_spin_basis* basis);
+ls_error_code ls_build_unsafe(ls_spin_basis* basis, uint64_t size,
+                              ls_bits64 const representatives[]);
 ```
 
+These are the only functions which mutate the basis. **They are not thread
+safe!**. `ls_build` function builds the internal cache. It is a quite expensive
+operation for large system (i.e. order of minutes on a decent server).
+`ls_build_unsafe` unsafe allows one to speed up the build process considerably
+by providing a list of representatives. No checks for validity of
+`representatives` are performed. Use at your own risk!
+
+
+### Interaction
 
 
 
-#### Interactions
 
-
-#### Operators
-
-
-#### Error handling
+### Operator
 
 
 
