@@ -43,6 +43,7 @@ contact me. I'd be happy to discuss it further and guide you through it.
     * [Compiling from source](#compiling-from-source)
 * [Example](#surfing_woman-example)
 * [Performance](#bicyclist-performance)
+* [Key concepts](#key-concepts)
 * [C API](#c-api)
     * [Error handling](#error-handling)
     * [Spin configuration](#spin-configuration)
@@ -226,6 +227,29 @@ we compare the performance of `lattice_symmetries` with that of `QuSpin`.
   <img src="benchmark/02_operator_application.png" width="640">
 
 
+## Key concepts
+
+In this section we briefly review the construction and of symmetry-adapted bases
+and operators. Since this topic is well known
+[(Sandvik2010)](https://doi.org/10.1063/1.3518900), only the key concepts which
+are necessary to understand high-level algorithms in `lattice_symmetries`, are
+discussed here.
+
+Suppose that we are dealing with a system of *N* spins numbered from *0* to *N−1*. It
+is described by a Hamiltonian *H* which commutes with a collection of symmetry
+generators *T<sub>k</sub>*. *T<sub>k</sub>*’s form a group *G*. If *G* admits an
+irreducible one-dimensional representation *χ: G → ℂ*, we can restrict our
+Hilbert space to the subspace of vectors which are eigenstates of symmetry
+operators *g ∈ G* with the corresponding eigenvalues *χ(g)*. This is done by
+introducing a smaller basis in terms of the original basis *{|σ⟩}*. We effectively
+replace original elements *|σ⟩* with **orbits** *orbit(σ) = {g|σ⟩ | g∈G}*. For each orbit
+we choose a **representative** vector as *|σ̃⟩ = min orbit(σ)* where ordering is
+defined by integer representations of spin configurations. Putting it all
+together, we define the symmetry-adapted basis: *|S⟩ = norm *
+∑<sub><sub>orbit</sub></sub> χ\*(g) |σ̃⟩*.  Here, *norm* is chosen such that
+⟨S|S⟩ = 1.
+
+
 ## C API
 
 1) Add the following include your source file
@@ -321,10 +345,27 @@ int get_nth_spin_512(ls_bits512 const* bits, unsigned const n)
 }
 ```
 
+Ordering of spin configurations is defined by the following functions:
+```c
+bool is_less_than(ls_bits64 const a, ls_bits64 const b)
+{
+    return a < b;
+}
+
+bool get_nth_spin_512(ls_bits512 const* a, ls_bits512 const* b)
+{
+    for (int i = 0; i < 8; ++i) {
+        if (is_less_than(a, b)) { return true; }
+        if (is_less_than(b, a)) { return false; }
+    }
+    return false;
+}
+```
+
 
 ### Symmetry
 
-Opaque struct representing a symmetry operator:
+Opaque struct representing a symmetry operator *T*:
 
 ```c
 typedef struct ls_symmetry ls_symmetry;
@@ -340,16 +381,30 @@ ls_error_code ls_create_symmetry(ls_symmetry** ptr, unsigned length, unsigned co
 void ls_destroy_symmetry(ls_symmetry* symmetry);
 ```
 
-`ls_create_symmetry` accepts a `permutation` of indices `{0, 1, ..., length-1}`
-and `sector` specifying the eigenvalue. *Periodicity* of a permutation operator
-`T` is the smallest positive integer `N` such that <code>T<sup>N</sup> =
-𝟙</code>. It then follows that eigenvalues of `T` are roots of unity: `-2πⅈk/N`
-for `k ∈ {0, ..., N-1}`. `sector` argument specifies the value of `k`.
+`ls_create_symmetry` accepts a `permutation` of indices *{0, 1, ..., `length`-1}*
+and `sector` specifying the eigenvalue.
+
+Periodicity of a permutation operator T is the smallest positive integer *N*
+such that *T<sup>N</sup> = 𝟙*. It then follows that eigenvalues of *T* are roots
+of unity: *-2πⅈk/N* for *k ∈ {0, ..., N-1}*. `sector` argument specifies the
+value of *k*.
 
 Upon successful completion of `ls_create_symmetry` (indicated by returning
 `LS_SUCCESS`), `*ptr` is set to point to the newly allocated `ls_symmetry`
 object. All pointers created using `ls_create_symmetry` must be destroyed using
 `ls_destroy_symmetry` to avoid memory leaks.
+
+
+**Example:** the following code snippet constructs lattice momentum symmetry
+operator with eigenvalue `-πⅈ/4`:
+
+```c
+unsigned const permutation[8] = {1, 2, 3, 4, 5, 6, 7, 0};
+ls_symmetry* symmetry;
+ls_error_code status = ls_create_symmetry(&symmetry, 8, permutation, 1);
+if (status != LS_SUCCESS) { /* handle error */ }
+ls_destroy_symmetry(symmetry);
+```
 
 
 * * *
@@ -364,12 +419,12 @@ double ls_get_phase(ls_symmetry const* symmetry);
 unsigned ls_symmetry_get_number_spins(ls_symmetry const* symmetry);
 ```
 
-`ls_get_periodicity` returns the periodicity `N` such that applying the symmetry
-`N` times results in identity. `ls_get_eigenvalue` stores the eigenvalue
-`-2πⅈk/N` in `out`. `k` is the sector which can be obtained with
-`ls_get_sector`. `ls_get_phase` returns `k / N`. `ls_symmetry_get_number_spins`
-returns the number of spins for which the symmetry was constructed (i.e.  length
-of the permutation passed to `ls_create_symmetry`)
+`ls_get_periodicity` returns the periodicity *N* such that applying the symmetry
+*N* times results in identity. `ls_get_eigenvalue` stores the eigenvalue
+*-2πⅈk/N* in `out`. *k* is the sector which can be obtained with
+`ls_get_sector`. `ls_get_phase` returns *k / N*. `ls_symmetry_get_number_spins`
+returns the number of spins for which the symmetry was constructed (i.e.
+`length` of the permutation which was passed to `ls_create_symmetry`)
 
 * * *
 
@@ -385,7 +440,7 @@ with which the symmetry was constructed.
 
 ### Symmetry group
 
-Opaque struct representing a symmetry group:
+Opaque struct representing a symmetry group *G*:
 
 ```c
 typedef struct ls_group ls_group;
@@ -403,9 +458,15 @@ ls_error_code ls_create_group(ls_group** ptr, unsigned size, ls_symmetry const* 
 void ls_destroy_group(ls_group* group);
 ```
 
-`ls_create_group` receives an array of `size` symmetry generators and tries to
-build a group from them. If symmetries are incommensurable an error will be
-returned. Note that `ls_create_group` **does not take ownership** of `generators`.
+`ls_create_group` receives an array of `size` symmetry generators
+*T<sub>k</sub>* and tries to build a group from them. If symmetries are
+incommensurable an error will be returned. Note that `ls_create_group` **does
+not take ownership** of `generators`.
+
+Upon successful completion of `ls_create_group` (indicated by returning
+`LS_SUCCESS`), `*ptr` is set to point to the newly allocated `ls_group` object.
+All pointers created using `ls_create_group` must be destroyed using
+`ls_destroy_group` to avoid memory leaks.
 
 * * *
 
@@ -462,7 +523,7 @@ leaks.
 `ls_copy_spin_basis` allows one to create a shallow copy of the basis. A copy
 obtained from `ls_copy_spin_basis` must also be destroyed using
 `ls_destroy_spin_basis`. Internally, reference counting is used, so copying a
-basis even for a large system is a cheap operation.
+basis (even for a large system) is a cheap operation.
 
 * * *
 
@@ -480,15 +541,27 @@ bool ls_has_symmetries(ls_spin_basis const* basis);
 configurations. `ls_get_hamming_weight` returns the Hamming weight, `-1` is
 returned if Hilbert space is not restricted to a particular Hamming weight.
 `ls_has_symmetries` returns whether lattice symmetries were used in the
-construction of the basis.
+construction of the basis. Note that only permutations and spin inversion count
+as lattice symmetries here: `ls_has_symmetries` will return `false` if only U(1)
+symmetry is enforced.
+
+* * *
 
 ```c
-void ls_get_state_info(ls_spin_basis* basis, uint64_t const bits[8], uint64_t representative[8],
-                       void* character, double* norm);
+void ls_get_state_info(ls_spin_basis const* basis, ls_bits512 const* bits,
+                       ls_bits512* representative, _Complex double* character,
+                       double* norm);
 ```
-**TODO:** description.
 
-There are also a few functions which are available only for small systems after
+This is probably the most interesting function of `ls_spin_basis`.
+
+Given a spin configuration *|σ⟩* it determines its representative *|σ̃⟩*,
+character *χ(g)* of the group element *g* which transforms *|σ̃⟩* into *|σ⟩*, and
+the normalization factor of the corresponding basis element *|S⟩*.
+
+* * *
+
+There are a few functions which are only available for small systems after
 a list of representatives has been built:
 ```c
 ls_error_code ls_build(ls_spin_basis* basis);
@@ -589,8 +662,9 @@ and to symmetrize your variational state afterwards.
 
 ## Acknowledgements
 
-* HUGE thanks to Nikita Astrakhantsev (@nikita-astronaut) for actively testing
+* HUGE thanks to Nikita Astrakhantsev ([@nikita-astronaut](https://github.com/nikita-astronaut)) for actively testing
   all alpha en beta features in real-life projects (which led to fixing quite a
   few bugs)!
-* Askar Iliasov (@asjosik1991) and Andrey Bagrov (@BagrovAndrey) were very
-  helpful in discussions related to group-theoretic aspects of this work.
+* Askar Iliasov ([@asjosik1991](https://github.com/asjosik1991)) and Andrey
+  Bagrov ([@BagrovAndrey](https://github.com/BagrovAndrey)) were very helpful in
+  discussions related to group-theoretic aspects of this work.
