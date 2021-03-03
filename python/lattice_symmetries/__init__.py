@@ -45,12 +45,9 @@ __all__ = [
 ]
 
 import ctypes
-
-# from ctypes import *
 from ctypes import (
     CFUNCTYPE,
     POINTER,
-    cast,
     byref,
     c_void_p,
     c_bool,
@@ -63,15 +60,15 @@ from ctypes import (
     c_double,
 )
 import inspect
-import os
-import sys
 import math
+import numpy as np
+import os
 import subprocess
-import warnings
-import weakref
+import sys
 import time
 from typing import List, Optional, Tuple, Union
-import numpy as np
+import warnings
+import weakref
 
 
 # Enable import warnings
@@ -162,6 +159,10 @@ def __preprocess_library():
         ("ls_build_unsafe", [c_void_p, c_uint64, POINTER(c_uint64)], c_int),
         # ("ls_get_state_info", [c_void_p, POINTER(ls_bits512), POINTER(ls_bits512), c_double * 2, POINTER(c_double)], None),
         ("ls_get_state_info", [c_void_p, POINTER(c_uint64), POINTER(c_uint64), c_void_p, POINTER(c_double)], None),
+        ("ls_batched_get_state_info", [c_void_p, c_uint64, POINTER(c_uint64), c_uint64,
+                                       POINTER(c_uint64), c_uint64,
+                                       c_void_p, c_uint64,
+                                       POINTER(c_double), c_uint64], None),
         ("ls_get_index", [c_void_p, c_uint64, POINTER(c_uint64)], c_int),
         ("ls_batched_get_index", [c_void_p, c_uint64, POINTER(c_uint64), c_uint64, POINTER(c_uint64), c_uint64], c_int),
         ("ls_get_states", [POINTER(c_void_p), c_void_p], c_int),
@@ -281,7 +282,7 @@ def _create_symmetry(permutation: List[int], sector: int) -> c_void_p:
     symmetry = c_void_p()
     _check_error(
         _lib.ls_create_symmetry(
-            ctypes.byref(symmetry),
+            byref(symmetry),
             permutation.size,
             permutation.ctypes.data_as(POINTER(c_uint)),
             sector,
@@ -376,7 +377,7 @@ def _create_group(generators: List[Symmetry]) -> c_void_p:
     for i in range(len(generators)):
         view[i] = generators[i]._payload
     group = c_void_p()
-    _check_error(_lib.ls_create_group(ctypes.byref(group), len(generators), view))
+    _check_error(_lib.ls_create_group(byref(group), len(generators), view))
     return group
 
 
@@ -409,7 +410,7 @@ def _create_spin_basis(group, number_spins, hamming_weight, spin_inversion) -> c
     basis = c_void_p()
     _check_error(
         _lib.ls_create_spin_basis(
-            ctypes.byref(basis), group._payload, number_spins, hamming_weight, spin_inversion
+            byref(basis), group._payload, number_spins, hamming_weight, spin_inversion
         )
     )
     return basis
@@ -477,7 +478,7 @@ class SpinBasis:
         """Number of states in the basis (i.e. dimension of the Hilbert space). This attribute is
         available only after a call to `build`."""
         r = c_uint64()
-        _check_error(_lib.ls_get_number_states(self._payload, ctypes.byref(r)))
+        _check_error(_lib.ls_get_number_states(self._payload, byref(r)))
         return r.value
 
     def build(self, representatives: Optional[np.ndarray] = None) -> None:
@@ -524,16 +525,48 @@ class SpinBasis:
         norm = c_double()
         _lib.ls_get_state_info(
             self._payload,
-            cast(byref(spin), POINTER(c_uint64)),
-            cast(byref(representative), POINTER(c_uint64)),
+            ctypes.cast(byref(spin), POINTER(c_uint64)),
+            ctypes.cast(byref(representative), POINTER(c_uint64)),
             character,
             byref(norm),
         )
         return _ls_bits512_to_int(representative), complex(character[0], character[1]), norm.value
 
+    def batched_state_info(self, spins: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Batched version of `self.state_info`. `batched_state_info` is equivalent to looping over `spins`
+        and calling `self.state_info` for each element, but is much faster.
+        """
+        if (
+            not isinstance(spins, np.ndarray)
+            or spins.dtype != np.uint64
+            or spins.ndim != 2
+            or spins.shape[1] != 8
+        ):
+            raise TypeError("'spins' must be a 2D NumPy array of uint64 of shape (batch_size, 8)")
+        if not spins.flags["C_CONTIGUOUS"]:
+            spins = np.ascontiguousarray(spins)
+        batch_size = spins.shape[0]
+        representative = np.zeros((batch_size, 8), dtype=np.uint64)
+        eigenvalue = np.empty((batch_size,), dtype=np.complex128)
+        norm = np.empty((batch_size,), dtype=np.float64)
+        _lib.ls_batched_get_state_info(
+            self._payload,
+            spins.shape[0],
+            spins.ctypes.data_as(POINTER(c_uint64)),
+            spins.strides[0] // (8 * spins.itemsize),
+            representative.ctypes.data_as(POINTER(c_uint64)),
+            representative.strides[0] // (8 * representative.itemsize),
+            eigenvalue.ctypes.data_as(POINTER(c_double)),
+            eigenvalue.strides[0] // eigenvalue.itemsize,
+            norm.ctypes.data_as(POINTER(c_double)),
+            norm.strides[0] // norm.itemsize,
+        )
+        return representative, eigenvalue, norm
+
     def index(self, bits: int) -> int:
         """Obtain index of a representative in `self.states` array. This function is available only
         after a call to `self.build`."""
+        bits = int(bits)
         i = c_uint64()
         _check_error(_lib.ls_get_index(self._payload, bits, byref(i)))
         return i.value
@@ -563,7 +596,7 @@ class SpinBasis:
         states = c_void_p()
         _check_error(_lib.ls_get_states(byref(states), self._payload))
         Array = c_uint64 * _lib.ls_states_get_size(states)
-        array = Array.from_address(cast(_lib.ls_states_get_data(states), c_void_p).value)
+        array = Array.from_address(ctypes.cast(_lib.ls_states_get_data(states), c_void_p).value)
         weakref.finalize(array, _lib.ls_destroy_states, states)
         return np.frombuffer(array, dtype=np.uint64)
 
@@ -669,6 +702,11 @@ def _batched_state_info_helper(basis, spins):
 def batched_state_info(
     basis: SpinBasis, spins: np.ndarray
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    warnings.warn(
+        "Freestanding `batched_state_info(basis, spins)` function is deprecated. "
+        "Please, use `basis.batched_state_info(spins)` instead.",
+        DeprecationWarning,
+    )
     if not isinstance(basis, SpinBasis):
         raise TypeError("basis must be a SpinBasis, but got {}".format(type(basis)))
     if not isinstance(spins, np.ndarray) or spins.dtype != np.uint64:
@@ -749,7 +787,7 @@ def _create_operator(basis: SpinBasis, terms: List[Interaction]) -> c_void_p:
     for i in range(len(terms)):
         view[i] = terms[i]._payload
     op = c_void_p()
-    _check_error(_lib.ls_create_operator(ctypes.byref(op), basis._payload, len(terms), view))
+    _check_error(_lib.ls_create_operator(byref(op), basis._payload, len(terms), view))
     return op
 
 
