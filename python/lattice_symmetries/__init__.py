@@ -1,4 +1,4 @@
-# Copyright (c) 2019-2020, Tom Westerhout
+# Copyright (c) 2019-2021, Tom Westerhout
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -25,10 +25,43 @@
 # CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+"""Wrapper around lattice_symmetries C library providing some handy functions for constructing and
+working with quantum many-body bases.
+
+See <https://github.com/twesterhout/lattice-symmetries> for more info.
+"""
+
+__version__ = "0.6.0"
+__author__ = "Tom Westerhout <14264576+twesterhout@users.noreply.github.com>"
+
+__all__ = [
+    "LatticeSymmetriesException",
+    "Symmetry",
+    "Group",
+    "SpinBasis",
+    "enable_logging",
+    "disable_logging",
+    "is_logging_enabled",
+]
 
 import ctypes
-from ctypes import *
-from ctypes import CFUNCTYPE, POINTER, c_void_p, c_bool, c_int
+
+# from ctypes import *
+from ctypes import (
+    CFUNCTYPE,
+    POINTER,
+    cast,
+    byref,
+    c_void_p,
+    c_bool,
+    c_char,
+    c_char_p,
+    c_int,
+    c_uint,
+    c_uint16,
+    c_uint64,
+    c_double,
+)
 import inspect
 import os
 import sys
@@ -37,10 +70,9 @@ import subprocess
 import warnings
 import weakref
 import time
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 import numpy as np
 
-__version__ = "0.5.1"
 
 # Enable import warnings
 warnings.filterwarnings("default", category=ImportWarning)
@@ -58,12 +90,12 @@ def __library_name() -> str:
 
 
 def __package_path() -> str:
-    """Get current package installation path"""
+    """Get current package installation path."""
     return os.path.dirname(os.path.realpath(__file__))
 
 
 def __load_shared_library():
-    """Load lattice_symmetries C library"""
+    """Load lattice_symmetries C library."""
     libname = __library_name()
     # First, try the current directory.
     prefix = __package_path()
@@ -131,6 +163,7 @@ def __preprocess_library():
         # ("ls_get_state_info", [c_void_p, POINTER(ls_bits512), POINTER(ls_bits512), c_double * 2, POINTER(c_double)], None),
         ("ls_get_state_info", [c_void_p, POINTER(c_uint64), POINTER(c_uint64), c_void_p, POINTER(c_double)], None),
         ("ls_get_index", [c_void_p, c_uint64, POINTER(c_uint64)], c_int),
+        ("ls_batched_get_index", [c_void_p, c_uint64, POINTER(c_uint64), c_uint64, POINTER(c_uint64), c_uint64], c_int),
         ("ls_get_states", [POINTER(c_void_p), c_void_p], c_int),
         ("ls_destroy_states", [c_void_p], None),
         ("ls_states_get_data", [c_void_p], POINTER(c_uint64)),
@@ -161,19 +194,22 @@ def __preprocess_library():
 __preprocess_library()
 
 
-def enable_logging():
+def enable_logging() -> None:
+    """Turn on debug logging in lattice_symmetries C library."""
     _lib.ls_enable_logging()
 
 
-def disable_logging():
+def disable_logging() -> None:
+    """Turn off debug logging in lattice_symmetries C library."""
     _lib.ls_disable_logging()
 
 
-def is_logging_enabled():
+def is_logging_enabled() -> bool:
+    """Return whether debug logging is currently enabled."""
     return _lib.ls_is_logging_enabled()
 
 
-def debug_log(msg, end="\n"):
+def debug_log(msg: str, end: str = "\n") -> None:
     if is_logging_enabled():
         current_frame = inspect.currentframe()
         parent_frame = inspect.getouterframes(current_frame)[1]
@@ -208,27 +244,23 @@ def _get_error_message(status: int) -> str:
 
 
 class LatticeSymmetriesException(Exception):
-    """Used to report errors from lattice_symmetries C library."""
+    """Exception type which is used to report errors from lattice_symmetries C library."""
 
     def __init__(self, error_code: int):
-        """Constructs the exception. `error_code` is the status code obtained
-        from the C library.
-        """
+        """Constructs the exception. `error_code` is the status code obtained from the C library."""
         self.status = error_code
         self.message = _get_error_message(error_code)
         super().__init__(self.message + " (error code: {})".format(self.status))
 
 
-def _check_error(status: int):
-    """Check `status` and raise a ``LatticeSymmetriesException`` in case of an
-    error.
-    """
+def _check_error(status: int) -> None:
+    """Check `status` and raise a `LatticeSymmetriesException` in case of an error."""
     if status != 0:
         raise LatticeSymmetriesException(status)
 
 
-def _get_dtype(dtype):
-    """Convert NumPy datatype to ls_datatype enum"""
+def _get_dtype(dtype: np.dtype) -> int:
+    """Convert NumPy datatype to `ls_datatype` enum"""
     if dtype == np.float32:
         return 0
     if dtype == np.float64:
@@ -243,7 +275,8 @@ def _get_dtype(dtype):
     )
 
 
-def _create_symmetry(permutation, sector) -> c_void_p:
+def _create_symmetry(permutation: List[int], sector: int) -> c_void_p:
+    assert isinstance(sector, int)
     permutation = np.asarray(permutation, dtype=np.uint32)
     symmetry = c_void_p()
     _check_error(
@@ -283,41 +316,48 @@ def _destroy(fn):
 
 
 class Symmetry:
-    """Symmetry operator."""
+    """Symmetry operator (wrapper around `ls_symmetry` C type).
+
+    >>> # Lattice momentum with eigenvalue -ⅈ for a chain of 4 spins.
+    >>> p = lattice_symmetries.Symmetry([1, 2, 3, 0], sector=1)
+    >>> p.sector
+    1
+    >>> p.periodicity
+    4
+    >>> p.eigenvalue
+    -1j
+    """
 
     def __init__(self, permutation: List[int], sector: int):
-        """Create a symmetry given a `permutation` of sites, `flip` indicating
-        whether to apply global spin inversion, and `sector` specifying the
-        eigenvalue
-        """
+        """Create a symmetry given a `permutation` of sites and `sector` specifying the eigenvalue."""
         self._payload = _create_symmetry(permutation, sector)
         self._finalizer = weakref.finalize(self, _destroy(_lib.ls_destroy_symmetry), self._payload)
 
     @property
     def sector(self) -> int:
-        """Return symmetry sector"""
+        """Symmetry sector."""
         return _lib.ls_get_sector(self._payload)
 
     @property
     def phase(self) -> float:
-        """Return phase of symmetry eigenvalue"""
+        """Phase of the eigenvalue."""
         return _lib.ls_get_phase(self._payload)
 
     @property
     def eigenvalue(self) -> complex:
-        """Return symmetry eigenvalue"""
+        """Symmetry eigenvalue."""
         out = (c_double * 2)()
         _lib.ls_get_eigenvalue(self._payload, out)
         return complex(out[0], out[1])
 
     @property
     def periodicity(self) -> int:
-        """Return periodicity of the operator"""
+        """Periodicity of the symmetry operator."""
         return _lib.ls_get_periodicity(self._payload)
 
     @property
     def number_spins(self) -> int:
-        """Return number of spins on which the operator acts"""
+        """Number of spins on which the symmetry operator acts."""
         return _lib.ls_symmetry_get_number_spins(self._payload)
 
     @staticmethod
@@ -326,12 +366,12 @@ class Symmetry:
         return Symmetry(src["permutation"], src["sector"])
 
 
-def _create_group(generators) -> c_void_p:
+def _create_group(generators: List[Symmetry]) -> c_void_p:
     # Things will break really badly if an element of the generators list
     # happens to be a Group or SpinBasis. They also have _payload attribute
     # which will also return a c_void_p, but C code will not be happy... :/
     if not all(map(lambda x: isinstance(x, Symmetry), generators)):
-        raise TypeError("expected List[Symmetry]")
+        raise TypeError("'generators' must be a List[Symmetry]")
     view = (c_void_p * len(generators))()
     for i in range(len(generators)):
         view[i] = generators[i]._payload
@@ -341,10 +381,17 @@ def _create_group(generators) -> c_void_p:
 
 
 class Group:
-    """Symmetry group"""
+    """Symmetry group (wrapper around `ls_group` C type).
+
+    >>> T = lattice_symmetries.Symmetry([1, 2, 3, 0], sector=0) # translation
+    >>> P = lattice_symmetries.Symmetry([3, 2, 1, 0], sector=0) # parity
+    >>> group = lattice_symmetries.Group([T, P])
+    >>> len(group)
+    8
+    """
 
     def __init__(self, generators: List[Symmetry]):
-        """Construct a symmetry group from a list of generators"""
+        """Construct a symmetry group from a list of generators."""
         self._payload = _create_group(generators)
         self._finalizer = weakref.finalize(self, _destroy(_lib.ls_destroy_group), self._payload)
 
@@ -370,7 +417,7 @@ def _create_spin_basis(group, number_spins, hamming_weight, spin_inversion) -> c
 
 def _int_to_ls_bits512(x: int) -> ls_bits512:
     x = int(x)
-    bits = (c_uint64 * 8)()
+    bits = ls_bits512()
     for i in range(8):
         bits[i] = x & 0xFFFFFFFFFFFFFFFF
         x >>= 64
@@ -386,18 +433,18 @@ def _ls_bits512_to_int(bits: ls_bits512) -> int:
 
 
 class SpinBasis:
-    """Hilbert space basis for a spin system"""
+    """Hilbert space basis for a spin system (wrapper around `ls_spin_basis` C type)."""
 
     def __init__(
         self,
         group: Group,
         number_spins: int,
-        hamming_weight: Optional[int],
+        hamming_weight: Optional[int] = None,
         spin_inversion: Optional[int] = None,
     ):
-        """Construct a spin basis given a symmetry group, number of spins in
-        the system, and (optionally) the Hamming weight to which to restrict
-        the Hilbert space.
+        """Construct a spin basis given a symmetry group, number of spins in the system,
+        (optionally) the Hamming weight to which to restrict the Hilbert space, and (optionally) the
+        phase the system acquires upon global spin inversion.
         """
         self._payload = _create_spin_basis(group, number_spins, hamming_weight, spin_inversion)
         self._finalizer = weakref.finalize(
@@ -406,34 +453,35 @@ class SpinBasis:
 
     @property
     def number_spins(self) -> int:
-        """Number of spins in the system"""
+        """Number of spins in the system."""
         return _lib.ls_get_number_spins(self._payload)
 
     @property
     def number_bits(self) -> int:
-        """Number of bits used to represent the spin configuration"""
+        """Number of bits used to represent the spin configuration."""
         return _lib.ls_get_number_bits(self._payload)
 
     @property
     def hamming_weight(self) -> Optional[int]:
-        """Hamming weight of all spin configurations, `None` if it varies"""
+        """Hamming weight of all spin configurations, `None` if it varies."""
         r = _lib.ls_get_hamming_weight(self._payload)
         return None if r == -1 else r
 
     @property
     def has_symmetries(self) -> bool:
-        """Whether lattice symmetries were used to construct the basis"""
+        """Whether lattice symmetries were used to construct the basis."""
         return _lib.ls_has_symmetries(self._payload)
 
     @property
     def number_states(self) -> int:
-        """Number of states in the basis (i.e. dimension of the Hilbert space)"""
+        """Number of states in the basis (i.e. dimension of the Hilbert space). This attribute is
+        available only after a call to `build`."""
         r = c_uint64()
         _check_error(_lib.ls_get_number_states(self._payload, ctypes.byref(r)))
         return r.value
 
-    def build(self, representatives=None):
-        """Build internal cache"""
+    def build(self, representatives: Optional[np.ndarray] = None) -> None:
+        """Build internal cache."""
         if representatives is None:
             _check_error(_lib.ls_build(self._payload))
         else:
@@ -446,7 +494,7 @@ class SpinBasis:
                 warnings.warn(
                     "SpinBasis.build expects 'representatives' to be C-contiguous. A copy of "
                     "'representatives' will be created with proper memory order, but note that "
-                    "this will memory (!) overhead..."
+                    "this will uncur memory (!) overhead..."
                 )
                 representatives = np.ascontiguousarray(representatives)
             _check_error(
@@ -457,17 +505,26 @@ class SpinBasis:
                 )
             )
 
-    def state_info(self, bits: int) -> Tuple[int, complex, float]:
+    def state_info(self, bits: Union[int, np.ndarray]) -> Tuple[int, complex, float]:
         """For a spin configuration `bits` obtain its representative, corresponding
-        group character, and orbit norm
+        group character, and orbit norm.
         """
-        bits = _int_to_ls_bits512(bits)
+        if isinstance(bits, np.ndarray):
+            if bits.dtype != np.uint64 or bits.shape != (8,):
+                raise TypeError(
+                    "'bits' must be an 8-element 1D NumPy array of uint64, but got {}; did you mean"
+                    "to call batched_state_info instead?".format(bits)
+                )
+            spin = ls_bits512()
+            spin[:] = bits
+        else:
+            spin = _int_to_ls_bits512(bits)
         representative = ls_bits512()
         character = (c_double * 2)()
         norm = c_double()
         _lib.ls_get_state_info(
             self._payload,
-            cast(byref(bits), POINTER(c_uint64)),
+            cast(byref(spin), POINTER(c_uint64)),
             cast(byref(representative), POINTER(c_uint64)),
             character,
             byref(norm),
@@ -475,25 +532,40 @@ class SpinBasis:
         return _ls_bits512_to_int(representative), complex(character[0], character[1]), norm.value
 
     def index(self, bits: int) -> int:
-        """Obtain index of a representative in `self.states` array"""
+        """Obtain index of a representative in `self.states` array. This function is available only
+        after a call to `self.build`."""
         i = c_uint64()
         _check_error(_lib.ls_get_index(self._payload, bits, byref(i)))
         return i.value
 
+    def batched_index(self, spins: np.ndarray) -> np.ndarray:
+        """Batched version of `self.index`. `batched_index` is equivalent to looping over `spins`
+        and calling `self.index` for each element, but is much faster.
+        """
+        if not isinstance(spins, np.ndarray) or spins.dtype != np.uint64 or spins.ndim != 1:
+            raise TypeError("'spins' must be a 1D NumPy array of uint64")
+        out = np.empty(spins.shape, dtype=np.uint64)
+        _check_error(
+            _lib.ls_batched_get_index(
+                self._payload,
+                spins.shape[0],
+                spins.ctypes.data_as(POINTER(c_uint64)),
+                spins.strides[0] // spins.itemsize,
+                out.ctypes.data_as(POINTER(c_uint64)),
+                out.strides[0] // out.itemsize,
+            )
+        )
+        return out
+
     @property
     def states(self) -> np.ndarray:
+        """Array of representatives. This attribute is available only after a call to `self.build`."""
         states = c_void_p()
         _check_error(_lib.ls_get_states(byref(states), self._payload))
         Array = c_uint64 * _lib.ls_states_get_size(states)
         array = Array.from_address(cast(_lib.ls_states_get_data(states), c_void_p).value)
         weakref.finalize(array, _lib.ls_destroy_states, states)
         return np.frombuffer(array, dtype=np.uint64)
-
-    def save_cache(self, filename: str):
-        _check_error(_lib.ls_save_cache(self._payload, bytes(filename, "utf-8")))
-
-    def load_cache(self, filename: str):
-        _check_error(_lib.ls_load_cache(self._payload, bytes(filename, "utf-8")))
 
     @staticmethod
     def load_from_yaml(src):
@@ -507,7 +579,6 @@ class SpinBasis:
 
 import numba
 
-_ls_get_index = _lib.ls_get_index
 _ls_get_state_info = _lib.ls_get_state_info
 
 
@@ -552,32 +623,29 @@ _int_to_float64_ptr = _int_to_ptr_generator(numba.types.CPointer(numba.types.flo
 #         return _signature, codegen
 
 
-@numba.jit(nopython=True, nogil=True, parallel=True)
-def _batched_index_helper(basis, spins):
-    basis_ptr = _int_to_void_ptr(basis)
-    batch_size = spins.shape[0]
-    indices = np.empty((batch_size,), dtype=np.uint64)
-    stride = indices.strides[0]
-    status = 0
-    for i in numba.prange(batch_size):
-        if status == 0:
-            index_ptr = _int_to_uint64_ptr(indices.ctypes.data + i * stride)
-            local_status = _ls_get_index(basis_ptr, spins[i], index_ptr)
-            if local_status != 0:
-                status = max(status, local_status)
-    return status, indices
+# @numba.jit(nopython=True, nogil=True, parallel=True)
+# def _batched_index_helper(basis, spins):
+#     basis_ptr = _int_to_void_ptr(basis)
+#     batch_size = spins.shape[0]
+#     indices = np.empty((batch_size,), dtype=np.uint64)
+#     stride = indices.strides[0]
+#     status = 0
+#     for i in numba.prange(batch_size):
+#         if status == 0:
+#             index_ptr = _int_to_uint64_ptr(indices.ctypes.data + i * stride)
+#             local_status = _ls_get_index(basis_ptr, spins[i], index_ptr)
+#             if local_status != 0:
+#                 status = max(status, local_status)
+#     return status, indices
 
 
 def batched_index(basis: SpinBasis, spins: np.ndarray) -> np.ndarray:
-    if not isinstance(basis, SpinBasis):
-        raise TypeError("basis must be a SpinBasis, but got {}".format(type(basis)))
-    if not isinstance(spins, np.ndarray) or spins.dtype != np.uint64:
-        raise TypeError("spins must be a 1D NumPy array of uint64")
-    if spins.ndim != 1:
-        raise ValueError("spins has wrong shape: {}; expected a 1D array".format(spins.shape))
-    status, indices = _batched_index_helper(basis._payload.value, spins)
-    _check_error(status)
-    return indices
+    warnings.warn(
+        "Freestanding `batched_index(basis, spins)` function is deprecated. "
+        "Please, use `basis.batched_index(spins)` instead.",
+        DeprecationWarning,
+    )
+    return basis.batched_index(basis, spins)
 
 
 @numba.jit(nopython=True, nogil=True, parallel=True)
