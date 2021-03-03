@@ -39,6 +39,9 @@ __all__ = [
     "Symmetry",
     "Group",
     "SpinBasis",
+    "Interaction",
+    "Operator",
+    "diagonalize",
     "enable_logging",
     "disable_logging",
     "is_logging_enabled",
@@ -707,15 +710,11 @@ def batched_state_info(
         "Please, use `basis.batched_state_info(spins)` instead.",
         DeprecationWarning,
     )
-    if not isinstance(basis, SpinBasis):
-        raise TypeError("basis must be a SpinBasis, but got {}".format(type(basis)))
-    if not isinstance(spins, np.ndarray) or spins.dtype != np.uint64:
-        raise TypeError("spins must be a 2D NumPy array of uint64")
-    if spins.ndim == 1:
-        spins = spins.reshape(-1, 1)
-    elif spins.ndim != 2:
-        raise ValueError("spins has wrong shape: {}; expected a 2D array".format(spins.shape))
-    return _batched_state_info_helper(basis._payload.value, spins)
+    r = basis.batched_state_info(spins)
+    # For testing purposes only:
+    old = _batched_state_info_helper(basis._payload.value, spins)
+    assert all(np.all(x == y) for (x, y) in zip(r, old))
+    return r
 
 
 def _deduce_number_spins(matrix) -> int:
@@ -766,7 +765,12 @@ def _create_interaction(matrix, sites) -> c_void_p:
 
 
 class Interaction:
-    def __init__(self, matrix, sites):
+    """1-, 2-, 3-, or 4-point interaction term (wrapper around `ls_interaction` C type)."""
+
+    def __init__(self, matrix: np.ndarray, sites):
+        """Create Interaction term given a matrix which specifies the interaction and a list of
+        sites on which to act.
+        """
         self._payload = _create_interaction(matrix, sites)
         self._finalizer = weakref.finalize(
             self, _destroy(_lib.ls_destroy_interaction), self._payload
@@ -924,39 +928,10 @@ def diagonalize(hamiltonian: Operator, k: int = 1, dtype=None, **kwargs):
     n = hamiltonian.basis.number_states
     if dtype is None:
         dtype = np.float64
-    # if dtype is not None:
-    #     if dtype not in {np.float32, np.float64, np.complex64, np.complex128}:
-    #         raise ValueError(
-    #             "invalid dtype: {}; expected float32, float64, complex64 or complex128"
-    #             "".format(dtype)
-    #         )
-    #     if not hamiltonian.is_real and dtype in {np.float32, np.float64}:
-    #         raise ValueError(
-    #             "invalid dtype: {}; Hamiltonian is complex -- expected either complex64 "
-    #             "or complex128".format(dtype)
-    #         )
-    # else:
-    #     dtype = np.float64 if hamiltonian.is_real else np.complex128
 
     def matvec(x):
         gc.collect()
         return hamiltonian(x)
-
-    def number_lanczos_vectors():
-        # free = psutil.virtual_memory().free
-        # usage = np.dtype(dtype).itemsize * n
-        # need = 20 * usage
-        # if need > free:
-        #     import warnings
-
-        #     count = (2 * free // 3) // usage
-        #     warnings.warn(
-        #         "Not enough memory to store the default=20 Lanczos vectors. "
-        #         "Need ~{:.1f}GB, but have only ~{:.1f}GB. Will use {} Lanczos "
-        #         "vectors instead.".format(need / 1024 ** 3, free / 1024 ** 3, count)
-        #     )
-        #     return count
-        return None
 
     op = scipy.sparse.linalg.LinearOperator(shape=(n, n), matvec=matvec, dtype=dtype)
     return scipy.sparse.linalg.eigsh(op, k=k, which="SA", **kwargs)
