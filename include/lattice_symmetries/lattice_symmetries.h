@@ -88,6 +88,15 @@
 #    include <stdint.h>
 #endif
 
+#if !defined(LATTICE_SYMMETRIES_COMPLEX128)
+#    if defined(__cplusplus)
+#        include <complex>
+#        define LATTICE_SYMMETRIES_COMPLEX128 std::complex<double>
+#    else
+#        define LATTICE_SYMMETRIES_COMPLEX128 _Complex double
+#    endif
+#endif
+
 #if defined(__cplusplus)
 extern "C" {
 #endif
@@ -213,44 +222,23 @@ ls_error_code ls_get_number_states(ls_spin_basis const* basis, uint64_t* out);
 ls_error_code ls_build(ls_spin_basis* basis);
 ls_error_code ls_build_unsafe(ls_spin_basis* basis, uint64_t size,
                               uint64_t const representatives[]);
-/// \brief Get information about a spin configuration.
-///
-/// Given a spin configuration, computes its representative, character, and norm of the orbit.
-///
-/// \param basis pointer to Hilbert space basis. Must not be `nullptr`.
-/// \param bits spin configuration. Size of \p bits array is 8 (i.e. 512 bits). If number of spins
-///             in the basis is fewer than 64, then only the first word of \p bits will be accessed.
-/// \param representative where the representative will be written to. Same as with \p bits, when
-///        the number of spins does not exceed 64, only the first word of \p representative will be
-///        modified.
-/// \param character a pointer to `std::complex<double>` (`_Complex double` in C) where the
-///                  character will be written to.
-/// \param norm where the norm of the orbit will be written to.
-void ls_get_state_info(ls_spin_basis const* basis, ls_bits512 const* bits,
-                       ls_bits512* representative, void* character, double* norm);
-/// \brief Get index of a basis representative.
-///
-/// \note \p bits must be a basis representative. If you just have a spin configuration, call
-///       #ls_get_state_info first to obtain its representative.
-///
-/// \warning This operation is supported only *after* a call to #ls_build.
-///
-/// \param basis pointer to Hilbert space basis. Must not be `nullptr`.
-/// \param bits basis representative. Since this function only works for small systems, \p bits has
-///             length 1.
+void          ls_get_state_info(ls_spin_basis const* basis, ls_bits512 const* bits,
+                                ls_bits512* representative, void* character, double* norm);
+void ls_batched_get_state_info(ls_spin_basis const* basis, uint64_t count, ls_bits512 const* spins,
+                               uint64_t spins_stride, ls_bits512* repr, uint64_t repr_stride,
+                               LATTICE_SYMMETRIES_COMPLEX128* eigenvalues,
+                               uint64_t eigenvalues_stride, double* norm, uint64_t norm_stride);
 ls_error_code ls_get_index(ls_spin_basis const* basis, uint64_t bits, uint64_t* index);
+ls_error_code ls_batched_get_index(ls_spin_basis const* basis, uint64_t count,
+                                   ls_bits64 const* spins, uint64_t spins_stride, uint64_t* out,
+                                   uint64_t out_stride);
 
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
-ls_error_code ls_get_states(ls_states** ptr, ls_spin_basis const* basis);
-void          ls_destroy_states(ls_states* states);
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
+ls_error_code   ls_get_states(ls_states** ptr, ls_spin_basis const* basis);
+void            ls_destroy_states(ls_states* states);
 uint64_t const* ls_states_get_data(ls_states const* states);
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
-uint64_t ls_states_get_size(ls_states const* states);
+uint64_t        ls_states_get_size(ls_states const* states);
 
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
 ls_error_code ls_save_cache(ls_spin_basis const* basis, char const* filename);
-// NOLINTNEXTLINE(modernize-use-trailing-return-type)
 ls_error_code ls_load_cache(ls_spin_basis* basis, char const* filename);
 
 /// @}

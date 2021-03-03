@@ -25,9 +25,9 @@ LATTICE_SYMMETRIES_EXPORT ls_error_code ls_batched_get_index(
     uint64_t const spins_stride, uint64_t* const out, uint64_t const out_stride)
 {
     _Alignas(L1_CACHE_SIZE) ls_error_code status = LS_SUCCESS;
-    uint64_t const chunk_size    = max(count / (unsigned)omp_get_max_threads(), 100);
-    uint64_t const number_chunks = (count + (chunk_size - 1)) / chunk_size;
 
+    uint64_t const chunk_size    = max(count / 10, 100);
+    uint64_t const number_chunks = (count + (chunk_size - 1)) / chunk_size;
 #pragma omp parallel for default(none) num_threads(2) schedule(dynamic, 1)                         \
     firstprivate(basis, count, spins, spins_stride, out, out_stride, chunk_size, number_chunks)    \
         shared(status)
@@ -48,4 +48,21 @@ LATTICE_SYMMETRIES_EXPORT ls_error_code ls_batched_get_index(
         }
     }
     return status;
+}
+
+LATTICE_SYMMETRIES_EXPORT void
+ls_batched_get_state_info(ls_spin_basis const* const basis, uint64_t const count,
+                          ls_bits512 const* const spins, uint64_t const spins_stride,
+                          ls_bits512* const repr, uint64_t const repr_stride,
+                          _Complex double* const eigenvalues, uint64_t const eigenvalues_stride,
+                          double* const norm, uint64_t const norm_stride)
+{
+    uint64_t const chunk_size = max(count / (unsigned)omp_get_max_threads(), 100);
+#pragma omp parallel for default(none) schedule(dynamic, chunk_size)                               \
+    firstprivate(basis, count, spins, spins_stride, repr, repr_stride, eigenvalues,                \
+                 eigenvalues_stride, norm, norm_stride)
+    for (uint64_t i = 0; i < count; ++i) {
+        ls_get_state_info(basis, spins + i * spins_stride, repr + i * repr_stride,
+                          eigenvalues + i * eigenvalues_stride, norm + i * norm_stride);
+    }
 }
