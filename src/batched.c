@@ -59,7 +59,7 @@ ls_batched_get_state_info(ls_spin_basis const* const basis, uint64_t const count
 {
     uint64_t const chunk_size = max(count / (unsigned)omp_get_max_threads(), 100);
 #pragma omp parallel for default(none) schedule(dynamic, chunk_size)                               \
-    firstprivate(basis, count, spins, spins_stride, repr, repr_stride, eigenvalues,                \
+    firstprivate(basis, chunk_size, count, spins, spins_stride, repr, repr_stride, eigenvalues,    \
                  eigenvalues_stride, norm, norm_stride)
     for (uint64_t i = 0; i < count; ++i) {
         ls_get_state_info(basis, spins + i * spins_stride, repr + i * repr_stride,
