@@ -248,6 +248,12 @@ target_link_libraries(
     OpenMP::OpenMP_CXX
 )
 
+target_link_libraries(
+  lattice_symmetries_c_sources
+  PUBLIC 
+    OpenMP::OpenMP_C
+)
+
 
 #
 # Provide alias to library for 
