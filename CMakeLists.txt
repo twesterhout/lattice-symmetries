@@ -184,6 +184,7 @@ target_compile_options(lattice_symmetries_kernels_avx2 PRIVATE -mavx2 -mbmi2 -mf
 add_library(lattice_symmetries_c_sources OBJECT
     src/error_handling.c
     src/dispatcher.c
+    src/batched.c
 )
 set_property(TARGET lattice_symmetries_c_sources PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_include_directories(lattice_symmetries_c_sources
