@@ -218,13 +218,49 @@ The only package (that I'm aware of) with similar functionality as
 `lattice_symmetries` is [`QuSpin`](https://github.com/weinbe58/QuSpin). Hence,
 we compare the performance of `lattice_symmetries` with that of `QuSpin`.
 
-* Time it takes to construct the basis (i.e. the list of representatives):
+### Constructing basis representatives
 
-  <img src="benchmark/01_basis_construction.png" width="640">
+Let us start with an operation which focuses solely on groups and symmetries.
+When working in symmetry-adapted bases, one typically works with *orbits* rather
+than spin configurations. For each orbit we store a special element (usually
+the one which has the smallest integer representation) and call it the orbit's
+*representative*. To determine the Hilbert space dimension, construct a
+Hamiltonian, and do exact diagonalization one first needs to find all such
+representatives. This is a computationally-heavy operation since one typically
+has to loop over either *2ᴺ* or *C(N, N/2)* spin configurations (even though the
+dimension of the Hilbert space may be a 100 or even a 1000 times smaller).
 
-* Time it takes to perform one matrix-vector product:
+In the following plot we compare how much time `lattice_symmetries` and `QuSpin`
+libraries spend finding representatives for square lattices of various sizes. In
+all cases we include as many symmetries as possible (U(1), translations, reflections,
+where possible rotations, and where possible global spin inversion).
 
-  <img src="benchmark/02_operator_application.png" width="640">
+<img src="./benchmark/01_basis_construction.png" width="960">
+
+We clearly see that `lattice_symmetries` outperforms `QuSpin` for systems ≥30
+spins. Results for smaller systems should be taken with a grain of salt, because
+Python overhead starts to play an important role, and the comparison is not fair
+anymore.
+
+Note also that on top of being faster `lattice_symmetries` is also more memory
+efficient (*disclaimer:* this is only the case for QuSpin with OpenMP support; in
+serial mode QuSpin does not waste memory, but is at least another order of
+magnitude slower). This is especially important for systems of ≥42 spins when
+just storing a vector of representatives requires more than 20GB of RAM.
+
+### Calculating matrix-vector products
+
+Let us now consider the matrix-vector products which are the most important
+operation for sparse linear algebra problems, and eigenvalue problems in
+particular. We will consider the case when the matrix is defined implicitly,
+without storing all matrix elements.
+
+We again consider square lattices of various sizes. We will use simple
+Heisenberg interaction between nearest neighbours as our matrix. In the
+following plot we compare how much time `lattice_symmetries` and `QuSpin`
+libraries spend computing a single matrix-vector product.
+
+<img src="./benchmark/02_operator_application.png" width="960">
 
 
 ## Key concepts
