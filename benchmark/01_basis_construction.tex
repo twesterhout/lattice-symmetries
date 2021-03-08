@@ -20,7 +20,7 @@
        bar width=0.3cm,
        xmin={[normalized]-0.5},
        ymin=0,
-       legend entries={\texttt{lattice\_symmetries}, QuSpin},
+       legend entries={\texttt{lattice\_symmetries}, \texttt{QuSpin}},
        every axis legend/.append style={
            at={(0.5, -0.4)},
            anchor=north,
@@ -39,22 +39,20 @@
        xtick=data,
        x tick label style={rotate=40, anchor=north east},
        every node near coord/.append style={rotate=90, anchor=west, font=\scriptsize},
-       nodes near coords={\pgfmathprintnumber[precision=1]{\pgfplotspointmeta}},
+       nodes near coords={\pgfmathprintnumber[precision=2]{\pgfplotspointmeta}},
        symbolic x coords={
-           $1 \times 34$,
-           $1 \times 36$,
-           $1 \times 38$,
-           $1 \times 40$,
+           $5 \times 5$,
+           $5 \times 6$,
+           $4 \times 8$,
            $5 \times 7$,
            $6 \times 6$,
            $5 \times 8$
        },
     ]
         \addplot [draw=black, fill=Pastel2-B] table [col sep=tab, meta=system, y=ls]
-            {01_basis_construction_combined.dat};
+            {cn71/01_basis_construction_squares.dat};
         \addplot [draw=black, fill=Pastel2-C] table [col sep=tab, meta=system, y=quspin]
-            {01_basis_construction_combined.dat};
-
+            {cn71/01_basis_construction_squares.dat};
     \end{axis}
 \end{tikzpicture}
 \end{document}
