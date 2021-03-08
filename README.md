@@ -6,33 +6,40 @@
 A package to simplify working with symmetry-adapted quantum many-body bases
 (think spin systems). It is written with two main applications in mind:
 
-* Exact diagonalization;
-* Experiments with neural quantum states and symmetries.
+* [Exact diagonalization](https://en.wikipedia.org/wiki/Exact_diagonalization);
+* Experiments with [neural quantum
+  states](https://en.wikipedia.org/wiki/Neural_network_quantum_states) and
+  symmetries.
 
 `lattice_symmetries` provides a relatively low-level (and high-performance)
 interface to working with symmetries and Hilbert space bases and operators. If
 all you want to do it to diagonalize a spin Hamiltonian, have a look at
 [`SpinED`](https://github.com/twesterhout/spin-ed) application which uses
-`lattice_symmetries` under the hood and provides a high-level and user-friendly
+`lattice_symmetries` under the hood and provides high-level and user-friendly
 interface to exact diagonalization.
 
 
 ## :pray: Help wanted!
 
 There are a few improvements to this package which could benefit a lot of
-people, but I don't really have time to do them all myself...
+people, but I do not really have time to do them all myself...
 
-1) Implement distributed matrix-vector products. It would be nice to be able to
-run this code on, say, 4 nodes to have a bit more memory.
-2) Implement fermion basis which handles symmetries properly. This is a matter
-of plugging `-1`s in the right places, but should be done carefully!
-3) Consider implementing sublattice-coding techniques. This *could* potentially
-speed-up `ls_get_state_info` function. Whether it *will* actually help is not
-clear at all since batching of symmetries already does a great job of improving
-performance...
+1) Distributed matrix-vector products. It would be nice to be able to run
+`SpinED` on, say, 4 nodes to have a bit more memory. *(Good project for a Master
+thesis)*.
+2) Fermion basis which handles symmetries properly. This would open up a
+possibility to use `SpinED` (or `lattice_symmetries` directly) as a
+[DMFT](https://en.wikipedia.org/wiki/Dynamical_mean-field_theory) solver. This
+is a matter of plugging `-1`s in the right places, but should be done carefully!
+*(Good project for a Master thesis)*.
+3) Sublattice-coding techniques. This *could* potentially speed-up
+`ls_get_state_info` function (see [C API documentation](#spin-basis) for more
+info). Whether it *will* actually help is not clear at all since batching of
+symmetries already does a great performance-wise... *(Good project for a
+Bachelor thesis)*
 
-If you're interested in working on one of these ideas, please, don't hesitate to
-contact me. I'd be happy to discuss it further and guide you through it.
+If you are interested in working on one of these ideas, please, do not hesitate
+to contact me. I would be happy to discuss it further and guide you through it.
 
 
 ## Contents
@@ -56,6 +63,7 @@ contact me. I'd be happy to discuss it further and guide you through it.
 * [Other software](#other-software)
 * [Acknowledgements](#acknowledgements)
 
+
 ## :scroll: Citing
 
 If you are using this package in your research, please, consider citing the
@@ -76,7 +84,7 @@ following paper (**WIP**):
 
 System requirements:
 
-  * Linux or OS X operating system;
+  * Linux or OS X operating system (although OS X support is not well tested);
   * x86-64 processor with
   [nehalem](https://en.wikipedia.org/wiki/Nehalem_(microarchitecture)) (released
   in 2008) or newer microarchitecture.
@@ -84,7 +92,6 @@ System requirements:
 :information_source: **Note:** even though we list Nehalem as the oldest
 supported microarchitecture, the library is not Intel only. The code will work
 on AMD processors just fine (and just as fast).
-
 
 ### Conda
 
@@ -115,7 +122,7 @@ simple. You will need the following:
 
 We also provide a [Conda environment
 file](https://github.com/twesterhout/lattice-symmetries/blob/master/conda-devel.yml)
-which contains the required dependencies (except Git).
+for a Linux system which contains the required dependencies (except Git).
 
 First step is to clone the repository:
 
@@ -136,15 +143,14 @@ Run the configure step which will determine the compilers to use, download
 dependencies etc.
 
 ```sh
-cmake -DCMAKE_BUILD_TYPE=Release ..
+cmake -GNinja -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release ..
 ```
 
 The following CMake parameters affect the build:
 
   * `BUILD_SHARED_LIBS`: when `ON` shared version of the library will be built,
   otherwise -- static. Note that static library cannot be loaded from Python. It
-  is thus suggested to use the shared version unless you know what you are
-  doing.
+  is suggested to use the shared version unless you know what you are doing.
   * `CMAKE_INSTALL_PREFIX`: where to install the library.
   * `CMAKE_BUILD_TYPE`: typically `Release` for optimized builds and `Debug` for
   development and testing.
@@ -168,10 +174,17 @@ And finally install it:
 cmake --build . --target install
 ```
 
-Now you can install Python wrappers using `pip`. Note that Python code uses
-`pkg-config` to determine the location of `liblattice_symmetries.so` (or
-`.dylib`). Make sure you either set `PKG_CONFIG_PATH` appropriately or install
-into a location known to `pkg-config`.
+Now you can install Python wrappers using `pip`:
+
+```sh
+cd .. # leave build/ directory
+python3 -m pip install -e python/
+```
+
+Note that Python code uses `pkg-config` to determine the location of
+`liblattice_symmetries.so` (or `.dylib`). Make sure you either set
+`PKG_CONFIG_PATH` appropriately or install into a location known to
+`pkg-config`.
 
 
 ## :surfing_woman: Example
@@ -218,7 +231,14 @@ Ground state energy is -18.0617854180
 
 The only package (that I'm aware of) with similar functionality as
 `lattice_symmetries` is [`QuSpin`](https://github.com/weinbe58/QuSpin). Hence,
-we compare the performance of `lattice_symmetries` with that of `QuSpin`.
+we compare the performance of `lattice_symmetries` to `QuSpin`.
+
+:information_source: **Disclaimer:** all benchmarks were run on 2-socket AMD
+EPYC 7502 with 64 cores (32 per socket). You may get different results depending
+on which processor you use.
+
+Scripts for running the benchmarks and plotting are available in
+[`benchmark/`](./benchmark) folder.
 
 ### Constructing basis representatives
 
@@ -237,7 +257,7 @@ libraries spend finding representatives for square lattices of various sizes. In
 all cases we include as many symmetries as possible (U(1), translations, reflections,
 where possible rotations, and where possible global spin inversion).
 
-<img src="./benchmark/01_basis_construction.png" width="960">
+<img src="./benchmark/01_basis_construction.jpg" width="960">
 
 We clearly see that `lattice_symmetries` outperforms `QuSpin` for systems ≥30
 spins. Results for smaller systems should be taken with a grain of salt, because
@@ -262,7 +282,7 @@ Heisenberg interaction between nearest neighbours as our matrix. In the
 following plot we compare how much time `lattice_symmetries` and `QuSpin`
 libraries spend computing a single matrix-vector product.
 
-<img src="./benchmark/02_operator_application.png" width="960">
+<img src="./benchmark/02_operator_application.jpg" width="960">
 
 Depending on the system, speed-ups vary from 5 to 22 times, but in all cases
 `lattice_symmetries` performs better.
