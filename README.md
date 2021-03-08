@@ -50,6 +50,8 @@ contact me. I'd be happy to discuss it further and guide you through it.
     * [Symmetry](#symmetry)
     * [Symmetry group](#symmetry-group)
     * [Spin basis](#spin-basis)
+    * [Interaction](#interaction)
+    * [Operator](#operator)
 * [Python API](#python-api)
 * [Other software](#other-software)
 * [Acknowledgements](#acknowledgements)
@@ -261,6 +263,9 @@ following plot we compare how much time `lattice_symmetries` and `QuSpin`
 libraries spend computing a single matrix-vector product.
 
 <img src="./benchmark/02_operator_application.png" width="960">
+
+Depending on the system, speed-ups vary from 5 to 22 times, but in all cases
+`lattice_symmetries` performs better.
 
 
 ## Key concepts
@@ -642,7 +647,7 @@ ls_error_code ls_build_unsafe(ls_spin_basis* basis, uint64_t size,
 ```
 
 These are the only functions which mutate the basis. **They are not thread
-safe!**. `ls_build` function builds the internal cache. It is a quite expensive
+safe!** `ls_build` function builds the internal cache. It is a quite expensive
 operation for large system (i.e. order of minutes on a decent server).
 `ls_build_unsafe` unsafe allows one to speed up the build process considerably
 by providing a list of representatives. No checks for validity of
@@ -651,15 +656,118 @@ by providing a list of representatives. No checks for validity of
 
 ### Interaction
 
+Operators in `lattice_symmetries` are implemented via sums of 1-, 2-, 3-, and
+4-point interaction terms. Such interaction terms are represented by the
+following opaque struct:
 
+```c
+typedef struct ls_interaction ls_interaction;
+```
+
+* * *
+
+Interactions are constructed and destructed using the following functions:
+
+```c
+ls_error_code ls_create_interaction1(ls_interaction** ptr, _Complex double const* matrix_2x2,
+                                     unsigned number_nodes, uint16_t const* nodes);
+ls_error_code ls_create_interaction2(ls_interaction** ptr, _Complex double const* matrix_4x4,
+                                     unsigned number_edges, uint16_t const (*edges)[2]);
+ls_error_code ls_create_interaction3(ls_interaction** ptr, _Complex double const* matrix_8x8,
+                                     unsigned number_triangles, uint16_t const (*triangles)[3]);
+ls_error_code ls_create_interaction4(ls_interaction** ptr, _Complex double const* matrix_16x16,
+                                     unsigned number_plaquettes, uint16_t const (*plaquettes)[4]);
+void ls_destroy_interaction(ls_interaction* interaction);
+```
+
+`ls_create_interactionN` creates an *N*-point interaction term given the
+interaction matrix between *N* spins and a list of sites on which to act. Upon
+successful completion of the function `*ptr` is set to point to the newly
+constructed interaction. The basis should later on be destroyed using
+`ls_destroy_interaction` to avoid memory leaks.
+
+* * *
+
+Interactions are meant to be used mostly as intermediate data structured for
+constructing operators. We do not provide many functions for working with them.
+
+```c
+bool ls_interaction_is_real(ls_interaction const* interaction);
+```
+
+`ls_interaction_is_real` returns whether the interaction matrix is purely real.
 
 
 ### Operator
 
+Opaque struct representing a Hermitian operator *O*:
+
+```c
+typedef struct ls_operator ls_operator;
+```
+
+Operators are constructed and destructed using the following functions:
+
+```c
+ls_error_code ls_create_operator(ls_operator** ptr, ls_spin_basis const* basis,
+                                 unsigned number_terms, ls_interaction const* const terms[]);
+void ls_destroy_operator(ls_operator* op);
+```
+
+`ls_create_operator` creates a new Hermitian operator given a basis and a list
+`number_terms` interaction terms `terms`. Upon successful completion of the
+function `*ptr` is set to point to the newly constructed operator. The basis
+should later on be destroyed using `ls_destroy_operator` to avoid memory leaks.
+
+* * *
+
+Operators can be applied to individual basis elements:
+
+```c
+typedef ls_error_code (*ls_callback)(ls_bits512 const* bits, _Complex double const* coeff, void* cxt);
+
+ls_error_code ls_operator_apply(ls_operator const* op, ls_bits512 const* bits, ls_callback func,
+                                void* cxt);
+```
+
+`ls_operator_apply` applies operator `op` to a basis element `bits`. `func`
+callback is called for every matrix element. `cxt` is used-defined additional
+information passed to `func`.
+
+* * *
+
+Operators can also be applied to wavefunctions:
+
+```c
+typedef enum {
+    LS_FLOAT32,    // 32-bit floating point number (float)
+    LS_FLOAT64,    // 64-bit floating point number (double)
+    LS_COMPLEX64,  // 64-bit complex number (_Complex float)
+    LS_COMPLEX128, // 128-bit complex number (_Complex double)
+} ls_datatype;
+
+ls_error_code ls_operator_matmat(ls_operator const* op, ls_datatype dtype, uint64_t size,
+                                 uint64_t block_size, void const* x, uint64_t x_stride, void* y,
+                                 uint64_t y_stride);
+
+ls_error_code ls_operator_expectation(ls_operator const* op, ls_datatype dtype, uint64_t size,
+                                      uint64_t block_size, void const* x, uint64_t x_stride,
+                                      void* out);
+```
 
 
 ## Python API
 
+Python API closely follows the C API except that class names start with capitals
+(i.e. `ls_spin_basis` becomes `lattice_symmetries.SpinBasis`, `ls_operator`
+becomes `lattice_symmetries.Operator`) and freestanding functions become member
+functions. Type `help(lattice_symmetries)` in Python interpreter to get an
+overview. Then use `help` to also get information about functionality of each
+class.
+
+We use Python `typing` module to provide typing information. Many functions
+become obvious once you see which type of arguments they expect and what they
+return.
 
 
 ## Projects using `lattice_symmetries`

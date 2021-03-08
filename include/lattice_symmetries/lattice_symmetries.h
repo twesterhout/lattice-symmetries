@@ -241,31 +241,20 @@ uint64_t        ls_states_get_size(ls_states const* states);
 ls_error_code ls_save_cache(ls_spin_basis const* basis, char const* filename);
 ls_error_code ls_load_cache(ls_spin_basis* basis, char const* filename);
 
-/// @}
-// end of group basis
-
-// NOLINTNEXTLINE(modernize-use-using)
 typedef struct ls_interaction ls_interaction;
-// NOLINTNEXTLINE(modernize-use-using)
-typedef struct ls_operator ls_operator;
+typedef struct ls_operator    ls_operator;
 
 ls_error_code ls_create_interaction1(ls_interaction** ptr, void const* matrix_2x2,
                                      unsigned number_nodes, uint16_t const* nodes);
-
 ls_error_code ls_create_interaction2(ls_interaction** ptr, void const* matrix_4x4,
                                      unsigned number_edges, uint16_t const (*edges)[2]);
-
 ls_error_code ls_create_interaction3(ls_interaction** ptr, void const* matrix_8x8,
                                      unsigned number_triangles, uint16_t const (*triangles)[3]);
-
 ls_error_code ls_create_interaction4(ls_interaction** ptr, void const* matrix_16x16,
                                      unsigned number_plaquettes, uint16_t const (*plaquettes)[4]);
-
-void ls_destroy_interaction(ls_interaction* interaction);
-
-bool ls_interaction_is_real(ls_interaction const* interaction);
-
-uint64_t ls_interaction_max_buffer_size(ls_interaction const* interaction);
+void          ls_destroy_interaction(ls_interaction* interaction);
+bool          ls_interaction_is_real(ls_interaction const* interaction);
+uint64_t      ls_interaction_max_buffer_size(ls_interaction const* interaction);
 
 ls_error_code ls_create_operator(ls_operator** ptr, ls_spin_basis const* basis,
                                  unsigned number_terms, ls_interaction const* const terms[]);
