@@ -759,7 +759,7 @@ def _create_interaction(matrix, sites) -> c_void_p:
     interaction = c_void_p()
     matrix_ptr = matrix.ctypes.data_as(c_void_p)
     number_sites = sites.shape[0]
-    sites_ptr = sites.ctypes.data_as(POINTER(c_uint16 * number_spins))
+    sites_ptr = sites.ctypes.data_as(POINTER(c_uint16 * number_spins) if number_spins > 1 else POINTER(c_uint16))
     _check_error(f(byref(interaction), matrix_ptr, number_sites, sites_ptr))
     return interaction
 
