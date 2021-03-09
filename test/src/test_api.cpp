@@ -1,13 +1,19 @@
+#include "bits.hpp"
 #include "cpu/search_sorted.hpp"
 #include "lattice_symmetries/lattice_symmetries.h"
+#include <bitset>
 #include <catch2/catch.hpp>
 #include <complex>
 #include <cstdio>
+#include <iostream>
+#include <memory>
 #include <numeric>
 
-TEST_CASE("prints CPU capabilities", "[api]")
+TEST_CASE("obtains CPU capabilities", "[api]")
 {
-    std::printf("avx2: %i\navx:  %i\nsse4: %i\n", ls_has_avx2(), ls_has_avx(), ls_has_sse4());
+    if (ls_has_avx2()) { REQUIRE(ls_has_avx() == true); }
+    if (ls_has_avx()) { REQUIRE(ls_has_sse4() == true); }
+    static_cast<void>(ls_has_sse4());
 }
 
 TEST_CASE("toggles debug logging", "[api]")
@@ -19,51 +25,112 @@ TEST_CASE("toggles debug logging", "[api]")
     REQUIRE(ls_is_logging_enabled() == false);
 }
 
+auto operator<<(std::ostream& out, ls_bits512 const& x) -> std::ostream&
+{
+    out << '[' << std::bitset<64>(x.words[0]);
+    for (auto i = 1U; i < 8; ++i) {
+        out << ", " << std::bitset<64>(x.words[i]);
+    }
+    out << ']';
+}
+
+template <class... Args> auto make_symmetry(Args&&... args)
+{
+    ls_symmetry*  self   = nullptr;
+    ls_error_code status = ls_create_symmetry(&self, std::forward<Args>(args)...);
+    REQUIRE(status == LS_SUCCESS);
+    REQUIRE(self != nullptr);
+    return std::unique_ptr<ls_symmetry, void (*)(ls_symmetry*)>{self, &ls_destroy_symmetry};
+}
+
+auto check_permutation(std::function<void(ls_bits512*)> permute,
+                       std::initializer_list<uint64_t>  before,
+                       std::initializer_list<uint64_t>  after)
+{
+    REQUIRE(before.size() <= 8);
+    REQUIRE(before.size() == after.size());
+    ls_bits512 bits;
+    lattice_symmetries::set_zero(bits);
+    std::copy(before.begin(), before.end(), std::begin(bits.words));
+    permute(&bits);
+    ls_bits512 expected;
+    lattice_symmetries::set_zero(expected);
+    std::copy(after.begin(), after.end(), std::begin(expected.words));
+    REQUIRE(bits == expected);
+}
+
+auto check_permutation(ls_symmetry const* symmetry, std::initializer_list<uint64_t> before,
+                       std::initializer_list<uint64_t> after)
+{
+    check_permutation([symmetry](auto* x) { ls_apply_symmetry(symmetry, x); }, before, after);
+}
+
+auto get_eigenvalue(ls_symmetry const* symmetry) -> std::complex<double>
+{
+    std::complex<double> eigenvalue;
+    ls_get_eigenvalue(symmetry, &eigenvalue);
+    return eigenvalue;
+}
+
 TEST_CASE("constructs symmetries", "[api]")
 {
     {
         unsigned const permutation[] = {1, 2, 3, 4, 5, 6, 0};
-        ls_symmetry*   self          = nullptr;
-        ls_error_code  status = ls_create_symmetry(&self, std::size(permutation), permutation, 0);
-        REQUIRE(status == LS_SUCCESS);
-        REQUIRE(self != nullptr);
-        REQUIRE(ls_get_sector(self) == 0);
-        REQUIRE(ls_get_periodicity(self) == 7);
-        REQUIRE(ls_get_phase(self) == 0.0);
-        REQUIRE(ls_symmetry_get_number_spins(self) == 7);
-        std::complex<double> eigenvalue;
-        ls_get_eigenvalue(self, &eigenvalue);
-        REQUIRE(eigenvalue == 1.0);
-        ls_destroy_symmetry(self);
+        auto const     self          = make_symmetry(std::size(permutation), permutation, 0);
+        REQUIRE(ls_get_sector(self.get()) == 0);
+        REQUIRE(ls_get_periodicity(self.get()) == 7);
+        REQUIRE(ls_get_phase(self.get()) == 0.0);
+        REQUIRE(ls_symmetry_get_number_spins(self.get()) == 7);
+        REQUIRE(get_eigenvalue(self.get()) == 1.0);
+        check_permutation(self.get(), {0b1010110}, {0b0101011});
     }
 
     {
         unsigned const permutation[] = {1, 2, 3, 0};
-        ls_symmetry*   self          = nullptr;
-        ls_error_code  status = ls_create_symmetry(&self, std::size(permutation), permutation, 3);
-        REQUIRE(status == LS_SUCCESS);
-        REQUIRE(self != nullptr);
-        REQUIRE(ls_get_sector(self) == 3);
-        REQUIRE(ls_get_periodicity(self) == 4);
-        REQUIRE(ls_get_phase(self) == 0.75);
-        REQUIRE(ls_symmetry_get_number_spins(self) == 4);
-        ls_destroy_symmetry(self);
+        auto const     self          = make_symmetry(std::size(permutation), permutation, 3);
+        REQUIRE(ls_get_sector(self.get()) == 3);
+        REQUIRE(ls_get_periodicity(self.get()) == 4);
+        REQUIRE(ls_get_phase(self.get()) == 0.75);
+        REQUIRE(ls_symmetry_get_number_spins(self.get()) == 4);
+        REQUIRE(get_eigenvalue(self.get()) == std::complex{0.0, 1.0});
+        check_permutation(self.get(), {0b0110}, {0b0011});
+        check_permutation(self.get(), {0b1111}, {0b1111});
     }
 
     {
         unsigned const permutation[] = {3, 2, 1, 0};
-        ls_symmetry*   self          = nullptr;
-        ls_error_code  status = ls_create_symmetry(&self, std::size(permutation), permutation, 1);
-        REQUIRE(status == LS_SUCCESS);
-        REQUIRE(self != nullptr);
-        REQUIRE(ls_get_sector(self) == 1);
-        REQUIRE(ls_get_periodicity(self) == 2);
-        REQUIRE(ls_get_phase(self) == 0.5);
-        REQUIRE(ls_symmetry_get_number_spins(self) == 4);
-        std::complex<double> eigenvalue;
-        ls_get_eigenvalue(self, &eigenvalue);
-        REQUIRE(eigenvalue == -1.0);
-        ls_destroy_symmetry(self);
+        auto const     self          = make_symmetry(std::size(permutation), permutation, 1);
+        REQUIRE(ls_get_sector(self.get()) == 1);
+        REQUIRE(ls_get_periodicity(self.get()) == 2);
+        REQUIRE(ls_get_phase(self.get()) == 0.5);
+        REQUIRE(ls_symmetry_get_number_spins(self.get()) == 4);
+        REQUIRE(get_eigenvalue(self.get()) == -1.0);
+        check_permutation(self.get(), {0b0010}, {0b0100});
+        check_permutation(self.get(), {0b1000}, {0b0001});
+    }
+
+    {
+        std::vector<unsigned> permutation(100);
+        for (auto i = uint64_t{0}; i < permutation.size(); ++i) {
+            permutation[i] = (i + 3) % 100;
+        }
+        auto const self = make_symmetry(permutation.size(), permutation.data(), 1);
+        REQUIRE(ls_get_sector(self.get()) == 1);
+        REQUIRE(ls_get_periodicity(self.get()) == 100);
+        REQUIRE(ls_get_phase(self.get()) == 0.01);
+        REQUIRE(ls_symmetry_get_number_spins(self.get()) == 100);
+        REQUIRE(get_eigenvalue(self.get()).real() == Approx(0.998026728428272));
+        REQUIRE(get_eigenvalue(self.get()).imag() == Approx(-0.062790519529313));
+        check_permutation(self.get(),
+                          {0b0100000000000000000000000000000100000000000000000000000000000001UL,
+                           0b100000000000000000000000000000000000UL},
+                          {0b0000100000000000000000000000000000100000000000000000000000000000UL,
+                           0b001100000000000000000000000000000000UL});
+        check_permutation(self.get(),
+                          {0b1100110100111110100001110110011111000110101100001110100101000110,
+                           0b100110110111001010101011001010101010},
+                          {0b0101100110100111110100001110110011111000110101100001110100101000,
+                           0b110100110110111001010101011001010101});
     }
 
     {
@@ -83,22 +150,35 @@ TEST_CASE("constructs symmetries", "[api]")
     }
 }
 
+template <class Deleter = decltype(&ls_destroy_symmetry)>
+auto make_group(std::initializer_list<std::unique_ptr<ls_symmetry, Deleter>> generators)
+{
+    std::vector<ls_symmetry const*> ptrs(generators.size());
+    std::transform(std::begin(generators), std::end(generators), std::begin(ptrs),
+                   [](auto const& x) { return x.get(); });
+    ls_group*     self   = nullptr;
+    ls_error_code status = ls_create_group(&self, ptrs.size(), ptrs.data());
+    REQUIRE(status == LS_SUCCESS);
+    REQUIRE(self != nullptr);
+    return std::unique_ptr<ls_group, void (*)(ls_group*)>{self, &ls_destroy_group};
+}
+
 TEST_CASE("constructs symmetry groups", "[api]")
 {
     {
-        unsigned const permutation[] = {1, 2, 3, 0};
-        ls_symmetry*   symmetry      = nullptr;
-        ls_group*      group         = nullptr;
-        ls_error_code  status =
-            ls_create_symmetry(&symmetry, std::size(permutation), permutation, 0);
-        REQUIRE(status == LS_SUCCESS);
+        auto const group = make_group({});
+        REQUIRE(ls_get_group_size(group.get()) == 0);
+        REQUIRE(ls_group_get_symmetries(group.get()) == nullptr);
+        REQUIRE(ls_group_get_number_spins(group.get()) == -1);
+    }
 
-        ls_symmetry const* generators[] = {symmetry};
-        status = ls_create_group(&group, std::size(generators), generators);
-        REQUIRE(status == LS_SUCCESS);
-        REQUIRE(ls_get_group_size(group) == 4);
-        ls_destroy_group(group);
-        ls_destroy_symmetry(symmetry);
+    {
+        unsigned const permutation[] = {1, 2, 3, 0};
+        auto           symmetry      = make_symmetry(std::size(permutation), permutation, 0);
+        auto const     group         = make_group({std::move(symmetry)});
+        REQUIRE(ls_get_group_size(group.get()) == 4);
+        REQUIRE(ls_group_get_symmetries(group.get()) != nullptr);
+        REQUIRE(ls_group_get_number_spins(group.get()) == 4);
     }
 
     {
@@ -110,31 +190,12 @@ TEST_CASE("constructs symmetry groups", "[api]")
             P.push_back(number_spins - 1U - i);
         }
 
-        ls_symmetry*  translation = nullptr;
-        ls_symmetry*  parity      = nullptr;
-        ls_group*     group       = nullptr;
-        ls_error_code status =
-            ls_create_symmetry(&translation, T.size(), T.data(), number_spins / 2);
-        REQUIRE(status == LS_SUCCESS);
-        status = ls_create_symmetry(&parity, P.size(), P.data(), 1);
-        REQUIRE(status == LS_SUCCESS);
-
-        ls_symmetry const* generators[] = {translation, parity};
-        status = ls_create_group(&group, std::size(generators), generators);
-        REQUIRE(status == LS_SUCCESS);
-        REQUIRE(ls_get_group_size(group) == 2 * number_spins);
-        ls_destroy_group(group);
-        ls_destroy_symmetry(parity);
-        ls_destroy_symmetry(translation);
-    }
-
-    {
-        ls_group*     group  = nullptr;
-        ls_error_code status = ls_create_group(&group, 0, nullptr);
-        REQUIRE(status == LS_SUCCESS);
-        REQUIRE(group != nullptr);
-        REQUIRE(ls_get_group_size(group) == 0);
-        ls_destroy_group(group);
+        auto       translation = make_symmetry(T.size(), T.data(), number_spins / 2);
+        auto       parity      = make_symmetry(P.size(), P.data(), 1);
+        auto const group       = make_group({std::move(translation), std::move(parity)});
+        REQUIRE(ls_get_group_size(group.get()) == 2 * number_spins);
+        REQUIRE(ls_group_get_symmetries(group.get()) != nullptr);
+        REQUIRE(ls_group_get_number_spins(group.get()) == 70);
     }
 
     {
@@ -143,6 +204,8 @@ TEST_CASE("constructs symmetry groups", "[api]")
         REQUIRE(status == LS_SUCCESS);
         REQUIRE(group != nullptr);
         REQUIRE(ls_get_group_size(group) == 1);
+        REQUIRE(ls_group_get_symmetries(group) != nullptr);
+        REQUIRE(ls_group_get_number_spins(group) == 25);
         ls_destroy_group(group);
     }
 }

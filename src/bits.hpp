@@ -28,9 +28,7 @@
 
 #pragma once
 
-#include <cstdint>
-
-namespace lattice_symmetries {
+#include <lattice_symmetries/lattice_symmetries.h>
 
 constexpr auto operator==(ls_bits512 const& x, ls_bits512 const& y) noexcept -> bool
 {
@@ -64,6 +62,8 @@ constexpr auto operator>=(ls_bits512 const& x, ls_bits512 const& y) noexcept -> 
 {
     return !(x < y);
 }
+
+namespace lattice_symmetries {
 
 constexpr auto set_zero(ls_bits64& bits) noexcept -> void { bits = 0UL; }
 constexpr auto set_zero(ls_bits512& bits) noexcept -> void
