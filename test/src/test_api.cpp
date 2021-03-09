@@ -25,7 +25,7 @@ TEST_CASE("toggles debug logging", "[api]")
     REQUIRE(ls_is_logging_enabled() == false);
 }
 
-auto operator<<(std::ostream& out, ls_bits512 const& x) -> std::ostream&
+inline auto operator<<(std::ostream& out, ls_bits512 const& x) -> std::ostream&
 {
     out << '[' << std::bitset<64>(x.words[0]);
     for (auto i = 1U; i < 8; ++i) {
@@ -43,9 +43,9 @@ template <class... Args> auto make_symmetry(Args&&... args)
     return std::unique_ptr<ls_symmetry, void (*)(ls_symmetry*)>{self, &ls_destroy_symmetry};
 }
 
-auto check_permutation(std::function<void(ls_bits512*)> permute,
-                       std::initializer_list<uint64_t>  before,
-                       std::initializer_list<uint64_t>  after)
+inline auto check_permutation(std::function<void(ls_bits512*)> permute,
+                              std::initializer_list<uint64_t>  before,
+                              std::initializer_list<uint64_t>  after)
 {
     REQUIRE(before.size() <= 8);
     REQUIRE(before.size() == after.size());
@@ -59,13 +59,13 @@ auto check_permutation(std::function<void(ls_bits512*)> permute,
     REQUIRE(bits == expected);
 }
 
-auto check_permutation(ls_symmetry const* symmetry, std::initializer_list<uint64_t> before,
-                       std::initializer_list<uint64_t> after)
+inline auto check_permutation(ls_symmetry const* symmetry, std::initializer_list<uint64_t> before,
+                              std::initializer_list<uint64_t> after)
 {
     check_permutation([symmetry](auto* x) { ls_apply_symmetry(symmetry, x); }, before, after);
 }
 
-auto get_eigenvalue(ls_symmetry const* symmetry) -> std::complex<double>
+inline auto get_eigenvalue(ls_symmetry const* symmetry) -> std::complex<double>
 {
     std::complex<double> eigenvalue;
     ls_get_eigenvalue(symmetry, &eigenvalue);
@@ -210,75 +210,109 @@ TEST_CASE("constructs symmetry groups", "[api]")
     }
 }
 
+template <class... Args> auto make_spin_basis(Args&&... args)
+{
+    ls_spin_basis* self   = nullptr;
+    ls_error_code  status = ls_create_spin_basis(&self, std::forward<Args>(args)...);
+    REQUIRE(status == LS_SUCCESS);
+    REQUIRE(self != nullptr);
+    return std::unique_ptr<ls_spin_basis, void (*)(ls_spin_basis*)>{self, &ls_destroy_spin_basis};
+}
+
+inline auto get_states(ls_spin_basis const* basis)
+{
+    ls_states*    self   = nullptr;
+    ls_error_code status = ls_get_states(&self, basis);
+    REQUIRE(status == LS_SUCCESS);
+    REQUIRE(self != nullptr);
+    return std::unique_ptr<ls_states, void (*)(ls_states*)>{self, &ls_destroy_states};
+}
+
+inline auto check_state_info(ls_spin_basis const* basis, std::initializer_list<uint64_t> const bits,
+                             std::initializer_list<uint64_t> const repr,
+                             std::complex<double> const character, double const norm)
+{
+    REQUIRE(bits.size() <= 8);
+    REQUIRE(repr.size() == bits.size());
+    ls_bits512 raw_bits;
+    lattice_symmetries::set_zero(raw_bits);
+    std::copy(bits.begin(), bits.end(), std::begin(raw_bits.words));
+
+    ls_bits512 predicted_repr;
+    lattice_symmetries::set_zero(predicted_repr);
+    std::complex<double> predicted_character;
+    double               predicted_norm;
+    ls_get_state_info(basis, &raw_bits, &predicted_repr, &predicted_character, &predicted_norm);
+
+    REQUIRE(std::equal(repr.begin(), repr.end(), std::begin(predicted_repr.words)));
+    if (character.real() == 0.0 || character.real() == -1.0 || character.real() == 1.0) {
+        REQUIRE(predicted_character.real() == character.real());
+    }
+    else {
+        REQUIRE(predicted_character.real() == Approx(character.real()));
+    }
+
+    if (character.imag() == 0.0 || character.imag() == -1.0 || character.imag() == 1.0) {
+        REQUIRE(predicted_character.imag() == character.imag());
+    }
+    else {
+        REQUIRE(predicted_character.imag() == Approx(character.imag()));
+    }
+
+    if (norm == 0.0 || norm == 1.0) { REQUIRE(predicted_norm == norm); }
+    else {
+        REQUIRE(predicted_norm == Approx(norm));
+    }
+}
+
 TEST_CASE("constructs basis", "[api]")
 {
     {
         unsigned const permutation[] = {1, 2, 3, 0};
-        ls_symmetry*   symmetry      = nullptr;
-        ls_error_code  status =
-            ls_create_symmetry(&symmetry, std::size(permutation), permutation, 0);
-        REQUIRE(status == LS_SUCCESS);
-
-        ls_symmetry const* generators[] = {symmetry};
-        ls_group*          group        = nullptr;
-        status = ls_create_group(&group, std::size(generators), generators);
-        REQUIRE(status == LS_SUCCESS);
-        ls_destroy_symmetry(symmetry);
-
-        ls_spin_basis* basis = nullptr;
-        status               = ls_create_spin_basis(&basis, group, 4, -1, 0);
-        REQUIRE(status == LS_SUCCESS);
-        ls_destroy_group(group);
-        REQUIRE(ls_get_number_spins(basis) == 4);
-        REQUIRE(ls_get_hamming_weight(basis) == -1);
-        REQUIRE(ls_get_spin_inversion(basis) == 0);
-        REQUIRE(ls_has_symmetries(basis) == true);
-
-        status = ls_build(basis);
-        REQUIRE(status == LS_SUCCESS);
+        auto           symmetry      = make_symmetry(std::size(permutation), permutation, 0);
+        auto const     group         = make_group({std::move(symmetry)});
+        auto const     basis         = make_spin_basis(group.get(), 4, -1, 0);
+        REQUIRE(ls_get_number_spins(basis.get()) == 4);
+        REQUIRE(ls_get_number_bits(basis.get()) == 64);
+        REQUIRE(ls_get_hamming_weight(basis.get()) == -1);
+        REQUIRE(ls_get_spin_inversion(basis.get()) == 0);
+        REQUIRE(ls_has_symmetries(basis.get()) == true);
+        REQUIRE(ls_build(basis.get()) == LS_SUCCESS);
 
         uint64_t count;
-        status = ls_get_number_states(basis, &count);
+        auto     status = ls_get_number_states(basis.get(), &count);
         REQUIRE(status == LS_SUCCESS);
         REQUIRE(count == 6); // 1 + 1 + 1 + 2 + 1
 
-        ls_states* states = nullptr;
-        status            = ls_get_states(&states, basis);
-        REQUIRE(status == LS_SUCCESS);
+        auto states = get_states(basis.get());
+        REQUIRE(ls_states_get_data(states.get()) != nullptr);
+        REQUIRE(ls_states_get_size(states.get()) == count);
 
-        auto const begin = ls_states_get_data(states);
+        auto const e = std::complex{1.0, 0.0};
+        check_state_info(basis.get(), {0b1010}, {0b0101}, e, 0.707107); // sqrt(2 / 4)
+        check_state_info(basis.get(), {0b1100}, {0b0011}, e, 0.5);      // sqrt(1 / 4)
+        check_state_info(basis.get(), {0b0001}, {0b0001}, e, 0.5);      // sqrt(1 / 4)
+        check_state_info(basis.get(), {0b0000}, {0b0000}, e, 1.0);      // sqrt(4 / 4)
+
+        auto const begin = ls_states_get_data(states.get());
         auto const end   = begin + count;
         for (auto i = 0U; i < count; ++i) {
             uint64_t index;
-            status = ls_get_index(basis, begin[i], &index);
+            status = ls_get_index(basis.get(), begin[i], &index);
             REQUIRE(status == LS_SUCCESS);
             REQUIRE(index == i);
         }
-
-        ls_destroy_states(states);
-        ls_destroy_spin_basis(basis);
     }
 
     {
-        ls_group*     group  = nullptr;
-        ls_error_code status = ls_create_group(&group, 0, nullptr);
-        REQUIRE(status == LS_SUCCESS);
+        auto const group = make_group({});
+        auto const basis = make_spin_basis(group.get(), 4, 2, 1);
+        REQUIRE(ls_build(basis.get()) == LS_SUCCESS);
 
-        ls_spin_basis* basis = nullptr;
-        status               = ls_create_spin_basis(&basis, group, 4, 2, 1);
-        REQUIRE(status == LS_SUCCESS);
-
-        ls_destroy_group(group);
-
-        status = ls_build(basis);
-        REQUIRE(status == LS_SUCCESS);
-
-        uint64_t count;
-        status = ls_get_number_states(basis, &count);
+        uint64_t      count;
+        ls_error_code status = ls_get_number_states(basis.get(), &count);
         REQUIRE(status == LS_SUCCESS);
         REQUIRE(count == 3);
-
-        ls_destroy_spin_basis(basis);
     }
 }
 
@@ -303,10 +337,10 @@ TEST_CASE("finds correct states", "[api]")
              18, 19, 20, 21, 22, 23,
               0,  1,  2,  3,  4,  5};
         unsigned const P_x[] =
-            {  5,  4,  3,  2,  1,  0,
-              11, 10,  9,  8,  7,  6,
-              17, 16, 15, 14, 13, 12,
-              23, 22, 21, 20, 19, 18};
+            { 5,  4,  3,  2,  1,  0,
+             11, 10,  9,  8,  7,  6,
+             17, 16, 15, 14, 13, 12,
+             23, 22, 21, 20, 19, 18};
         unsigned const P_y[] =
             {18, 19, 20, 21, 22, 23,
              12, 13, 14, 15, 16, 17,
