@@ -405,3 +405,31 @@ TEST_CASE("finds correct states", "[api]")
         ls_destroy_spin_basis(basis);
     }
 }
+
+TEST_CASE("constructs interactions", "[api]")
+{
+    {
+        std::complex<double> const matrix[2][2] = {{1.0, 0.0}, {0.0, -1.0}};
+        uint16_t const             sites[5]     = {0, 1, 2, 3, 4};
+        ls_interaction*            interaction  = nullptr;
+        ls_error_code              status =
+            ls_create_interaction1(&interaction, &(matrix[0][0]), std::size(sites), sites);
+        REQUIRE(status == LS_SUCCESS);
+        REQUIRE(ls_interaction_is_real(interaction));
+        ls_destroy_interaction(interaction);
+    }
+
+    {
+        std::complex<double> const matrix[4][4] = {{1.0, 0.0, 0.0, 0.0},
+                                                   {0.0, -1.0, 2.0, 0.0},
+                                                   {0.0, 2.0, -1.0, 0.0},
+                                                   {0.0, 0.0, 0.0, 1.0}};
+        uint16_t const             sites[5][2]  = {{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 0}};
+        ls_interaction*            interaction  = nullptr;
+        ls_error_code              status =
+            ls_create_interaction2(&interaction, &(matrix[0][0]), std::size(sites), sites);
+        REQUIRE(status == LS_SUCCESS);
+        REQUIRE(ls_interaction_is_real(interaction));
+        ls_destroy_interaction(interaction);
+    }
+}
