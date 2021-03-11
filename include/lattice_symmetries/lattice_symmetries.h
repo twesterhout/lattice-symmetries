@@ -254,7 +254,6 @@ ls_error_code ls_create_interaction4(ls_interaction** ptr, void const* matrix_16
                                      unsigned number_plaquettes, uint16_t const (*plaquettes)[4]);
 void          ls_destroy_interaction(ls_interaction* interaction);
 bool          ls_interaction_is_real(ls_interaction const* interaction);
-uint64_t      ls_interaction_max_buffer_size(ls_interaction const* interaction);
 
 ls_error_code ls_create_operator(ls_operator** ptr, ls_spin_basis const* basis,
                                  unsigned number_terms, ls_interaction const* const terms[]);
