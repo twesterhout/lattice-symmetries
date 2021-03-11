@@ -50,6 +50,15 @@ namespace {
             }
         }
     }
+
+    template <unsigned N> auto conjugate(std::complex<double> (&matrix)[N][N]) noexcept -> void
+    {
+        for (auto i = 0U; i < N; ++i) {
+            for (auto j = 0U; j < N; ++j) {
+                matrix[i][j] = std::conj(matrix[i][j]);
+            }
+        }
+    }
 } // namespace
 
 template <unsigned NumberSpins> struct interaction_t {
@@ -82,7 +91,15 @@ template <unsigned NumberSpins> struct interaction_t {
                   tcb::span<std::array<uint16_t, NumberSpins> const> _sites)
         : matrix{std::make_unique<matrix_t>(_matrix)}, sites{std::begin(_sites), std::end(_sites)}
     {
+        // Transpose comes from the fact that we store the matrix in column major order, but the
+        // user passes it in row major order.
         transpose(matrix->payload);
+    }
+
+    auto hermitian_conjugate() noexcept -> void
+    {
+        transpose(matrix->payload);
+        conjugate(matrix->payload);
     }
 
     interaction_t(interaction_t&&) noexcept = default;
@@ -265,9 +282,15 @@ struct ls_operator {
         : basis{ls_copy_spin_basis(_basis)}
     {
         terms.reserve(_terms.size());
-        std::transform(
-            std::begin(_terms), std::end(_terms), std::back_inserter(terms),
-            [](auto const* x) noexcept -> auto const& { return *x; });
+        // We Hermitian conjugate every term to make sure that our matrix-matrix product function
+        // works for non-Hermitian operators as well.
+        std::transform(std::begin(_terms), std::end(_terms), std::back_inserter(terms),
+                       [](auto const* x) noexcept {
+                           auto new_x = *x;
+                           std::visit([](auto& p) noexcept { p.hermitian_conjugate(); },
+                                      new_x.payload);
+                           return new_x;
+                       });
         is_real = lattice_symmetries::is_real(*basis)
                   && std::all_of(std::begin(terms), std::end(terms),
                                  [](auto const& x) { return ls_interaction_is_real(&x); });
