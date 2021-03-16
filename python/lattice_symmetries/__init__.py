@@ -31,7 +31,7 @@ working with quantum many-body bases.
 See <https://github.com/twesterhout/lattice-symmetries> for more info.
 """
 
-__version__ = "0.6.1"
+__version__ = "0.6.3"
 __author__ = "Tom Westerhout <14264576+twesterhout@users.noreply.github.com>"
 
 __all__ = [
@@ -681,7 +681,7 @@ def batched_index(basis: SpinBasis, spins: np.ndarray) -> np.ndarray:
         "Please, use `basis.batched_index(spins)` instead.",
         DeprecationWarning,
     )
-    return basis.batched_index(basis, spins)
+    return basis.batched_index(spins)
 
 
 @numba.jit(nopython=True, nogil=True, parallel=True)
