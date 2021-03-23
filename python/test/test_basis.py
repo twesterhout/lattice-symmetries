@@ -1,5 +1,6 @@
 import numpy as np
 import lattice_symmetries as ls
+
 ls.enable_logging()
 
 import systems
@@ -46,17 +47,24 @@ def test_index():
         number_spins=L_x * L_y,
         hamming_weight=(L_x * L_y) // 2,
     )
-    print(basis.number_states)
+    # print(basis.number_states)
     hamiltonian = systems.make_heisenberg(basis, nearest, backend=backend)
-   
+
     # indices = ls.batched_index(basis, basis.states)
     # assert np.all(indices == np.arange(basis.number_states, dtype=np.uint64))
     for i in range(basis.number_states):
         index = basis.index(basis.states[i])
         assert index == i
+
+    assert np.all(basis.batched_index(basis.states) == np.arange(basis.number_states))
+
+    spins = np.zeros((10000, 8), dtype=np.uint64)
+    spins[:, 0] = basis.states[:10000]
+    ls.batched_state_info(basis, spins)
     # evals, evecs = hamiltonian.eigsh(k=1, which='SA')
     # evals, evecs = ls.diagonalize(hamiltonian)
     # print(evals)
+
 
 test_index()
 # test_4_spins()
