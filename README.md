@@ -1,8 +1,6 @@
 # lattice_symmetries ![Linux](https://github.com/twesterhout/lattice-symmetries/workflows/Ubuntu/badge.svg)![OS X](https://github.com/twesterhout/lattice-symmetries/workflows/OS%20X/badge.svg)
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)![Conda](https://img.shields.io/conda/v/twesterhout/lattice-symmetries)
 
-**WARNING** This is work-in-progress
-
 A package to simplify working with symmetry-adapted quantum many-body bases
 (think spin systems). It is written with two main applications in mind:
 
@@ -267,7 +265,7 @@ anymore.
 Note also that on top of being faster `lattice_symmetries` is also more memory
 efficient (*disclaimer:* this is only the case for QuSpin with OpenMP support; in
 serial mode QuSpin does not waste memory, but is at least another order of
-magnitude slower). This is especially important for systems of ≥42 spins when
+magnitude slower). This is especially important for systems of ≥42 spins where
 just storing a vector of representatives requires more than 20GB of RAM.
 
 ### Calculating matrix-vector products
@@ -284,7 +282,7 @@ libraries spend computing a single matrix-vector product.
 
 <img src="./benchmark/02_operator_application.jpg" width="960">
 
-Depending on the system, speed-ups vary from 5 to 22 times, but in all cases
+Depending on the system, speedups vary from 5 to 22 times, but in all cases
 `lattice_symmetries` performs better.
 
 
@@ -384,10 +382,11 @@ typedef struct ls_bits512 {
 } ls_bits512;
 ```
 
-:bangbang: **Warning:** we do not support systems with more than 512 spins. This is a
-design decision to limit the memory footprint of a single spin configuration. If
-you really want to use `lattice_symmetries` for larger systems, please, let us
-know by opening an issue.
+:bangbang: **Warning:** we do not support systems with more than 512 spins. This
+is a design decision to limit the memory footprint of a single spin
+configuration. If you really want to use `lattice_symmetries` for larger
+systems, please, let us know by opening an
+[issue](https://github.com/twesterhout/lattice-symmetries/issues).
 
 Each spin is represented by a single bit. The order of spins is determined by
 the underlying hardware [endianness](https://en.wikipedia.org/wiki/Endianness).
@@ -447,7 +446,7 @@ and `sector` specifying the eigenvalue.
 
 Periodicity of a permutation operator T is the smallest positive integer *N*
 such that *T<sup>N</sup> = 𝟙*. It then follows that eigenvalues of *T* are roots
-of unity: *-2πⅈk/N* for *k ∈ {0, ..., N-1}*. `sector` argument specifies the
+of unity: *exp(-2πⅈk/N)* for *k ∈ {0, ..., N-1}*. `sector` argument specifies the
 value of *k*.
 
 Upon successful completion of `ls_create_symmetry` (indicated by returning
@@ -457,13 +456,14 @@ object. All pointers created using `ls_create_symmetry` must be destroyed using
 
 
 **Example:** the following code snippet constructs lattice momentum symmetry
-operator with eigenvalue `-πⅈ/4`:
+operator with eigenvalue *exp(-πⅈ/4)*:
 
 ```c
 unsigned const permutation[8] = {1, 2, 3, 4, 5, 6, 7, 0};
 ls_symmetry* symmetry;
 ls_error_code status = ls_create_symmetry(&symmetry, 8, permutation, 1);
 if (status != LS_SUCCESS) { /* handle error */ }
+/* Do stuff with symmetry */
 ls_destroy_symmetry(symmetry);
 ```
 
@@ -482,7 +482,7 @@ unsigned ls_symmetry_get_number_spins(ls_symmetry const* symmetry);
 
 `ls_get_periodicity` returns the periodicity *N* such that applying the symmetry
 *N* times results in identity. `ls_get_eigenvalue` stores the eigenvalue
-*-2πⅈk/N* in `out`. *k* is the sector which can be obtained with
+*exp(-2πⅈk/N)* in `out`. *k* is the sector which can be obtained with
 `ls_get_sector`. `ls_get_phase` returns *k / N*. `ls_symmetry_get_number_spins`
 returns the number of spins for which the symmetry was constructed (i.e.
 `length` of the permutation which was passed to `ls_create_symmetry`)
@@ -497,6 +497,24 @@ void ls_apply_symmetry(ls_symmetry const* symmetry, ls_bits512* bits);
 
 `ls_apply_symmetry` will permute `bits` in-place according to the permutation
 with which the symmetry was constructed.
+
+**Example:** we apply the previously constructed momentum operator to a spin
+configuration.
+
+```c
+/* Just as before... */
+unsigned const permutation[8] = {1, 2, 3, 4, 5, 6, 7, 0};
+ls_symmetry* symmetry;
+ls_error_code status = ls_create_symmetry(&symmetry, 8, permutation, 1);
+if (status != LS_SUCCESS) { /* handle error */ }
+/* Applying symmetry to a spin configuration |01001101⟩ = 0b10110010 = 0xB2. We
+   expect the result to be |10011010⟩ = 0b01011001 = 0x59
+ */
+ls_bits512 spin = {0xB2, 0, 0, 0, 0, 0, 0, 0};
+ls_apply_symmetry(symmetry, &spin);
+assert(spin.words[0] == 0x59);
+ls_destroy_symmetry(symmetry);
+```
 
 
 ### Symmetry group
@@ -542,7 +560,7 @@ int ls_group_get_number_spins(ls_group const* group);
 
 `ls_get_group_size` returns the number of elements in the group.
 `ls_group_get_symmetries` returns a pointer to an array of symmetries. This
-array is internal and owned by `ls_group`. Do not try to `free` it, and make
+array is internal and owned by `ls_group`. Do not try to `free` it and make
 sure **that `ls_group` stays alive as long as you are using this pointer**.
 `ls_group_get_number_spins` returns the number of spins in the system. If it
 cannot be determined (because the group is empty), `-1` is returned.
@@ -808,18 +826,20 @@ Here are a few projects which are using `lattice_symmetries`:
   an earlier version of `lattice_symmetries` code to do exact diagonalization.
 
 
-If want your project to be added to this list, feel free to submit a PR.
+If you would like your project to be added to this list, feel free to submit a PR.
 
 
 ## Other software
 
 #### In the context of Neural Quantum States
 
-As far as we know, `lattice_symmetries` is currently the only open-source
-package which allows one to run complete variational Monte Carlo simulations *in
-the symmetrized basis*. Currently, the most popular solution is to run you
-simulations in the *full* basis (i.e. without taking symmetries into account),
-and to symmetrize your variational state afterwards.
+As far as we know, `lattice_symmetries` (in combination with `nqs_playground`)
+is currently the only open-source package which allows one to run complete
+variational Monte Carlo simulations *in the symmetrized basis*. This is
+implemented in [`nqs_playground`](https://github.com/twesterhout/nqs-playground)
+package. Currently, the most popular solution is to run you simulations in the
+*full* basis (i.e. without taking symmetries into account), and to symmetrize
+your variational state afterwards ().
 
 
 #### In the context of Exact Diagonalization
@@ -827,10 +847,11 @@ and to symmetrize your variational state afterwards.
 * [`Pomerol`](https://github.com/aeantipov/pomerol) uses dense matrices and
   as such targets a different set of problems than `lattice_symmetries`.
 * [`HPhi`](https://github.com/issp-center-dev/Hphi) supports a wider range of
-  systems than `lattice_symmetries`, but uses sparse matrices to represent that
-  Hamiltonian which makes it inapplicable for large systems.
-* [`EDLib`](https://github.com/Q-solvers/EDLib) also uses sparse matrices, and
-  does not support user-defined symmetries (which is the focus of
+  systems than `lattice_symmetries`, but uses sparse matrices to represent the
+  Hamiltonian which makes it inapplicable for large systems. Also, the interface
+  of `HPhi` is less user-friendly.
+* [`EDLib`](https://github.com/Q-solvers/EDLib) uses sparse matrices and does
+  not support user-defined symmetries (which is the focus of
   `lattice_symmetries`).
 * [`QuSpin`](https://github.com/weinbe58/QuSpin) supports a wider range of
   systems than `lattice_symmetries`, but is considerably slower (see

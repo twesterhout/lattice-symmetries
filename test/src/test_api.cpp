@@ -148,6 +148,23 @@ TEST_CASE("constructs symmetries", "[api]")
             ls_create_symmetry(&self, std::size(permutation), permutation.data(), 0);
         REQUIRE(status == LS_PERMUTATION_TOO_LONG);
     }
+
+    // Example from README
+    {
+        /* Just as before... */
+        unsigned const permutation[8] = {1, 2, 3, 4, 5, 6, 7, 0};
+        ls_symmetry*   symmetry;
+        ls_error_code  status = ls_create_symmetry(&symmetry, 8, permutation, 1);
+        if (status != LS_SUCCESS) { /* handle error */
+        }
+        /* Applying symmetry to a spin configuration |01001101⟩ = 0b10110010 = 0xB2. We
+           expect the result to be |10011010⟩ = 0b01011001 = 0x59
+         */
+        ls_bits512 spin = {0xB2, 0, 0, 0, 0, 0, 0, 0};
+        ls_apply_symmetry(symmetry, &spin);
+        REQUIRE(spin.words[0] == 0x59);
+        ls_destroy_symmetry(symmetry);
+    }
 }
 
 template <class Deleter = decltype(&ls_destroy_symmetry)>
