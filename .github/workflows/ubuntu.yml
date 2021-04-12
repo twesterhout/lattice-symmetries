@@ -23,6 +23,11 @@ jobs:
       with:
         submodules: true
       
+    - name: install dependencies
+      run: |
+        sudo apt update
+        sudo apt install g++-${{ matrix.gcc-version }} gcc-${{ matrix.gcc-version }}
+
     - name: configure
       run: |
         cmake -Bbuild \
