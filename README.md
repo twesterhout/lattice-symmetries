@@ -65,15 +65,15 @@ to contact me. I would be happy to discuss it further and guide you through it.
 ## :scroll: Citing
 
 If you are using this package in your research, please, consider citing the
-following paper (**WIP**):
+following paper:
 ```
-@unpublished{citekey,
-  author = "",
-  title  = "",
-  note   = "",
-  month  = "",
-  year   = "",
-  annote = "".
+@misc{westerhout2021latticesymmetries,
+  title={lattice-symmetries: A package for working with quantum many-body bases},
+  author={Tom Westerhout},
+  year={2021},
+  eprint={2104.04011},
+  archivePrefix={arXiv},
+  primaryClass={cond-mat.str-el}
 }
 ```
 
