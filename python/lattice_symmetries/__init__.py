@@ -31,7 +31,7 @@ working with quantum many-body bases.
 See <https://github.com/twesterhout/lattice-symmetries> for more info.
 """
 
-__version__ = "0.6.3"
+__version__ = "0.6.4"
 __author__ = "Tom Westerhout <14264576+twesterhout@users.noreply.github.com>"
 
 __all__ = [
@@ -763,6 +763,10 @@ def _create_interaction(matrix, sites) -> c_void_p:
     _check_error(f(byref(interaction), matrix_ptr, number_sites, sites_ptr))
     return interaction
 
+def _list_to_complex(x):
+    if isinstance(x, (list, tuple)) and len(x) == 2:
+        return complex(x[0], x[1])
+    return x
 
 class Interaction:
     """1-, 2-, 3-, or 4-point interaction term (wrapper around `ls_interaction` C type)."""
@@ -779,7 +783,10 @@ class Interaction:
     @staticmethod
     def load_from_yaml(src):
         """Load Interaction from a parsed YAML document."""
-        return Interaction(src["matrix"], src["sites"])
+        matrix = []
+        for row in src["matrix"]:
+            matrix.append([_list_to_complex(element) for element in row])
+        return Interaction(matrix, src["sites"])
 
 
 def _create_operator(basis: SpinBasis, terms: List[Interaction]) -> c_void_p:
