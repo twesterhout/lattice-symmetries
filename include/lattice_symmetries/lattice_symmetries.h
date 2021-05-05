@@ -192,8 +192,10 @@ unsigned      ls_get_sector(ls_symmetry const* symmetry);
 double        ls_get_phase(ls_symmetry const* symmetry);
 void          ls_get_eigenvalue(ls_symmetry const* symmetry, void* out);
 unsigned      ls_get_periodicity(ls_symmetry const* symmetry);
-void          ls_apply_symmetry(ls_symmetry const* symmetry, ls_bits512* bits);
 unsigned      ls_symmetry_get_number_spins(ls_symmetry const* symmetry);
+void          ls_apply_symmetry(ls_symmetry const* symmetry, ls_bits512* bits);
+void ls_batched_apply_symmetry(ls_symmetry const* symmetry, uint64_t count, uint64_t* spins,
+                               uint64_t stride);
 
 typedef struct ls_group ls_group;
 

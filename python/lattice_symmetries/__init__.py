@@ -31,7 +31,7 @@ working with quantum many-body bases.
 See <https://github.com/twesterhout/lattice-symmetries> for more info.
 """
 
-__version__ = "0.6.4"
+__version__ = "0.7.0"
 __author__ = "Tom Westerhout <14264576+twesterhout@users.noreply.github.com>"
 
 __all__ = [
@@ -146,6 +146,7 @@ def __preprocess_library():
         ("ls_get_eigenvalue", [c_void_p, c_double * 2], None),
         ("ls_get_periodicity", [c_void_p], c_uint),
         ("ls_symmetry_get_number_spins", [c_void_p], c_uint),
+        ("ls_batched_apply_symmetry", [c_void_p, c_uint64, POINTER(c_uint64), c_uint64], None),
         # Group
         ("ls_create_group", [POINTER(c_void_p), c_uint, POINTER(c_void_p)], c_int),
         ("ls_destroy_group", [c_void_p], None),
@@ -368,6 +369,25 @@ class Symmetry:
     def load_from_yaml(src):
         """Load Symmetry from a parsed YAML document."""
         return Symmetry(src["permutation"], src["sector"])
+
+    def __call__(self, spins: np.ndarray) -> None:
+        if not isinstance(spins, np.ndarray) or spins.dtype != np.uint64 or spins.ndim != 2:
+            raise TypeError("'spins' must be a 2D NumPy array of uint64")
+        if (self.number_spins + 63) // 64 != spins.shape[1]:
+            raise ValueError(
+                "expected 'spins' to have {} columns, but it has {}"
+                "".format((self.number_spins + 63) // 64, spins.shape[1])
+            )
+        if not spins.flags["C_CONTIGUOUS"]:
+            spins = np.ascontiguousarray(spins)
+
+        batch_size = spins.shape[0]
+        _lib.ls_batched_apply_symmetry(
+            self._payload,
+            spins.shape[0],
+            spins.ctypes.data_as(POINTER(c_uint64)),
+            spins.strides[0] // spins.itemsize,
+        )
 
 
 def _create_group(generators: List[Symmetry]) -> c_void_p:
@@ -759,14 +779,18 @@ def _create_interaction(matrix, sites) -> c_void_p:
     interaction = c_void_p()
     matrix_ptr = matrix.ctypes.data_as(c_void_p)
     number_sites = sites.shape[0]
-    sites_ptr = sites.ctypes.data_as(POINTER(c_uint16 * number_spins) if number_spins > 1 else POINTER(c_uint16))
+    sites_ptr = sites.ctypes.data_as(
+        POINTER(c_uint16 * number_spins) if number_spins > 1 else POINTER(c_uint16)
+    )
     _check_error(f(byref(interaction), matrix_ptr, number_sites, sites_ptr))
     return interaction
+
 
 def _list_to_complex(x):
     if isinstance(x, (list, tuple)) and len(x) == 2:
         return complex(x[0], x[1])
     return x
+
 
 class Interaction:
     """1-, 2-, 3-, or 4-point interaction term (wrapper around `ls_interaction` C type)."""

@@ -1,5 +1,6 @@
 #include <lattice_symmetries/lattice_symmetries.h>
 #include <omp.h>
+#include <string.h>
 
 #define L1_CACHE_SIZE 64
 
@@ -64,5 +65,18 @@ ls_batched_get_state_info(ls_spin_basis const* const basis, uint64_t const count
     for (uint64_t i = 0; i < count; ++i) {
         ls_get_state_info(basis, spins + i * spins_stride, repr + i * repr_stride,
                           eigenvalues + i * eigenvalues_stride, norm + i * norm_stride);
+    }
+}
+
+LATTICE_SYMMETRIES_EXPORT
+void ls_batched_apply_symmetry(ls_symmetry const* symmetry, uint64_t const count,
+                               uint64_t* const spins, uint64_t const stride)
+{
+    int num_threads = omp_get_max_threads();
+    if (num_threads > 2) { num_threads = 2; }
+#pragma omp parallel for default(none) num_threads(num_threads)                                    \
+    firstprivate(count, spins, stride, symmetry)
+    for (uint64_t i = 0; i < count; ++i) {
+        ls_apply_symmetry(symmetry, (ls_bits512*)(spins + i * stride));
     }
 }
