@@ -633,34 +633,34 @@ class SpinBasis:
         return SpinBasis(group, number_spins, hamming_weight, spin_inversion)
 
 
-import numba
-
-_ls_get_state_info = _lib.ls_get_state_info
-
-
-def _int_to_ptr_generator(pointer_type):
-    @numba.extending.intrinsic
-    def _int_to_ptr(typingctx, src):
-        from numba import types
-
-        # Check for accepted types
-        if isinstance(src, types.Integer):
-            # Custom code generation
-            def codegen(context, builder, signature, args):
-                [src] = args
-                llrtype = context.get_value_type(signature.return_type)
-                return builder.inttoptr(src, llrtype)
-
-            # Create expected type signature
-            _signature = pointer_type(types.intp)
-            return _signature, codegen
-
-    return _int_to_ptr
-
-
-_int_to_uint64_ptr = _int_to_ptr_generator(numba.types.CPointer(numba.types.uint64))
-_int_to_void_ptr = _int_to_ptr_generator(numba.types.voidptr)
-_int_to_float64_ptr = _int_to_ptr_generator(numba.types.CPointer(numba.types.float64))
+# import numba
+#
+# _ls_get_state_info = _lib.ls_get_state_info
+#
+#
+# def _int_to_ptr_generator(pointer_type):
+#     @numba.extending.intrinsic
+#     def _int_to_ptr(typingctx, src):
+#         from numba import types
+#
+#         # Check for accepted types
+#         if isinstance(src, types.Integer):
+#             # Custom code generation
+#             def codegen(context, builder, signature, args):
+#                 [src] = args
+#                 llrtype = context.get_value_type(signature.return_type)
+#                 return builder.inttoptr(src, llrtype)
+#
+#             # Create expected type signature
+#             _signature = pointer_type(types.intp)
+#             return _signature, codegen
+#
+#     return _int_to_ptr
+#
+#
+# _int_to_uint64_ptr = _int_to_ptr_generator(numba.types.CPointer(numba.types.uint64))
+# _int_to_void_ptr = _int_to_ptr_generator(numba.types.voidptr)
+# _int_to_float64_ptr = _int_to_ptr_generator(numba.types.CPointer(numba.types.float64))
 
 # @numba.extending.intrinsic
 # def _int_to_uint64_ptr(typingctx, src):
@@ -704,22 +704,22 @@ def batched_index(basis: SpinBasis, spins: np.ndarray) -> np.ndarray:
     return basis.batched_index(spins)
 
 
-@numba.jit(nopython=True, nogil=True, parallel=True)
-def _batched_state_info_helper(basis, spins):
-    basis_ptr = _int_to_void_ptr(basis)
-    batch_size = spins.shape[0]
-    representative = np.zeros((batch_size, 8), dtype=np.uint64)
-    eigenvalue = np.empty((batch_size,), dtype=np.complex128)
-    norm = np.empty((batch_size,), dtype=np.float64)
-    for i in numba.prange(batch_size):
-        _ls_get_state_info(
-            basis_ptr,
-            _int_to_uint64_ptr(spins.ctypes.data + i * spins.strides[0]),
-            _int_to_uint64_ptr(representative.ctypes.data + i * representative.strides[0]),
-            _int_to_void_ptr(eigenvalue.ctypes.data + i * eigenvalue.strides[0]),
-            _int_to_float64_ptr(norm.ctypes.data + i * norm.strides[0]),
-        )
-    return representative, eigenvalue, norm
+# @numba.jit(nopython=True, nogil=True, parallel=True)
+# def _batched_state_info_helper(basis, spins):
+#     basis_ptr = _int_to_void_ptr(basis)
+#     batch_size = spins.shape[0]
+#     representative = np.zeros((batch_size, 8), dtype=np.uint64)
+#     eigenvalue = np.empty((batch_size,), dtype=np.complex128)
+#     norm = np.empty((batch_size,), dtype=np.float64)
+#     for i in numba.prange(batch_size):
+#         _ls_get_state_info(
+#             basis_ptr,
+#             _int_to_uint64_ptr(spins.ctypes.data + i * spins.strides[0]),
+#             _int_to_uint64_ptr(representative.ctypes.data + i * representative.strides[0]),
+#             _int_to_void_ptr(eigenvalue.ctypes.data + i * eigenvalue.strides[0]),
+#             _int_to_float64_ptr(norm.ctypes.data + i * norm.strides[0]),
+#         )
+#     return representative, eigenvalue, norm
 
 
 def batched_state_info(
@@ -732,8 +732,8 @@ def batched_state_info(
     )
     r = basis.batched_state_info(spins)
     # For testing purposes only:
-    old = _batched_state_info_helper(basis._payload.value, spins)
-    assert all(np.all(x == y) for (x, y) in zip(r, old))
+    # old = _batched_state_info_helper(basis._payload.value, spins)
+    # assert all(np.all(x == y) for (x, y) in zip(r, old))
     return r
 
 

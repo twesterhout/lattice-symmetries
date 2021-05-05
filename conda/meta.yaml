@@ -31,4 +31,4 @@ requirements:
     - libgcc-ng
     - numpy
     - scipy
-    - numba
+    # - numba
