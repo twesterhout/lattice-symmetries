@@ -273,6 +273,10 @@ typedef ls_error_code (*ls_callback)(ls_bits512 const* bits, void const* coeff, 
 ls_error_code ls_operator_apply(ls_operator const* op, ls_bits512 const* bits, ls_callback func,
                                 void* cxt);
 
+uint64_t ls_batched_operator_apply(ls_operator const* op, uint64_t count, ls_bits512 const* spins,
+                                   ls_bits512* out_spins, LATTICE_SYMMETRIES_COMPLEX128* out_coeffs,
+                                   uint64_t* out_counts);
+
 ls_error_code ls_operator_matmat(ls_operator const* op, ls_datatype dtype, uint64_t size,
                                  uint64_t block_size, void const* x, uint64_t x_stride, void* y,
                                  uint64_t y_stride);

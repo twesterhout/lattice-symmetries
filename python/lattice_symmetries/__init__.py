@@ -31,7 +31,7 @@ working with quantum many-body bases.
 See <https://github.com/twesterhout/lattice-symmetries> for more info.
 """
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 __author__ = "Tom Westerhout <14264576+twesterhout@users.noreply.github.com>"
 
 __all__ = [
@@ -186,6 +186,8 @@ def __preprocess_library():
         ("ls_destroy_operator", [c_void_p], None),
         ("ls_operator_max_buffer_size", [c_void_p], c_uint64),
         ("ls_operator_apply", [c_void_p, POINTER(ls_bits512), ls_callback, c_void_p], c_int),
+        ("ls_batched_operator_apply", [c_void_p, c_uint64, POINTER(c_uint64),
+                                       POINTER(c_uint64), c_void_p, POINTER(c_uint64)], c_uint64),
         ("ls_operator_matmat", [c_void_p, c_int, c_uint64, c_uint64, c_void_p, c_uint64, c_void_p, c_uint64], c_int),
         ("ls_operator_expectation", [c_void_p, c_int, c_uint64, c_uint64, c_void_p, c_uint64, c_void_p], c_int),
     ]
@@ -943,6 +945,31 @@ class Operator:
         _check_error(status)
         coeffs = coeffs.view(np.complex128).reshape(-1)
         return spins[:i], coeffs[:i]
+
+    def batched_apply(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        x = np.asarray(x, dtype=np.uint64)
+        if x.ndim == 1:
+            x = np.hstack([x.reshape(-1, 1), np.zeros((x.shape[0], 7), dtype=np.uint64)])
+        elif x.ndim == 2:
+            if x.shape[1] != 8:
+                raise ValueError("'x' has wrong shape: {}; expected (?, 8)".format(x.shape))
+            x = np.ascontiguousarray(x)
+        else:
+            raise ValueError("'x' has wrong shape: {}; expected a 2D array".format(x.shape))
+
+        max_size = x.shape[0] * self.max_buffer_size
+        spins = np.empty((max_size, 8), dtype=np.uint64)
+        coeffs = np.empty(max_size, dtype=np.complex128)
+        counts = np.empty(x.shape[0], dtype=np.uint64)
+        written = _lib.ls_batched_operator_apply(
+            self._payload,
+            x.shape[0],
+            x.ctypes.data_as(POINTER(c_uint64)),
+            spins.ctypes.data_as(POINTER(c_uint64)),
+            coeffs.ctypes.data_as(c_void_p),
+            counts.ctypes.data_as(POINTER(c_uint64)),
+        )
+        return spins[:written], coeffs[:written], counts.astype(np.int64)
 
     @staticmethod
     def load_from_yaml(src, basis: SpinBasis):

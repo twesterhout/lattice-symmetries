@@ -1,6 +1,8 @@
 import numpy as np
 import lattice_symmetries as ls
 
+ls.enable_logging()
+
 
 def test_apply():
     basis = ls.SpinBasis(ls.Group([]), number_spins=10, hamming_weight=5)
@@ -21,6 +23,32 @@ def test_apply():
         v = operator(v)
         for (s, c) in zip(spins, coeffs):
             assert v[basis.index(s[0])] == c
+
+
+def test_batched_apply():
+    basis = ls.SpinBasis(ls.Group([]), number_spins=10, hamming_weight=5)
+    basis.build()
+    # fmt: off
+    matrix = np.array([[1,  0,  0, 0],
+                       [0, -1,  2, 0],
+                       [0,  2, -1, 0],
+                       [0,  0,  0, 1]])
+    # fmt: on
+    edges = [(i, (i + 1) % basis.number_spins) for i in range(basis.number_spins)]
+    operator = ls.Operator(basis, [ls.Interaction(matrix, edges)])
+
+    for batch_size in [1, 2, 10, 20, 50]:
+        x = basis.states[11 : 11 + batch_size]  # just a random range
+        spins, coeffs, counts = operator.batched_apply(x)
+        assert len(counts) == x.shape[0]
+        offset = 0
+        for i in range(batch_size):
+            expected_spins, expected_coeffs = operator.apply(x[i])
+            assert np.all(spins[offset : offset + counts[i]] == expected_spins)
+            assert np.all(coeffs[offset : offset + counts[i]] == expected_coeffs)
+            offset += counts[i]
+        assert offset == spins.shape[0]
+        assert offset == coeffs.shape[0]
 
 
 def test_non_hermitian_matvec():
@@ -56,4 +84,6 @@ def test_index():
     print(ls.batched_state_info(basis, bits))
     print(basis.state_info(states[1]))
 
-test_non_hermitian_matvec()
+
+test_batched_apply()
+# test_non_hermitian_matvec()
