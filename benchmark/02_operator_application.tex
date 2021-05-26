@@ -18,7 +18,7 @@
         axis y line=left,
         bar width=0.25cm,
         xmin={[normalized]-0.5},
-        legend entries={\texttt{lattice\_symmetries}, \texttt{QuSpin}},
+        legend entries={\texttt{lattice\_symmetries}, \texttt{QuSpin}, \texttt{SPINPACK}},
         every axis legend/.append style={
             at={(0.5, -0.3)},
             anchor=north,
@@ -58,6 +58,10 @@
             draw=black,
             fill=Pastel2-C
         ] table [col sep=tab, y expr=\thisrow{quspin}/\thisrow{ls}]{cn71/02_operator_application_1.dat};
+        \addplot [
+            draw=black,
+            fill=Pastel2-D
+        ] table [col sep=tab, y expr=\thisrow{spinpack}/\thisrow{ls}]{spinpack/02_operator_application_1.dat};
     \end{axis}
 \end{tikzpicture}
 \end{document}
