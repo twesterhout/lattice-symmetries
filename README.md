@@ -227,7 +227,7 @@ Ground state energy is -18.0617854180
 
 ## :bicyclist: Performance
 
-The only package (that I'm aware of) with similar functionality as
+The only package (that I'm aware of) with similar functionality to
 `lattice_symmetries` is [`QuSpin`](https://github.com/weinbe58/QuSpin). Hence,
 we compare the performance of `lattice_symmetries` to `QuSpin`.
 
@@ -847,9 +847,10 @@ your variational state afterwards ().
 * [`Pomerol`](https://github.com/aeantipov/pomerol) uses dense matrices and
   as such targets a different set of problems than `lattice_symmetries`.
 * [`HPhi`](https://github.com/issp-center-dev/Hphi) supports a wider range of
-  systems than `lattice_symmetries`, but uses sparse matrices to represent the
-  Hamiltonian which makes it inapplicable for large systems. Also, the interface
-  of `HPhi` is less user-friendly.
+  systems than `lattice_symmetries`, but does not support user-defined
+  symmetries. Also, the interface of `HPhi` is less user-friendly.
+* [`SPINPACK`](https://wasd.urz.uni-magdeburg.de/jschulen/spin/index.html) is
+  slower than `lattice_symmetries` and much less user-friendly.
 * [`EDLib`](https://github.com/Q-solvers/EDLib) uses sparse matrices and does
   not support user-defined symmetries (which is the focus of
   `lattice_symmetries`).
