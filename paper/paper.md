@@ -148,7 +148,9 @@ physics. All in all, it makes large-scale ED more approachable for non-experts.
 
 Finally, we would like to note that `lattice-symmetries` and `SpinED` have
 already been used in a number of research projects [@astrakhantsev2021;
-@bagrov2020; @westerhout2020] and we feel that they could benefit many more.
+@bagrov2020; @westerhout2020], and we feel that they could benefit many more.
+For example, `lattice-symmetries` is currently even being used to simulate
+quantum circuits.
 
 # Acknowledgements
 
