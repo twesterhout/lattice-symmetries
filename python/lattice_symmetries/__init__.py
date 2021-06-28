@@ -31,7 +31,7 @@ working with quantum many-body bases.
 See <https://github.com/twesterhout/lattice-symmetries> for more info.
 """
 
-__version__ = "0.8.0"
+__version__ = "0.8.1"
 __author__ = "Tom Westerhout <14264576+twesterhout@users.noreply.github.com>"
 
 __all__ = [
