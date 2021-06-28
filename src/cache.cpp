@@ -93,7 +93,6 @@ namespace {
         LATTICE_SYMMETRIES_CHECK(0 < bits && bits < 64, "invalid bits");
         LATTICE_SYMMETRIES_CHECK(shift < 64, "invalid shift");
         auto const        size             = uint64_t{1} << bits;
-        auto const        mask             = size - 1;
         auto const        extract_relevant = [shift](auto const x) noexcept { return x >> shift; };
         auto const*       first            = states.data();
         auto const* const last             = first + states.size();
@@ -365,7 +364,7 @@ auto basis_cache_t::index_v2(uint64_t const x, uint64_t* out) const noexcept -> 
     if constexpr (false) {
         auto const index = std::lower_bound(first, last, x);
         if (index == last || *index != x) { return LS_NOT_A_REPRESENTATIVE; }
-        *out = index - _states.data();
+        *out = static_cast<uint64_t>(index - _states.data());
         return LS_SUCCESS;
     }
     else {

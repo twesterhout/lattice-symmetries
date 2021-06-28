@@ -171,7 +171,7 @@ namespace {
     {
         std::vector<uint16_t> permutation;
         permutation.reserve(number_spins);
-        for (auto i = 0U; i < number_spins; ++i) {
+        for (auto i = uint16_t{0}; i < static_cast<uint16_t>(number_spins); ++i) {
             permutation.push_back(i);
         }
         return symmetry_spec_t{std::move(permutation), 0, 1};

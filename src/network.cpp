@@ -31,7 +31,7 @@ small_network_t::small_network_t(uint16_t _depth, uint16_t _width) noexcept
     auto i = 0U;
     for (auto d = 1U; d < _width / 2; ++i, d *= 2) {
         LATTICE_SYMMETRIES_ASSERT(i < max_depth, "");
-        deltas[i] = d;
+        deltas[i] = static_cast<uint16_t>(d);
         masks[i]  = 0U;
     }
     for (auto j = i - 1; j-- > 0; ++i) {

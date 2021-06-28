@@ -103,6 +103,7 @@ auto search_sorted(uint64_t const* data, uint64_t size, uint64_t const key) noex
     constexpr auto words_in_cache_line     = bytes_in_cache_line / 8U;
     constexpr auto cache_line_mask         = (~uint64_t{0}) << 6U;
     static_assert(vcl::Vec8uq::size() == words_in_cache_line);
+    static_cast<void>(cache_line_mask);
 
     // _mm_prefetch(static_cast<void const*>(data + size / 2), _MM_HINT_NTA);
     constexpr auto align_to_cache_line = [](uint64_t const* p) {
@@ -135,7 +136,8 @@ auto search_sorted(uint64_t const* data, uint64_t size, uint64_t const key) noex
         }
     }
     data = align_to_cache_line(data);
-    return static_cast<uint64_t>(data - original_data) + linear_search(data, size, key_v);
+    return static_cast<uint64_t>(data - original_data)
+           + linear_search(data, static_cast<unsigned>(size), key_v);
 }
 
 } // namespace lattice_symmetries::ARCH
