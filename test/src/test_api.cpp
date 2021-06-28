@@ -31,7 +31,7 @@ inline auto operator<<(std::ostream& out, ls_bits512 const& x) -> std::ostream&
     for (auto i = 1U; i < 8; ++i) {
         out << ", " << std::bitset<64>(x.words[i]);
     }
-    out << ']';
+    return out << ']';
 }
 
 template <class... Args> auto make_symmetry(Args&&... args)

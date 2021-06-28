@@ -454,7 +454,7 @@ template <class T> struct block_acc_t {
 
         LATTICE_SYMMETRIES_CHECK(p != nullptr, "memory allocation failed");
         data = std::unique_ptr<acc_t, free_fn_t>{static_cast<acc_t*>(p)};
-        std::memset(data.get(), 0, sizeof(acc_t) * num_threads * stride);
+        std::fill_n(data.get(), num_threads * stride, acc_t{0});
     }
 
     constexpr auto operator[](unsigned const thread_num) const noexcept -> tcb::span<acc_t>
@@ -463,10 +463,18 @@ template <class T> struct block_acc_t {
         return {data.get() + stride * thread_num, block_size};
     }
 
+#if LATTICE_SYMMETRIES_GCC()
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wclass-memaccess"
+#endif
     auto set_zero(unsigned const thread_num) const noexcept -> void
     {
+        // memset for std::complex is okay since it's standard layout.
         std::memset(data.get() + stride * thread_num, 0, sizeof(acc_t) * block_size);
     }
+#if LATTICE_SYMMETRIES_GCC()
+#    pragma GCC diagnostic pop
+#endif
 
     auto sum_over_threads(tcb::span<std::complex<double>> out) noexcept -> void
     {

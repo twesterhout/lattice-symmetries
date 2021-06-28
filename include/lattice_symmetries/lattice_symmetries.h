@@ -35,6 +35,24 @@
 #define LATTICE_SYMMETRIES_EXPORT __attribute__((visibility("default")))
 #define LATTICE_SYMMETRIES_NORETURN __attribute__((noreturn))
 
+#if defined(__clang__)
+#    define LATTICE_SYMMETRIES_CLANG() 1
+#    define LATTICE_SYMMETRIES_GCC() 0
+#    define LATTICE_SYMMETRIES_MSVC() 0
+#elif defined(__GNUC__) || defined(__GNUG__)
+#    define LATTICE_SYMMETRIES_CLANG() 0
+#    define LATTICE_SYMMETRIES_GCC() 1
+#    define LATTICE_SYMMETRIES_MSVC() 0
+#elif defined(_MSC_VER)
+#    define LATTICE_SYMMETRIES_CLANG() 0
+#    define LATTICE_SYMMETRIES_GCC() 0
+#    define LATTICE_SYMMETRIES_MSVC() 1
+#else
+#    define LATTICE_SYMMETRIES_CLANG() 0
+#    define LATTICE_SYMMETRIES_GCC() 0
+#    define LATTICE_SYMMETRIES_MSVC() 0
+#endif
+
 #if !defined(LATTICE_SYMMETRIES_FORCEINLINE)
 #    if defined(_MSC_VER)
 #        define LATTICE_SYMMETRIES_FORCEINLINE __forceinline
