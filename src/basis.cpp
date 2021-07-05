@@ -57,6 +57,7 @@ namespace {
         }
 
         std::vector<small_symmetry_t> other;
+        other.reserve(batch_size); // Make sure other is never reallocated
         std::copy(std::next(std::begin(symmetries), static_cast<ptrdiff_t>(offset)),
                   std::end(symmetries), std::back_inserter(other));
         if (other.empty()) { return std::make_tuple(std::move(batched), std::nullopt, 0U); }
