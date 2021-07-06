@@ -193,7 +193,7 @@ auto get_state_info_64(basis_base_t const& basis_header, small_basis_t const& ba
 
     batch_acc_64_t acc{bits};
 
-    vcl::Vec8q i_v{0, 1, 2, 3, 4, 5, 6, 7};
+    vcl::Vec8q i_v{1, 2, 3, 4, 5, 6, 7, 8};
     vcl::Vec8q constant_8{8};
     for (auto const& symmetry : basis_body.batched_symmetries) {
         auto x = acc.original;
@@ -228,8 +228,8 @@ auto get_state_info_64(basis_base_t const& basis_header, small_basis_t const& ba
     if (i == std::numeric_limits<int64_t>::max()) { character = {1.0, 0.0}; }
     else {
         auto const i_abs       = static_cast<uint64_t>(std::abs(i));
-        auto const batch_index = i_abs / 8;
-        auto const rest_index  = i_abs % 8;
+        auto const batch_index = (i_abs - 1) / 8;
+        auto const rest_index  = (i_abs - 1) % 8;
 
         auto const& s = batch_index == basis_body.batched_symmetries.size()
                             ? *basis_body.other_symmetries
