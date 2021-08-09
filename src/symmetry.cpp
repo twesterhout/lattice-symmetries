@@ -168,6 +168,43 @@ LATTICE_SYMMETRIES_EXPORT unsigned ls_symmetry_get_number_spins(ls_symmetry cons
     return std::visit([](auto const& x) noexcept { return x.network.width; }, symmetry->payload);
 }
 
+LATTICE_SYMMETRIES_EXPORT unsigned ls_symmetry_get_network_depth(ls_symmetry const* symmetry)
+{
+    return std::visit([](auto const& x) noexcept { return x.network.depth; }, symmetry->payload);
+}
+
+} // extern "C"
+
+namespace lattice_symmetries {
+struct symmetry_get_network_masks_fn_t {
+    void* const    out;
+    uint64_t const stride;
+
+    auto operator()(small_symmetry_t const& symmetry) const noexcept -> void
+    {
+        auto* const p = static_cast<uint64_t*>(out);
+        for (auto j = 0U; j < symmetry.network.depth; ++j) {
+            p[j * stride] = symmetry.network.masks[j];
+        }
+    }
+
+    auto operator()(big_symmetry_t const& symmetry) const noexcept -> void
+    {
+        auto* const p = static_cast<ls_bits512*>(out);
+        for (auto j = 0U; j < symmetry.network.depth; ++j) {
+            p[j * stride] = symmetry.network.masks[j];
+        }
+    }
+};
+} // namespace lattice_symmetries
+
+extern "C" {
+LATTICE_SYMMETRIES_EXPORT void ls_symmetry_get_network_masks(ls_symmetry const* symmetry, void* out,
+                                                             uint64_t const stride)
+{
+    lattice_symmetries::symmetry_get_network_masks_fn_t f{out, stride};
+    std::visit(f, symmetry->payload);
+}
 } // extern "C"
 
 namespace lattice_symmetries {

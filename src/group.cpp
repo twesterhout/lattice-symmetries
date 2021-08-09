@@ -240,6 +240,41 @@ LATTICE_SYMMETRIES_EXPORT int ls_group_get_number_spins(ls_group const* group)
     return static_cast<int>(ls_symmetry_get_number_spins(&group->payload.front()));
 }
 
+LATTICE_SYMMETRIES_EXPORT int ls_group_get_network_depth(ls_group const* group)
+{
+    if (ls_get_group_size(group) == 0) { return -1; }
+    auto const depth = ls_symmetry_get_network_depth(&group->payload.front());
+    LATTICE_SYMMETRIES_CHECK(
+        std::all_of(std::next(std::begin(group->payload)), std::end(group->payload),
+                    [depth](auto const& s) { return ls_symmetry_get_network_depth(&s) == depth; }),
+        "not all networks have the same depth");
+    return static_cast<int>(depth);
+}
+
+LATTICE_SYMMETRIES_EXPORT int
+ls_group_dump_symmetry_info(ls_group const* group, void* masks,
+                            LATTICE_SYMMETRIES_COMPLEX128* eigenvalues)
+{
+    auto const n     = ls_get_group_size(group);
+    auto const depth = ls_group_get_network_depth(group);
+    if (depth == -1) {
+        LATTICE_SYMMETRIES_LOG_DEBUG(
+            "%s\n", "Group is empty, leaving 'masks' and 'eigenvalues' unchanged...");
+        return LS_SYSTEM_ERROR;
+    }
+    LATTICE_SYMMETRIES_CHECK(depth >= 0, "");
+    for (auto const& symmetry : group->payload) {
+        ls_get_eigenvalue(&symmetry, eigenvalues);
+        ++eigenvalues;
+        ls_symmetry_get_network_masks(&symmetry, masks, /*stride=*/n);
+        // masks are stored in row-major order, so to get to the next column we use stride 1.
+        masks = ls_symmetry_get_number_spins(&symmetry) > 64U
+                    ? static_cast<void*>(static_cast<ls_bits512*>(masks) + 1)
+                    : static_cast<void*>(static_cast<uint64_t*>(masks) + 1);
+    }
+    return LS_SUCCESS;
+}
+
 LATTICE_SYMMETRIES_EXPORT ls_symmetry const* ls_group_get_symmetries(ls_group const* group)
 {
     return group->payload.data();

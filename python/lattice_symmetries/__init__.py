@@ -146,11 +146,16 @@ def __preprocess_library():
         ("ls_get_eigenvalue", [c_void_p, c_double * 2], None),
         ("ls_get_periodicity", [c_void_p], c_uint),
         ("ls_symmetry_get_number_spins", [c_void_p], c_uint),
+        ("ls_symmetry_get_network_depth", [c_void_p], c_uint),
+        ("ls_symmetry_get_network_masks", [c_void_p, c_void_p, c_uint64], c_int),
         ("ls_batched_apply_symmetry", [c_void_p, c_uint64, POINTER(c_uint64), c_uint64], None),
         # Group
         ("ls_create_group", [POINTER(c_void_p), c_uint, POINTER(c_void_p)], c_int),
         ("ls_destroy_group", [c_void_p], None),
         ("ls_get_group_size", [c_void_p], c_uint),
+        ("ls_group_get_number_spins", [c_void_p], c_int),
+        ("ls_group_get_network_depth", [c_void_p], c_int),
+        ("ls_group_dump_symmetry_info", [c_void_p, c_void_p, POINTER(c_double)], c_int),
         # Basis
         ("ls_create_spin_basis", [POINTER(c_void_p), c_void_p, c_uint, c_int, c_int], c_int),
         ("ls_destroy_spin_basis", [c_void_p], None),
@@ -367,6 +372,23 @@ class Symmetry:
         """Number of spins on which the symmetry operator acts."""
         return _lib.ls_symmetry_get_number_spins(self._payload)
 
+    @property
+    def network_depth(self) -> int:
+        """Depth of the underlying Benes network."""
+        return _lib.ls_symmetry_get_network_depth(self._payload)
+
+    @property
+    def network_masks(self) -> np.ndarray:
+        """Masks of the underlying Benes network."""
+        width = 8 if self.number_spins > 64 else 1
+        masks = np.empty((self.network_depth, width), dtype=np.uint64)
+        _lib.ls_symmetry_get_network_masks(
+            self._payload,
+            masks.ctypes.data_as(c_void_p),
+            1,
+        )
+        return masks
+
     @staticmethod
     def load_from_yaml(src):
         """Load Symmetry from a parsed YAML document."""
@@ -424,6 +446,34 @@ class Group:
     def __len__(self):
         return _lib.ls_get_group_size(self._payload)
 
+    @property
+    def network_depth(self):
+        depth = _lib.ls_group_get_network_depth(self._payload)
+        if depth < 0:
+            return None
+        return depth
+
+    @property
+    def number_spins(self):
+        n = _lib.ls_group_get_number_spins(self._payload)
+        if n < 0:
+            return None
+        return n 
+
+    def dump_symmetry_info(self):
+        if len(self) == 0:
+            raise ValueError("expected a non-empty group")
+        depth = self.network_depth
+        number_masks = len(self)
+        mask_size = 8 if self.number_spins > 64 else 1
+        masks = np.empty((depth, number_masks, mask_size), dtype=np.uint64)
+        eigenvalues = np.empty((number_masks,), dtype=np.complex128)
+        _check_error(_lib.ls_group_dump_symmetry_info(
+            self._payload,
+            masks.ctypes.data_as(c_void_p),
+            eigenvalues.ctypes.data_as(POINTER(c_double))
+        ))
+        return masks, eigenvalues
 
 def _create_spin_basis(group, number_spins, hamming_weight, spin_inversion) -> c_void_p:
     if not isinstance(group, Group):
