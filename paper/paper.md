@@ -63,8 +63,8 @@ performance as we will show in the next section.
 All in all, `lattice-symmetries` serves as a foundation for building
 state-of-the-art ED and VMC (Variational Monte Carlo) applications. For example,
 `SpinED` [@SpinED] is an easy-to-use application for exact diagonalization which
-is built on top of `lattice-symmetries` and can handle clusters of up to
-$\mathcal{O}(42)$ spins on a single node.
+is built on top of `lattice-symmetries` and can handle clusters of at least
+42 spins on a single node.
 
 # Statement of need
 
@@ -111,7 +111,12 @@ mostly focuses on ease of use and functionality rather than performance. In
 `lattice-symmetries` we follow UNIX philosophy [@salus1994] and try to "do one thing
 but do it well". Even though `lattice-symmetries` uses essentially the same
 algorithms as `QuSpin`, careful implementation allows us to achieve an order of
-magnitude speedup as shown in \autoref{fig:performance}.
+magnitude speedup as shown in \autoref{fig:performance}. To achieve such
+performance, we make heavy use of Single Instruction Multiple Data (SIMD)
+instructions supported by modern processors. Vector Class Library [@vectorclass]
+is used to write all performance-critical kernels which currently limits the
+portability of `lattice-symmetries` to processors supporting `x86-64` instruction
+set [@amd1999].
 
 `lattice-symmetries` is a library implemented in `C++` and `C`. It provides two
 interfaces:
@@ -141,7 +146,7 @@ configurations to implement Monte Carlo local estimators.
 As an example of what can be done with `lattice-symmetries`, we implemented a
 standalone application for exact diagonalization studies of spin-1/2 systems:
 `SpinED`. By combining `lattice-symmetries` with PRIMME eigensolver
-[@stathopoulos2010], it allows one to treat systems of up to $\mathcal{O}(42)$
+[@stathopoulos2010], it allows one to treat systems of at least 42
 sites on a single node. `SpinED` is distributed as a statically-linked
 executable --- one can download one file and immediately get started with
 physics. All in all, it makes large-scale ED more approachable for non-experts.
