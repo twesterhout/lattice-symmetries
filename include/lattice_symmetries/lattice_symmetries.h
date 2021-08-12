@@ -213,6 +213,7 @@ unsigned      ls_get_periodicity(ls_symmetry const* symmetry);
 unsigned      ls_symmetry_get_number_spins(ls_symmetry const* symmetry);
 unsigned      ls_symmetry_get_network_depth(ls_symmetry const* symmetry);
 void ls_symmetry_get_network_masks(ls_symmetry const* symmetry, void* out, uint64_t stride);
+void ls_symmetry_get_network_shifts(ls_symmetry const* symmetry, unsigned* shifts);
 void ls_apply_symmetry(ls_symmetry const* symmetry, ls_bits512* bits);
 void ls_batched_apply_symmetry(ls_symmetry const* symmetry, uint64_t count, uint64_t* spins,
                                uint64_t stride);
@@ -226,7 +227,7 @@ unsigned           ls_get_group_size(ls_group const* group);
 ls_symmetry const* ls_group_get_symmetries(ls_group const* group);
 int                ls_group_get_number_spins(ls_group const* group);
 int                ls_group_get_network_depth(ls_group const* group);
-int                ls_group_dump_symmetry_info(ls_group const* group, void* masks,
+int                ls_group_dump_symmetry_info(ls_group const* group, void* masks, unsigned* shifts,
                                                LATTICE_SYMMETRIES_COMPLEX128* eigenvalues);
 
 typedef struct ls_spin_basis ls_spin_basis;

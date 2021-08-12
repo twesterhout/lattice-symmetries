@@ -252,17 +252,21 @@ LATTICE_SYMMETRIES_EXPORT int ls_group_get_network_depth(ls_group const* group)
 }
 
 LATTICE_SYMMETRIES_EXPORT int
-ls_group_dump_symmetry_info(ls_group const* group, void* masks,
+ls_group_dump_symmetry_info(ls_group const* group, void* masks, unsigned* shifts,
                             LATTICE_SYMMETRIES_COMPLEX128* eigenvalues)
 {
     auto const n     = ls_get_group_size(group);
     auto const depth = ls_group_get_network_depth(group);
     if (depth == -1) {
         LATTICE_SYMMETRIES_LOG_DEBUG(
-            "%s\n", "Group is empty, leaving 'masks' and 'eigenvalues' unchanged...");
+            "%s\n", "Group is empty, leaving 'masks', 'shifts' and 'eigenvalues' unchanged...");
         return LS_SYSTEM_ERROR;
     }
     LATTICE_SYMMETRIES_CHECK(depth >= 0, "");
+    { // get shifts from the first group element
+        auto const& s = group->payload.front();
+        ls_symmetry_get_network_shifts(&s, shifts);
+    }
     for (auto const& symmetry : group->payload) {
         ls_get_eigenvalue(&symmetry, eigenvalues);
         ++eigenvalues;

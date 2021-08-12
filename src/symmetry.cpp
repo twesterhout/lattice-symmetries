@@ -205,6 +205,18 @@ LATTICE_SYMMETRIES_EXPORT void ls_symmetry_get_network_masks(ls_symmetry const* 
     lattice_symmetries::symmetry_get_network_masks_fn_t f{out, stride};
     std::visit(f, symmetry->payload);
 }
+
+LATTICE_SYMMETRIES_EXPORT void ls_symmetry_get_network_shifts(ls_symmetry const* symmetry,
+                                                              unsigned*          shifts)
+{
+    std::visit(
+        [shifts](auto const& s) {
+            for (auto i = 0U; i < s.network.depth; ++i) {
+                shifts[i] = s.network.deltas[i];
+            }
+        },
+        symmetry->payload);
+}
 } // extern "C"
 
 namespace lattice_symmetries {
