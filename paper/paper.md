@@ -137,11 +137,27 @@ Hilbert space basis (`ls_spin_basis`/`SpinBasis` in `C`/`Python`). For some
 applications functionality provided by `SpinBasis` may be sufficient, but
 typically the user will construct one (or multiple) quantum mechanical operators
 (`ls_operator`/`Operator` in `C`/`Python`) corresponding to the Hamiltonian and
-various observables. `Operator` can be efficiently applied to vectors in the
-Hilbert space (i.e. wavefunctions). Also, in cases when the Hilbert space
-dimension is so big that the wavefunction cannot be written down explicitly (as
-a list of coefficients), `Operator` can be applied to individual spin
-configurations to implement Monte Carlo local estimators.
+various observables. `lattice-symmetries` supports generic 1-, 2-, 3-, and
+4-point operators. Examples of Hamiltonians which can be constructed, include
+
+$$
+\begin{aligned}
+    H &= \sum_{i, j} J_{ij} \boldsymbol\sigma_i \cdot \boldsymbol\sigma_j \,,\;\text{--- Heisenberg interaction,} \\
+    H &= \sum_{i, j} J_{ij} \sigma^z_i \sigma^z_j + \sum_i h_i \sigma^x_i \,,\;\text{--- Ising model in transverse magnetic field,} \\
+    H &= \sum_{i, j} \mathbf{D}_{ij} \left[ \boldsymbol\sigma_i \times \boldsymbol\sigma_j \right] \,,\;\text{--- Dzyaloshinskii-Moriya interaction,} \\
+    &\dots
+\end{aligned}
+$$
+
+Here, $\boldsymbol\sigma$ denotes Pauli matrices, $J$ and $\mathbf{D}$ are
+various coupling constants, and sums over $i$ and $j$ can run over arbitrary
+used-defined geometries.
+
+`Operator` can be efficiently applied to vectors in the Hilbert space (i.e.
+wavefunctions). Also, in cases when the Hilbert space dimension is so big that
+the wavefunction cannot be written down explicitly (as a list of coefficients),
+`Operator` can be applied to individual spin configurations to implement Monte
+Carlo local estimators.
 
 As an example of what can be done with `lattice-symmetries`, we implemented a
 standalone application for exact diagonalization studies of spin-1/2 systems:
