@@ -116,7 +116,7 @@ performance, we make heavy use of Single Instruction Multiple Data (SIMD)
 instructions supported by modern processors. Vector Class Library [@vectorclass]
 is used to write all performance-critical kernels, which currently limits the
 portability of `lattice-symmetries` to processors supporting `x86-64` instruction
-sets [@amd1999].
+sets.
 
 `lattice-symmetries` is a library implemented in `C++` and `C`. It provides two
 interfaces:
