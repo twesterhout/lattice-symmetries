@@ -150,6 +150,12 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_spin_basis(ls_spin_
     if (spin_inversion != -1 && spin_inversion != 0 && spin_inversion != 1) {
         return LS_INVALID_SPIN_INVERSION;
     }
+    // It's not possible to enforce spin inversion if number of spins up is not exactly
+    // number_spins / 2
+    if (spin_inversion != 0 && hamming_weight != -1
+        && 2 * hamming_weight != static_cast<int>(number_spins)) {
+        return LS_INVALID_SPIN_INVERSION;
+    }
 
     auto const using_trivial_group = ls_get_group_size(group) == 0 && spin_inversion != 0;
     ls_group*  trivial_group       = nullptr;

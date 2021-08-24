@@ -1,9 +1,52 @@
 import numpy as np
 import lattice_symmetries as ls
+import pytest
+import math
 
 ls.enable_logging()
 
 import systems
+
+
+def test_empty():
+    with pytest.raises(ls.LatticeSymmetriesException):
+        ls.SpinBasis(ls.Group([]), number_spins=0)
+
+def test_huge():
+    with pytest.raises(ls.LatticeSymmetriesException):
+        ls.SpinBasis(ls.Group([]), number_spins=1000)
+
+def test_1_spin():
+    basis = ls.SpinBasis(ls.Group([]), number_spins=1)
+    basis.build()
+    assert basis.states.tolist() == [0, 1]
+    assert basis.state_info(0) == (0, 1.0, 1.0)
+    assert basis.state_info(1) == (1, 1.0, 1.0)
+    basis = ls.SpinBasis(ls.Group([]), number_spins=1, hamming_weight=0)
+    basis.build()
+    assert basis.states.tolist() == [0]
+    assert basis.state_info(0) == (0, 1.0, 1.0)
+    basis = ls.SpinBasis(ls.Group([]), number_spins=1, spin_inversion=-1)
+    basis.build()
+    assert basis.states.tolist() == [0]
+    assert basis.state_info(0) == (0, 1.0, pytest.approx(1 / math.sqrt(2)))
+    assert basis.state_info(1) == (0, -1.0, pytest.approx(1 / math.sqrt(2)))
+
+def test_2_spins():
+    basis = ls.SpinBasis(ls.Group([]), number_spins=2)
+    basis.build()
+    assert basis.states.tolist() == [0, 1, 2, 3]
+    with pytest.raises(ls.LatticeSymmetriesException):
+        ls.SpinBasis(ls.Group([]), number_spins=2, hamming_weight=2, spin_inversion=1)
+    with pytest.raises(ls.LatticeSymmetriesException):
+        ls.SpinBasis(ls.Group([]), number_spins=2, hamming_weight=2, spin_inversion=-1)
+    basis = ls.SpinBasis(ls.Group([ls.Symmetry([1, 0], sector=1)]), number_spins=2)
+    basis.build()
+    assert basis.states.tolist() == [1]
+    assert basis.state_info(0) == (0, 1.0, 0.0)
+    assert basis.state_info(1) == (1, 1.0, pytest.approx(1 / math.sqrt(2)))
+    assert basis.state_info(2) == (1, -1.0, pytest.approx(1 / math.sqrt(2)))
+    assert basis.state_info(3) == (3, 1.0, 0.0)
 
 
 def test_4_spins():
@@ -65,7 +108,7 @@ def test_index():
     # evals, evecs = ls.diagonalize(hamiltonian)
     # print(evals)
 
-def test_construction():
+def notest_construction():
     symmetries = [
         # ls.Symmetry([18, 19,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17], sector=5),
         # ls.Symmetry([19, 18, 17, 16, 15, 14, 13, 12, 11, 10,  9,  8,  7,  6,  5,  4,  3,  2,  1, 0], sector=0)
@@ -150,4 +193,4 @@ def test_construction():
 
 # test_index()
 # test_4_spins()
-test_construction()
+# test_construction()
