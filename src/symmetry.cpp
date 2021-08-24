@@ -173,6 +173,19 @@ LATTICE_SYMMETRIES_EXPORT unsigned ls_symmetry_get_network_depth(ls_symmetry con
     return std::visit([](auto const& x) noexcept { return x.network.depth; }, symmetry->payload);
 }
 
+LATTICE_SYMMETRIES_EXPORT void ls_symmetry_get_permutation(ls_symmetry const* symmetry,
+                                                           unsigned           out[])
+{
+    auto const n = ls_symmetry_get_number_spins(symmetry);
+    std::iota(out, out + n, 0U);
+    std::visit(
+        [out, n](auto const& x) {
+            using namespace lattice_symmetries;
+            return static_cast<fat_benes_network_t>(x.network)(tcb::span{out, out + n});
+        },
+        symmetry->payload);
+}
+
 } // extern "C"
 
 namespace lattice_symmetries {
@@ -210,7 +223,7 @@ LATTICE_SYMMETRIES_EXPORT void ls_symmetry_get_network_shifts(ls_symmetry const*
                                                               unsigned*          shifts)
 {
     std::visit(
-        [shifts](auto const& s) {
+        [shifts](auto const& s) noexcept {
             for (auto i = 0U; i < s.network.depth; ++i) {
                 shifts[i] = s.network.deltas[i];
             }
@@ -242,5 +255,7 @@ LATTICE_SYMMETRIES_EXPORT void ls_apply_symmetry(ls_symmetry const* symmetry, ls
 {
     return std::visit(lattice_symmetries::symmetry_apply_fn_t{bits}, symmetry->payload);
 }
+
+LATTICE_SYMMETRIES_EXPORT uint64_t ls_symmetry_sizeof() { return sizeof(ls_symmetry); }
 
 } // extern "C"

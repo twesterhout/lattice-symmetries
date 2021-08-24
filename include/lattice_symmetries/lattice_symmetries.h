@@ -212,11 +212,13 @@ void          ls_get_eigenvalue(ls_symmetry const* symmetry, void* out);
 unsigned      ls_get_periodicity(ls_symmetry const* symmetry);
 unsigned      ls_symmetry_get_number_spins(ls_symmetry const* symmetry);
 unsigned      ls_symmetry_get_network_depth(ls_symmetry const* symmetry);
-void ls_symmetry_get_network_masks(ls_symmetry const* symmetry, void* out, uint64_t stride);
-void ls_symmetry_get_network_shifts(ls_symmetry const* symmetry, unsigned* shifts);
-void ls_apply_symmetry(ls_symmetry const* symmetry, ls_bits512* bits);
-void ls_batched_apply_symmetry(ls_symmetry const* symmetry, uint64_t count, uint64_t* spins,
-                               uint64_t stride);
+void     ls_symmetry_get_network_masks(ls_symmetry const* symmetry, void* out, uint64_t stride);
+void     ls_symmetry_get_network_shifts(ls_symmetry const* symmetry, unsigned* shifts);
+void     ls_apply_symmetry(ls_symmetry const* symmetry, ls_bits512* bits);
+void     ls_batched_apply_symmetry(ls_symmetry const* symmetry, uint64_t count, uint64_t* spins,
+                                   uint64_t stride);
+void     ls_symmetry_get_permutation(ls_symmetry const* symmetry, unsigned out[]);
+uint64_t ls_symmetry_sizeof();
 
 typedef struct ls_group ls_group;
 

@@ -59,6 +59,7 @@ from ctypes import (
     c_int,
     c_uint,
     c_uint16,
+    c_uint32,
     c_uint64,
     c_double,
 )
@@ -148,7 +149,9 @@ def __preprocess_library():
         ("ls_symmetry_get_number_spins", [c_void_p], c_uint),
         ("ls_symmetry_get_network_depth", [c_void_p], c_uint),
         ("ls_symmetry_get_network_masks", [c_void_p, c_void_p, c_uint64], c_int),
+        ("ls_symmetry_get_permutation", [c_void_p, POINTER(c_uint32)], None),
         ("ls_batched_apply_symmetry", [c_void_p, c_uint64, POINTER(c_uint64), c_uint64], None),
+        ("ls_symmetry_sizeof", [], c_uint64),
         # Group
         ("ls_create_group", [POINTER(c_void_p), c_uint, POINTER(c_void_p)], c_int),
         ("ls_destroy_group", [c_void_p], None),
@@ -156,6 +159,7 @@ def __preprocess_library():
         ("ls_group_get_number_spins", [c_void_p], c_int),
         ("ls_group_get_network_depth", [c_void_p], c_int),
         ("ls_group_dump_symmetry_info", [c_void_p, c_void_p, POINTER(c_double)], c_int),
+        ("ls_group_get_symmetries", [c_void_p], c_void_p),
         # Basis
         ("ls_create_spin_basis", [POINTER(c_void_p), c_void_p, c_uint, c_int, c_int], c_int),
         ("ls_destroy_spin_basis", [c_void_p], None),
@@ -345,6 +349,13 @@ class Symmetry:
         self._payload = _create_symmetry(permutation, sector)
         self._finalizer = weakref.finalize(self, _destroy(_lib.ls_destroy_symmetry), self._payload)
 
+    @staticmethod
+    def _view_pointer(p: c_void_p, parent = None):
+        s = Symmetry([], 0)
+        s._payload = p
+        s._finalizer = None
+        return s
+
     @property
     def sector(self) -> int:
         """Symmetry sector."""
@@ -388,6 +399,16 @@ class Symmetry:
             1,
         )
         return masks
+
+    @property
+    def permutation(self) -> np.ndarray:
+        """Underlying permutation."""
+        out = np.empty((self.number_spins,), dtype=np.uint32)
+        _lib.ls_symmetry_get_permutation(
+            self._payload,
+            out.ctypes.data_as(POINTER(c_uint32)),
+        )
+        return out
 
     @staticmethod
     def load_from_yaml(src):
@@ -474,6 +495,17 @@ class Group:
             eigenvalues.ctypes.data_as(POINTER(c_double))
         ))
         return masks, eigenvalues
+
+    @property
+    def symmetries(self):
+        """Symmetries of this group."""
+        symmetries = []
+        n = len(self)
+        p = _lib.ls_group_get_symmetries(self._payload)
+        for i in range(n):
+            s = Symmetry._view_pointer(p + i * _lib.ls_symmetry_sizeof())
+            symmetries.append(Symmetry(s.permutation, s.sector))
+        return symmetries
 
 def _create_spin_basis(group, number_spins, hamming_weight, spin_inversion) -> c_void_p:
     if not isinstance(group, Group):

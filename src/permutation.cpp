@@ -367,6 +367,8 @@ template <class Int> auto fat_benes_network_t::operator()(tcb::span<Int> bits) c
               std::begin(bits));
 }
 
+template auto fat_benes_network_t::operator()(tcb::span<unsigned> bits) const -> void;
+
 template <class Int> auto fat_benes_network_t::permutation() const -> std::vector<Int>
 {
     std::vector<Int> r(size);
