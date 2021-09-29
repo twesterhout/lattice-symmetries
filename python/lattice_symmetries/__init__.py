@@ -350,7 +350,7 @@ class Symmetry:
         self._finalizer = weakref.finalize(self, _destroy(_lib.ls_destroy_symmetry), self._payload)
 
     @staticmethod
-    def _view_pointer(p: c_void_p, parent = None):
+    def _view_pointer(p: c_void_p, parent=None):
         s = Symmetry([], 0)
         s._payload = p
         s._finalizer = None
@@ -479,7 +479,7 @@ class Group:
         n = _lib.ls_group_get_number_spins(self._payload)
         if n < 0:
             return None
-        return n 
+        return n
 
     def dump_symmetry_info(self):
         if len(self) == 0:
@@ -489,11 +489,13 @@ class Group:
         mask_size = 8 if self.number_spins > 64 else 1
         masks = np.empty((depth, number_masks, mask_size), dtype=np.uint64)
         eigenvalues = np.empty((number_masks,), dtype=np.complex128)
-        _check_error(_lib.ls_group_dump_symmetry_info(
-            self._payload,
-            masks.ctypes.data_as(c_void_p),
-            eigenvalues.ctypes.data_as(POINTER(c_double))
-        ))
+        _check_error(
+            _lib.ls_group_dump_symmetry_info(
+                self._payload,
+                masks.ctypes.data_as(c_void_p),
+                eigenvalues.ctypes.data_as(POINTER(c_double)),
+            )
+        )
         return masks, eigenvalues
 
     @property
@@ -506,6 +508,7 @@ class Group:
             s = Symmetry._view_pointer(p + i * _lib.ls_symmetry_sizeof())
             symmetries.append(Symmetry(s.permutation, s.sector))
         return symmetries
+
 
 def _create_spin_basis(group, number_spins, hamming_weight, spin_inversion) -> c_void_p:
     if not isinstance(group, Group):
@@ -1052,6 +1055,23 @@ class Operator:
             counts.ctypes.data_as(POINTER(c_uint64)),
         )
         return spins[:written], coeffs[:written], counts.astype(np.int64)
+
+    def to_csr(self):
+        import scipy.sparse
+
+        self.basis.build()
+        spins, coeffs, counts = self.batched_apply(self.basis.states)
+        indices = self.basis.batched_index(spins[:, 0])
+        row_indices = np.empty((self.basis.number_states + 1,), dtype=np.int64)
+        row_indices[0] = 0
+        row_indices[1:] = np.cumsum(counts)
+        col_indices = indices.astype(np.int64)
+        if np.all(coeffs.imag == 0):
+            coeffs = np.ascontiguousarray(coeffs.real)
+        return scipy.sparse.csr_matrix(
+            (coeffs, col_indices, row_indices),
+            shape=(self.basis.number_states, self.basis.number_states),
+        )
 
     @staticmethod
     def load_from_yaml(src, basis: SpinBasis):
