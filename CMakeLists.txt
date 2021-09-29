@@ -62,6 +62,7 @@ set(LatticeSymmetries_sources
     src/operator.cpp
     src/permutation.cpp
     src/symmetry.cpp
+    src/cpu/binary_search.cpp
 )
 set(LatticeSymmetries_portable_sources
     src/error_handling.cpp

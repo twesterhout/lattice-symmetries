@@ -256,6 +256,8 @@ void ls_batched_get_state_info(ls_spin_basis const* basis, uint64_t count, ls_bi
                                uint64_t spins_stride, ls_bits512* repr, uint64_t repr_stride,
                                LATTICE_SYMMETRIES_COMPLEX128* eigenvalues,
                                uint64_t eigenvalues_stride, double* norm, uint64_t norm_stride);
+ls_error_code ls_is_representative(ls_spin_basis const* basis, uint64_t count,
+                                   uint64_t const bits[], uint8_t out[]);
 ls_error_code ls_get_index(ls_spin_basis const* basis, uint64_t bits, uint64_t* index);
 ls_error_code ls_batched_get_index(ls_spin_basis const* basis, uint64_t count,
                                    ls_bits64 const* spins, uint64_t spins_stride, uint64_t* out,
@@ -265,6 +267,8 @@ ls_error_code   ls_get_states(ls_states** ptr, ls_spin_basis const* basis);
 void            ls_destroy_states(ls_states* states);
 uint64_t const* ls_states_get_data(ls_states const* states);
 uint64_t        ls_states_get_size(ls_states const* states);
+
+uint64_t ls_binary_search(uint64_t const* data, uint64_t size, uint64_t key);
 
 ls_error_code ls_save_cache(ls_spin_basis const* basis, char const* filename);
 ls_error_code ls_load_cache(ls_spin_basis* basis, char const* filename);

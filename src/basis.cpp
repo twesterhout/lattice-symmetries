@@ -130,6 +130,217 @@ struct ls_states {
     ~ls_states() { ls_destroy_spin_basis(parent); }
 };
 
+struct ls_flat_group {
+    unsigned  shape[3];
+    uint64_t* masks;
+    uint64_t* shifts;
+    double*   eigenvalues_real;
+    double*   eigenvalues_imag;
+    unsigned* sectors;
+    unsigned* periodicities;
+};
+
+struct ls_flat_spin_basis {
+    mutable atomic_count_t refcount;
+    unsigned               number_spins;
+    int                    hamming_weight;
+    int                    spin_inversion;
+    ls_flat_group          group;
+};
+
+namespace lattice_symmetries {
+
+namespace {
+    auto masks_shape(ls_spin_basis const& basis) noexcept -> std::array<unsigned, 3>
+    {
+        struct get_shape_fn_t {
+            auto operator()(small_basis_t const& b) const noexcept
+            {
+                auto network_depth = 0U;
+                if (!b.batched_symmetries.empty()) {
+                    network_depth = b.batched_symmetries.front().network.depth;
+                }
+                else if (b.other_symmetries.has_value()) {
+                    network_depth = b.other_symmetries->network.depth;
+                }
+                auto number_permutations = static_cast<unsigned>(
+                    b.batched_symmetries.size() * batched_small_symmetry_t::batch_size
+                    + b.number_other_symmetries);
+                auto mask_width = 1U;
+                return std::array<unsigned, 3>{{network_depth, number_permutations, mask_width}};
+            }
+
+            auto operator()(big_basis_t const& b) const noexcept
+            {
+                auto network_depth = 0U;
+                if (!b.symmetries.empty()) { network_depth = b.symmetries.front().network.depth; }
+                auto number_permutations = static_cast<unsigned>(b.symmetries.size());
+                auto mask_width          = 8U;
+                return std::array<unsigned, 3>{{network_depth, number_permutations, mask_width}};
+            }
+        };
+        return std::visit(get_shape_fn_t{}, basis.payload);
+    }
+} // namespace
+
+struct init_flat_group_contents_fn_t {
+    ls_flat_group* g;
+
+    auto operator()(small_basis_t const& b) const noexcept -> void
+    {
+        // Initializing masks
+        auto offset = ptrdiff_t{0};
+        for (auto depth = 0U; depth < g->shape[0]; ++depth) {
+            for (auto const& s : b.batched_symmetries) {
+                for (auto i = 0U; i < batched_small_symmetry_t::batch_size; ++i) {
+                    g->masks[offset] = s.network.masks[depth][i];
+                    ++offset;
+                }
+            }
+            for (auto i = 0U; i < b.number_other_symmetries; ++i) {
+                g->masks[offset] = b.other_symmetries->network.masks[depth][i];
+                ++offset;
+            }
+        }
+
+        // Initializing shifts
+        if (g->shifts != nullptr) {
+            auto const& s =
+                !b.batched_symmetries.empty() ? b.batched_symmetries.front() : *b.other_symmetries;
+            for (auto depth = 0U; depth < g->shape[0]; ++depth) {
+                g->shifts[depth] = s.network.deltas[depth];
+            }
+        }
+
+        // Initializing eigenvalues, sectors, and periodicities
+        offset = ptrdiff_t{0};
+        for (auto const& s : b.batched_symmetries) {
+            for (auto i = 0U; i < batched_small_symmetry_t::batch_size; ++i) {
+                g->eigenvalues_real[offset] = s.eigenvalues_real[i];
+                g->eigenvalues_imag[offset] = s.eigenvalues_imag[i];
+                g->sectors[offset]          = s.sectors[i];
+                g->periodicities[offset]    = s.periodicities[i];
+                ++offset;
+            }
+        }
+        for (auto i = 0U; i < b.number_other_symmetries; ++i) {
+            auto const& s               = *b.other_symmetries;
+            g->eigenvalues_real[offset] = s.eigenvalues_real[i];
+            g->eigenvalues_imag[offset] = s.eigenvalues_imag[i];
+            g->sectors[offset]          = s.sectors[i];
+            g->periodicities[offset]    = s.periodicities[i];
+            ++offset;
+        }
+    }
+
+    auto operator()(big_basis_t const& b) const noexcept -> void
+    {
+        // Initializing masks
+        auto offset = ptrdiff_t{0};
+        for (auto depth = 0U; depth < g->shape[0]; ++depth) {
+            for (auto const& s : b.symmetries) {
+                for (auto i = 0; i < 8; ++i) {
+                    g->masks[offset] = s.network.masks[depth].words[i];
+                    ++offset;
+                }
+            }
+        }
+
+        // Initializing shifts
+        if (g->shifts != nullptr) {
+            auto const& s = b.symmetries.front();
+            for (auto depth = 0U; depth < g->shape[0]; ++depth) {
+                g->shifts[depth] = s.network.deltas[depth];
+            }
+        }
+
+        // Initializing eigenvalues, sectors, and periodicities
+        offset = ptrdiff_t{0};
+        for (auto const& s : b.symmetries) {
+            for (auto i = 0U; i < batched_small_symmetry_t::batch_size; ++i) {
+                g->eigenvalues_real[offset] = s.eigenvalue.real();
+                g->eigenvalues_imag[offset] = s.eigenvalue.imag();
+                g->sectors[offset]          = s.sector;
+                g->periodicities[offset]    = s.periodicity;
+                ++offset;
+            }
+        }
+    }
+};
+
+namespace {
+    auto init_flat_group_contents(ls_flat_group* group, ls_spin_basis const& basis) noexcept -> void
+    {
+        std::visit(init_flat_group_contents_fn_t{group}, basis.payload);
+    }
+} // namespace
+
+struct free_deleter_fn_t {
+    template <class T> auto operator()(T* ptr) const noexcept -> void
+    {
+        if (ptr != nullptr) { std::free(ptr); }
+    }
+};
+
+template <class T>
+auto alloc_aligned_unitialized(size_t alignment, size_t count) noexcept
+    -> std::unique_ptr<T, free_deleter_fn_t>
+{
+    auto* ptr = count > 0 ? std::aligned_alloc(alignment, count * sizeof(T)) : nullptr;
+    return std::unique_ptr<T, free_deleter_fn_t>{static_cast<T*>(ptr)};
+}
+
+template <class T>
+auto alloc_aligned_unitialized(size_t count = 1) noexcept -> std::unique_ptr<T, free_deleter_fn_t>
+{
+    return alloc_aligned_unitialized<T>(alignof(std::max_align_t), count);
+}
+} // namespace lattice_symmetries
+
+extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code
+ls_convert_to_flat_spin_basis(ls_flat_spin_basis** ptr, ls_spin_basis const* basis)
+{
+    using namespace lattice_symmetries;
+    constexpr auto alignment  = 64U;
+    auto           status     = LS_SUCCESS;
+    auto const     shape      = masks_shape(*basis);
+    auto           flat_basis = alloc_aligned_unitialized<ls_flat_spin_basis>();
+    if (flat_basis == nullptr) { return LS_OUT_OF_MEMORY; }
+    auto masks  = alloc_aligned_unitialized<uint64_t>(alignment, shape[0] * shape[1] * shape[2]);
+    auto shifts = alloc_aligned_unitialized<uint64_t>(alignment, shape[0]);
+    auto eigenvalues_real = alloc_aligned_unitialized<double>(alignment, shape[1]);
+    auto eigenvalues_imag = alloc_aligned_unitialized<double>(alignment, shape[1]);
+    auto sectors          = alloc_aligned_unitialized<unsigned>(alignment, shape[1]);
+    auto periodicities    = alloc_aligned_unitialized<unsigned>(alignment, shape[1]);
+    if (shape[1] != 0
+        && (masks == nullptr || shifts == nullptr || eigenvalues_real == nullptr
+            || eigenvalues_imag == nullptr || sectors == nullptr || periodicities == nullptr)) {
+        return LS_OUT_OF_MEMORY;
+    }
+    new (flat_basis.get()) ls_flat_spin_basis{{},
+                                              ls_get_number_spins(basis),
+                                              ls_get_hamming_weight(basis),
+                                              ls_get_spin_inversion(basis),
+                                              ls_flat_group{
+                                                  {shape[0], shape[1], shape[2]},
+                                                  masks.get(),
+                                                  shifts.get(),
+                                                  eigenvalues_real.get(),
+                                                  eigenvalues_imag.get(),
+                                                  sectors.get(),
+                                                  periodicities.get(),
+                                              }};
+    init_flat_group_contents(&flat_basis->group, *basis);
+    *ptr = flat_basis.release();
+    masks.release();
+    shifts.release();
+    eigenvalues_real.release();
+    eigenvalues_imag.release();
+    sectors.release();
+    periodicities.release();
+    return LS_SUCCESS;
+}
+
 // cppcheck-suppress unusedFunction
 extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_create_spin_basis(ls_spin_basis** ptr,
                                                                         ls_group const* group,
@@ -308,6 +519,19 @@ extern "C" LATTICE_SYMMETRIES_EXPORT void ls_get_state_info(ls_spin_basis const*
     auto& ch = *reinterpret_cast<std::complex<double>*>(character); // NOLINT
     std::visit(get_state_info_visitor_t{basis->header, bits, representative, ch, *norm},
                basis->payload);
+}
+
+extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code ls_is_representative(ls_spin_basis const* basis,
+                                                                        uint64_t const       count,
+                                                                        uint64_t const       bits[],
+                                                                        uint8_t              out[])
+{
+    auto const* payload = std::get_if<small_basis_t>(&basis->payload);
+    if (LATTICE_SYMMETRIES_UNLIKELY(payload == nullptr)) { return LS_WRONG_BASIS_TYPE; }
+    for (auto i = uint64_t{0}; i < count; ++i) {
+        out[i] = static_cast<uint8_t>(is_representative_64(basis->header, *payload, bits[i]));
+    }
+    return LS_SUCCESS;
 }
 
 // cppcheck-suppress unusedFunction
