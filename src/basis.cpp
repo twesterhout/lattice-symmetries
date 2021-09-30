@@ -30,6 +30,7 @@
 #include "cache.hpp"
 #include "cpu/state_info.hpp"
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <functional>
 
