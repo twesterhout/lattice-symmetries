@@ -31,7 +31,7 @@ working with quantum many-body bases.
 See <https://github.com/twesterhout/lattice-symmetries> for more info.
 """
 
-__version__ = "0.8.2"
+__version__ = "1.0.1"
 __author__ = "Tom Westerhout <14264576+twesterhout@users.noreply.github.com>"
 
 __all__ = [
@@ -184,6 +184,15 @@ def __preprocess_library():
         ("ls_states_get_size", [c_void_p], c_uint64),
         ("ls_save_cache", [c_void_p, c_char_p], c_int),
         ("ls_load_cache", [c_void_p, c_char_p], c_int),
+        # Flat basis
+        ("ls_convert_to_flat_spin_basis", [POINTER(c_void_p), c_void_p], c_int),
+        ("ls_destroy_flat_spin_basis", [c_void_p], None),
+        ("ls_get_buffer_size_for_flat_spin_basis", [c_void_p], c_uint64),
+        ("ls_serialize_flat_spin_basis", [c_void_p, POINTER(c_char), c_uint64], c_int),
+        ("ls_deserialize_flat_spin_basis", [POINTER(c_void_p), POINTER(c_char), c_uint64], c_int),
+        ("ls_flat_spin_basis_number_spins", [c_void_p], c_uint),
+        ("ls_flat_spin_basis_hamming_weight", [c_void_p], c_int),
+        ("ls_flat_spin_basis_spin_inversion", [c_void_p], c_int),
         # Interaction
         ("ls_create_interaction1", [POINTER(c_void_p), c_void_p, c_uint, POINTER(c_uint16)], c_int),
         ("ls_create_interaction2", [POINTER(c_void_p), c_void_p, c_uint, POINTER(c_uint16 * 2)], c_int),
@@ -311,6 +320,7 @@ def _destroy(fn):
         (_lib.ls_destroy_symmetry, "Symmetry"),
         (_lib.ls_destroy_group, "Group"),
         (_lib.ls_destroy_spin_basis, "SpinBasis"),
+        (_lib.ls_destroy_flat_spin_basis, "FlatSpinBasis"),
         (_lib.ls_destroy_states, "states array"),
         (_lib.ls_destroy_interaction, "Interaction"),
         (_lib.ls_destroy_operator, "Operator"),
@@ -718,6 +728,67 @@ class SpinBasis:
         spin_inversion = src.get("spin_inversion")
         group = Group(list(map(Symmetry.load_from_yaml, src["symmetries"])))
         return SpinBasis(group, number_spins, hamming_weight, spin_inversion)
+
+
+def _create_flat_spin_basis(basis: SpinBasis) -> c_void_p:
+    if not isinstance(basis, SpinBasis):
+        raise TypeError("expected SpinBasis, but got {}".format(type(group)))
+    flat_basis = c_void_p()
+    _check_error(_lib.ls_convert_to_flat_spin_basis(byref(flat_basis), basis._payload))
+    return flat_basis
+
+
+class FlatSpinBasis:
+    def __init__(
+        self,
+        basis: SpinBasis,
+    ):
+        self._payload = _create_flat_spin_basis(basis)
+        self._finalizer = weakref.finalize(
+            self, _destroy(_lib.ls_destroy_flat_spin_basis), self._payload
+        )
+
+    @property
+    def number_spins(self) -> int:
+        return _lib.ls_flat_spin_basis_number_spins(self._payload)
+
+    @property
+    def hamming_weight(self) -> Optional[int]:
+        r = _lib.ls_flat_spin_basis_hamming_weight(self._payload)
+        return None if r == -1 else r
+
+    @property
+    def spin_inversion(self) -> Optional[int]:
+        r = _lib.ls_flat_spin_basis_spin_inversion(self._payload)
+        return None if r == 0 else r
+
+    def serialize(self) -> np.ndarray:
+        n = _lib.ls_get_buffer_size_for_flat_spin_basis(self._payload)
+        buf = np.zeros((n,), dtype=np.uint8)
+        ("ls_serialize_flat_spin_basis", [c_void_p, POINTER(c_char), c_uint64], c_int),
+        ("ls_deserialize_flat_spin_basis", [POINTER(c_void_p), POINTER(c_char), c_uint64], c_int),
+        _check_error(
+            _lib.ls_serialize_flat_spin_basis(self._payload, buf.ctypes.data_as(POINTER(c_char)), n)
+        )
+        return buf
+
+    @staticmethod
+    def deserialize(buf: np.ndarray):
+        if buf.dtype != np.uint8:
+            raise TypeError("'buf' has wrong dtype: {}; expected uint8".format(buf.dtype))
+        buf = np.ascontiguousarray(buf)
+        payload = c_void_p()
+        _check_error(
+            _lib.ls_deserialize_flat_spin_basis(
+                byref(payload), buf.ctypes.data_as(POINTER(c_char)), buf.size
+            )
+        )
+        basis = FlatSpinBasis.__new__(FlatSpinBasis)
+        basis._payload = payload
+        basis._finalizer = weakref.finalize(
+            basis, _destroy(_lib.ls_destroy_flat_spin_basis), basis._payload
+        )
+        return basis
 
 
 # import numba

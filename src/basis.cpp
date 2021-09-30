@@ -153,14 +153,88 @@ struct ls_states {
     ~ls_states() { ls_destroy_spin_basis(parent); }
 };
 
+namespace lattice_symmetries {
+
+template <bool CallDestructor = true> struct free_deleter_fn_t {
+    template <class T> auto operator()(T* ptr) const noexcept -> void
+    {
+        if (ptr != nullptr) {
+            ptr->~T();
+            std::free(ptr);
+        }
+    }
+};
+
+template <class T>
+auto alloc_aligned_array(size_t alignment, size_t count) noexcept
+    -> std::unique_ptr<T, free_deleter_fn_t<false>>
+{
+    auto* ptr = count > 0 ? std::aligned_alloc(alignment, count * sizeof(T)) : nullptr;
+    return std::unique_ptr<T, free_deleter_fn_t<false>>{static_cast<T*>(ptr)};
+}
+
+template <class T, class... Args>
+auto alloc_aligned(Args&&... args) noexcept -> std::unique_ptr<T, free_deleter_fn_t<true>>
+{
+    static_assert(std::is_nothrow_constructible_v<T, Args&&...>);
+    constexpr auto alignment = 64U;
+    auto*          ptr       = std::aligned_alloc(alignment, sizeof(T));
+    new (ptr) T{std::forward<Args>(args)...};
+    return std::unique_ptr<T, free_deleter_fn_t<true>>{static_cast<T*>(ptr)};
+}
+} // namespace lattice_symmetries
+
+struct ls_flat_spin_basis;
+
 struct ls_flat_group {
-    unsigned  shape[3];
-    uint64_t* masks;
-    uint64_t* shifts;
-    double*   eigenvalues_real;
-    double*   eigenvalues_imag;
-    unsigned* sectors;
-    unsigned* periodicities;
+    template <class T>
+    using buffer_t = std::unique_ptr<T, lattice_symmetries::free_deleter_fn_t<false>>;
+    static constexpr uint64_t alignment = 64U;
+    friend struct ls_flat_spin_basis;
+
+    std::array<unsigned, 3> shape;
+    buffer_t<uint64_t>      masks;
+    buffer_t<uint64_t>      shifts;
+    buffer_t<double>        eigenvalues_real;
+    buffer_t<double>        eigenvalues_imag;
+    buffer_t<unsigned>      sectors;
+    buffer_t<unsigned>      periodicities;
+
+  private:
+    explicit ls_flat_group(std::array<unsigned, 3> _shape) noexcept
+        : shape{_shape}
+        , masks{lattice_symmetries::alloc_aligned_array<uint64_t>(alignment,
+                                                                  shape[0] * shape[1] * shape[2])}
+        , shifts{lattice_symmetries::alloc_aligned_array<uint64_t>(alignment, shape[0])}
+        , eigenvalues_real{lattice_symmetries::alloc_aligned_array<double>(alignment, shape[1])}
+        , eigenvalues_imag{lattice_symmetries::alloc_aligned_array<double>(alignment, shape[1])}
+        , sectors{lattice_symmetries::alloc_aligned_array<unsigned>(alignment, shape[1])}
+        , periodicities{lattice_symmetries::alloc_aligned_array<unsigned>(alignment, shape[1])}
+    {}
+
+    [[nodiscard]] auto has_allocation_succeeded() const noexcept -> bool
+    {
+        if (shape[0] * shape[1] * shape[2] != 0 && masks == nullptr) {
+            LATTICE_SYMMETRIES_LOG_DEBUG("Failed to allocate 'masks' array of shape [%u, %u, %u]\n",
+                                         shape[0], shape[1], shape[2]);
+            return false;
+        }
+        if (shape[0] != 0 && shifts == nullptr) {
+            LATTICE_SYMMETRIES_LOG_DEBUG("Failed to allocate 'shifts' array of shape [%u]\n",
+                                         shape[0]);
+            return false;
+        }
+        if (shape[1] != 0
+            && (eigenvalues_real == nullptr || eigenvalues_imag == nullptr || sectors == nullptr
+                || periodicities == nullptr)) {
+            LATTICE_SYMMETRIES_LOG_DEBUG(
+                "Failed to allocate 'eigenvalues_real', 'eigenvalues_imag', 'sectors' or "
+                "'periodicities' array of shape [%u]\n",
+                shape[1]);
+            return false;
+        }
+        return true;
+    }
 };
 
 struct ls_flat_spin_basis {
@@ -169,6 +243,27 @@ struct ls_flat_spin_basis {
     int                    hamming_weight;
     int                    spin_inversion;
     ls_flat_group          group;
+
+    using unique_ptr_type =
+        std::unique_ptr<ls_flat_spin_basis, lattice_symmetries::free_deleter_fn_t<true>>;
+
+  private:
+    struct private_tag_type {};
+
+  public:
+    // The constructor is public, but unusable from outside of this class which is what we want.
+    // (we can't make it private because alloc_aligned() in allocate() needs access to it)
+    ls_flat_spin_basis(std::array<unsigned, 3> shape, private_tag_type /*tag*/) noexcept
+        : refcount{}, number_spins{}, hamming_weight{}, spin_inversion{}, group{shape}
+    {}
+
+    static auto allocate(std::array<unsigned, 3> shape) noexcept -> unique_ptr_type
+    {
+        auto p = lattice_symmetries::alloc_aligned<ls_flat_spin_basis>(shape, private_tag_type{});
+        if (p == nullptr) { return {}; }
+        if (!p->group.has_allocation_succeeded()) { return {}; }
+        return p;
+    }
 };
 
 namespace lattice_symmetries {
@@ -216,12 +311,12 @@ struct init_flat_group_contents_fn_t {
         for (auto depth = 0U; depth < g->shape[0]; ++depth) {
             for (auto const& s : b.batched_symmetries) {
                 for (auto i = 0U; i < batched_small_symmetry_t::batch_size; ++i) {
-                    g->masks[offset] = s.network.masks[depth][i];
+                    g->masks.get()[offset] = s.network.masks[depth][i];
                     ++offset;
                 }
             }
             for (auto i = 0U; i < b.number_other_symmetries; ++i) {
-                g->masks[offset] = b.other_symmetries->network.masks[depth][i];
+                g->masks.get()[offset] = b.other_symmetries->network.masks[depth][i];
                 ++offset;
             }
         }
@@ -231,7 +326,7 @@ struct init_flat_group_contents_fn_t {
             auto const& s =
                 !b.batched_symmetries.empty() ? b.batched_symmetries.front() : *b.other_symmetries;
             for (auto depth = 0U; depth < g->shape[0]; ++depth) {
-                g->shifts[depth] = s.network.deltas[depth];
+                g->shifts.get()[depth] = s.network.deltas[depth];
             }
         }
 
@@ -239,19 +334,19 @@ struct init_flat_group_contents_fn_t {
         offset = ptrdiff_t{0};
         for (auto const& s : b.batched_symmetries) {
             for (auto i = 0U; i < batched_small_symmetry_t::batch_size; ++i) {
-                g->eigenvalues_real[offset] = s.eigenvalues_real[i];
-                g->eigenvalues_imag[offset] = s.eigenvalues_imag[i];
-                g->sectors[offset]          = s.sectors[i];
-                g->periodicities[offset]    = s.periodicities[i];
+                g->eigenvalues_real.get()[offset] = s.eigenvalues_real[i];
+                g->eigenvalues_imag.get()[offset] = s.eigenvalues_imag[i];
+                g->sectors.get()[offset]          = s.sectors[i];
+                g->periodicities.get()[offset]    = s.periodicities[i];
                 ++offset;
             }
         }
         for (auto i = 0U; i < b.number_other_symmetries; ++i) {
-            auto const& s               = *b.other_symmetries;
-            g->eigenvalues_real[offset] = s.eigenvalues_real[i];
-            g->eigenvalues_imag[offset] = s.eigenvalues_imag[i];
-            g->sectors[offset]          = s.sectors[i];
-            g->periodicities[offset]    = s.periodicities[i];
+            auto const& s                     = *b.other_symmetries;
+            g->eigenvalues_real.get()[offset] = s.eigenvalues_real[i];
+            g->eigenvalues_imag.get()[offset] = s.eigenvalues_imag[i];
+            g->sectors.get()[offset]          = s.sectors[i];
+            g->periodicities.get()[offset]    = s.periodicities[i];
             ++offset;
         }
     }
@@ -263,7 +358,7 @@ struct init_flat_group_contents_fn_t {
         for (auto depth = 0U; depth < g->shape[0]; ++depth) {
             for (auto const& s : b.symmetries) {
                 for (auto i = 0; i < 8; ++i) {
-                    g->masks[offset] = s.network.masks[depth].words[i];
+                    g->masks.get()[offset] = s.network.masks[depth].words[i];
                     ++offset;
                 }
             }
@@ -273,7 +368,7 @@ struct init_flat_group_contents_fn_t {
         if (g->shifts != nullptr) {
             auto const& s = b.symmetries.front();
             for (auto depth = 0U; depth < g->shape[0]; ++depth) {
-                g->shifts[depth] = s.network.deltas[depth];
+                g->shifts.get()[depth] = s.network.deltas[depth];
             }
         }
 
@@ -281,10 +376,10 @@ struct init_flat_group_contents_fn_t {
         offset = ptrdiff_t{0};
         for (auto const& s : b.symmetries) {
             for (auto i = 0U; i < batched_small_symmetry_t::batch_size; ++i) {
-                g->eigenvalues_real[offset] = s.eigenvalue.real();
-                g->eigenvalues_imag[offset] = s.eigenvalue.imag();
-                g->sectors[offset]          = s.sector;
-                g->periodicities[offset]    = s.periodicity;
+                g->eigenvalues_real.get()[offset] = s.eigenvalue.real();
+                g->eigenvalues_imag.get()[offset] = s.eigenvalue.imag();
+                g->sectors.get()[offset]          = s.sector;
+                g->periodicities.get()[offset]    = s.periodicity;
                 ++offset;
             }
         }
@@ -298,69 +393,26 @@ namespace {
     }
 } // namespace
 
-struct free_deleter_fn_t {
-    template <class T> auto operator()(T* ptr) const noexcept -> void
-    {
-        if (ptr != nullptr) { std::free(ptr); }
-    }
-};
-
-template <class T>
-auto alloc_aligned_unitialized(size_t alignment, size_t count) noexcept
-    -> std::unique_ptr<T, free_deleter_fn_t>
-{
-    auto* ptr = count > 0 ? std::aligned_alloc(alignment, count * sizeof(T)) : nullptr;
-    return std::unique_ptr<T, free_deleter_fn_t>{static_cast<T*>(ptr)};
-}
-
-template <class T>
-auto alloc_aligned_unitialized(size_t count = 1) noexcept -> std::unique_ptr<T, free_deleter_fn_t>
-{
-    return alloc_aligned_unitialized<T>(alignof(std::max_align_t), count);
-}
 } // namespace lattice_symmetries
+
+extern "C" LATTICE_SYMMETRIES_EXPORT void ls_destroy_flat_spin_basis(ls_flat_spin_basis* ptr)
+{
+    ls_flat_spin_basis::unique_ptr_type::deleter_type{}(ptr);
+}
 
 extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code
 ls_convert_to_flat_spin_basis(ls_flat_spin_basis** ptr, ls_spin_basis const* basis)
 {
     using namespace lattice_symmetries;
-    constexpr auto alignment  = 64U;
-    auto           status     = LS_SUCCESS;
-    auto const     shape      = masks_shape(*basis);
-    auto           flat_basis = alloc_aligned_unitialized<ls_flat_spin_basis>();
-    if (flat_basis == nullptr) { return LS_OUT_OF_MEMORY; }
-    auto masks  = alloc_aligned_unitialized<uint64_t>(alignment, shape[0] * shape[1] * shape[2]);
-    auto shifts = alloc_aligned_unitialized<uint64_t>(alignment, shape[0]);
-    auto eigenvalues_real = alloc_aligned_unitialized<double>(alignment, shape[1]);
-    auto eigenvalues_imag = alloc_aligned_unitialized<double>(alignment, shape[1]);
-    auto sectors          = alloc_aligned_unitialized<unsigned>(alignment, shape[1]);
-    auto periodicities    = alloc_aligned_unitialized<unsigned>(alignment, shape[1]);
-    if (shape[1] != 0
-        && (masks == nullptr || shifts == nullptr || eigenvalues_real == nullptr
-            || eigenvalues_imag == nullptr || sectors == nullptr || periodicities == nullptr)) {
-        return LS_OUT_OF_MEMORY;
-    }
-    new (flat_basis.get()) ls_flat_spin_basis{{},
-                                              ls_get_number_spins(basis),
-                                              ls_get_hamming_weight(basis),
-                                              ls_get_spin_inversion(basis),
-                                              ls_flat_group{
-                                                  {shape[0], shape[1], shape[2]},
-                                                  masks.get(),
-                                                  shifts.get(),
-                                                  eigenvalues_real.get(),
-                                                  eigenvalues_imag.get(),
-                                                  sectors.get(),
-                                                  periodicities.get(),
-                                              }};
-    init_flat_group_contents(&flat_basis->group, *basis);
-    *ptr = flat_basis.release();
-    masks.release();
-    shifts.release();
-    eigenvalues_real.release();
-    eigenvalues_imag.release();
-    sectors.release();
-    periodicities.release();
+    constexpr auto alignment      = 64U;
+    auto const     shape          = masks_shape(*basis);
+    auto           flat_basis_ptr = ls_flat_spin_basis::allocate(shape);
+    if (flat_basis_ptr == nullptr) { return LS_OUT_OF_MEMORY; }
+    flat_basis_ptr->number_spins   = ls_get_number_spins(basis);
+    flat_basis_ptr->hamming_weight = ls_get_hamming_weight(basis);
+    flat_basis_ptr->spin_inversion = ls_get_spin_inversion(basis);
+    init_flat_group_contents(&flat_basis_ptr->group, *basis);
+    *ptr = flat_basis_ptr.release();
     return LS_SUCCESS;
 }
 
@@ -426,6 +478,57 @@ namespace {
         }
         return buffer;
     }
+
+    inline auto read_primitive(uint64_t& x, char const* buffer) noexcept -> char const*
+    {
+        std::memcpy(&x, buffer, sizeof(x));
+        x = le64toh(x);
+        return buffer + sizeof(x);
+    }
+    inline auto read_primitive(int64_t& x, char const* buffer) noexcept -> char const*
+    {
+        uint64_t y;
+        buffer = read_primitive(y, buffer);
+        x      = static_cast<int64_t>(y);
+        return buffer;
+    }
+    inline auto read_primitive(uint32_t& x, char const* buffer) noexcept -> char const*
+    {
+        std::memcpy(&x, buffer, sizeof(x));
+        x = le32toh(x);
+        return buffer + sizeof(x);
+    }
+    inline auto read_primitive(int32_t& x, char const* buffer) noexcept -> char const*
+    {
+        uint32_t y;
+        buffer = read_primitive(y, buffer);
+        x      = static_cast<int32_t>(y);
+        return buffer;
+    }
+    inline auto read_primitive(float& x, char const* buffer) noexcept -> char const*
+    {
+        static_assert(sizeof(float) == sizeof(uint32_t));
+        uint32_t y;
+        buffer = read_primitive(y, buffer);
+        std::memcpy(&x, &y, sizeof(x));
+        return buffer;
+    }
+    inline auto read_primitive(double& x, char const* buffer) noexcept -> char const*
+    {
+        static_assert(sizeof(double) == sizeof(uint64_t));
+        uint64_t y;
+        buffer = read_primitive(y, buffer);
+        std::memcpy(&x, &y, sizeof(x));
+        return buffer;
+    }
+    template <class T>
+    auto read_primitive_array(T* x, uint64_t const size, char const* buffer) noexcept -> char const*
+    {
+        for (auto i = uint64_t{0}; i < size; ++i) {
+            buffer = read_primitive(x[i], buffer);
+        }
+        return buffer;
+    }
 } // namespace
 
 } // namespace lattice_symmetries
@@ -437,22 +540,80 @@ ls_serialize_flat_spin_basis(ls_flat_spin_basis const* basis, char* buffer, uint
     auto const  required_buffer_size = ls_get_buffer_size_for_flat_spin_basis(basis);
     auto* const original_buffer      = buffer;
     if (size < required_buffer_size) { return LS_SYSTEM_ERROR; }
-    buffer = write_primitive(buffer, basis->number_spins);
-    buffer = write_primitive(buffer, basis->hamming_weight);
-    buffer = write_primitive(buffer, basis->spin_inversion);
-    buffer = write_primitive_array(buffer, basis->group.shape, std::size(basis->group.shape));
-    buffer = write_primitive_array(buffer, basis->group.masks,
-                                   basis->group.shape[0] * basis->group.shape[1]
-                                       * basis->group.shape[2]);
-    buffer = write_primitive_array(buffer, basis->group.shifts, basis->group.shape[0]);
-    buffer = write_primitive_array(buffer, basis->group.eigenvalues_real, basis->group.shape[1]);
-    buffer = write_primitive_array(buffer, basis->group.eigenvalues_imag, basis->group.shape[1]);
-    buffer = write_primitive_array(buffer, basis->group.sectors, basis->group.shape[1]);
-    buffer = write_primitive_array(buffer, basis->group.periodicities, basis->group.shape[1]);
+    buffer        = write_primitive(buffer, basis->number_spins);
+    buffer        = write_primitive(buffer, basis->hamming_weight);
+    buffer        = write_primitive(buffer, basis->spin_inversion);
+    auto const& g = basis->group;
+    buffer        = write_primitive_array(buffer, g.shape.data(), std::size(g.shape));
+    buffer = write_primitive_array(buffer, g.masks.get(), g.shape[0] * g.shape[1] * g.shape[2]);
+    buffer = write_primitive_array(buffer, g.shifts.get(), g.shape[0]);
+    buffer = write_primitive_array(buffer, g.eigenvalues_real.get(), g.shape[1]);
+    buffer = write_primitive_array(buffer, g.eigenvalues_imag.get(), g.shape[1]);
+    buffer = write_primitive_array(buffer, g.sectors.get(), g.shape[1]);
+    buffer = write_primitive_array(buffer, g.periodicities.get(), g.shape[1]);
     LATTICE_SYMMETRIES_CHECK(buffer - original_buffer
                                  == static_cast<ptrdiff_t>(required_buffer_size),
                              "buffer overflow");
     return LS_SUCCESS;
+}
+
+extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code
+ls_deserialize_flat_spin_basis(ls_flat_spin_basis** ptr, char const* buffer, uint64_t size)
+{
+    using namespace lattice_symmetries;
+    constexpr auto alignment = 64U;
+    if (size < sizeof(ls_flat_spin_basis::number_spins) + sizeof(ls_flat_spin_basis::hamming_weight)
+                   + sizeof(ls_flat_spin_basis::spin_inversion) + sizeof(ls_flat_group::shape)) {
+        return LS_SYSTEM_ERROR;
+    }
+    auto const* const                            original_buffer = buffer;
+    decltype(ls_flat_spin_basis::number_spins)   number_spins;
+    decltype(ls_flat_spin_basis::hamming_weight) hamming_weight;
+    decltype(ls_flat_spin_basis::spin_inversion) spin_inversion;
+    decltype(ls_flat_group::shape)               shape;
+    buffer = read_primitive(number_spins, buffer);
+    buffer = read_primitive(hamming_weight, buffer);
+    buffer = read_primitive(spin_inversion, buffer);
+    buffer = read_primitive_array(shape.data(), shape.size(), buffer);
+
+    auto basis = ls_flat_spin_basis::allocate(shape);
+    if (basis == nullptr) { return LS_OUT_OF_MEMORY; }
+    auto const required_buffer_size = ls_get_buffer_size_for_flat_spin_basis(basis.get());
+    if (size < required_buffer_size) { return LS_SYSTEM_ERROR; }
+
+    basis->number_spins   = number_spins;
+    basis->hamming_weight = hamming_weight;
+    basis->spin_inversion = spin_inversion;
+    auto& g               = basis->group;
+    buffer = read_primitive_array(g.masks.get(), g.shape[0] * g.shape[1] * g.shape[2], buffer);
+    buffer = read_primitive_array(g.shifts.get(), g.shape[0], buffer);
+    buffer = read_primitive_array(g.eigenvalues_real.get(), g.shape[1], buffer);
+    buffer = read_primitive_array(g.eigenvalues_imag.get(), g.shape[1], buffer);
+    buffer = read_primitive_array(g.sectors.get(), g.shape[1], buffer);
+    buffer = read_primitive_array(g.periodicities.get(), g.shape[1], buffer);
+    LATTICE_SYMMETRIES_CHECK(buffer - original_buffer
+                                 == static_cast<ptrdiff_t>(required_buffer_size),
+                             "buffer overflow");
+    *ptr = basis.release();
+    return LS_SUCCESS;
+}
+
+extern "C" LATTICE_SYMMETRIES_EXPORT unsigned
+ls_flat_spin_basis_number_spins(ls_flat_spin_basis const* basis)
+{
+    return basis->number_spins;
+}
+
+extern "C" LATTICE_SYMMETRIES_EXPORT int
+ls_flat_spin_basis_hamming_weight(ls_flat_spin_basis const* basis)
+{
+    return basis->hamming_weight;
+}
+
+extern "C" LATTICE_SYMMETRIES_EXPORT int
+ls_flat_spin_basis_spin_inversion(ls_flat_spin_basis const* basis)
+{
+    return basis->spin_inversion;
 }
 
 // cppcheck-suppress unusedFunction

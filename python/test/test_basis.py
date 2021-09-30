@@ -12,9 +12,11 @@ def test_empty():
     with pytest.raises(ls.LatticeSymmetriesException):
         ls.SpinBasis(ls.Group([]), number_spins=0)
 
+
 def test_huge():
     with pytest.raises(ls.LatticeSymmetriesException):
         ls.SpinBasis(ls.Group([]), number_spins=1000)
+
 
 def test_1_spin():
     basis = ls.SpinBasis(ls.Group([]), number_spins=1)
@@ -31,6 +33,7 @@ def test_1_spin():
     assert basis.states.tolist() == [0]
     assert basis.state_info(0) == (0, 1.0, pytest.approx(1 / math.sqrt(2)))
     assert basis.state_info(1) == (0, -1.0, pytest.approx(1 / math.sqrt(2)))
+
 
 def test_2_spins():
     basis = ls.SpinBasis(ls.Group([]), number_spins=2)
@@ -103,19 +106,23 @@ def test_index():
 
     spins = np.zeros((10000, 8), dtype=np.uint64)
     spins[:, 0] = basis.states[:10000]
-    ls.batched_state_info(basis, spins)
+    basis.batched_state_info(spins)
     # evals, evecs = hamiltonian.eigsh(k=1, which='SA')
     # evals, evecs = ls.diagonalize(hamiltonian)
     # print(evals)
+
 
 def notest_construction():
     symmetries = [
         # ls.Symmetry([18, 19,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17], sector=5),
         # ls.Symmetry([19, 18, 17, 16, 15, 14, 13, 12, 11, 10,  9,  8,  7,  6,  5,  4,  3,  2,  1, 0], sector=0)
     ]
-    basis = ls.SpinBasis(ls.Group(symmetries), number_spins=20, hamming_weight=10, spin_inversion=None)
+    basis = ls.SpinBasis(
+        ls.Group(symmetries), number_spins=20, hamming_weight=10, spin_inversion=None
+    )
     basis.build()
 
+    # fmt: off
     interactions = [
         ls.Interaction([[0.25, 0, 0, 0], [0, -0.25, 0.5, 0], [0,  0.5 , -0.25,  0.  ], [ 0.  ,  0.
             ,  0.  ,  0.25]], [[0, 1], [2, 3], [4, 5], [6, 7], [8, 9], [10, 11], [12, 13], [14, 15],
@@ -183,14 +190,35 @@ def notest_construction():
                 8], [11, 9], [12, 10], [13, 11], [14, 12], [15, 13], [16, 14], [17, 15], [18, 16],
                 [19, 17]])
     ]
+    # fmt: on
     operator = ls.Operator(basis, interactions)
 
-    e, _ = ls.diagonalize(operator, k = 5)
+    e, _ = ls.diagonalize(operator, k=5)
     print(e)
 
 
+def test_construct_flat_basis():
+    basis = ls.SpinBasis(ls.Group([]), number_spins=4, hamming_weight=2)
+    flat_basis = ls.FlatSpinBasis(basis)
+    assert flat_basis.number_spins == 4
+    assert flat_basis.hamming_weight == 2
+    assert flat_basis.spin_inversion is None
+
+    basis = ls.SpinBasis(ls.Group([ls.Symmetry([1, 2, 3, 0], sector=1)]), number_spins=4, hamming_weight=2)
+    flat_basis = ls.FlatSpinBasis(basis)
+    assert flat_basis.number_spins == 4
+    assert flat_basis.hamming_weight == 2
+    assert flat_basis.spin_inversion is None
+    # print(flat_basis.serialize())
+    buf = flat_basis.serialize()
+    other_basis = ls.FlatSpinBasis.deserialize(buf)
+    assert other_basis.number_spins == 4
+    assert other_basis.hamming_weight == 2
+    assert other_basis.spin_inversion is None
+    assert np.all(other_basis.serialize() == buf)
 
 
+test_construct_flat_basis()
 # test_index()
 # test_4_spins()
 # test_construction()

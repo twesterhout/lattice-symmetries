@@ -268,7 +268,24 @@ void            ls_destroy_states(ls_states* states);
 uint64_t const* ls_states_get_data(ls_states const* states);
 uint64_t        ls_states_get_size(ls_states const* states);
 
+// NOTE: THIS IS HIGHTLY EXPERIMENTAL! {{{
+typedef struct ls_flat_spin_basis ls_flat_spin_basis;
+
+ls_error_code ls_convert_to_flat_spin_basis(ls_flat_spin_basis** ptr, ls_spin_basis const* basis);
+void          ls_destroy_flat_spin_basis(ls_flat_spin_basis* ptr);
+uint64_t      ls_get_buffer_size_for_flat_spin_basis(ls_flat_spin_basis const* basis);
+
+ls_error_code ls_serialize_flat_spin_basis(ls_flat_spin_basis const* basis, char* buffer,
+                                           uint64_t size);
+ls_error_code ls_deserialize_flat_spin_basis(ls_flat_spin_basis** ptr, char const* buffer,
+                                             uint64_t size);
+
+unsigned ls_flat_spin_basis_number_spins(ls_flat_spin_basis const* basis);
+int      ls_flat_spin_basis_hamming_weight(ls_flat_spin_basis const* basis);
+int      ls_flat_spin_basis_spin_inversion(ls_flat_spin_basis const* basis);
+
 uint64_t ls_binary_search(uint64_t const* data, uint64_t size, uint64_t key);
+// }}} END EXPERIMENTAL STUFF
 
 ls_error_code ls_save_cache(ls_spin_basis const* basis, char const* filename);
 ls_error_code ls_load_cache(ls_spin_basis* basis, char const* filename);
