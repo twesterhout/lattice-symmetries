@@ -30,6 +30,29 @@
 #include "cache.hpp"
 #include "cpu/state_info.hpp"
 #include <algorithm>
+#include <cstring>
+
+#if defined(__APPLE__)
+#    include <libkern/OSByteOrder.h>
+#    include <machine/endian.h>
+
+#    define htobe16(x) OSSwapHostToBigInt16(x)
+#    define htole16(x) OSSwapHostToLittleInt16(x)
+#    define be16toh(x) OSSwapBigToHostInt16(x)
+#    define le16toh(x) OSSwapLittleToHostInt16(x)
+
+#    define htobe32(x) OSSwapHostToBigInt32(x)
+#    define htole32(x) OSSwapHostToLittleInt32(x)
+#    define be32toh(x) OSSwapBigToHostInt32(x)
+#    define le32toh(x) OSSwapLittleToHostInt32(x)
+
+#    define htobe64(x) OSSwapHostToBigInt64(x)
+#    define htole64(x) OSSwapHostToLittleInt64(x)
+#    define be64toh(x) OSSwapBigToHostInt64(x)
+#    define le64toh(x) OSSwapLittleToHostInt64(x)
+#else
+#    include <endian.h>
+#endif
 
 namespace lattice_symmetries {
 
@@ -338,6 +361,97 @@ ls_convert_to_flat_spin_basis(ls_flat_spin_basis** ptr, ls_spin_basis const* bas
     eigenvalues_imag.release();
     sectors.release();
     periodicities.release();
+    return LS_SUCCESS;
+}
+
+extern "C" LATTICE_SYMMETRIES_EXPORT uint64_t
+ls_get_buffer_size_for_flat_spin_basis(ls_flat_spin_basis const* basis)
+{
+    auto const& g = basis->group;
+    return sizeof(unsigned)                                          // number_spins
+           + sizeof(int)                                             // hamming_weight
+           + sizeof(int)                                             // spin_inversion
+           + 3 * sizeof(unsigned)                                    // shape
+           + g.shape[0] * g.shape[1] * g.shape[2] * sizeof(uint64_t) // masks
+           + g.shape[0] * sizeof(uint64_t)                           // shifts
+           + g.shape[1] * sizeof(double)                             // eigenvalues_real
+           + g.shape[1] * sizeof(double)                             // eigenvalues_imag
+           + g.shape[1] * sizeof(unsigned)                           // sectors
+           + g.shape[1] * sizeof(unsigned);                          // periodicities
+}
+
+namespace lattice_symmetries {
+
+namespace {
+    inline auto write_primitive(char* buffer, uint64_t x) noexcept -> char*
+    {
+        x = htole64(x);
+        std::memcpy(buffer, &x, sizeof(x));
+        return buffer + sizeof(x);
+    }
+    inline auto write_primitive(char* buffer, int64_t x) noexcept -> char*
+    {
+        return write_primitive(buffer, static_cast<uint64_t>(x));
+    }
+    inline auto write_primitive(char* buffer, uint32_t x) noexcept -> char*
+    {
+        x = htole32(x);
+        std::memcpy(buffer, &x, sizeof(x));
+        return buffer + sizeof(x);
+    }
+    inline auto write_primitive(char* buffer, int32_t x) noexcept -> char*
+    {
+        return write_primitive(buffer, static_cast<uint32_t>(x));
+    }
+    inline auto write_primitive(char* buffer, float x) noexcept -> char*
+    {
+        static_assert(sizeof(float) == sizeof(uint32_t));
+        uint32_t y;
+        std::memcpy(&y, &x, sizeof(x));
+        return write_primitive(buffer, y);
+    }
+    inline auto write_primitive(char* buffer, double x) noexcept -> char*
+    {
+        static_assert(sizeof(double) == sizeof(uint64_t));
+        uint64_t y;
+        std::memcpy(&y, &x, sizeof(x));
+        return write_primitive(buffer, y);
+    }
+
+    template <class T>
+    auto write_primitive_array(char* buffer, T const* x, uint64_t const size) noexcept -> char*
+    {
+        for (auto i = uint64_t{0}; i < size; ++i) {
+            buffer = write_primitive(buffer, x[i]);
+        }
+        return buffer;
+    }
+} // namespace
+
+} // namespace lattice_symmetries
+
+extern "C" LATTICE_SYMMETRIES_EXPORT ls_error_code
+ls_serialize_flat_spin_basis(ls_flat_spin_basis const* basis, char* buffer, uint64_t size)
+{
+    using namespace lattice_symmetries;
+    auto const  required_buffer_size = ls_get_buffer_size_for_flat_spin_basis(basis);
+    auto* const original_buffer      = buffer;
+    if (size < required_buffer_size) { return LS_SYSTEM_ERROR; }
+    buffer = write_primitive(buffer, basis->number_spins);
+    buffer = write_primitive(buffer, basis->hamming_weight);
+    buffer = write_primitive(buffer, basis->spin_inversion);
+    buffer = write_primitive_array(buffer, basis->group.shape, std::size(basis->group.shape));
+    buffer = write_primitive_array(buffer, basis->group.masks,
+                                   basis->group.shape[0] * basis->group.shape[1]
+                                       * basis->group.shape[2]);
+    buffer = write_primitive_array(buffer, basis->group.shifts, basis->group.shape[0]);
+    buffer = write_primitive_array(buffer, basis->group.eigenvalues_real, basis->group.shape[1]);
+    buffer = write_primitive_array(buffer, basis->group.eigenvalues_imag, basis->group.shape[1]);
+    buffer = write_primitive_array(buffer, basis->group.sectors, basis->group.shape[1]);
+    buffer = write_primitive_array(buffer, basis->group.periodicities, basis->group.shape[1]);
+    LATTICE_SYMMETRIES_CHECK(buffer - original_buffer
+                                 == static_cast<ptrdiff_t>(required_buffer_size),
+                             "buffer overflow");
     return LS_SUCCESS;
 }
 
