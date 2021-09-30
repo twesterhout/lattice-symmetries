@@ -29,6 +29,7 @@
 #include "basis.hpp"
 #include "cache.hpp"
 #include "cpu/state_info.hpp"
+#include "halide/kernels.hpp"
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
@@ -375,6 +376,9 @@ ls_convert_to_flat_spin_basis(ls_flat_spin_basis** ptr, ls_spin_basis const* bas
     flat_basis_ptr->hamming_weight = ls_get_hamming_weight(basis);
     flat_basis_ptr->spin_inversion = ls_get_spin_inversion(basis);
     init_flat_group_contents(&flat_basis_ptr->group, *basis);
+    flat_basis_ptr->state_info_kernel        = make_state_info_kernel(*flat_basis_ptr);
+    flat_basis_ptr->is_representative_kernel = make_is_representative_kernel(*flat_basis_ptr);
+
     *ptr = flat_basis_ptr.release();
     return LS_SUCCESS;
 }
@@ -557,6 +561,9 @@ ls_deserialize_flat_spin_basis(ls_flat_spin_basis** ptr, char const* buffer, uin
     LATTICE_SYMMETRIES_CHECK(buffer - original_buffer
                                  == static_cast<ptrdiff_t>(required_buffer_size),
                              "buffer overflow");
+    basis->state_info_kernel        = make_state_info_kernel(*basis);
+    basis->is_representative_kernel = make_is_representative_kernel(*basis);
+
     *ptr = basis.release();
     return LS_SUCCESS;
 }

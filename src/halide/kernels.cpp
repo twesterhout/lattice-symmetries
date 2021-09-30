@@ -4,18 +4,27 @@
 #include <cstdlib>
 #include <cstring>
 
-#define IS_X86_64 false
+#define IS_X86_64 true // false
 //
 // Architecture-specific kernels
 #if IS_X86_64
+#    include "ls_internal_is_representative_general_kernel_64_avx.h"
+#    include "ls_internal_is_representative_general_kernel_64_avx2.h"
+#    include "ls_internal_is_representative_general_kernel_64_sse41.h"
 #    include "ls_internal_state_info_general_kernel_64_avx.h"
 #    include "ls_internal_state_info_general_kernel_64_avx2.h"
 #    include "ls_internal_state_info_general_kernel_64_sse41.h"
 
+#    include "ls_internal_is_representative_symmetric_kernel_64_avx.h"
+#    include "ls_internal_is_representative_symmetric_kernel_64_avx2.h"
+#    include "ls_internal_is_representative_symmetric_kernel_64_sse41.h"
 #    include "ls_internal_state_info_symmetric_kernel_64_avx.h"
 #    include "ls_internal_state_info_symmetric_kernel_64_avx2.h"
 #    include "ls_internal_state_info_symmetric_kernel_64_sse41.h"
 
+#    include "ls_internal_is_representative_antisymmetric_kernel_64_avx.h"
+#    include "ls_internal_is_representative_antisymmetric_kernel_64_avx2.h"
+#    include "ls_internal_is_representative_antisymmetric_kernel_64_sse41.h"
 #    include "ls_internal_state_info_antisymmetric_kernel_64_avx.h"
 #    include "ls_internal_state_info_antisymmetric_kernel_64_avx2.h"
 #    include "ls_internal_state_info_antisymmetric_kernel_64_sse41.h"
@@ -48,36 +57,37 @@ inline auto current_architecture() -> proc_arch
 {
     if (auto const* arch = std::getenv("LATTICE_SYMMETRIES_ARCH")) {
         if (std::strcmp(arch, "generic") == 0) {
-            LATTICE_SYMMETRIES_LOG_DEBUG("%s\n", "Kernels with use no special instructions...");
+            LATTICE_SYMMETRIES_LOG_DEBUG("%s\n", "Kernels will use no special instructions...");
             return proc_arch::generic;
         }
         if (std::strcmp(arch, "sse4_1") == 0) {
-            LATTICE_SYMMETRIES_LOG_DEBUG("%s\n", "Kernels with use SSE4.1 instructions...");
+            LATTICE_SYMMETRIES_LOG_DEBUG("%s\n", "Kernels will use SSE4.1 instructions...");
             return proc_arch::sse4_1;
         }
         if (std::strcmp(arch, "avx") == 0) {
-            LATTICE_SYMMETRIES_LOG_DEBUG("%s\n", "Kernels with use AVX instructions...");
+            LATTICE_SYMMETRIES_LOG_DEBUG("%s\n", "Kernels will use AVX instructions...");
             return proc_arch::avx;
         }
         if (std::strcmp(arch, "avx2") == 0) {
-            LATTICE_SYMMETRIES_LOG_DEBUG("%s\n", "Kernels with use AVX2 instructions...");
+            LATTICE_SYMMETRIES_LOG_DEBUG("%s\n", "Kernels will use AVX2 instructions...");
             return proc_arch::avx2;
         }
     }
 
     __builtin_cpu_init();
     if (__builtin_cpu_supports("avx2") > 0) {
-        LATTICE_SYMMETRIES_LOG_DEBUG("%s\n", "Kernels with use AVX2 instructions...");
+        LATTICE_SYMMETRIES_LOG_DEBUG("%s\n", "Kernels will use AVX2 instructions...");
         return proc_arch::avx2;
     }
     if (__builtin_cpu_supports("avx") > 0) {
-        LATTICE_SYMMETRIES_LOG_DEBUG("%s\n", "Kernels with use AVX instructions...");
+        LATTICE_SYMMETRIES_LOG_DEBUG("%s\n", "Kernels will use AVX instructions...");
         return proc_arch::avx;
     }
     if (__builtin_cpu_supports("sse4.1") > 0) {
-        LATTICE_SYMMETRIES_LOG_DEBUG("%s\n", "Kernels with use SSE4.1 instructions...");
+        LATTICE_SYMMETRIES_LOG_DEBUG("%s\n", "Kernels will use SSE4.1 instructions...");
         return proc_arch::sse4_1;
     }
+    LATTICE_SYMMETRIES_LOG_DEBUG("%s\n", "Kernels will use no special instructions...");
     return proc_arch::generic;
 }
 
@@ -282,6 +292,7 @@ struct halide_is_representative_kernel {
     explicit halide_is_representative_kernel(ls_flat_spin_basis const& basis) noexcept
         : state{basis}, kernel{}
     {
+        LATTICE_SYMMETRIES_LOG_DEBUG("%s\n", "Constructing halide_is_representative_kernel...");
         auto const arch = current_architecture();
         switch (basis.spin_inversion) {
         case 0:

@@ -52,7 +52,7 @@ function(generate_kernels_for_arch)
 endfunction()
 
 
-if(FALSE AND "${CMAKE_SYSTEM_PROCESSOR}" MATCHES "(x86|AMD64)")
+if("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "(x86|AMD64)")
   set(base_arch x86-64-${os_for_Halide})
   set(arch_suffixes _sse41 _avx _avx2)
   set(arch_features -sse41 -avx-sse41 -avx-avx2-fma-sse41)
