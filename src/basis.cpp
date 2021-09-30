@@ -31,6 +31,7 @@
 #include "cpu/state_info.hpp"
 #include <algorithm>
 #include <cstring>
+#include <functional>
 
 #if defined(__APPLE__)
 #    include <libkern/OSByteOrder.h>
@@ -154,17 +155,6 @@ struct ls_states {
 };
 
 namespace lattice_symmetries {
-
-template <bool CallDestructor = true> struct free_deleter_fn_t {
-    template <class T> auto operator()(T* ptr) const noexcept -> void
-    {
-        if (ptr != nullptr) {
-            ptr->~T();
-            std::free(ptr);
-        }
-    }
-};
-
 template <class T>
 auto alloc_aligned_array(size_t alignment, size_t count) noexcept
     -> std::unique_ptr<T, free_deleter_fn_t<false>>
@@ -182,89 +172,61 @@ auto alloc_aligned(Args&&... args) noexcept -> std::unique_ptr<T, free_deleter_f
     new (ptr) T{std::forward<Args>(args)...};
     return std::unique_ptr<T, free_deleter_fn_t<true>>{static_cast<T*>(ptr)};
 }
+
 } // namespace lattice_symmetries
 
-struct ls_flat_spin_basis;
+ls_flat_group::ls_flat_group(std::array<unsigned, 3> _shape) noexcept
+    : shape{_shape}
+    , masks{lattice_symmetries::alloc_aligned_array<uint64_t>(alignment,
+                                                              shape[0] * shape[1] * shape[2])}
+    , shifts{lattice_symmetries::alloc_aligned_array<uint64_t>(alignment, shape[0])}
+    , eigenvalues_real{lattice_symmetries::alloc_aligned_array<double>(alignment, shape[1])}
+    , eigenvalues_imag{lattice_symmetries::alloc_aligned_array<double>(alignment, shape[1])}
+    , sectors{lattice_symmetries::alloc_aligned_array<unsigned>(alignment, shape[1])}
+    , periodicities{lattice_symmetries::alloc_aligned_array<unsigned>(alignment, shape[1])}
+{}
 
-struct ls_flat_group {
-    template <class T>
-    using buffer_t = std::unique_ptr<T, lattice_symmetries::free_deleter_fn_t<false>>;
-    static constexpr uint64_t alignment = 64U;
-    friend struct ls_flat_spin_basis;
-
-    std::array<unsigned, 3> shape;
-    buffer_t<uint64_t>      masks;
-    buffer_t<uint64_t>      shifts;
-    buffer_t<double>        eigenvalues_real;
-    buffer_t<double>        eigenvalues_imag;
-    buffer_t<unsigned>      sectors;
-    buffer_t<unsigned>      periodicities;
-
-  private:
-    explicit ls_flat_group(std::array<unsigned, 3> _shape) noexcept
-        : shape{_shape}
-        , masks{lattice_symmetries::alloc_aligned_array<uint64_t>(alignment,
-                                                                  shape[0] * shape[1] * shape[2])}
-        , shifts{lattice_symmetries::alloc_aligned_array<uint64_t>(alignment, shape[0])}
-        , eigenvalues_real{lattice_symmetries::alloc_aligned_array<double>(alignment, shape[1])}
-        , eigenvalues_imag{lattice_symmetries::alloc_aligned_array<double>(alignment, shape[1])}
-        , sectors{lattice_symmetries::alloc_aligned_array<unsigned>(alignment, shape[1])}
-        , periodicities{lattice_symmetries::alloc_aligned_array<unsigned>(alignment, shape[1])}
-    {}
-
-    [[nodiscard]] auto has_allocation_succeeded() const noexcept -> bool
-    {
-        if (shape[0] * shape[1] * shape[2] != 0 && masks == nullptr) {
-            LATTICE_SYMMETRIES_LOG_DEBUG("Failed to allocate 'masks' array of shape [%u, %u, %u]\n",
-                                         shape[0], shape[1], shape[2]);
-            return false;
-        }
-        if (shape[0] != 0 && shifts == nullptr) {
-            LATTICE_SYMMETRIES_LOG_DEBUG("Failed to allocate 'shifts' array of shape [%u]\n",
-                                         shape[0]);
-            return false;
-        }
-        if (shape[1] != 0
-            && (eigenvalues_real == nullptr || eigenvalues_imag == nullptr || sectors == nullptr
-                || periodicities == nullptr)) {
-            LATTICE_SYMMETRIES_LOG_DEBUG(
-                "Failed to allocate 'eigenvalues_real', 'eigenvalues_imag', 'sectors' or "
-                "'periodicities' array of shape [%u]\n",
-                shape[1]);
-            return false;
-        }
-        return true;
+auto ls_flat_group::has_allocation_succeeded() const noexcept -> bool
+{
+    if (shape[0] * shape[1] * shape[2] != 0 && masks == nullptr) {
+        LATTICE_SYMMETRIES_LOG_DEBUG("Failed to allocate 'masks' array of shape [%u, %u, %u]\n",
+                                     shape[0], shape[1], shape[2]);
+        return false;
     }
-};
-
-struct ls_flat_spin_basis {
-    mutable atomic_count_t refcount;
-    unsigned               number_spins;
-    int                    hamming_weight;
-    int                    spin_inversion;
-    ls_flat_group          group;
-
-    using unique_ptr_type =
-        std::unique_ptr<ls_flat_spin_basis, lattice_symmetries::free_deleter_fn_t<true>>;
-
-  private:
-    struct private_tag_type {};
-
-  public:
-    // The constructor is public, but unusable from outside of this class which is what we want.
-    // (we can't make it private because alloc_aligned() in allocate() needs access to it)
-    ls_flat_spin_basis(std::array<unsigned, 3> shape, private_tag_type /*tag*/) noexcept
-        : refcount{}, number_spins{}, hamming_weight{}, spin_inversion{}, group{shape}
-    {}
-
-    static auto allocate(std::array<unsigned, 3> shape) noexcept -> unique_ptr_type
-    {
-        auto p = lattice_symmetries::alloc_aligned<ls_flat_spin_basis>(shape, private_tag_type{});
-        if (p == nullptr) { return {}; }
-        if (!p->group.has_allocation_succeeded()) { return {}; }
-        return p;
+    if (shape[0] != 0 && shifts == nullptr) {
+        LATTICE_SYMMETRIES_LOG_DEBUG("Failed to allocate 'shifts' array of shape [%u]\n", shape[0]);
+        return false;
     }
-};
+    if (shape[1] != 0
+        && (eigenvalues_real == nullptr || eigenvalues_imag == nullptr || sectors == nullptr
+            || periodicities == nullptr)) {
+        LATTICE_SYMMETRIES_LOG_DEBUG(
+            "Failed to allocate 'eigenvalues_real', 'eigenvalues_imag', 'sectors' or "
+            "'periodicities' array of shape [%u]\n",
+            shape[1]);
+        return false;
+    }
+    return true;
+}
+
+ls_flat_spin_basis::ls_flat_spin_basis(std::array<unsigned, 3> shape,
+                                       private_tag_type /*tag*/) noexcept
+    : refcount{}
+    , number_spins{}
+    , hamming_weight{}
+    , spin_inversion{}
+    , group{shape}
+    , state_info_kernel{}
+    , is_representative_kernel{}
+{}
+
+auto ls_flat_spin_basis::allocate(std::array<unsigned, 3> shape) noexcept -> unique_ptr_type
+{
+    auto p = lattice_symmetries::alloc_aligned<ls_flat_spin_basis>(shape, private_tag_type{});
+    if (p == nullptr) { return {}; }
+    if (!p->group.has_allocation_succeeded()) { return {}; }
+    return p;
+}
 
 namespace lattice_symmetries {
 
@@ -614,6 +576,24 @@ extern "C" LATTICE_SYMMETRIES_EXPORT int
 ls_flat_spin_basis_spin_inversion(ls_flat_spin_basis const* basis)
 {
     return basis->spin_inversion;
+}
+
+extern "C" LATTICE_SYMMETRIES_EXPORT void
+ls_flat_spin_basis_state_info(ls_flat_spin_basis const* basis, uint64_t count, void const* spin,
+                              void* repr, LATTICE_SYMMETRIES_COMPLEX128* character, double* norm)
+{
+    LATTICE_SYMMETRIES_CHECK(static_cast<bool>(basis->state_info_kernel),
+                             "state_info_kernel not yet initialized");
+    basis->state_info_kernel(count, spin, repr, character, norm);
+}
+
+extern "C" LATTICE_SYMMETRIES_EXPORT void
+ls_flat_spin_basis_is_representative(ls_flat_spin_basis const* basis, uint64_t count,
+                                     void const* spin, uint8_t* is_repr, double* norm)
+{
+    LATTICE_SYMMETRIES_CHECK(static_cast<bool>(basis->is_representative_kernel),
+                             "is_representative_kernel not yet initialized");
+    basis->is_representative_kernel(count, spin, is_repr, norm);
 }
 
 // cppcheck-suppress unusedFunction

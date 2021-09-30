@@ -30,6 +30,8 @@
 
 #include "intrusive_ptr.hpp"
 #include "symmetry.hpp"
+#include <cstdlib>
+#include <functional>
 #include <memory>
 #include <optional>
 
@@ -62,4 +64,65 @@ struct big_basis_t {
 
 auto is_real(ls_spin_basis const& basis) noexcept -> bool;
 
+template <bool CallDestructor = true> struct free_deleter_fn_t {
+    template <class T> auto operator()(T* ptr) const noexcept -> void
+    {
+        if (ptr != nullptr) {
+            ptr->~T();
+            std::free(ptr);
+        }
+    }
+};
+
+using state_info_kernel_type =
+    std::function<void(uint64_t, void const*, void*, std::complex<double>*, double*)>;
+using is_representative_kernel_type = std::function<void(uint64_t, void const*, uint8_t*, double*)>;
+
 } // namespace lattice_symmetries
+
+struct ls_flat_spin_basis;
+
+struct ls_flat_group {
+    template <class T>
+    using buffer_t = std::unique_ptr<T, lattice_symmetries::free_deleter_fn_t<false>>;
+    static constexpr uint64_t alignment = 64U;
+    friend struct ls_flat_spin_basis;
+
+    std::array<unsigned, 3> shape;
+    buffer_t<uint64_t>      masks;
+    buffer_t<uint64_t>      shifts;
+    buffer_t<double>        eigenvalues_real;
+    buffer_t<double>        eigenvalues_imag;
+    buffer_t<unsigned>      sectors;
+    buffer_t<unsigned>      periodicities;
+
+  private:
+    explicit ls_flat_group(std::array<unsigned, 3> _shape) noexcept;
+    [[nodiscard]] auto has_allocation_succeeded() const noexcept -> bool;
+};
+
+struct ls_flat_spin_basis {
+    using atomic_count_t                = lattice_symmetries::atomic_count_t;
+    using state_info_kernel_type        = lattice_symmetries::state_info_kernel_type;
+    using is_representative_kernel_type = lattice_symmetries::is_representative_kernel_type;
+    using unique_ptr_type =
+        std::unique_ptr<ls_flat_spin_basis, lattice_symmetries::free_deleter_fn_t<true>>;
+
+    mutable atomic_count_t        refcount;
+    unsigned                      number_spins;
+    int                           hamming_weight;
+    int                           spin_inversion;
+    ls_flat_group                 group;
+    state_info_kernel_type        state_info_kernel;
+    is_representative_kernel_type is_representative_kernel;
+
+  private:
+    struct private_tag_type {};
+
+  public:
+    // The constructor is public, but unusable from outside of this class which is what we want.
+    // (we can't make it private because alloc_aligned() in allocate() needs access to it)
+    ls_flat_spin_basis(std::array<unsigned, 3> shape, private_tag_type /*tag*/) noexcept;
+
+    static auto allocate(std::array<unsigned, 3> shape) noexcept -> unique_ptr_type;
+};

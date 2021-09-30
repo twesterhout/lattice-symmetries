@@ -284,6 +284,12 @@ unsigned ls_flat_spin_basis_number_spins(ls_flat_spin_basis const* basis);
 int      ls_flat_spin_basis_hamming_weight(ls_flat_spin_basis const* basis);
 int      ls_flat_spin_basis_spin_inversion(ls_flat_spin_basis const* basis);
 
+void ls_flat_spin_basis_state_info(ls_flat_spin_basis const* basis, uint64_t count,
+                                   void const* spin, void* repr,
+                                   LATTICE_SYMMETRIES_COMPLEX128* character, double* norm);
+void ls_flat_spin_basis_is_representative(ls_flat_spin_basis const* basis, uint64_t count,
+                                          void const* spin, uint8_t* is_repr, double* norm);
+
 uint64_t ls_binary_search(uint64_t const* data, uint64_t size, uint64_t key);
 // }}} END EXPERIMENTAL STUFF
 

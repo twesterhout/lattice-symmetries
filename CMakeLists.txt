@@ -32,6 +32,7 @@ option(${PROJECT_NAME}_ENABLE_CLANG_TIDY "Enable static analysis with clang-tidy
 option(${PROJECT_NAME}_ENABLE_CPPCHECK "Enable static analysis with Cppcheck." OFF)
 option(${PROJECT_NAME}_ENABLE_CODE_COVERAGE "Enable code coverage through GCC." OFF)
 option(${PROJECT_NAME}_LINK_STDLIB_STATICALLY "Enable static linking of libstdc++ and libgcc on Linux." OFF)
+option(${PROJECT_NAME}_USE_SYSTEM_HALIDE "Use system installation of Halide." OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_C_EXTENSIONS OFF)
@@ -39,6 +40,9 @@ set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS OFF)
 set(CMAKE_C_VISIBILITY_PRESET hidden)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN 1)
+
+include(FetchContent)
+include(cmake/Dependencies.cmake)
 
 #
 # Set the project standard and warnings
@@ -205,6 +209,9 @@ target_link_libraries(lattice_symmetries PRIVATE lattice_symmetries_c_sources)
 foreach(arch sse2 sse4 avx avx2)
     target_link_libraries(lattice_symmetries PRIVATE lattice_symmetries_kernels_${arch})
 endforeach()
+
+add_subdirectory(src/halide)
+target_link_libraries(lattice_symmetries PRIVATE lattice_symmetries_halide_kernels)
 
 
 target_compile_features(lattice_symmetries PRIVATE cxx_std_17)
