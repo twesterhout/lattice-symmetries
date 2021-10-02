@@ -58,6 +58,7 @@ from ctypes import (
     c_char_p,
     c_int,
     c_uint,
+    c_uint8,
     c_uint16,
     c_uint32,
     c_uint64,
@@ -193,6 +194,10 @@ def __preprocess_library():
         ("ls_flat_spin_basis_number_spins", [c_void_p], c_uint),
         ("ls_flat_spin_basis_hamming_weight", [c_void_p], c_int),
         ("ls_flat_spin_basis_spin_inversion", [c_void_p], c_int),
+        ("ls_flat_spin_basis_state_info", [c_void_p, c_uint64, c_void_p,
+                                           c_void_p, POINTER(c_double), POINTER(c_double)], None),
+        ("ls_flat_spin_basis_is_representative", [c_void_p, c_uint64, c_void_p,
+                                                  POINTER(c_uint8), POINTER(c_double)], None),
         # Interaction
         ("ls_create_interaction1", [POINTER(c_void_p), c_void_p, c_uint, POINTER(c_uint16)], c_int),
         ("ls_create_interaction2", [POINTER(c_void_p), c_void_p, c_uint, POINTER(c_uint16 * 2)], c_int),
@@ -761,6 +766,50 @@ class FlatSpinBasis:
     def spin_inversion(self) -> Optional[int]:
         r = _lib.ls_flat_spin_basis_spin_inversion(self._payload)
         return None if r == 0 else r
+
+    def state_info(self, spins: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        if (
+            not isinstance(spins, np.ndarray)
+            or spins.dtype != np.uint64
+            or spins.ndim != 1
+        ):
+            raise TypeError("'spins' must be a 1D NumPy array of uint64 of shape (batch_size,)")
+        if not spins.flags["C_CONTIGUOUS"]:
+            spins = np.ascontiguousarray(spins)
+        batch_size = spins.shape[0]
+        representative = np.zeros((batch_size,), dtype=np.uint64)
+        eigenvalue = np.empty((batch_size,), dtype=np.complex128)
+        norm = np.empty((batch_size,), dtype=np.float64)
+        _lib.ls_flat_spin_basis_state_info(
+            self._payload,
+            spins.shape[0],
+            spins.ctypes.data_as(c_void_p),
+            representative.ctypes.data_as(c_void_p),
+            eigenvalue.ctypes.data_as(POINTER(c_double)),
+            norm.ctypes.data_as(POINTER(c_double)),
+        )
+        return representative, eigenvalue, norm
+
+    def is_representative(self, spins: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        if (
+            not isinstance(spins, np.ndarray)
+            or spins.dtype != np.uint64
+            or spins.ndim != 1
+        ):
+            raise TypeError("'spins' must be a 1D NumPy array of uint64 of shape (batch_size,)")
+        if not spins.flags["C_CONTIGUOUS"]:
+            spins = np.ascontiguousarray(spins)
+        batch_size = spins.shape[0]
+        is_repr = np.zeros((batch_size,), dtype=np.uint8)
+        norm = np.empty((batch_size,), dtype=np.float64)
+        _lib.ls_flat_spin_basis_is_representative(
+            self._payload,
+            spins.shape[0],
+            spins.ctypes.data_as(c_void_p),
+            is_repr.ctypes.data_as(POINTER(c_uint8)),
+            norm.ctypes.data_as(POINTER(c_double)),
+        )
+        return is_repr, norm
 
     def serialize(self) -> np.ndarray:
         n = _lib.ls_get_buffer_size_for_flat_spin_basis(self._payload)

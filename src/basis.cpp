@@ -161,7 +161,7 @@ template <class T>
 auto alloc_aligned_array(size_t alignment, size_t count) noexcept
     -> std::unique_ptr<T, free_deleter_fn_t<false>>
 {
-    auto* ptr = count > 0 ? std::aligned_alloc(alignment, count * sizeof(T)) : nullptr;
+    auto* ptr = count > 0 ? ::aligned_alloc(alignment, count * sizeof(T)) : nullptr;
     return std::unique_ptr<T, free_deleter_fn_t<false>>{static_cast<T*>(ptr)};
 }
 
@@ -170,7 +170,7 @@ auto alloc_aligned(Args&&... args) noexcept -> std::unique_ptr<T, free_deleter_f
 {
     static_assert(std::is_nothrow_constructible_v<T, Args&&...>);
     constexpr auto alignment = 64U;
-    auto*          ptr       = std::aligned_alloc(alignment, sizeof(T));
+    auto*          ptr       = ::aligned_alloc(alignment, sizeof(T));
     new (ptr) T{std::forward<Args>(args)...};
     return std::unique_ptr<T, free_deleter_fn_t<true>>{static_cast<T*>(ptr)};
 }
@@ -220,7 +220,10 @@ ls_flat_spin_basis::ls_flat_spin_basis(std::array<unsigned, 3> shape,
     , group{shape}
     , state_info_kernel{}
     , is_representative_kernel{}
-{}
+{
+    LATTICE_SYMMETRIES_LOG_DEBUG("Constructed ls_flat_spin_basis with masks shape [%u, %u, %u]\n",
+                                 shape[0], shape[1], shape[2]);
+}
 
 auto ls_flat_spin_basis::allocate(std::array<unsigned, 3> shape) noexcept -> unique_ptr_type
 {

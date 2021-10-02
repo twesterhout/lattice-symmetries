@@ -69,7 +69,7 @@ template <bool CallDestructor = true> struct free_deleter_fn_t {
     {
         if (ptr != nullptr) {
             ptr->~T();
-            std::free(ptr);
+            ::free(ptr);
         }
     }
 };

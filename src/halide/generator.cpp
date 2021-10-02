@@ -17,7 +17,7 @@ class state_info_generator : public Halide::Generator<state_info_generator> {
     Input<Buffer<uint64_t>>  _masks{"masks", 2};
     Input<Buffer<double>>    _eigvals_re{"eigvals_re", 1};
     Input<Buffer<double>>    _eigvals_im{"eigvals_im", 1};
-    Input<Buffer<unsigned>>  _shifts{"shifts", 1};
+    Input<Buffer<uint64_t>>  _shifts{"shifts", 1};
     Output<Buffer<uint64_t>> _repr{"representative", 1};
     Output<Buffer<double>>   _character{"character", 2};
     Output<Buffer<double>>   _norm{"norm"};
@@ -87,7 +87,8 @@ class state_info_generator : public Halide::Generator<state_info_generator> {
         // Apply masks to generate transformed spin configurations
         RDom k{0, depth, "k"};
         Func y_batched{"y_batched"};
-        Var  j_outer{"j_outer"}, j_inner{"j_inner"};
+        Var  j_outer{"j_outer"};
+        Var  j_inner{"j_inner"};
         y_batched(i, j_outer, j_inner) = _x(i);
         y_batched(i, j_outer, j_inner) = bit_permute_step_64(
             y_batched(i, j_outer, j_inner), _masks(k, j_outer * chunk_size + j_inner), _shifts(k));
@@ -167,8 +168,8 @@ class is_representative_generator : public Halide::Generator<is_representative_g
     Input<uint64_t>         _flip_mask{"flip_mask"};
     Input<Buffer<uint64_t>> _masks{"masks", 2};
     Input<Buffer<double>>   _eigvals_re{"eigvals_re", 1};
-    Input<Buffer<unsigned>> _shifts{"shifts", 1};
-    Output<Buffer<bool>>    _is_representative{"is_representative", 1};
+    Input<Buffer<uint64_t>> _shifts{"shifts", 1};
+    Output<Buffer<uint8_t>> _is_representative{"is_representative", 1};
     Output<Buffer<double>>  _norm{"norm", 1};
 
     void generate()
@@ -231,8 +232,9 @@ class is_representative_generator : public Halide::Generator<is_representative_g
                                    batch_reduction(i)[1] && lane_reduction(i, m_batch)[1]};
 
         // Save results
-        _is_representative(i) = batch_reduction(i)[1];
-        _norm(i)              = batch_reduction(i)[0];
+        _norm(i) = batch_reduction(i)[0];
+        _is_representative(i) =
+            select(batch_reduction(i)[0] > 0, cast<uint8_t>(batch_reduction(i)[1]), 0);
 
         // Shapes & strides
         _x.dim(0).set_min(0).set_stride(1);

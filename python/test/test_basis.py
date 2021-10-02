@@ -217,8 +217,34 @@ def test_construct_flat_basis():
     assert other_basis.spin_inversion is None
     assert np.all(other_basis.serialize() == buf)
 
+def test_state_info_flat_basis():
+    basis = ls.SpinBasis(ls.Group([ls.Symmetry([1, 2, 3, 0], sector=1)]), number_spins=4)
+    basis.build()
+    flat = ls.FlatSpinBasis(basis)
+    full = ls.SpinBasis(ls.Group([]), number_spins=4)
+    full.build()
+    r1, e1, n1 = basis.batched_state_info(
+        np.hstack((full.states.reshape(-1, 1), np.zeros((full.number_states, 7), dtype=np.uint64)))
+    )
+    r2, e2, n2 = flat.state_info(full.states)
+    assert np.all(r1[:, 0] == r2)
+    assert np.all(n1 == n2)
+    assert np.all(e1 == e2)
 
-test_construct_flat_basis()
+    is_r2, n2 = flat.is_representative(full.states)
+    assert np.all(basis.states == full.states[is_r2.view(np.bool_)])
+    # assert np.app(n1 == n2)
+    # if not np.all(e1 == e2):
+    #     for i in range(e1.shape[0]):
+    #         if e1[i] != e2[i]:
+    #             print(i, full.states[i], r1[i], n1[i], ":", e1[i], e2[i])
+    #             # assert False
+
+
+
+
+# test_construct_flat_basis()
+test_state_info_flat_basis()
 # test_index()
 # test_4_spins()
 # test_construction()

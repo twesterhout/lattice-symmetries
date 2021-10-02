@@ -214,68 +214,25 @@ struct halide_kernel_state {
             /*flags=*/0
         },
         _flip_mask{get_flip_mask_64(basis.number_spins)}
+    {}
+
+    halide_kernel_state(halide_kernel_state const& other) noexcept
+        : _masks{other._masks}
+        , _eigvals_re{other._eigvals_re}
+        , _eigvals_im{other._eigvals_im}
+        , _shifts{other._shifts}
+        , _masks_dims{other._masks_dims[0], other._masks_dims[1]}
+        , _shifts_dim{other._shifts_dim}
+        , _flip_mask{other._flip_mask}
     {
-#if 0
-        // auto kernels_list = init_halide_kernels();
-        auto const arch = current_architecture();
-        if (spin_inversion == 0) {
-            _kernel = KERNEL_FOR_ARCH(ls_internal_state_info_general_kernel_64, arch);
-        }
-        else if (spin_inversion == 1) {
-            _kernel = KERNEL_FOR_ARCH(ls_internal_state_info_symmetric_kernel_64, arch);
-            // _kernel = kernels_list.symmetric;
-        }
-        else if (spin_inversion == -1) {
-            _kernel = KERNEL_FOR_ARCH(ls_internal_state_info_antisymmetric_kernel_64, arch);
-            // _kernel = kernels_list.antisymmetric;
-        }
-        else {
-            assert(false);
-        }
-
-        _masks.transpose(0, 1);
-        std::vector<std::complex<double>> temp(number_masks);
-        ls_group_dump_symmetry_info(group, _masks.begin(), _shifts.begin(), temp.data());
-        for (auto i = 0U; i < number_masks; ++i) {
-            _eigvals_re(i) = temp[i].real();
-            _eigvals_im(i) = temp[i].imag();
-        }
-
-        _x.raw_buffer()->dimensions    = 1;
-        _x.raw_buffer()->dim[0]        = halide_dimension_t{/*min=*/0, /*extent=*/0, /*stride=*/1,
-                                                     /*flags=*/0};
-        _repr.raw_buffer()->dimensions = 1;
-        _repr.raw_buffer()->dim[0]     = halide_dimension_t{/*min=*/0, /*extent=*/0, /*stride=*/1,
-                                                        /*flags=*/0};
-        _character.raw_buffer()->dimensions = 2;
-        _character.raw_buffer()->dim[1] = halide_dimension_t{/*min=*/0, /*extent=*/2, /*stride=*/1,
-                                                             /*flags=*/0};
-        _character.raw_buffer()->dim[0] = halide_dimension_t{/*min=*/0, /*extent=*/0, /*stride=*/2,
-                                                             /*flags=*/0};
-        _norm.raw_buffer()->dimensions  = 1;
-        _norm.raw_buffer()->dim[0]      = halide_dimension_t{/*min=*/0, /*extent=*/0, /*stride=*/1,
-                                                        /*flags=*/0};
-#endif
+        _masks.dim      = &(_masks_dims[0]);
+        _eigvals_re.dim = &(_masks_dims[1]);
+        _eigvals_im.dim = &(_masks_dims[1]);
+        _shifts.dim     = &_shifts_dim;
     }
 
-#if 0
-  public:
-    auto operator()(uint64_t const count, uint64_t const* x, uint64_t* repr,
-                    std::complex<double>* character, double* norm)
-    {
-        _x.raw_buffer()->host             = reinterpret_cast<uint8_t*>(const_cast<uint64_t*>(x));
-        _x.raw_buffer()->dim[0].extent    = count;
-        _repr.raw_buffer()->host          = reinterpret_cast<uint8_t*>(const_cast<uint64_t*>(repr));
-        _repr.raw_buffer()->dim[0].extent = count;
-        _character.raw_buffer()->host =
-            reinterpret_cast<uint8_t*>(const_cast<std::complex<double>*>(character));
-        _character.raw_buffer()->dim[0].extent = count;
-        _norm.raw_buffer()->host          = reinterpret_cast<uint8_t*>(const_cast<double*>(norm));
-        _norm.raw_buffer()->dim[0].extent = count;
-        (*_kernel)(_x, _flip_mask, _masks, _eigvals_re, _eigvals_im, _shifts, _repr, _character,
-                   _norm);
-    }
-#endif
+    auto operator=(halide_kernel_state const&) -> halide_kernel_state& = delete;
+    auto operator=(halide_kernel_state&&) -> halide_kernel_state& = delete;
 };
 
 struct halide_is_representative_kernel {
@@ -423,6 +380,7 @@ struct halide_state_info_kernel {
             /*dim=*/&batch_dim,
             /*padding=*/nullptr,
         };
+        LATTICE_SYMMETRIES_LOG_DEBUG("Extent: %i\n", state._shifts.dim[0].extent);
         (*kernel)(&x_buf, state._flip_mask, &state._masks, &state._eigvals_re, &state._eigvals_im,
                   &state._shifts, &repr_buf, &character_buf, &norm_buf);
     }
