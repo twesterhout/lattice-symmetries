@@ -218,10 +218,10 @@ def test_construct_flat_basis():
     assert np.all(other_basis.serialize() == buf)
 
 def test_state_info_flat_basis():
-    basis = ls.SpinBasis(ls.Group([ls.Symmetry([1, 2, 3, 0], sector=1)]), number_spins=4)
+    basis = ls.SpinBasis(ls.Group([ls.Symmetry(list(range(1, 20)) + [0], sector=1)]), number_spins=20)
     basis.build()
     flat = ls.FlatSpinBasis(basis)
-    full = ls.SpinBasis(ls.Group([]), number_spins=4)
+    full = ls.SpinBasis(ls.Group([]), number_spins=20)
     full.build()
     r1, e1, n1 = basis.batched_state_info(
         np.hstack((full.states.reshape(-1, 1), np.zeros((full.number_states, 7), dtype=np.uint64)))
