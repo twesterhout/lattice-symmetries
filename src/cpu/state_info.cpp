@@ -132,21 +132,21 @@ struct alignas(required_alignment) batch_acc_64_t {
         // Reduce from 512 to 256
         auto const r256_low   = r.get_low();
         auto const r256_high  = r.get_high();
-        auto const smaller256 = r256_low < r256_high;
+        auto const smaller256 = r256_low <= r256_high;
         auto const r256       = vcl::select(smaller256, r256_low, r256_high);
         auto const i256       = vcl::select(smaller256, i.get_low(), i.get_high());
 
         // Reduce from 526 to 128
         auto const r128_low   = r256.get_low();
         auto const r128_high  = r256.get_high();
-        auto const smaller128 = r128_low < r128_high;
+        auto const smaller128 = r128_low <= r128_high;
         auto const r128       = vcl::select(smaller128, r128_low, r128_high);
         auto const i128       = vcl::select(smaller128, i256.get_low(), i256.get_high());
 
         // Reduce from 128 to 64
         auto const r64_low   = r128.extract(0);
         auto const r64_high  = r128.extract(1);
-        auto const smaller64 = r64_low < r64_high;
+        auto const smaller64 = r64_low <= r64_high;
         if (smaller64) { return {r64_low, i128.extract(0), norm}; }
         return {r64_high, i128.extract(1), norm};
     }
