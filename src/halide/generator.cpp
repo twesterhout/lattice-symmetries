@@ -231,10 +231,18 @@ class is_representative_generator : public Halide::Generator<is_representative_g
         batch_reduction(i) = Tuple{batch_reduction(i)[0] + lane_reduction(i, m_batch)[0],
                                    batch_reduction(i)[1] && lane_reduction(i, m_batch)[1]};
 
+        // Compute reduction over remaining elements
+        Func scalar_reduction{"scalar_reduction"};
+        RDom m_tail{0, number_rest, "m_tail"};
+        scalar_reduction(i) = Tuple{batch_reduction(i)[0], batch_reduction(i)[1]};
+        // m_tail.where(batch_reduction(i)[1]);
+        scalar_reduction(i) = Tuple{scalar_reduction(i)[0] + temp(i, number_chunks, m_tail)[0],
+                                    scalar_reduction(i)[1] && temp(i, number_chunks, m_tail)[1]};
+
         // Save results
-        _norm(i) = batch_reduction(i)[0];
+        _norm(i) = scalar_reduction(i)[0];
         _is_representative(i) =
-            select(batch_reduction(i)[0] > 0, cast<uint8_t>(batch_reduction(i)[1]), 0);
+            select(scalar_reduction(i)[0] > 0, cast<uint8_t>(scalar_reduction(i)[1]), 0);
 
         // Shapes & strides
         _x.dim(0).set_min(0).set_stride(1);
@@ -246,10 +254,11 @@ class is_representative_generator : public Halide::Generator<is_representative_g
         _norm.dim(0).set_min(0).set_stride(1).set_extent(count);
 
         // Schedule
-        temp.vectorize(j_inner);
-        temp.compute_at(lane_reduction, j_outer);
+        temp.in(lane_reduction).vectorize(j_inner);
+        temp.in(lane_reduction).compute_at(lane_reduction, j_outer);
+        temp.in(scalar_reduction).compute_at(scalar_reduction, i);
         // lane_reduction.compute_at(batch_reduction, m_batch);
-        batch_reduction.compute_at(_is_representative, i);
+        scalar_reduction.compute_at(_is_representative, i);
         _norm.compute_with(_is_representative, i);
     }
 };
