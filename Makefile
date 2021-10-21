@@ -12,6 +12,7 @@ C_LDFLAGS = $(shell cat "$(CABAL_AUTOGEN_DIR)/EXTRA_LIBRARIES_LIST" | sed 's/^/-
 
 $(shell mkdir -p build)
 
+all: shared static main
 
 shared: build/lib$(LIBRARY_NAME).so
 static: build/lib$(LIBRARY_NAME).a
@@ -28,7 +29,7 @@ build/api.txt: cbits/init.c
 		> $@
 
 build/lib$(LIBRARY_NAME).so: $(CABAL_BUILD_DIR)/cbits/init.o build/api.txt $(CABAL_AUTOGEN_DIR)/HS_LIBRARY_PATHS_LIST $(CABAL_AUTOGEN_DIR)/HS_LIBRARIES_LIST $(CABAL_AUTOGEN_DIR)/EXTRA_LIBRARIES_LIST
-	ghc -v --make -no-hs-main -shared \
+	ghc --make -no-hs-main -shared \
 		-pgmc $(CC) -pgml $(CC) \
 		-optl -Wl,--retain-symbols-file=build/api.txt \
 		$< -o $@ \
@@ -36,11 +37,10 @@ build/lib$(LIBRARY_NAME).so: $(CABAL_BUILD_DIR)/cbits/init.o build/api.txt $(CAB
 		$(HS_LDFLAGS) $(C_LDFLAGS)
 
 build/lib$(LIBRARY_NAME).a: $(CABAL_BUILD_DIR)/cbits/init.o $(CABAL_AUTOGEN_DIR)/HS_LIBRARY_PATHS_LIST $(CABAL_AUTOGEN_DIR)/HS_LIBRARIES_LIST $(CABAL_AUTOGEN_DIR)/EXTRA_LIBRARIES_LIST
-	# --retain-symbols=$PWD/api.txt
 	$(LD) -o $@ --relocatable --whole-archive -L"$(CABAL_BUILD_DIR)" $(HS_LDFLAGS)
 
 main: main.c
 	gcc -o $@ -I cbits $< -L build -l$(LIBRARY_NAME)
 
 clean:
-	rm -rf build/
+	rm -rf main build/
