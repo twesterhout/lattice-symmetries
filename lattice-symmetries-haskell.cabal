@@ -1,0 +1,94 @@
+cabal-version:         2.4
+name:                  lattice-symmetries-haskell
+version:               0.1.0.0
+synopsis:              See README for more info
+description:           See README for more info
+license:               BSD-3-Clause
+license-file:          LICENSE
+author:                Tom Westerhout
+maintainer:            Tom Westerhout <14264576+twesterhout@users.noreply.github.com>
+copyright:             2021 Tom Westerhout
+category:              Math
+build-type:            Custom
+extra-doc-files:       README.md
+                       CHANGELOG.md
+tested-with:           GHC == 8.10.4
+
+custom-setup
+  setup-depends:       base, containers, Cabal, filepath
+
+common common-options
+  build-depends:       base >= 4.13.0.0
+                     , relude
+
+  mixins:              base hiding (Prelude)
+                     , relude (Relude as Prelude)
+
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Widentities
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+  if impl(ghc >= 8.0)
+    ghc-options:       -Wredundant-constraints
+  if impl(ghc >= 8.2)
+    ghc-options:       -fhide-source-paths
+  if impl(ghc >= 8.4)
+    ghc-options:       -Wmissing-export-lists
+                       -Wpartial-fields
+  if impl(ghc >= 8.8)
+    ghc-options:       -Wmissing-deriving-strategies
+
+  default-language:    Haskell2010
+  default-extensions:  BangPatterns
+                       ScopedTypeVariables
+                       OverloadedStrings
+                       FlexibleContexts
+                       FlexibleInstances
+                       MultiParamTypeClasses
+                       TypeFamilies
+                       DerivingVia
+                       GeneralizedNewtypeDeriving
+                       TypeApplications
+
+library
+  import:              common-options
+  hs-source-dirs:      src
+  exposed-modules:     LatticeSymmetries
+  c-sources:           cbits/init.c
+  ghc-options:         -fPIC
+  -- build-depends:       vector
+                     -- , vector-algorithms
+                     -- , deepseq
+                     -- , primitive
+                     -- , mtl
+                     -- , random >= 1.2.0
+                     -- , mwc-random
+                     -- , text
+                     -- , ghc-dump-core
+                     -- , ghc-dump-util
+                     -- , inline-c
+
+-- executable ising-ground-state
+--   import:              common-options
+--   hs-source-dirs:      app
+--   main-is:             Main.hs
+--   build-depends:       ising-glass-annealer
+--                      , vector
+--                      , hdf5-hs
+--   ghc-options:         -threaded
+--                        -rtsopts
+--                        -with-rtsopts=-N
+-- 
+-- test-suite ising-ground-state-test
+--   import:              common-options
+--   type:                exitcode-stdio-1.0
+--   hs-source-dirs:      test
+--   main-is:             Spec.hs
+--   build-depends:       ising-glass-annealer
+--                      , hspec
+--                      , vector
+--                      , mwc-random
+--   ghc-options:         -threaded
+--                        -rtsopts
+--                        -with-rtsopts=-N
