@@ -28,10 +28,11 @@ build/api.txt: cbits/init.c
 		| tr ',' '\n' \
 		> $@
 
-build/lib$(LIBRARY_NAME).so: $(CABAL_BUILD_DIR)/cbits/init.o build/api.txt $(CABAL_AUTOGEN_DIR)/HS_LIBRARY_PATHS_LIST $(CABAL_AUTOGEN_DIR)/HS_LIBRARIES_LIST $(CABAL_AUTOGEN_DIR)/EXTRA_LIBRARIES_LIST
-	ghc --make -no-hs-main -shared \
+build/lib$(LIBRARY_NAME).so: cbits/init.c $(CABAL_BUILD_DIR)/libHS$(PROJECT_NAME)* build/api.txt $(CABAL_AUTOGEN_DIR)/HS_LIBRARY_PATHS_LIST $(CABAL_AUTOGEN_DIR)/HS_LIBRARIES_LIST $(CABAL_AUTOGEN_DIR)/EXTRA_LIBRARIES_LIST
+	ghc --make -no-hs-main -shared -threaded \
 		-pgmc $(CC) -pgml $(CC) \
 		-optl -Wl,--retain-symbols-file=build/api.txt \
+		`pkg-config --cflags lattice_symmetries` \
 		$< -o $@ \
 		-L"$(CABAL_BUILD_DIR)" \
 		$(HS_LDFLAGS) $(C_LDFLAGS)
@@ -40,7 +41,12 @@ build/lib$(LIBRARY_NAME).a: $(CABAL_BUILD_DIR)/cbits/init.o $(CABAL_AUTOGEN_DIR)
 	$(LD) -o $@ --relocatable --whole-archive -L"$(CABAL_BUILD_DIR)" $(HS_LDFLAGS)
 
 main: main.c
-	gcc -o $@ -I cbits $< -L build -l$(LIBRARY_NAME)
+	gcc -o $@ \
+		-Icbits `pkg-config --cflags lattice_symmetries` \
+		$< \
+		-L build -l$(LIBRARY_NAME) \
+		`pkg-config --libs lattice_symmetries` \
+		$(C_LDFLAGS)
 
 clean:
 	rm -rf main build/

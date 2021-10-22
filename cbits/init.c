@@ -6,4 +6,5 @@ void ls_hs_init(void) { hs_init(NULL, NULL); }
 
 void ls_hs_exit(void) { hs_exit(); }
 
-void *ls_hs_symbol_table[] = {&ls_hs_init, &ls_hs_exit, &ls_hs_foo};
+void *ls_hs_symbol_table[] = {&ls_hs_init, &ls_hs_exit, &ls_hs_foo,
+                              &ls_hs_load_basis_from_yaml};

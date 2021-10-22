@@ -55,9 +55,22 @@ library
   import:              common-options
   hs-source-dirs:      src
   exposed-modules:     LatticeSymmetries
-  c-sources:           cbits/init.c
+  -- c-sources:           cbits/init.c
   ghc-options:         -fPIC
-  -- build-depends:       vector
+  build-depends:       vector
+                     , exceptions
+                     , safe-exceptions
+                     -- , resourcet
+                     , unliftio
+                     , unliftio-core
+                     , mtl
+                     , vector
+                     , text
+                     , aeson
+                     , scientific
+                     , yaml
+                     , co-log
+                     , co-log-core
                      -- , vector-algorithms
                      -- , deepseq
                      -- , primitive
@@ -68,6 +81,7 @@ library
                      -- , ghc-dump-core
                      -- , ghc-dump-util
                      -- , inline-c
+  pkgconfig-depends:   lattice_symmetries
 
 -- executable ising-ground-state
 --   import:              common-options
