@@ -1,12 +1,22 @@
 {-# LANGUAGE CApiFFI #-}
+{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE TemplateHaskell #-}
+
+-- {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module LatticeSymmetries where
 
+import qualified Control.Monad.Primitive as Primitive
+import Control.Monad.ST
+import qualified Control.Monad.ST.Unsafe (unsafeIOToST)
 import Data.Aeson
 import Data.Aeson.Types (typeMismatch)
 import Data.Complex
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Scientific (toRealFloat)
+import Data.Vector.Generic ((!))
+import qualified Data.Vector.Storable as S
+import qualified Data.Vector.Storable.Mutable as SM
 import qualified Data.Vector.Unboxed as U
 import Data.Yaml (decodeFileWithWarnings)
 import Foreign.C.String (CString, peekCString)
@@ -16,10 +26,19 @@ import Foreign.Marshal.Alloc (alloca)
 import Foreign.Marshal.Array (withArrayLen)
 import Foreign.Ptr (FunPtr, Ptr)
 import Foreign.Storable (Storable (..))
+import qualified GHC.Exts as GHC (IsList (..))
 import qualified GHC.ForeignPtr as GHC (Finalizers (..), ForeignPtr (..), ForeignPtrContents (..))
 import qualified GHC.IORef as GHC (atomicSwapIORef)
 import qualified GHC.Ptr as GHC (Ptr (..))
+import qualified Language.C.Inline as C
+import qualified Language.C.Inline.Unsafe as CU
+import LatticeSymmetries.Context
+import qualified System.IO.Unsafe
 import UnliftIO.Exception (bracket, impureThrow, throwIO)
+
+C.context (C.baseCtx <> C.bsCtx <> C.funCtx <> lsCtx)
+C.include "<lattice_symmetries/lattice_symmetries.h>"
+C.include "helpers.h"
 
 foo :: IO CInt
 foo = do
@@ -110,6 +129,59 @@ instance FromJSON (Complex Double) where
     _ -> typeMismatch "Complex" v
   parseJSON v = typeMismatch "Complex" v
 
+newtype DenseMatrixSpec = DenseMatrixSpec [[Complex Double]]
+  deriving stock (Read, Show, Eq)
+  deriving newtype (FromJSON)
+
+-- Row-major order (C layout)
+data DenseMatrix = DenseMatrix {denseMatrixShape :: (Int, Int), denseMatrixData :: S.Vector (Complex Double)}
+  deriving stock (Show, Eq)
+
+isDenseMatrixSquare :: DenseMatrix -> Bool
+isDenseMatrixSquare (DenseMatrix (r, c) _) = r == c
+
+isDenseMatrixEmpty :: DenseMatrix -> Bool
+isDenseMatrixEmpty (DenseMatrix (r, c) _) = r * c == 0
+
+indexDenseMatrix :: DenseMatrix -> Int -> Int -> Complex Double
+indexDenseMatrix (DenseMatrix (_, c) v) i j = v ! (c * i + j)
+
+isDenseMatrixHermitian :: DenseMatrix -> Bool
+isDenseMatrixHermitian matrix@(DenseMatrix (r, c) _) = isDenseMatrixSquare matrix && go 0 0
+  where
+    -- Iterate over upper triangle (including the diagonal) of the matrix
+    go :: Int -> Int -> Bool
+    go !i !j
+      | j == c = let !i' = i + 1 in (i' >= r) || go i' i'
+      | otherwise =
+        let !p = indexDenseMatrix matrix i j == conjugate (indexDenseMatrix matrix j i)
+         in p && go i (j + 1)
+
+denseMatrixFromList :: [[Complex Double]] -> Maybe DenseMatrix
+denseMatrixFromList [] = Just $ DenseMatrix (0, 0) S.empty
+denseMatrixFromList (r : rs) =
+  case all ((== nColumns) . length) rs of
+    True -> Just $ DenseMatrix (length (r : rs), nColumns) v
+    False -> Nothing
+  where
+    nColumns = length r
+    v = fromList $ mconcat (r : rs)
+
+instance GHC.IsList DenseMatrix where
+  type Item DenseMatrix = [Complex Double]
+  fromList rows = case denseMatrixFromList rows of
+    Just m -> m
+    Nothing -> error $ "all rows must have the same length"
+
+-- data InteractionSpec = InteractionSpec ![[Complex Double]] ![[Int]]
+--   deriving stock (Read, Show, Eq)
+--
+-- instance FromJSON InteractionSpec where
+--   parseJSON = withObject "interaction" $ \v ->
+--     InteractionSpec
+--       <$> v .: "matrix"
+--       <*> v .: "sites"
+
 loadRawBasis :: MonadIO m => Text -> m (Ptr CSpinBasis)
 loadRawBasis path = do
   r <- liftIO $ decodeFileWithWarnings (toString path)
@@ -148,11 +220,15 @@ data {-# CTYPE "lattice_symmetries/lattice_symmetries.h" "ls_group" #-} CGroup
 
 data {-# CTYPE "lattice_symmetries/lattice_symmetries.h" "ls_spin_basis" #-} CSpinBasis
 
+data {-# CTYPE "lattice_symmetries/lattice_symmetries.h" "ls_flat_spin_basis" #-} CFlatSpinBasis
+
 newtype Symmetry = Symmetry (ForeignPtr CSymmetry)
 
 newtype SymmetryGroup = SymmetryGroup (ForeignPtr CGroup)
 
 newtype SpinBasis = SpinBasis (ForeignPtr CSpinBasis)
+
+newtype FlatSpinBasis = FlatSpinBasis (ForeignPtr CFlatSpinBasis)
 
 mkSymmetry ::
   MonadIO m =>
@@ -254,6 +330,247 @@ releaseForeignPtr (GHC.ForeignPtr p foreignPtr) = do
       (GHC.PlainForeignPtr ref) -> ref
       _ -> error "releaseForeignPtr: only 'PlainForeignPtr's are supported"
 
+data {-# CTYPE "ls_bit_index" #-} BitIndex = BitIndex !Word8 !Word8
+
+data SparseSquareMatrix = SparseSquareMatrix
+  { ssmDimension :: {-# UNPACK #-} !Int,
+    ssmOffsets :: {-# UNPACK #-} !(S.Vector CUInt),
+    ssmColumns :: {-# UNPACK #-} !(S.Vector CUInt),
+    ssmOffDiagElements :: {-# UNPACK #-} !(S.Vector (Complex Double)),
+    ssmDiagElements :: {-# UNPACK #-} !(S.Vector (Complex Double))
+  }
+  deriving stock (Show, Eq)
+
+-- typedef struct ls_csr_matrix {
+--     unsigned         dimension;
+--     unsigned         number_nonzero;
+--     unsigned*        offsets;
+--     unsigned*        columns;
+--     _Complex double* off_diag_elements;
+--     _Complex double* diag_elements;
+-- } ls_csr_matrix;
+data {-# CTYPE "helpers.h" "ls_csr_matrix" #-} Csparse_matrix
+  = Csparse_matrix
+      {-# UNPACK #-} !CUInt
+      {-# UNPACK #-} !CUInt
+      {-# UNPACK #-} !(Ptr CUInt)
+      {-# UNPACK #-} !(Ptr CUInt)
+      {-# UNPACK #-} !(Ptr (Complex Double))
+      {-# UNPACK #-} !(Ptr (Complex Double))
+
+instance Storable Csparse_matrix where
+  sizeOf _ = 40
+  alignment _ = 8
+  peek p =
+    Csparse_matrix
+      <$> peekByteOff p 0
+      <*> peekByteOff p 4
+      <*> peekByteOff p 8
+      <*> peekByteOff p 16
+      <*> peekByteOff p 24
+      <*> peekByteOff p 32
+  poke p (Csparse_matrix dimension number_nonzero offsets columns off_diag_elements diag_elements) = do
+    pokeByteOff p 0 dimension
+    pokeByteOff p 4 number_nonzero
+    pokeByteOff p 8 offsets
+    pokeByteOff p 16 columns
+    pokeByteOff p 24 off_diag_elements
+    pokeByteOff p 32 diag_elements
+
+trueCsparse_matrixSizeOf :: Int
+trueCsparse_matrixSizeOf = fromIntegral [CU.pure| unsigned int { sizeof(ls_csr_matrix) } |]
+
+trueCsparse_matrixAlignment :: Int
+trueCsparse_matrixAlignment = fromIntegral [CU.pure| unsigned int { __alignof__(ls_csr_matrix) } |]
+
+-- typedef struct ls_bit_index {
+--     uint8_t word;
+--     uint8_t bit;
+-- } ls_bit_index;
+data {-# CTYPE "helpers.h" "ls_bit_index" #-} Cbit_index = Cbit_index {-# UNPACK #-} !Word8 {-# UNPACK #-} !Word8
+
+instance Storable Cbit_index where
+  sizeOf _ = 2
+  alignment _ = 1
+  peek p = Cbit_index <$> peekByteOff p 0 <*> peekByteOff p 1
+  poke p (Cbit_index word bit) = pokeByteOff p 0 word >> pokeByteOff p 1 bit
+
+trueCbit_indexSizeOf :: Int
+trueCbit_indexSizeOf = fromIntegral [CU.pure| unsigned int { sizeof(ls_bit_index) } |]
+
+trueCbit_indexAlignment :: Int
+trueCbit_indexAlignment = fromIntegral [CU.pure| unsigned int { __alignof__(ls_bit_index) } |]
+
+-- typedef unsigned (*ls_term_gather_fn)(uint64_t const* /*source*/, ls_bit_index const* /*tuple*/);
+-- typedef void (*ls_term_scatter_fn)(unsigned, ls_bit_index const* /*tuple*/,
+--                                    uint64_t* /*destination*/);
+-- typedef struct ls_term {
+--     ls_csr_matrix      matrix;
+--     unsigned           number_tuples;
+--     unsigned           tuple_size;
+--     ls_bit_index*      tuples;
+--     ls_term_gather_fn  gather_fn;
+--     ls_term_scatter_fn scatter_fn;
+-- } ls_term;
+data {-# CTYPE "helpers.h" "ls_term" #-} Cterm
+  = Cterm
+      {-# UNPACK #-} !Csparse_matrix
+      {-# UNPACK #-} !CUInt
+      {-# UNPACK #-} !CUInt
+      {-# UNPACK #-} !(Ptr Cbit_index)
+      {-# UNPACK #-} !(FunPtr (Ptr Word64 -> Ptr Cbit_index -> IO CUInt))
+      {-# UNPACK #-} !(FunPtr (CUInt -> Ptr Cbit_index -> Ptr Word64 -> IO ()))
+
+instance Storable Cterm where
+  sizeOf _ = 72
+  alignment _ = 8
+  peek p =
+    Cterm
+      <$> peekByteOff p 0
+      <*> peekByteOff p 40
+      <*> peekByteOff p 44
+      <*> peekByteOff p 48
+      <*> peekByteOff p 56
+      <*> peekByteOff p 64
+  poke p (Cterm matrix number_tuples tuple_size tuples gather_fn scatter_fn) = do
+    pokeByteOff p 0 matrix
+    pokeByteOff p 40 number_tuples
+    pokeByteOff p 44 tuple_size
+    pokeByteOff p 48 tuples
+    pokeByteOff p 56 gather_fn
+    pokeByteOff p 64 scatter_fn
+
+trueCtermSizeOf :: Int
+trueCtermSizeOf = fromIntegral [CU.pure| unsigned int { sizeof(ls_term) } |]
+
+trueCtermAlignment :: Int
+trueCtermAlignment = fromIntegral [CU.pure| unsigned int { __alignof__(ls_term) } |]
+
+-- typedef struct ls_output_buffer {
+--   uint64_t *spins;
+--   _Complex double *coeffs;
+--   _Complex double *const diagonal;
+--   uint64_t number_words;
+-- } ls_output_buffer;
+data {-# CTYPE "helpers.h" "ls_output_buffer" #-} Coutput_buffer
+  = Coutput_buffer
+      {-# UNPACK #-} !(Ptr Word64)
+      {-# UNPACK #-} !(Ptr (Complex Double))
+      {-# UNPACK #-} !(Ptr (Complex Double))
+      {-# UNPACK #-} !Word64
+
+instance Storable Coutput_buffer where
+  sizeOf _ = 32
+  alignment _ = 8
+  peek p =
+    Coutput_buffer
+      <$> peekByteOff p 0
+      <*> peekByteOff p 8
+      <*> peekByteOff p 16
+      <*> peekByteOff p 24
+  poke p (Coutput_buffer spins coeffs diagonal number_words) = do
+    pokeByteOff p 0 spins
+    pokeByteOff p 8 coeffs
+    pokeByteOff p 16 diagonal
+    pokeByteOff p 24 number_words
+
+trueCoutput_bufferSizeOf :: Int
+trueCoutput_bufferSizeOf = fromIntegral [CU.pure| unsigned int { sizeof(ls_output_buffer) } |]
+
+trueCoutput_bufferAlignment :: Int
+trueCoutput_bufferAlignment = fromIntegral [CU.pure| unsigned int { __alignof__(ls_output_buffer) } |]
+
+newtype SitesList = SitesList [[Int]]
+
+data Term = Term {termMatrix :: !SparseSquareMatrix, termSites :: !SitesList}
+
+data SparseOperator = SparseOperator FlatSpinBasis [Term]
+
+-- instance Storable SparseSquareMatrix where
+--   sizeOf _ = 16
+--   alignment _ = 4
+--   peek p =
+--     HalideDimension
+--       <$> peekByteOff p 0
+--       <*> peekByteOff p 4
+--       <*> peekByteOff p 8
+--       <*> peekByteOff p 12
+--   poke p x = do
+--     pokeByteOff p 0 (halideDimensionMin x)
+--     pokeByteOff p 4 (halideDimensionExtent x)
+--     pokeByteOff p 8 (halideDimensionStride x)
+--     pokeByteOff p 12 (halideDimensionFlags x)
+
+denseMatrixCountNonZero :: DenseMatrix -> Int
+denseMatrixCountNonZero matrix = S.foldl' (\n x -> if x /= 0 then n + 1 else n) 0 (denseMatrixData matrix)
+
+-- for (auto i = 0; i < numberRows; ++i) {
+--   unsigned numberNonZero = 0;
+--   for (auto j = 0; j < numberColumns; ++j) {
+--     if (dense[i, j] != 0 && i != j) {
+--       ++numberNonZero;
+--       *(columns++) = j;
+--       *(off_diag_elements++) = dense[i, j];
+--     }
+--   }
+--   offsets[i + 1] = offsets[i] + numberNonZero;
+-- }
+
+denseToCSRSquare :: DenseMatrix -> Maybe SparseSquareMatrix
+denseToCSRSquare dense
+  | isDenseMatrixSquare dense = Just $
+    System.IO.Unsafe.unsafePerformIO $
+      do
+        let numberNonZero = denseMatrixCountNonZero dense
+            dimension = let (DenseMatrix (n, _) _) = dense in n
+        offsets <- SM.new (dimension + 1)
+        columns <- SM.new numberNonZero
+        offDiagElements <- SM.new numberNonZero
+        diagElements <- SM.new dimension
+        S.unsafeWith (denseMatrixData dense) $ \c_dense ->
+          SM.unsafeWith offsets $ \c_offsets ->
+            SM.unsafeWith columns $ \c_columns ->
+              SM.unsafeWith offDiagElements $ \c_off_diag_elements ->
+                SM.unsafeWith diagElements $ \c_diag_elements ->
+                  ls_csr_matrix_from_dense
+                    (fromIntegral dimension)
+                    c_dense
+                    c_offsets
+                    c_columns
+                    c_off_diag_elements
+                    c_diag_elements
+        numberNonZero' <- fromIntegral <$> SM.read offsets dimension
+        SparseSquareMatrix dimension
+          <$> S.freeze offsets
+          <*> S.freeze (SM.take numberNonZero' columns)
+          <*> S.freeze (SM.take numberNonZero' offDiagElements)
+          <*> S.freeze diagElements
+  | otherwise = Nothing
+
+foreign import capi unsafe "helpers.h ls_csr_matrix_from_dense"
+  ls_csr_matrix_from_dense :: CUInt -> Ptr (Complex Double) -> Ptr CUInt -> Ptr CUInt -> Ptr (Complex Double) -> Ptr (Complex Double) -> IO ()
+
+foreign import capi unsafe "helpers.h ls_dense_from_csr_matrix"
+  ls_dense_from_csr_matrix :: CUInt -> Ptr CUInt -> Ptr CUInt -> Ptr (Complex Double) -> Ptr (Complex Double) -> Ptr (Complex Double) -> IO ()
+
+csrSquareToDense :: SparseSquareMatrix -> DenseMatrix
+csrSquareToDense sparse = System.IO.Unsafe.unsafePerformIO $ do
+  let dimension = ssmDimension sparse
+  elements <- SM.new (dimension * dimension)
+  S.unsafeWith (ssmOffsets sparse) $ \c_offsets ->
+    S.unsafeWith (ssmColumns sparse) $ \c_columns ->
+      S.unsafeWith (ssmOffDiagElements sparse) $ \c_off_diag_elements ->
+        S.unsafeWith (ssmDiagElements sparse) $ \c_diag_elements ->
+          SM.unsafeWith elements $ \c_dense ->
+            ls_dense_from_csr_matrix
+              (fromIntegral dimension)
+              c_offsets
+              c_columns
+              c_off_diag_elements
+              c_diag_elements
+              c_dense
+  DenseMatrix (dimension, dimension) <$> S.freeze elements
+
 foreign import ccall unsafe "lattice_symmetries/lattice_symmetries.h ls_error_to_string"
   ls_error_to_string :: CInt -> IO CString
 
@@ -295,6 +612,9 @@ foreign import ccall safe "lattice_symmetries/lattice_symmetries.h ls_build_unsa
 
 foreign import ccall unsafe "lattice_symmetries/lattice_symmetries.h ls_get_number_states"
   ls_get_number_states :: Ptr CSpinBasis -> Ptr Word64 -> IO CInt
+
+foreign import capi unsafe "lattice_symmetries/lattice_symmetries.h ls_flat_spin_basis_state_info"
+  ls_flat_spin_basis_state_info :: Ptr CFlatSpinBasis -> Word64 -> Ptr () -> Ptr () -> Ptr (Complex Double) -> Ptr Double -> IO ()
 
 -- foreign import ccall unsafe "lattice_symmetries/lattice_symmetries.h ls_get_states"
 --   ls_get_states :: Ptr (Ptr ()) -> Ptr () -> IO CInt
