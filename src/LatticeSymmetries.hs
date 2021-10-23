@@ -341,6 +341,9 @@ data SparseSquareMatrix = SparseSquareMatrix
   }
   deriving stock (Show, Eq)
 
+isSparseMatrixHermitian :: SparseSquareMatrix -> Bool
+isSparseMatrixHermitian = isDenseMatrixHermitian . sparseToDense
+
 -- typedef struct ls_csr_matrix {
 --     unsigned         dimension;
 --     unsigned         number_nonzero;
@@ -480,9 +483,55 @@ trueCoutput_bufferSizeOf = fromIntegral [CU.pure| unsigned int { sizeof(ls_outpu
 trueCoutput_bufferAlignment :: Int
 trueCoutput_bufferAlignment = fromIntegral [CU.pure| unsigned int { __alignof__(ls_output_buffer) } |]
 
+data {-# CTYPE "helpers.h" "ls_workspace" #-} Cworkspace
+  = Cworkspace
+      {-# UNPACK #-} !(Ptr Word64)
+      {-# UNPACK #-} !(Ptr (Complex Double))
+      {-# UNPACK #-} !(Ptr Double)
+
+-- typedef struct ls_sparse_operator {
+--   ls_flat_spin_basis const *basis;
+--   unsigned number_terms;
+--   ls_term *terms;
+-- } ls_sparse_operator;
+data {-# CTYPE "helpers.h" "ls_sparse_operator" #-} Csparse_operator
+  = Csparse_operator
+      {-# UNPACK #-} !(Ptr CFlatSpinBasis)
+      {-# UNPACK #-} !CUInt
+      {-# UNPACK #-} !(Ptr Cterm)
+
+instance Storable Csparse_operator where
+  sizeOf _ = 24
+  alignment _ = 8
+  peek p =
+    Csparse_operator
+      <$> peekByteOff p 0
+      <*> peekByteOff p 8
+      <*> peekByteOff p 16
+  poke p (Csparse_operator basis number_terms terms) = do
+    pokeByteOff p 0 basis
+    pokeByteOff p 8 number_terms
+    pokeByteOff p 16 terms
+
+trueCsparse_operatorSizeOf :: Int
+trueCsparse_operatorSizeOf = fromIntegral [CU.pure| unsigned int { sizeof(ls_sparse_operator) } |]
+
+trueCsparse_operatorAlignment :: Int
+trueCsparse_operatorAlignment = fromIntegral [CU.pure| unsigned int { __alignof__(ls_sparse_operator) } |]
+
 newtype SitesList = SitesList [[Int]]
 
 data Term = Term {termMatrix :: !SparseSquareMatrix, termSites :: !SitesList}
+
+estimateBufferSizeForTerm :: Term -> Int
+estimateBufferSizeForTerm (Term matrix (SitesList sites)) = 1 + maxNonZeroPerRow * length sites
+  where
+    maxNonZeroPerRow =
+      if ssmDimension matrix /= 0
+        then
+          fromIntegral . S.maximum $
+            S.generate (ssmDimension matrix) (\i -> ssmOffsets matrix ! (i + 1) - ssmOffsets matrix ! i)
+        else 0
 
 data SparseOperator = SparseOperator FlatSpinBasis [Term]
 
@@ -553,8 +602,8 @@ foreign import capi unsafe "helpers.h ls_csr_matrix_from_dense"
 foreign import capi unsafe "helpers.h ls_dense_from_csr_matrix"
   ls_dense_from_csr_matrix :: CUInt -> Ptr CUInt -> Ptr CUInt -> Ptr (Complex Double) -> Ptr (Complex Double) -> Ptr (Complex Double) -> IO ()
 
-csrSquareToDense :: SparseSquareMatrix -> DenseMatrix
-csrSquareToDense sparse = System.IO.Unsafe.unsafePerformIO $ do
+sparseToDense :: SparseSquareMatrix -> DenseMatrix
+sparseToDense sparse = System.IO.Unsafe.unsafePerformIO $ do
   let dimension = ssmDimension sparse
   elements <- SM.new (dimension * dimension)
   S.unsafeWith (ssmOffsets sparse) $ \c_offsets ->

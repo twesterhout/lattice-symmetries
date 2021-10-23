@@ -98,21 +98,21 @@ main = hspec $ do
               ]
           expr = denseToCSRSquare m
        in case expr of
-            Just m' -> csrSquareToDense m' `shouldBe` m
+            Just m' -> sparseToDense m' `shouldBe` m
             Nothing -> expr `shouldSatisfy` isJust
       let m =
             fromList
               [[3]]
           expr = denseToCSRSquare m
        in case expr of
-            Just m' -> csrSquareToDense m' `shouldBe` m
+            Just m' -> sparseToDense m' `shouldBe` m
             Nothing -> expr `shouldSatisfy` isJust
       let m =
             fromList
               []
           expr = denseToCSRSquare m
        in case expr of
-            Just m' -> csrSquareToDense m' `shouldBe` m
+            Just m' -> sparseToDense m' `shouldBe` m
             Nothing -> expr `shouldSatisfy` isJust
   describe "Storable instances" $ do
     it "has correct sizeOf" $ do
@@ -120,11 +120,13 @@ main = hspec $ do
       sizeOf (undefined :: Cbit_index) `shouldBe` trueCbit_indexSizeOf
       sizeOf (undefined :: Cterm) `shouldBe` trueCtermSizeOf
       sizeOf (undefined :: Coutput_buffer) `shouldBe` trueCoutput_bufferSizeOf
+      sizeOf (undefined :: Csparse_operator) `shouldBe` trueCsparse_operatorSizeOf
     it "has correct alignment" $ do
       alignment (undefined :: Csparse_matrix) `shouldBe` trueCsparse_matrixAlignment
       alignment (undefined :: Cbit_index) `shouldBe` trueCbit_indexAlignment
       alignment (undefined :: Cterm) `shouldBe` trueCtermAlignment
       alignment (undefined :: Coutput_buffer) `shouldBe` trueCoutput_bufferAlignment
+      alignment (undefined :: Csparse_operator) `shouldBe` trueCsparse_operatorAlignment
 
 {-
 describe "BasisSpec" $ do

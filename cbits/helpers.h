@@ -1,6 +1,7 @@
 #ifndef HELPERS_H
 #define HELPERS_H
 
+#include <lattice_symmetries/lattice_symmetries.h>
 #include <stdint.h>
 
 typedef struct ls_csr_matrix {
@@ -37,6 +38,18 @@ typedef struct ls_output_buffer {
   _Complex double *const diagonal;
   uint64_t number_words;
 } ls_output_buffer;
+
+typedef struct ls_workspace {
+  uint64_t *spins;
+  _Complex double *characters;
+  double *norms;
+} ls_workspace;
+
+typedef struct ls_sparse_operator {
+  ls_flat_spin_basis const *basis;
+  unsigned number_terms;
+  ls_term *terms;
+} ls_sparse_operator;
 
 void ls_csr_matrix_from_dense(unsigned const dimension,
                               _Complex double const *dense, unsigned *offsets,
