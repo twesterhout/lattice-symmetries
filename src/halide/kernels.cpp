@@ -235,6 +235,15 @@ struct halide_kernel_state {
     auto operator=(halide_kernel_state&&) -> halide_kernel_state& = delete;
 };
 
+struct is_representative_no_symmetries {
+    auto operator()(uint64_t const count, void const* /*x*/, uint8_t* is_repr,
+                    double* norm) const noexcept -> void
+    {
+        std::fill(is_repr, is_repr + count, uint8_t{1});
+        std::fill(norm, norm + count, 1.0);
+    }
+};
+
 struct halide_is_representative_kernel {
     typedef int (*ls_internal_is_representative_kernel_t)(
         struct halide_buffer_t* /*_x_buffer*/, uint64_t /*_flip_mask*/,
@@ -302,6 +311,18 @@ struct halide_is_representative_kernel {
         };
         (*kernel)(&x_buf, state._flip_mask, &state._masks, &state._eigvals_re, &state._shifts,
                   &is_repr_buf, &norm_buf);
+    }
+};
+
+struct state_info_no_symmetries {
+    unsigned const number_words;
+
+    auto operator()(uint64_t const count, void const* x, void* repr,
+                    std::complex<double>* character, double* norm) const noexcept -> void
+    {
+        std::memcpy(repr, x, count * number_words * sizeof(uint64_t));
+        std::fill(character, character + count, std::complex<double>{1.0});
+        std::fill(norm, norm + count, 1.0);
     }
 };
 
@@ -388,13 +409,20 @@ struct halide_state_info_kernel {
 
 auto make_state_info_kernel(ls_flat_spin_basis const& basis) noexcept -> state_info_kernel_type
 {
-    return halide_state_info_kernel{basis};
+    if (basis.group.shape[0] > 0) { // Has at least one symmetry
+        return halide_state_info_kernel{basis};
+    }
+    auto const number_words = (basis.number_spins + 64 - 1) / 64;
+    return state_info_no_symmetries{number_words};
 }
 
 auto make_is_representative_kernel(ls_flat_spin_basis const& basis) noexcept
     -> is_representative_kernel_type
 {
-    return halide_is_representative_kernel{basis};
+    if (basis.group.shape[0] > 0) { // Has at least one symmetry
+        return halide_is_representative_kernel{basis};
+    }
+    return is_representative_no_symmetries{};
 }
 
 } // namespace lattice_symmetries
