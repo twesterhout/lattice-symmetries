@@ -1,12 +1,15 @@
 packages: *
 
 package *
-  -- optimization: 2
+  optimization: 2
   split-sections: true
   executable-stripping: true
   library-stripping: true
-  ghc-options: -fPIC 
-  -- -fexpose-all-unfoldings -fspecialise-aggressively
+  ghc-options: -fPIC -fexpose-all-unfoldings -fspecialise-aggressively
+
+package lattice-symmetries-haskell
+  optimization: 0
+  ghc-options: -fPIC -fexpose-all-unfoldings -fspecialise-aggressively -fllvm
 
 -- package primitive
 --   optimization: 2

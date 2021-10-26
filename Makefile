@@ -3,7 +3,7 @@ PROJECT_NAME = lattice-symmetries-haskell
 LIBRARY_NAME = $(subst -,_,$(PROJECT_NAME))
 
 GHC_VERSION ?= $(shell ghc --numeric-version)
-CABAL_BUILD_DIR = $(shell dirname $$(find dist-newstyle/build -name 'libHS$(PROJECT_NAME)*.a'))
+CABAL_BUILD_DIR = $(shell dirname $$(find dist-newstyle/build -name 'libHS$(PROJECT_NAME)*.a' | xargs ls -t | head -n 1))
 CABAL_AUTOGEN_DIR = $(CABAL_BUILD_DIR)/global-autogen
 
 HS_LDFLAGS = $(shell cat "$(CABAL_AUTOGEN_DIR)/HS_LIBRARY_PATHS_LIST" | sed 's/^/-L"/;s/$$/"/' | tr '\n' ' ')
@@ -30,6 +30,7 @@ build/api.txt: cbits/init.c
 
 build/lib$(LIBRARY_NAME).so: cbits/init.c $(CABAL_BUILD_DIR)/libHS$(PROJECT_NAME)* build/api.txt $(CABAL_AUTOGEN_DIR)/HS_LIBRARY_PATHS_LIST $(CABAL_AUTOGEN_DIR)/HS_LIBRARIES_LIST $(CABAL_AUTOGEN_DIR)/EXTRA_LIBRARIES_LIST
 	ghc --make -no-hs-main -shared -threaded \
+		-O2 -optc-O -fexpose-all-unfoldings -fspecialise-aggressively \
 		-pgmc $(CC) -pgml $(CC) \
 		-optl -Wl,--retain-symbols-file=build/api.txt \
 		`pkg-config --cflags lattice_symmetries` \
@@ -42,6 +43,14 @@ build/lib$(LIBRARY_NAME).a: $(CABAL_BUILD_DIR)/cbits/init.o $(CABAL_AUTOGEN_DIR)
 
 main: main.c
 	gcc -o $@ \
+		-Icbits `pkg-config --cflags lattice_symmetries` \
+		$< \
+		-L build -l$(LIBRARY_NAME) \
+		`pkg-config --libs lattice_symmetries` \
+		$(C_LDFLAGS)
+
+benchmark: benchmark.c
+	gcc -O3 -o $@ \
 		-Icbits `pkg-config --cflags lattice_symmetries` \
 		$< \
 		-L build -l$(LIBRARY_NAME) \

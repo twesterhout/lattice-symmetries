@@ -58,15 +58,19 @@ main = hspec $ do
       s₄ `shouldSatisfy` isLeft
   describe "denseMatrixFromList" $ do
     it "handles empty lists" $ do
-      denseMatrixFromList [] `shouldBe` Just (DenseMatrix (0, 0) S.empty)
-      denseMatrixFromList [[], []] `shouldBe` Just (DenseMatrix (2, 0) S.empty)
+      denseMatrixFromList [] `shouldBe` Just (DenseMatrix (0, 0) S.empty :: DenseMatrix Double)
+      denseMatrixFromList [[], []] `shouldBe` Just (DenseMatrix (2, 0) S.empty :: DenseMatrix Double)
     it "handles square matrices" $ do
-      denseMatrixFromList [[1, 2], [3, 4]] `shouldBe` Just (DenseMatrix (2, 2) (fromList [1, 2, 3, 4]))
+      denseMatrixFromList [[1, 2], [3, 4]]
+        `shouldBe` Just (DenseMatrix (2, 2) (fromList [1, 2, 3, 4]) :: DenseMatrix Double)
     it "handles rectangular matrices" $ do
-      denseMatrixFromList [[1, 2, 3], [4, 5, 6]] `shouldBe` Just (DenseMatrix (2, 3) (fromList [1, 2, 3, 4, 5, 6]))
-      denseMatrixFromList [[1, 2], [3, 4], [5, 6]] `shouldBe` Just (DenseMatrix (3, 2) (fromList [1, 2, 3, 4, 5, 6]))
+      denseMatrixFromList [[1, 2, 3], [4, 5, 6]]
+        `shouldBe` Just (DenseMatrix (2, 3) (fromList [1, 2, 3, 4, 5, 6]) :: DenseMatrix Double)
+      denseMatrixFromList [[1, 2], [3, 4], [5, 6]]
+        `shouldBe` Just (DenseMatrix (3, 2) (fromList [1, 2, 3, 4, 5, 6]) :: DenseMatrix Double)
     it "general lists" $ do
-      denseMatrixFromList [[1, 2], [3], [5, 6]] `shouldBe` Nothing
+      (denseMatrixFromList [[1, 2], [3], [5, 6]] :: Maybe (DenseMatrix Int))
+        `shouldBe` Nothing
   describe "DenseMatrixSpec" $ do
     it "parses JSON specifications" $ do
       parseLines @DenseMatrixSpec
@@ -127,6 +131,19 @@ main = hspec $ do
       alignment (undefined :: Cterm) `shouldBe` trueCtermAlignment
       alignment (undefined :: Coutput_buffer) `shouldBe` trueCoutput_bufferAlignment
       alignment (undefined :: Csparse_operator) `shouldBe` trueCsparse_operatorAlignment
+  describe "applyOperatorTerm'" $ do
+    it ".." $ do
+      let spec =
+            InteractionSpec
+              [ [1, 0, 0, 0],
+                [0, -1, 2, 0],
+                [0, 2, -1, 0],
+                [0, 0, 0, 1]
+              ]
+              [[0, 1]]
+          (Right term) = toOperatorTerm spec
+      print =<< term `applyOperatorTerm'` [0x1]
+      True `shouldBe` True
 
 {-
 describe "BasisSpec" $ do

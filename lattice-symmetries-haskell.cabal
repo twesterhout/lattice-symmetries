@@ -48,6 +48,9 @@ common common-options
                        MultiParamTypeClasses
                        TypeFamilies
                        DerivingVia
+                       DeriveGeneric
+                       DeriveAnyClass
+                       StandaloneDeriving
                        GeneralizedNewtypeDeriving
                        TypeApplications
 
@@ -56,9 +59,10 @@ library
   hs-source-dirs:      src
   exposed-modules:     LatticeSymmetries
   other-modules:       LatticeSymmetries.Context
+                       LatticeSymmetries.IO
+                       LatticeSymmetries.Types
   c-sources:           cbits/helpers.c
   include-dirs:        cbits
-  ghc-options:         -fPIC
   build-depends:       vector
                      , exceptions
                      , safe-exceptions
@@ -76,6 +80,7 @@ library
                      -- , vector-algorithms
                      -- , deepseq
                      , primitive
+                     , ghc-prim
                      -- , mtl
                      -- , random >= 1.2.0
                      -- , mwc-random
@@ -85,6 +90,8 @@ library
                      , containers
                      , template-haskell
                      , inline-c
+                     , binary
+                     , vector-binary-instances
   pkgconfig-depends:   lattice_symmetries
 
 -- executable ising-ground-state
