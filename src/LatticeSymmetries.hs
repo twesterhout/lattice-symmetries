@@ -8,12 +8,14 @@ module LatticeSymmetries where
 import Data.Complex
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
+import Data.Yaml.Aeson
 import Foreign.C.String (CString, peekCString)
 import Foreign.C.Types (CBool (..), CInt (..), CUInt (..), CUShort (..))
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc (alloca)
 import Foreign.Marshal.Array (withArrayLen)
 import Foreign.Ptr (FunPtr, Ptr, nullPtr)
+import Foreign.StablePtr
 import Foreign.Storable (Storable (..))
 import LatticeSymmetries.IO
 import LatticeSymmetries.Types
@@ -71,6 +73,50 @@ checkSymmetrySpec (SymmetrySpec permutation sector) = do
     Left $ show permutation <> " is not a permutation of " <> show [0 .. length permutation]
   undefined
 -}
+
+loadBasisAndHamiltonianFromYAML :: Text -> IO (SpinBasis, Operator)
+loadBasisAndHamiltonianFromYAML path = do
+  r <- decodeFileWithWarnings (toString path)
+  case r of
+    Left e -> throwIO e
+    Right (warnings, (ConfigSpec basisSpec operatorSpec)) -> do
+      mapM_ print warnings
+      let basis = mkBasis basisSpec
+      return (basis, mkOperator basis operatorSpec)
+
+ls_hs_basis_and_hamiltonian_from_yaml :: CString -> Ptr SpinBasisWrapper -> Ptr OperatorWrapper -> IO ()
+ls_hs_basis_and_hamiltonian_from_yaml path basisPtr operatorPtr = do
+  (basis, hamiltonian) <- loadBasisAndHamiltonianFromYAML . toText =<< peekCString path
+  case basis of
+    SpinBasis fp -> withForeignPtr fp $ \rawPtr ->
+      poke basisPtr =<< SpinBasisWrapper rawPtr <$> newStablePtr basis
+  case hamiltonian of
+    Operator fp -> withForeignPtr fp $ \rawPtr ->
+      poke operatorPtr =<< OperatorWrapper rawPtr <$> newStablePtr hamiltonian
+
+-- void ls_hs_basis_and_hamiltonian_from_yaml(char const *path,
+--                                            ls_hs_spin_basis_v1 *basis,
+--                                            ls_hs_operator_v1 *hamiltonian);
+foreign export ccall "ls_hs_basis_and_hamiltonian_from_yaml"
+  ls_hs_basis_and_hamiltonian_from_yaml :: CString -> Ptr SpinBasisWrapper -> Ptr OperatorWrapper -> IO ()
+
+ls_hs_destroy_spin_basis :: Ptr SpinBasisWrapper -> IO ()
+ls_hs_destroy_spin_basis ptr = do
+  peek ptr >>= \(SpinBasisWrapper _ stablePtr) -> freeStablePtr stablePtr
+  poke ptr $ OperatorWrapper nullPtr (castPtrToStablePtr nullPtr)
+
+-- void ls_hs_destroy_spin_basis(ls_hs_spin_basis_v1 *basis);
+foreign export ccall "ls_hs_destroy_spin_basis"
+  ls_hs_destroy_spin_basis :: Ptr SpinBasisWrapper -> IO ()
+
+ls_hs_destroy_operator :: Ptr OperatorWrapper -> IO ()
+ls_hs_destroy_operator ptr = do
+  peek ptr >>= \(OperatorWrapper _ stablePtr) -> freeStablePtr stablePtr
+  poke ptr $ OperatorWrapper nullPtr (castPtrToStablePtr nullPtr)
+
+-- void ls_hs_destroy_operator(ls_hs_operator_v1 *op);
+foreign export ccall "ls_hs_destroy_operator"
+  ls_hs_destroy_operator :: Ptr OperatorWrapper -> IO ()
 
 toSymmetry :: SymmetrySpec -> Symmetry
 toSymmetry (SymmetrySpec p s) = mkSymmetry p s

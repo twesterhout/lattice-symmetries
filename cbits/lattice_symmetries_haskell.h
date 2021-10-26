@@ -14,15 +14,24 @@ extern "C" {
 
 void ls_hs_init(void);
 void ls_hs_exit(void);
-int ls_hs_foo(int);
 
-void *ls_hs_internal_load_basis_from_yaml(void *);
-inline ls_spin_basis *ls_hs_load_basis_from_yaml(char const *path) {
-  return ls_hs_internal_load_basis_from_yaml((void *)path);
-}
+typedef struct ls_hs_spin_basis_v1 {
+  ls_spin_basis const *const payload;
+  void *const context;
+} ls_hs_spin_basis_v1;
 
-void *ls_hs_get_lowered_operator(void *);
+typedef struct ls_hs_operator_v1 {
+  ls_operator const *const payload;
+  void *const context;
+} ls_hs_operator_v1;
 
+void ls_hs_basis_and_hamiltonian_from_yaml(char const *path,
+                                           ls_hs_spin_basis_v1 *basis,
+                                           ls_hs_operator_v1 *hamiltonian);
+void ls_hs_destroy_spin_basis(ls_hs_spin_basis_v1 *basis);
+void ls_hs_destroy_operator(ls_hs_operator_v1 *op);
+
+#if 0
 typedef struct ls_sparse_operator ls_sparse_operator;
 typedef struct ls_term ls_term;
 
@@ -66,6 +75,7 @@ void ls_hs_operator_get_basis(ls_hs_operator const *self, ls_hs_basis *basis);
 
 uint64_t ls_hs_apply_operator(ls_hs_operator const *term, uint64_t const *spin,
                               ls_output_buffer *out, ls_workspace *workspace);
+#endif
 
 #ifdef __cplusplus
 } // extern "C"

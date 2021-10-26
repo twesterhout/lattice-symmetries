@@ -1,6 +1,9 @@
 module LatticeSymmetries.Types where
 
 import Foreign.ForeignPtr
+import Foreign.Ptr (Ptr)
+import Foreign.StablePtr
+import Foreign.Storable (Storable (..))
 
 -- | Exceptions thrown when an error occurs in @liblattice_symmetries@.
 data LatticeSymmetriesException = LatticeSymmetriesException {eCode :: Int, eMessage :: Text}
@@ -36,3 +39,35 @@ newtype FlatSpinBasis = FlatSpinBasis (ForeignPtr CFlatSpinBasis)
 newtype Operator = Operator (ForeignPtr Coperator)
 
 newtype Interaction = Interaction (ForeignPtr Cinteraction)
+
+data SpinBasisWrapper
+  = SpinBasisWrapper
+      {-# UNPACK #-} !(Ptr Cspin_basis)
+      {-# UNPACK #-} !(StablePtr SpinBasis)
+
+instance Storable SpinBasisWrapper where
+  {-# INLINE sizeOf #-}
+  sizeOf _ = 16
+  {-# INLINE alignment #-}
+  alignment _ = 8
+  {-# INLINE peek #-}
+  peek p = SpinBasisWrapper <$> peekByteOff p 0 <*> peekByteOff p 8
+  {-# INLINE poke #-}
+  poke p (SpinBasisWrapper rawPtr stablePtr) =
+    pokeByteOff p 0 rawPtr >> pokeByteOff p 8 stablePtr
+
+data OperatorWrapper
+  = OperatorWrapper
+      {-# UNPACK #-} !(Ptr Coperator)
+      {-# UNPACK #-} !(StablePtr Operator)
+
+instance Storable OperatorWrapper where
+  {-# INLINE sizeOf #-}
+  sizeOf _ = 16
+  {-# INLINE alignment #-}
+  alignment _ = 8
+  {-# INLINE peek #-}
+  peek p = OperatorWrapper <$> peekByteOff p 0 <*> peekByteOff p 8
+  {-# INLINE poke #-}
+  poke p (OperatorWrapper rawPtr stablePtr) =
+    pokeByteOff p 0 rawPtr >> pokeByteOff p 8 stablePtr
