@@ -6,6 +6,7 @@
 module LatticeSymmetries where
 
 import Data.Complex
+import qualified Data.HDF5 as H5
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
 import Data.Yaml.Aeson
@@ -13,7 +14,7 @@ import Foreign.C.String (CString, peekCString)
 import Foreign.C.Types (CBool (..), CInt (..), CUInt (..), CUShort (..))
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc (alloca)
-import Foreign.Marshal.Array (withArrayLen)
+import Foreign.Marshal.Array (peekArray, withArrayLen)
 import Foreign.Ptr (FunPtr, Ptr, nullPtr)
 import Foreign.StablePtr
 import Foreign.Storable (Storable (..))
@@ -74,6 +75,66 @@ checkSymmetrySpec (SymmetrySpec permutation sector) = do
   undefined
 -}
 
+createDataset ::
+  forall a.
+  (H5.KnownDatatype a) =>
+  CString ->
+  CString ->
+  CUInt ->
+  Ptr Word64 ->
+  IO ()
+createDataset _fileName _datasetName _dim shapePtr = do
+  fileName <- fromString <$> peekCString _fileName
+  datasetName <- fromString <$> peekCString _datasetName
+  shape <- fmap fromIntegral <$> peekArray (fromIntegral _dim) shapePtr
+  H5.withFile fileName H5.WriteAppend $ \file -> do
+    exists <- H5.exists file datasetName
+    when exists $ H5.delete file datasetName
+    void . join $ H5.createDataset' file datasetName <$> H5.ofType @a <*> H5.ofShape shape
+
+ls_hs_hdf5_create_dataset_u64 :: CString -> CString -> CUInt -> Ptr Word64 -> IO ()
+ls_hs_hdf5_create_dataset_u64 = createDataset @Word64
+
+foreign export ccall "ls_hs_hdf5_create_dataset_u64"
+  ls_hs_hdf5_create_dataset_u64 :: CString -> CString -> CUInt -> Ptr Word64 -> IO ()
+
+writeDatasetChunk ::
+  forall a.
+  (Storable a, H5.KnownDatatype a) =>
+  CString ->
+  CString ->
+  Word64 ->
+  Word64 ->
+  Ptr a ->
+  IO ()
+writeDatasetChunk _fileName _datasetName _offset _size ptr = do
+  fileName <- fromString <$> peekCString _fileName
+  datasetName <- fromString <$> peekCString _datasetName
+  -- shape <- fmap fromIntegral <$> peekArray (fromIntegral _dim) shapePtr
+  fp <- newForeignPtr_ ptr
+  let buffer = V.unsafeFromForeignPtr0 fp (fromIntegral _size)
+  H5.withFile fileName H5.WriteAppend $ \file ->
+    H5.open file datasetName
+      >>= return
+        . H5.sliceDataset
+          0 -- dimension
+          (fromIntegral _offset) -- start
+          (fromIntegral _size) -- count
+          1 -- stride
+      >>= H5.writeSelected buffer
+
+ls_hs_hdf5_write_1d_chunk_u64 :: CString -> CString -> Word64 -> Word64 -> Ptr Word64 -> IO ()
+ls_hs_hdf5_write_1d_chunk_u64 = writeDatasetChunk @Word64
+
+foreign export ccall "ls_hs_hdf5_write_1d_chunk_u64"
+  ls_hs_hdf5_write_1d_chunk_u64 :: CString -> CString -> Word64 -> Word64 -> Ptr Word64 -> IO ()
+
+-- writeDatasetChunk _fileName _datasetName offset size ptr = do
+--   fileName <- fromString <$> peekCString _fileName
+--   datasetName <- fromString <$> peekCString _datasetName
+--   H5.withFile filename H5.AppendMode $ \file ->
+--     H5.open
+
 loadBasisAndHamiltonianFromYAML :: Text -> IO (SpinBasis, Operator)
 loadBasisAndHamiltonianFromYAML path = do
   r <- decodeFileWithWarnings (toString path)
@@ -103,7 +164,7 @@ foreign export ccall "ls_hs_basis_and_hamiltonian_from_yaml"
 ls_hs_destroy_spin_basis :: Ptr SpinBasisWrapper -> IO ()
 ls_hs_destroy_spin_basis ptr = do
   peek ptr >>= \(SpinBasisWrapper _ stablePtr) -> freeStablePtr stablePtr
-  poke ptr $ OperatorWrapper nullPtr (castPtrToStablePtr nullPtr)
+  poke ptr $ SpinBasisWrapper nullPtr (castPtrToStablePtr nullPtr)
 
 -- void ls_hs_destroy_spin_basis(ls_hs_spin_basis_v1 *basis);
 foreign export ccall "ls_hs_destroy_spin_basis"

@@ -1,7 +1,7 @@
 #ifndef HELPERS_H
 #define HELPERS_H
 
-#include "LatticeSymmetries_stub.h"
+// #include "LatticeSymmetries_stub.h"
 #include "lattice_symmetries_haskell.h"
 #include <stdint.h>
 
@@ -29,20 +29,20 @@ typedef void (*ls_spin_fill_fn)(uint64_t const * /*2D source*/,
                                 uint64_t /*count*/,
                                 uint64_t * /*2D destination*/);
 
-struct ls_term {
+typedef struct ls_term {
   ls_csr_matrix matrix;
   unsigned number_tuples;
   unsigned tuple_size;
   ls_bit_index *tuples;
   ls_term_gather_fn gather_fn;
   ls_term_scatter_fn scatter_fn;
-};
+} ls_term;
 
-struct ls_sparse_operator {
+typedef struct ls_sparse_operator {
   ls_flat_spin_basis const *basis;
   unsigned number_terms;
   ls_term *terms;
-};
+} ls_sparse_operator;
 
 unsigned ls_internal_term_gather_1(uint64_t const *, ls_bit_index const *);
 unsigned ls_internal_term_gather_2(uint64_t const *, ls_bit_index const *);
@@ -71,7 +71,7 @@ void ls_dense_from_csr_matrix(unsigned const dimension, unsigned const *offsets,
                               _Complex double const *diag_elements,
                               _Complex double *dense);
 
-uint64_t ls_hs_apply_term(ls_term const *term, uint64_t const *spin,
-                          ls_output_buffer *out);
+// uint64_t ls_hs_apply_term(ls_term const *term, uint64_t const *spin,
+//                           ls_output_buffer *out);
 
 #endif // HELPERS_H

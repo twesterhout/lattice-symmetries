@@ -53,6 +53,7 @@ common common-options
                        StandaloneDeriving
                        GeneralizedNewtypeDeriving
                        TypeApplications
+                       AllowAmbiguousTypes
 
 library
   import:              common-options
@@ -61,7 +62,7 @@ library
   other-modules:       LatticeSymmetries.Context
                        LatticeSymmetries.IO
                        LatticeSymmetries.Types
-  c-sources:           cbits/helpers.c
+  -- c-sources:           cbits/helpers.c
   include-dirs:        cbits
   build-depends:       vector
                      , exceptions
@@ -92,6 +93,7 @@ library
                      , inline-c
                      , binary
                      , vector-binary-instances
+                     , hdf5-hs
   pkgconfig-depends:   lattice_symmetries
 
 -- executable ising-ground-state

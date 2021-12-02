@@ -2,8 +2,8 @@
 #include <stdio.h>
 
 int main() {
-  ls_hs_init();
   ls_enable_logging();
+  ls_hs_init();
   ls_hs_spin_basis_v1 basis;
   ls_hs_operator_v1 operator;
   ls_hs_basis_and_hamiltonian_from_yaml("heisenberg_chain_4.yaml", &basis,

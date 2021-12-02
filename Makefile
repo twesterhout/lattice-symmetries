@@ -47,6 +47,7 @@ main: main.c
 		$< \
 		-L build -l$(LIBRARY_NAME) \
 		`pkg-config --libs lattice_symmetries` \
+		`pkg-config --libs hdf5` \
 		$(C_LDFLAGS)
 
 benchmark: benchmark.c
