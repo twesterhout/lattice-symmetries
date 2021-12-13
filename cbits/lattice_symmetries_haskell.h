@@ -31,11 +31,31 @@ void ls_hs_basis_and_hamiltonian_from_yaml(char const *path,
 void ls_hs_destroy_spin_basis(ls_hs_spin_basis_v1 *basis);
 void ls_hs_destroy_operator(ls_hs_operator_v1 *op);
 
+unsigned ls_hs_hdf5_get_dataset_rank(char const *filename, char const *dataset);
+void ls_hs_hdf5_get_dataset_shape(char const *filename, char const *dataset,
+                                  uint64_t *shape);
 void ls_hs_hdf5_create_dataset_u64(char const *filename, char const *dataset,
                                    unsigned dim, uint64_t const *shape);
-void ls_hs_hdf5_write_1d_chunk_u64(char const *filename, char const *dataset,
-                                   uint64_t offset, uint64_t count,
-                                   uint64_t const *data);
+void ls_hs_hdf5_create_dataset_f64(char const *filename, char const *dataset,
+                                   unsigned dim, uint64_t const *shape);
+void ls_hs_hdf5_create_dataset_f32(char const *filename, char const *dataset,
+                                   unsigned dim, uint64_t const *shape);
+void ls_hs_hdf5_create_dataset_c64(char const *filename, char const *dataset,
+                                   unsigned dim, uint64_t const *shape);
+void ls_hs_hdf5_create_dataset_c128(char const *filename, char const *dataset,
+                                    unsigned dim, uint64_t const *shape);
+void ls_hs_hdf5_write_chunk_u64(char const *filename, char const *dataset,
+                                unsigned dim, uint64_t const *offset,
+                                uint64_t const *shape, uint64_t const *data);
+void ls_hs_hdf5_write_chunk_f64(char const *filename, char const *dataset,
+                                unsigned dim, uint64_t const *offset,
+                                uint64_t const *shape, double const *data);
+void ls_hs_hdf5_read_chunk_u64(char const *filename, char const *dataset,
+                               unsigned dim, uint64_t const *offset,
+                               uint64_t const *shape, uint64_t *data);
+void ls_hs_hdf5_read_chunk_f64(char const *filename, char const *dataset,
+                               unsigned dim, uint64_t const *offset,
+                               uint64_t const *shape, double *data);
 
 #if 0
 typedef struct ls_sparse_operator ls_sparse_operator;
