@@ -1,3 +1,6 @@
+.POSIX:
+.SUFFIXES:
+
 PREFIX = $(PWD)/prefix
 PROJECT_NAME = lattice-symmetries-haskell
 LIBRARY_NAME = $(subst -,_,$(PROJECT_NAME))
@@ -36,10 +39,12 @@ build/lib$(LIBRARY_NAME).so: cbits/init.c $(CABAL_BUILD_DIR)/libHS$(PROJECT_NAME
 		`pkg-config --cflags lattice_symmetries` \
 		$< -o $@ \
 		-L"$(CABAL_BUILD_DIR)" \
+		`pkg-config --libs lattice_symmetries` \
+		-optl -Wl,--as-needed \
 		$(HS_LDFLAGS) $(C_LDFLAGS)
 
-build/lib$(LIBRARY_NAME).a: $(CABAL_BUILD_DIR)/cbits/init.o $(CABAL_AUTOGEN_DIR)/HS_LIBRARY_PATHS_LIST $(CABAL_AUTOGEN_DIR)/HS_LIBRARIES_LIST $(CABAL_AUTOGEN_DIR)/EXTRA_LIBRARIES_LIST
-	$(LD) -o $@ --relocatable --whole-archive -L"$(CABAL_BUILD_DIR)" $(HS_LDFLAGS)
+build/lib$(LIBRARY_NAME).a: cbits/init.o $(CABAL_AUTOGEN_DIR)/HS_LIBRARY_PATHS_LIST $(CABAL_AUTOGEN_DIR)/HS_LIBRARIES_LIST $(CABAL_AUTOGEN_DIR)/EXTRA_LIBRARIES_LIST
+	$(LD) $< -o $@ --relocatable --whole-archive -L"$(CABAL_BUILD_DIR)" $(HS_LDFLAGS)
 
 main: main.c
 	gcc -o $@ \
