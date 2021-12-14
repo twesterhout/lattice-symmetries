@@ -669,6 +669,7 @@ extern "C" LATTICE_SYMMETRIES_EXPORT ls_spin_basis* ls_copy_spin_basis(ls_spin_b
 
 extern "C" LATTICE_SYMMETRIES_EXPORT void ls_destroy_spin_basis(ls_spin_basis* basis)
 {
+    LATTICE_SYMMETRIES_CHECK(basis != nullptr, "trying to deallocate a nullptr");
     if (decrement(basis->header.refcount) == 0) {
         LATTICE_SYMMETRIES_LOG_DEBUG("Destroying basis %p\n", static_cast<void*>(basis));
         std::default_delete<ls_spin_basis>{}(basis);

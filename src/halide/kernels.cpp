@@ -407,7 +407,8 @@ struct halide_state_info_kernel {
     }
 };
 
-auto make_state_info_kernel(ls_flat_spin_basis const& basis) noexcept -> state_info_kernel_type
+LATTICE_SYMMETRIES_EXPORT auto make_state_info_kernel(ls_flat_spin_basis const& basis) noexcept
+    -> state_info_kernel_type
 {
     if (basis.group.shape[0] > 0) { // Has at least one symmetry
         return halide_state_info_kernel{basis};
@@ -416,7 +417,8 @@ auto make_state_info_kernel(ls_flat_spin_basis const& basis) noexcept -> state_i
     return state_info_no_symmetries{number_words};
 }
 
-auto make_is_representative_kernel(ls_flat_spin_basis const& basis) noexcept
+LATTICE_SYMMETRIES_EXPORT auto
+make_is_representative_kernel(ls_flat_spin_basis const& basis) noexcept
     -> is_representative_kernel_type
 {
     if (basis.group.shape[0] > 0) { // Has at least one symmetry
