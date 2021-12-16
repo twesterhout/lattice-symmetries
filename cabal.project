@@ -2,10 +2,12 @@ packages: *
 
 package *
   optimization: 2
+  split-sections: true
   ghc-options: -fPIC -fexpose-all-unfoldings -fspecialise-aggressively
 
 package lattice-symmetries-haskell
   optimization: 0
+  split-sections: true
   ghc-options: -fPIC -fexpose-all-unfoldings -fspecialise-aggressively
 
 -- package primitive

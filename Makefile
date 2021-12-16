@@ -44,7 +44,10 @@ build/lib$(LIBRARY_NAME).so: cbits/init.c $(CABAL_BUILD_DIR)/libHS$(PROJECT_NAME
 		$(HS_LDFLAGS) $(C_LDFLAGS)
 
 build/lib$(LIBRARY_NAME).a: cbits/init.o $(CABAL_AUTOGEN_DIR)/HS_LIBRARY_PATHS_LIST $(CABAL_AUTOGEN_DIR)/HS_LIBRARIES_LIST $(CABAL_AUTOGEN_DIR)/EXTRA_LIBRARIES_LIST
-	$(LD) $< -o $@ --relocatable --whole-archive -L"$(CABAL_BUILD_DIR)" $(HS_LDFLAGS)
+	$(LD) $< -o $@ --relocatable --whole-archive \
+		-L"$(CABAL_BUILD_DIR)" \
+		$(HS_LDFLAGS) \
+		`pkg-config --libs hdf5` -lhdf5_hl
 
 main: main.c
 	gcc -o $@ \
