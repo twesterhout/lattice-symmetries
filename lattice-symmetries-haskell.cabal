@@ -68,7 +68,7 @@ library
                      , exceptions
                      , safe-exceptions
                      -- , resourcet
-                     , unliftio
+                     -- , unliftio
                      , unliftio-core
                      , mtl
                      , vector
@@ -76,8 +76,8 @@ library
                      , aeson
                      , scientific
                      , yaml
-                     , co-log
-                     , co-log-core
+                     -- , co-log
+                     -- , co-log-core
                      -- , vector-algorithms
                      -- , deepseq
                      , primitive
@@ -91,8 +91,8 @@ library
                      , containers
                      , template-haskell
                      , inline-c
-                     , binary
-                     , vector-binary-instances
+                     -- , binary
+                     -- , vector-binary-instances
                      , hdf5-hs
   pkgconfig-depends:   lattice_symmetries
 
