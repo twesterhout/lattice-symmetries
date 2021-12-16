@@ -5,6 +5,7 @@
 
 module LatticeSymmetries where
 
+import Control.Exception.Safe (MonadThrow, bracket, impureThrow, throwIO)
 import Data.Complex
 import qualified Data.HDF5 as H5
 import Data.Vector.Storable (Vector)
@@ -21,7 +22,8 @@ import Foreign.Storable (Storable (..))
 import LatticeSymmetries.IO
 import LatticeSymmetries.Types
 import qualified System.IO.Unsafe
-import UnliftIO.Exception (bracket, impureThrow, throwIO)
+
+-- import UnliftIO.Exception (bracket, impureThrow, throwIO)
 
 -- | Retrieve textual representation of an error
 getErrorMessage ::
@@ -39,7 +41,7 @@ checkStatus c
   | c == 0 = return ()
   | otherwise = do
     print =<< liftIO (getErrorMessage c')
-    throwIO . LatticeSymmetriesException c' =<< liftIO (getErrorMessage c')
+    liftIO $ throwIO . LatticeSymmetriesException c' =<< getErrorMessage c'
   where
     c' = fromIntegral c
 
@@ -331,7 +333,7 @@ mkSymmetryGroup symmetries = System.IO.Unsafe.unsafePerformIO $ do
   fmap SymmetryGroup . liftIO $ newForeignPtr ls_destroy_group ptr
 
 mkRawBasis ::
-  MonadIO m =>
+  (MonadIO m, MonadThrow m) =>
   -- | Symmetry group
   SymmetryGroup ->
   -- | Number of spins
@@ -428,7 +430,7 @@ toMatrix !dim !rows = do
 type CreateInteraction = Ptr (Ptr Cinteraction) -> Ptr (Complex Double) -> CUInt -> Ptr CUShort -> IO CInt
 
 class MakeInteraction a where
-  mkInteraction' :: (MonadIO m, Show r, Real r) => [[Complex r]] -> [a] -> m Interaction
+  mkInteraction' :: (MonadIO m, MonadThrow m, Show r, Real r) => [[Complex r]] -> [a] -> m Interaction
 
 instance MakeInteraction Int where
   mkInteraction' matrix sites =
@@ -486,7 +488,7 @@ instance MakeInteraction [Int] where
           "invalid sites: " <> show rows <> "; expected an array of length-" <> show n <> " tuples"
 
 unsafeMkInteraction ::
-  MonadIO m =>
+  (MonadIO m, MonadThrow m) =>
   CreateInteraction ->
   Int ->
   Vector (Complex Double) ->

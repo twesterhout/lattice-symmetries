@@ -3,6 +3,7 @@
 module Main (main) where
 
 import Data.Graph (topSort)
+import Data.List (nub)
 import Distribution.InstalledPackageInfo
   ( extraLibraries,
     hsLibraries,
@@ -53,7 +54,9 @@ generateBuildModule verbosity pkgDesc lbi = do
 
   withLibLBI pkgDesc lbi $ \_ libLBI -> do
     let thisLib = getHSLibraryName (componentUnitId libLBI)
-    let pkgs = orderedPackagesList (installedPkgs lbi)
+    let pkgs = case dependencyClosure (installedPkgs lbi) (fst <$> componentPackageDeps libLBI) of
+          Left index -> orderedPackagesList index
+          Right _ -> error "Oops..."
         libdirs = libdir installDirs : concatMap libraryDirs pkgs
         libNames = thisLib : map threadedVersion (concatMap hsLibraries pkgs)
         mkLibName x
@@ -71,8 +74,11 @@ generateBuildModule verbosity pkgDesc lbi = do
       unlines libdirs
 
     rewriteFileEx verbosity (autodir </> "EXTRA_LIBRARIES_LIST") $
-      unlines $
+      unlines . removeDuplicateExtraLibs $
         extraLibraries =<< pkgs
+
+removeDuplicateExtraLibs :: Eq a => [a] -> [a]
+removeDuplicateExtraLibs xs = reverse $ nub (reverse xs)
 
 orderedPackagesList :: PackageInstalled a => PackageIndex a -> [a]
 orderedPackagesList pkgs = lookupVertex <$> topSort g

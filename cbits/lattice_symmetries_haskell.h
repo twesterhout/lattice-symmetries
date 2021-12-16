@@ -31,6 +31,11 @@ void ls_hs_basis_and_hamiltonian_from_yaml(char const *path,
 void ls_hs_destroy_spin_basis(ls_hs_spin_basis_v1 *basis);
 void ls_hs_destroy_operator(ls_hs_operator_v1 *op);
 
+ls_error_code ls_hs_operator_apply(ls_hs_operator_v1 const *op, uint64_t count,
+                                   uint64_t const *spins, uint64_t *offsets,
+                                   uint64_t *out_spins,
+                                   _Complex double *out_coeffs);
+
 unsigned ls_hs_hdf5_get_dataset_rank(char const *filename, char const *dataset);
 void ls_hs_hdf5_get_dataset_shape(char const *filename, char const *dataset,
                                   uint64_t *shape);
