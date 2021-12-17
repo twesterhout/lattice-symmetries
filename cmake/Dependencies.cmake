@@ -31,7 +31,7 @@ else()
   endif()
   FetchContent_Declare(
     HalideBinaryRelease
-    URL https://github.com/halide/Halide/releases/download/v12.0.1/Halide-12.0.1-${arch_for_Halide}-${bits_for_Halide}-${os_for_Halide}-5dabcaa9effca1067f907f6c8ea212f3d2b1d99a.${_archive_suffix}
+    URL https://github.com/halide/Halide/releases/download/v13.0.2/Halide-13.0.2-${arch_for_Halide}-${bits_for_Halide}-${os_for_Halide}-cf8c8f22eb507aedeba5a44f8ee20bc63757dc57.${_archive_suffix}
   )
   FetchContent_GetProperties(HalideBinaryRelease)
   if(NOT ${halidebinaryrelease_POPULATED})
