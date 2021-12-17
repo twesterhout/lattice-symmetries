@@ -59,12 +59,15 @@ library
   import:              common-options
   hs-source-dirs:      src
   exposed-modules:     LatticeSymmetries
-  other-modules:       LatticeSymmetries.Context
+                       LatticeSymmetries.Context
                        LatticeSymmetries.IO
                        LatticeSymmetries.Types
-  -- c-sources:           cbits/helpers.c
+                       LatticeSymmetries.Sparse
+  c-sources:           cbits/helpers.c
   include-dirs:        cbits
   build-depends:       vector
+                     -- , binary
+                     -- , vector-binary-instances
                      , exceptions
                      , safe-exceptions
                      -- , resourcet

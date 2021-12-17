@@ -33,7 +33,7 @@ build/api.txt: cbits/init.c
 
 build/lib$(LIBRARY_NAME).so: cbits/init.c $(CABAL_BUILD_DIR)/libHS$(PROJECT_NAME)* build/api.txt $(CABAL_AUTOGEN_DIR)/HS_LIBRARY_PATHS_LIST $(CABAL_AUTOGEN_DIR)/HS_LIBRARIES_LIST $(CABAL_AUTOGEN_DIR)/EXTRA_LIBRARIES_LIST
 	ghc --make -no-hs-main -shared -threaded \
-		-fPIC -O2 -optc-O -fexpose-all-unfoldings -fspecialise-aggressively \
+		-optc-fPIC -fPIC -O2 -optc-O -fexpose-all-unfoldings -fspecialise-aggressively \
 		-pgmc $(CC) -pgml $(CC) \
 		-optl -Wl,--retain-symbols-file=build/api.txt \
 		`pkg-config --cflags lattice_symmetries` \

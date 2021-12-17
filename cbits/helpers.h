@@ -44,6 +44,15 @@ typedef struct ls_sparse_operator {
   ls_term *terms;
 } ls_sparse_operator;
 
+typedef struct ls_output_buffer {
+  uint64_t *spins;
+  _Complex double *coeffs;
+  _Complex double *const diagonal;
+  uint64_t const number_words;
+  ls_spin_copy_fn const spin_copy;
+  ls_spin_fill_fn const spin_fill;
+} ls_output_buffer;
+
 unsigned ls_internal_term_gather_1(uint64_t const *, ls_bit_index const *);
 unsigned ls_internal_term_gather_2(uint64_t const *, ls_bit_index const *);
 unsigned ls_internal_term_gather_3(uint64_t const *, ls_bit_index const *);
