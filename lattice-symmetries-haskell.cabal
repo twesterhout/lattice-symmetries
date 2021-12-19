@@ -63,6 +63,7 @@ library
                        LatticeSymmetries.IO
                        LatticeSymmetries.Types
                        LatticeSymmetries.Sparse
+                       LatticeSymmetries.Parser
   c-sources:           cbits/helpers.c
   include-dirs:        cbits
   build-depends:       vector
@@ -83,6 +84,7 @@ library
                      -- , co-log-core
                      -- , vector-algorithms
                      -- , deepseq
+                     , parsec
                      , primitive
                      , ghc-prim
                      -- , mtl
@@ -119,6 +121,7 @@ test-suite lattice-symmetries-haskell-test
                      , hspec
                      , yaml
                      , vector
+                     , parsec
                      -- , mwc-random
   ghc-options:         -threaded
                        -rtsopts

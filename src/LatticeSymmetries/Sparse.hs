@@ -147,9 +147,10 @@ csrToDense csr = runST $ do
   elements <- SM.new (n * m)
   forM_ (csrToCoo csr) $ \(i, j, x) ->
     SM.write elements (i * m + j) x
-  S.unsafeFreeze elements
+  DenseMatrix (n, m) <$> S.unsafeFreeze elements
   where
-    !m = smCols b
+    !n = smRows csr
+    !m = smCols csr
 
 smKron :: (Storable a, Num a) => SparseMatrix a -> SparseMatrix a -> SparseMatrix a
 smKron a b =

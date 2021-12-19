@@ -6,9 +6,11 @@ import Data.Yaml.Aeson
 import Foreign.Storable
 import LatticeSymmetries
 import LatticeSymmetries.IO
+import LatticeSymmetries.Parser
 import LatticeSymmetries.Sparse
 import LatticeSymmetries.Types
 import Test.Hspec
+import Text.Parsec (parse)
 
 anySpinEDException :: Selector SpinEDException
 anySpinEDException = const True
@@ -166,6 +168,21 @@ main = hspec $ do
       m `smIndex` (0, 1) `shouldBe` 0
       m `smIndex` (0, 2) `shouldBe` 2
       m `smIndex` (2, 3) `shouldBe` 8
+  describe "pSpinfulFermionicOperator" $ do
+    it ".." $ do
+      parse pFermionicOperator "" ("c†↓₁₀" :: Text) `shouldBe` Right (SpinfulFermionicOperator FermionicCreationOperator 'c' SpinDown 10)
+      parse pFermionicOperator "" ("f₀" :: Text) `shouldBe` Right (SpinlessFermionicOperator FermionicAnnihilationOperator 'f' 0)
+      parse pFermionicOperator "" ("n↑₃₈" :: Text) `shouldBe` Right (SpinfulFermionicOperator FermionicNumberCountingOperator 'n' SpinUp 38)
+      parse pFermionicString "" ("n₃₈ f↓₁₅" :: Text)
+        `shouldBe` Right
+          ( SpinlessFermionicOperator FermionicNumberCountingOperator 'n' 38
+              :| [SpinfulFermionicOperator FermionicAnnihilationOperator 'f' SpinDown 15]
+          )
+      parse pFermionicString "" ("n↑₃₈f↓₁₅" :: Text)
+        `shouldBe` Right
+          ( SpinfulFermionicOperator FermionicNumberCountingOperator 'n' SpinUp 38
+              :| [SpinfulFermionicOperator FermionicAnnihilationOperator 'f' SpinDown 15]
+          )
 
 {-
 describe "BasisSpec" $ do
