@@ -17,7 +17,7 @@ module LatticeSymmetries.Sparse where
 -- import Data.Vector.Binary
 
 -- import Control.Exception.Safe (bracket, impureThrow, throwIO)
--- import qualified Control.Monad.Primitive as Primitive
+import Control.Monad.Primitive (PrimMonad, PrimState)
 import Control.Monad.ST
 -- import qualified Control.Monad.ST.Unsafe (unsafeIOToST)
 -- import Data.Aeson
@@ -25,10 +25,15 @@ import Control.Monad.ST
 
 -- import Data.Scientific (toRealFloat)
 
--- import Data.Bits (toIntegralSized)
+import Data.Bits (Bits, toIntegralSized)
 import Data.Complex
 -- import qualified Data.List
 -- import qualified Data.List.NonEmpty as NonEmpty
+
+-- import qualified Data.Vector.Fusion.Stream.Monadic as Stream
+
+-- import qualified Data.Vector.Storable as S
+import qualified Data.Vector
 import qualified Data.Vector as B
 import qualified Data.Vector.Algorithms.Intro as Intro
 import Data.Vector.Fusion.Bundle (Bundle)
@@ -36,11 +41,11 @@ import qualified Data.Vector.Fusion.Bundle as Bundle (inplace)
 import qualified Data.Vector.Fusion.Bundle.Monadic as Bundle
 import Data.Vector.Fusion.Bundle.Size (Size (..), toMax)
 import Data.Vector.Fusion.Stream.Monadic (Step (..), Stream (..))
--- import qualified Data.Vector.Fusion.Stream.Monadic as Stream
 import Data.Vector.Generic ((!))
 import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Generic.Mutable as GM
--- import qualified Data.Vector.Storable as S
+import qualified Data.Vector.Storable
+import qualified Data.Vector.Unboxed
 -- import qualified Data.Vector.Storable.Mutable as SM
 -- import Data.Vector.Unboxed (Unbox)
 -- import qualified Data.Vector.Unboxed as U
@@ -89,14 +94,26 @@ natToInt = fromIntegral $ GHC.TypeLits.natVal (Proxy @n)
 data DenseMatrix v (r :: Nat) (c :: Nat) a = DenseMatrix {dmData :: !(v a)}
   deriving stock (Show, Eq, Generic)
 
+type StorableDenseMatrix r c a = DenseMatrix Data.Vector.Storable.Vector r c a
+
+type UnboxedDenseMatrix r c a = DenseMatrix Data.Vector.Unboxed.Vector r c a
+
+type BoxedDenseMatrix r c a = DenseMatrix Data.Vector.Vector r c a
+
+-- | Get number of rows in the matrix
 dmRows :: forall r c a v. KnownDenseMatrix v r c a => DenseMatrix v r c a -> Int
 dmRows _ = natToInt @r
+{-# INLINE dmRows #-}
 
+-- | Get number of columns in the matrix
 dmCols :: forall r c a v. KnownDenseMatrix v r c a => DenseMatrix v r c a -> Int
 dmCols _ = natToInt @c
+{-# INLINE dmCols #-}
 
+-- | Get matrix shape
 dmShape :: forall r c a v. KnownDenseMatrix v r c a => DenseMatrix v r c a -> (Int, Int)
 dmShape m = (dmRows m, dmCols m)
+{-# INLINE dmShape #-}
 
 instance (KnownDenseMatrix v r c a, Num a) => Num (DenseMatrix v r c a) where
   (+) a b = DenseMatrix $ G.zipWith (+) (dmData a) (dmData b)
@@ -114,14 +131,20 @@ deriving instance Show (v (i, i, a)) => Show (COO v i r c a)
 
 deriving instance Eq (v (i, i, a)) => Eq (COO v i r c a)
 
+-- | Get number of rows in the matrix
 cooRows :: forall r c a i v. KnownCOO v i r c a => COO v i r c a -> Int
 cooRows _ = natToInt @r
+{-# INLINE cooRows #-}
 
+-- | Get number of columns in the matrix
 cooCols :: forall r c a i v. KnownCOO v i r c a => COO v i r c a -> Int
 cooCols _ = natToInt @c
+{-# INLINE cooCols #-}
 
+-- | Get matrix shape
 cooShape :: forall r c a i v. KnownCOO v i r c a => COO v i r c a -> (Int, Int)
 cooShape m = (cooRows m, cooCols m)
+{-# INLINE cooShape #-}
 
 data CSR v i (r :: Nat) (c :: Nat) a = CSR
   { csrOffsets :: !(v i),
@@ -138,6 +161,7 @@ deriving instance (Eq (v i), Eq (v a)) => Eq (CSR v i r c a)
 binarySearch :: (G.Vector v a, Ord a) => v a -> a -> Maybe Int
 binarySearch v z = go 0 (G.length v)
   where
+    {-# INLINE go #-}
     go !l !u
       | l < u =
         -- NOTE: we assume that the vector is short enought such that @u + l@ does not overflow
@@ -147,6 +171,7 @@ binarySearch v z = go 0 (G.length v)
               EQ -> Just m
               GT -> go l m
       | otherwise = Nothing
+{-# INLINE binarySearch #-}
 
 csrIndex :: (KnownCSR v i r c a, Integral i, Num a) => CSR v i r c a -> (Int, Int) -> a
 csrIndex matrix (i, j) =
@@ -174,19 +199,33 @@ csrShape :: (KnownNat r, KnownNat c) => CSR v i r c a -> (Int, Int)
 csrShape csr = (csrRows csr, csrCols csr)
 {-# INLINE csrShape #-}
 
-csrReIndex ::
-  (KnownCSR v i1 r c a, KnownCSR v i2 r c a, Integral i1, Integral i2) =>
-  CSR v i1 r c a ->
-  CSR v i2 r c a
-csrReIndex (CSR offsets indices elements) = CSR (cast offsets) (cast indices) elements
+csrTraverseIndex ::
+  forall i₁ i₂ f v r c a.
+  (Applicative f, KnownCSR v i₁ r c a, KnownCSR v i₂ r c a) =>
+  (i₁ -> f i₂) ->
+  CSR v i₁ r c a ->
+  f (CSR v i₂ r c a)
+csrTraverseIndex f (CSR offsets indices elements) = construct <$> offsets' <*> indices'
   where
-    cast = G.map fromIntegral -- (fromJust . toIntegralSized)
+    construct o i = CSR o i elements
+    offsets' = G.fromListN n <$> traverse f (G.toList offsets)
+    indices' = G.fromListN n <$> traverse f (G.toList indices)
+    !n = G.length indices
+{-# INLINE csrTraverseIndex #-}
+
+-- | Change the underlying integral type. Returns a @Maybe@ because casts may overflow.
+csrReIndex ::
+  (KnownCSR v i₁ r c a, KnownCSR v i₂ r c a, Bits i₁, Integral i₁, Bits i₂, Integral i₂) =>
+  CSR v i₁ r c a ->
+  Maybe (CSR v i₂ r c a)
+csrReIndex = csrTraverseIndex toIntegralSized
 {-# INLINE csrReIndex #-}
 
+-- | Change the underlying vector type.
 csrReVector ::
-  (KnownCSR v1 i r c a, KnownCSR v2 i r c a) =>
-  CSR v1 i r c a ->
-  CSR v2 i r c a
+  (KnownCSR v₁ i r c a, KnownCSR v₂ i r c a) =>
+  CSR v₁ i r c a ->
+  CSR v₂ i r c a
 csrReVector (CSR offsets indices elements) =
   CSR (G.convert offsets) (G.convert indices) (G.convert elements)
 {-# INLINE csrReVector #-}
@@ -325,17 +364,17 @@ denseToCoo dense = COO v
           (Bundle.enumFromStepN 0 1 numberCols)
 
 denseToCsr ::
-  forall v1 v2 i r c a.
-  (KnownDenseMatrix v1 r c a, KnownCSR v2 i r c a, Eq a, Num a, Integral i) =>
-  DenseMatrix v1 r c a ->
-  CSR v2 i r c a
-denseToCsr = cooToCsr . denseToCoo @v1 @B.Vector
+  forall v i r c a.
+  (KnownDenseMatrix v r c a, KnownCSR v i r c a, Eq a, Num a, Integral i) =>
+  DenseMatrix v r c a ->
+  CSR v i r c a
+denseToCsr = cooToCsr . denseToCoo @v @Data.Vector.Vector
 
 cooToDense ::
-  forall r c a i v.
-  (HasCallStack, KnownCOO v i r c a, KnownDenseMatrix v r c a, Integral i) =>
-  COO v i r c a ->
-  DenseMatrix v r c a
+  forall v1 v2 i r c a.
+  (HasCallStack, KnownCOO v1 i r c a, KnownDenseMatrix v2 r c a, Integral i) =>
+  COO v1 i r c a ->
+  DenseMatrix v2 r c a
 cooToDense coo
   | (n, m) == (natToInt @r, natToInt @c) = runST $ do
     elements <- GM.new (n * m)
@@ -347,10 +386,11 @@ cooToDense coo
     (n, m) = cooShape coo
 
 csrToDense ::
+  forall v i r c a.
   (KnownDenseMatrix v r c a, KnownCSR v i r c a, G.Vector v (i, i, a), Integral i) =>
   CSR v i r c a ->
   DenseMatrix v r c a
-csrToDense = cooToDense . csrToCoo
+csrToDense = cooToDense . csrToCoo @v @Data.Vector.Vector
 
 cartesian :: Bundle v a -> Bundle v b -> Bundle v (a, b)
 cartesian a b =
@@ -446,11 +486,11 @@ instance (KnownCSR v i r c a, Integral i, Eq a, Num a) => Num (CSR v i r c a) wh
   fromInteger = error "Num instance for CSR does not implement fromInteger"
 
 csrBinaryOp ::
-  (KnownCSR v i r c a, Integral i, Eq a, Num a) =>
-  (a -> a -> a) ->
+  (KnownCSR v i r c a, KnownCSR v i r c b, Integral i, Eq b, Num a, Num b) =>
+  (a -> a -> b) ->
   CSR v i r c a ->
   CSR v i r c a ->
-  CSR v i r c a
+  CSR v i r c b
 csrBinaryOp op a b = runST $ do
   outOffsets <- GM.new (csrRows a + 1)
   let estimatedNumberNonZero = csrNumberNonZero a + csrNumberNonZero b
@@ -586,69 +626,102 @@ csrBinaryOp op a b = runST $ do
 --     }
 -- }
 
-{-
-maxNumNonZeroAfterMatMul :: SparseMatrix a -> SparseMatrix a -> Int
+maxNumNonZeroAfterMatMul ::
+  forall r k c a i v.
+  (KnownCSR v i r k a, KnownCSR v i k c a, G.Vector v Int, Integral i) =>
+  CSR v i r k a ->
+  CSR v i k c a ->
+  Int
 maxNumNonZeroAfterMatMul a b = runST $ do
   let nRows = csrRows a
       nCols = csrCols b
-  mask <- SM.replicate nCols (-1)
-  iFoldM 0 0 nRows $ \nnz i ->
+  mask <- G.unsafeThaw (G.replicate nCols (-1) :: v Int)
+  iFoldM 0 (< nRows) (+ 1) 0 $ \nnz i ->
     let jjBegin = fromIntegral $ csrOffsets a ! i
         jjEnd = fromIntegral $ csrOffsets a ! (i + 1)
-     in iFoldM nnz jjBegin jjEnd $ \nnzRow jj ->
+     in iFoldM jjBegin (< jjEnd) (+ 1) nnz $ \nnzRow jj ->
           let j = fromIntegral $ csrIndices a ! jj
               kkBegin = fromIntegral $ csrOffsets b ! j
               kkEnd = fromIntegral $ csrOffsets b ! (j + 1)
-           in iFoldM nnzRow kkBegin kkEnd $ \acc kk -> do
+           in iFoldM kkBegin (< kkEnd) (+ 1) nnzRow $ \acc kk -> do
                 let k = fromIntegral $ csrIndices b ! kk
-                m <- SM.read mask k
+                m <- GM.read mask k
                 if m /= i
-                  then do SM.write mask k i; pure (acc + 1)
+                  then do GM.write mask k i; pure (acc + 1)
                   else pure acc
--}
 
-{-
-csrMatMul :: (Storable a, Num a, Unbox a) => SparseMatrix a -> SparseMatrix a -> SparseMatrix a
-csrMatMul a b = cooToCsr . csrToCoo $
+sortManyByKey ::
+  (Ord c, PrimMonad m, G.Vector v a, G.Vector v b) =>
+  (a -> b -> c) ->
+  G.Mutable v (PrimState m) a ->
+  G.Mutable v (PrimState m) b ->
+  m ()
+sortManyByKey key a b = do
+  mbuffer <-
+    (G.unsafeThaw =<<) $
+      Data.Vector.zip
+        <$> (G.convert <$> G.unsafeFreeze a)
+        <*> (G.convert <$> G.unsafeFreeze b)
+  Intro.sortBy (comparing (uncurry key)) mbuffer
+  buffer <- G.unsafeFreeze mbuffer
+  G.copy a $ G.convert (G.map fst buffer)
+  G.copy b $ G.convert (G.map snd buffer)
+
+csrMatMul ::
+  forall r k c a i v.
+  (KnownCSR v i r k a, KnownCSR v i k c a, G.Vector v Int, Integral i, Num a) =>
+  CSR v i r k a ->
+  CSR v i k c a ->
+  CSR v i r c a
+csrMatMul a b =
+  -- cooToCsr . csrToCoo $
   runST $ do
-    let bufferSize = maxNumNonZeroAfterMatMul a b
-        nRows = csrRows a
-        nCols = csrCols b
-    outOffsets <- SM.new (nRows + 1)
-    outIndices <- SM.new bufferSize
-    outData <- SM.new bufferSize
-    next <- SM.replicate nCols (-1)
-    sums <- SM.new nCols
-    nnz <- iFoldM 0 0 nRows $ \nnz i -> do
-      let jjBegin = fromIntegral $ csrOffsets a ! i
-          jjEnd = fromIntegral $ csrOffsets a ! (i + 1)
-      (head, length) <- iFoldM (-2 :: Int, 0 :: Int) jjBegin jjEnd $ \(_head, _length) jj ->
-        let j = fromIntegral $ csrIndices a ! jj
-            v = csrData a ! jj
-            kkBegin = fromIntegral $ csrOffsets b ! j
-            kkEnd = fromIntegral $ csrOffsets b ! (j + 1)
-         in iFoldM (_head, _length) kkBegin kkEnd $ \(head, length) kk -> do
-              let k = fromIntegral $ csrIndices b ! kk
-              SM.modify sums (+ v * (csrData b ! kk)) k
-              _next <- SM.read next k
-              if _next == -1
-                then do SM.write next k head; pure (k, length + 1)
-                else pure (head, length)
-      (_, nnz') <- iFoldM (head, nnz) 0 length $ \(!head, !nnz) _ -> do
-        SM.write outIndices nnz (fromIntegral head)
-        SM.write outData nnz =<< SM.read sums head
-        head' <- SM.read next head
-        SM.write next head (-1)
-        SM.write sums head 0
+    let !bufferSize = maxNumNonZeroAfterMatMul a b
+        !nRows = csrRows a
+        !nCols = csrCols b
+    outOffsets <- GM.new (nRows + 1)
+    outIndices <- GM.new bufferSize
+    outData <- GM.new bufferSize
+    next <- G.unsafeThaw (G.replicate nCols (-1) :: v Int)
+    sums <- G.unsafeThaw (G.replicate nCols 0 :: v a)
+    nnz <- iFoldM 0 (< nRows) (+ 1) 0 $ \ !nnz !i -> do
+      let !jjBegin = fromIntegral $ csrOffsets a ! i
+          !jjEnd = fromIntegral $ csrOffsets a ! (i + 1)
+      (head, length) <- iFoldM jjBegin (< jjEnd) (+ 1) (-2 :: Int, 0 :: Int) $
+        \(!_head, !_length) !jj ->
+          let !j = fromIntegral $ csrIndices a ! jj
+              !v = csrData a ! jj
+              !kkBegin = fromIntegral $ csrOffsets b ! j
+              !kkEnd = fromIntegral $ csrOffsets b ! (j + 1)
+           in iFoldM kkBegin (< kkEnd) (+ 1) (_head, _length) $ \(!head, !length) !kk -> do
+                let !k = fromIntegral $ csrIndices b ! kk
+                GM.modify sums (+ v * (csrData b ! kk)) k
+                _next <- GM.read next k
+                if _next == -1
+                  then do GM.write next k head; pure (k, length + 1)
+                  else pure (head, length)
+      (_, nnz') <- iFoldM 0 (< length) (+ 1) (head, nnz) $ \(!head, !nnz) _ -> do
+        GM.write outIndices nnz (fromIntegral head)
+        GM.write outData nnz =<< GM.read sums head
+        head' <- GM.read next head
+        GM.write next head (-1)
+        GM.write sums head 0
         pure (head', nnz + 1)
-      trace (show (nnz, nnz')) $ pure ()
-      SM.write outOffsets (i + 1) (fromIntegral nnz')
+      GM.write outOffsets (i + 1) (fromIntegral nnz')
       pure nnz'
-    SparseMatrix nRows nCols
-      <$> S.unsafeFreeze outOffsets
-      <*> S.unsafeFreeze (SM.slice 0 nnz outIndices)
-      <*> S.unsafeFreeze (SM.slice 0 nnz outData)
--}
+    outOffsets' <- G.unsafeFreeze outOffsets
+    loopM 0 (< nRows) (+ 1) $ \ !i -> do
+      let !jjBegin = fromIntegral $ outOffsets' ! i
+          !jjEnd = fromIntegral $ outOffsets' ! (i + 1)
+          key !j _ = j
+      sortManyByKey
+        (\j _ -> j)
+        (GM.slice jjBegin (jjEnd - jjBegin) outIndices)
+        (GM.slice jjBegin (jjEnd - jjBegin) outData)
+    CSR
+      <$> pure outOffsets'
+      <*> G.unsafeFreeze (GM.slice 0 nnz outIndices)
+      <*> G.unsafeFreeze (GM.slice 0 nnz outData)
 
 -- void ls_csr_matrix_from_dense(unsigned const dimension,
 --                               _Complex double const *const dense,

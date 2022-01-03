@@ -162,7 +162,7 @@ main = hspec $ do
       m `csrIndex` (1, 1) `shouldBe` 4
   describe "denseToCSR" $ do
     it ".." $ do
-      let (m :: CSR S.Vector Int 3 4 Int) = denseToCsr @S.Vector @S.Vector (fromList [[1, 0, 2, 0], [0, 4, 0, 0], [0, 0, -3, 8]])
+      let (m :: CSR S.Vector Int 3 4 Int) = denseToCsr (fromList [[1, 0, 2, 0], [0, 4, 0, 0], [0, 0, -3, 8]])
       print m
       m `csrIndex` (0, 0) `shouldBe` 1
       m `csrIndex` (0, 1) `shouldBe` 0
@@ -171,11 +171,11 @@ main = hspec $ do
   describe "Num CSR" $ do
     it "(+)" $ do
       let (a :: CSR S.Vector Int 3 4 Int) =
-            denseToCsr @S.Vector @S.Vector (fromList [[1, 0, 2, 0], [0, 4, 0, 0], [0, 0, -3, 8]])
+            denseToCsr (fromList [[1, 0, 2, 0], [0, 4, 0, 0], [0, 0, -3, 8]])
           (b :: CSR S.Vector Int 3 4 Int) =
-            denseToCsr @S.Vector @S.Vector (fromList [[3, -8, 0, 0], [1, 5, 0, 0], [0, 0, -3, 0]])
+            denseToCsr (fromList [[3, -8, 0, 0], [1, 5, 0, 0], [0, 0, -3, 0]])
           (c :: CSR S.Vector Int 3 4 Int) =
-            denseToCsr @S.Vector @S.Vector (fromList [[4, -8, 2, 0], [1, 9, 0, 0], [0, 0, -6, 8]])
+            denseToCsr (fromList [[4, -8, 2, 0], [1, 9, 0, 0], [0, 0, -6, 8]])
       print a
       print b
       print c
@@ -206,29 +206,29 @@ main = hspec $ do
       sortByWithParity compare [3 :: Int, 1] `shouldBe` (Odd, [1, 3])
       sortByWithParity compare [1 :: Int, 3] `shouldBe` (Even, [1, 3])
       sortByWithParity compare ([] :: [Int]) `shouldBe` (Even, [])
-  -- describe "csrMatMul" $ do
-  --   it ".." $
-  --     do
-  --       let a =
-  --             denseToCsr @Float . fromList $
-  --               [ [0.0, 0.0, 0.0, 0.87383316],
-  --                 [0.0, 0.0, 0.0, 0.13542224],
-  --                 [0.24292645, 0.0, 0.0, 0.0]
-  --               ]
-  --           b =
-  --             denseToCsr @Float . fromList $
-  --               [ [0.0, 0.0, 0.0, 0.67190817, 0.0],
-  --                 [0.80930562, 0.0, 0.0, 0.94956449, 0.51363394],
-  --                 [0.63021572, 0.94316889, 0.0, 0.89156391, 0.0],
-  --                 [0.0, 0.0, 0.64573977, 0.05604065, 0.28140917]
-  --               ]
-  --           c =
-  --             denseToCsr @Float . fromList $
-  --               [ [0.0, 0.0, 0.56426882, 0.048970178, 0.24590467],
-  --                 [0.0, 0.0, 0.08744753, 0.00758915, 0.03810906],
-  --                 [0.0, 0.0, 0.0, 0.16322428, 0.0]
-  --               ]
-  --       csrMatMul a b `shouldBe` c
+  describe "csrMatMul" $ do
+    it ".." $
+      do
+        let (a :: StorableDenseMatrix 3 4 Float) =
+              fromList $
+                [ [0.0, 0.0, 0.0, 0.87383316],
+                  [0.0, 0.0, 0.0, 0.13542224],
+                  [0.24292645, 0.0, 0.0, 0.0]
+                ]
+            (b :: StorableDenseMatrix 4 5 Float) =
+              fromList $
+                [ [0.0, 0.0, 0.0, 0.67190817, 0.0],
+                  [0.80930562, 0.0, 0.0, 0.94956449, 0.51363394],
+                  [0.63021572, 0.94316889, 0.0, 0.89156391, 0.0],
+                  [0.0, 0.0, 0.64573977, 0.05604065, 0.28140917]
+                ]
+            (c :: StorableDenseMatrix 3 5 Float) =
+              fromList $
+                [ [0.0, 0.0, 0.56426882, 0.048970178, 0.24590467],
+                  [0.0, 0.0, 0.08744753, 0.00758915, 0.03810906],
+                  [0.0, 0.0, 0.0, 0.16322428, 0.0]
+                ]
+        csrMatMul (denseToCsr @S.Vector @Int a) (denseToCsr b) `shouldBe` (denseToCsr c)
   describe "combineNeighbors" $ do
     it ".." $ do
       combineNeighbors (==) (+) (S.fromList [1 :: Int, 2, 3]) `shouldBe` (S.fromList [1, 2, 3])
