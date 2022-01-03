@@ -54,6 +54,7 @@ common common-options
                        GeneralizedNewtypeDeriving
                        TypeApplications
                        AllowAmbiguousTypes
+                       DataKinds
 
 library
   import:              common-options
@@ -76,6 +77,7 @@ library
                      , unliftio-core
                      , mtl
                      , vector
+                     , vector-algorithms
                      , text
                      , aeson
                      , scientific

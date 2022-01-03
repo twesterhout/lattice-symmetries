@@ -2,6 +2,7 @@ module Main (main) where
 
 import Data.Complex
 import qualified Data.Vector.Storable as S
+import qualified Data.Vector.Unboxed as U
 import Data.Yaml.Aeson
 import Foreign.Storable
 import LatticeSymmetries
@@ -63,19 +64,18 @@ main = hspec $ do
       s₄ `shouldSatisfy` isLeft
   describe "denseMatrixFromList" $ do
     it "handles empty lists" $ do
-      denseMatrixFromList [] `shouldBe` Right (DenseMatrix (0, 0) S.empty :: DenseMatrix Double)
-      denseMatrixFromList [[], []] `shouldBe` Right (DenseMatrix (2, 0) S.empty :: DenseMatrix Double)
+      denseMatrixFromList []
+        `shouldBe` Right (DenseMatrix S.empty :: DenseMatrix S.Vector 0 0 Double)
+      denseMatrixFromList [[], []]
+        `shouldBe` Right (DenseMatrix S.empty :: DenseMatrix S.Vector 2 0 Double)
     it "handles square matrices" $ do
       denseMatrixFromList [[1, 2], [3, 4]]
-        `shouldBe` Right (DenseMatrix (2, 2) (fromList [1, 2, 3, 4]) :: DenseMatrix Double)
+        `shouldBe` Right (DenseMatrix (fromList [1, 2, 3, 4]) :: DenseMatrix S.Vector 2 2 Double)
     it "handles rectangular matrices" $ do
       denseMatrixFromList [[1, 2, 3], [4, 5, 6]]
-        `shouldBe` Right (DenseMatrix (2, 3) (fromList [1, 2, 3, 4, 5, 6]) :: DenseMatrix Double)
+        `shouldBe` Right (DenseMatrix (fromList [1, 2, 3, 4, 5, 6]) :: DenseMatrix S.Vector 2 3 Double)
       denseMatrixFromList [[1, 2], [3, 4], [5, 6]]
-        `shouldBe` Right (DenseMatrix (3, 2) (fromList [1, 2, 3, 4, 5, 6]) :: DenseMatrix Double)
-  -- it "general lists" $ do
-  --   (denseMatrixFromList [[1, 2], [3], [5, 6]] :: Maybe (DenseMatrix Int))
-  --     `shouldBe` Nothing
+        `shouldBe` Right (DenseMatrix (fromList [1, 2, 3, 4, 5, 6]) :: DenseMatrix S.Vector 3 2 Double)
   describe "DenseMatrixSpec" $ do
     it "parses JSON specifications" $ do
       parseLines @DenseMatrixSpec
@@ -157,32 +157,85 @@ main = hspec $ do
       binarySearch (S.fromList [1]) (1 :: Int) `shouldBe` Just 0
   describe "cooToCSR" $ do
     it ".." $ do
-      let m = cooToCsr [(2, 2, -3), (1, 1, 1), (2, 3, 8), (1, 1, 3 :: Int)]
+      let (m :: CSR S.Vector Int 3 4 Int) = cooToCsr @U.Vector @S.Vector . fromList $ [(2, 2, -3), (1, 1, 1), (2, 3, 8), (1, 1 :: Int, 3 :: Int)]
       print m
-      m `smIndex` (1, 1) `shouldBe` 4
+      m `csrIndex` (1, 1) `shouldBe` 4
   describe "denseToCSR" $ do
     it ".." $ do
-      let m = denseToCsr (fromList [[(1 :: Int), 0, 2, 0], [0, 4, 0, 0], [0, 0, -3, 8]])
+      let (m :: CSR S.Vector Int 3 4 Int) = denseToCsr @S.Vector @S.Vector (fromList [[1, 0, 2, 0], [0, 4, 0, 0], [0, 0, -3, 8]])
       print m
-      m `smIndex` (0, 0) `shouldBe` 1
-      m `smIndex` (0, 1) `shouldBe` 0
-      m `smIndex` (0, 2) `shouldBe` 2
-      m `smIndex` (2, 3) `shouldBe` 8
-  describe "pSpinfulFermionicOperator" $ do
+      m `csrIndex` (0, 0) `shouldBe` 1
+      m `csrIndex` (0, 1) `shouldBe` 0
+      m `csrIndex` (0, 2) `shouldBe` 2
+      m `csrIndex` (2, 3) `shouldBe` 8
+  describe "Num CSR" $ do
+    it "(+)" $ do
+      let (a :: CSR S.Vector Int 3 4 Int) =
+            denseToCsr @S.Vector @S.Vector (fromList [[1, 0, 2, 0], [0, 4, 0, 0], [0, 0, -3, 8]])
+          (b :: CSR S.Vector Int 3 4 Int) =
+            denseToCsr @S.Vector @S.Vector (fromList [[3, -8, 0, 0], [1, 5, 0, 0], [0, 0, -3, 0]])
+          (c :: CSR S.Vector Int 3 4 Int) =
+            denseToCsr @S.Vector @S.Vector (fromList [[4, -8, 2, 0], [1, 9, 0, 0], [0, 0, -6, 8]])
+      print a
+      print b
+      print c
+      a + b `shouldBe` c
+  describe "pPrimitiveOperator" $ do
     it ".." $ do
-      parse pFermionicOperator "" ("c†↓₁₀" :: Text) `shouldBe` Right (SpinfulFermionicOperator FermionicCreationOperator 'c' SpinDown 10)
-      parse pFermionicOperator "" ("f₀" :: Text) `shouldBe` Right (SpinlessFermionicOperator FermionicAnnihilationOperator 'f' 0)
-      parse pFermionicOperator "" ("n↑₃₈" :: Text) `shouldBe` Right (SpinfulFermionicOperator FermionicNumberCountingOperator 'n' SpinUp 38)
-      parse pFermionicString "" ("n₃₈ f↓₁₅" :: Text)
+      parse pPrimitiveOperator "" ("c†↓₁₀" :: Text)
+        `shouldBe` Right (SpinfulFermionicOperator FermionicCreationOperator 'c' SpinDown 10)
+      parse pPrimitiveOperator "" ("f₀" :: Text)
+        `shouldBe` Right (SpinlessFermionicOperator FermionicAnnihilationOperator 'f' 0)
+      parse pPrimitiveOperator "" ("n↑₃₈" :: Text)
+        `shouldBe` Right (SpinfulFermionicOperator FermionicNumberCountingOperator 'n' SpinUp 38)
+      parse pPrimitiveOperator "" ("Sᶻ₃₈" :: Text)
+        `shouldBe` Right (SpinOperator SpinZOperator 'S' 38)
+      parse pOperatorString "" ("n₃₈ f↓₁₅" :: Text)
         `shouldBe` Right
           ( SpinlessFermionicOperator FermionicNumberCountingOperator 'n' 38
               :| [SpinfulFermionicOperator FermionicAnnihilationOperator 'f' SpinDown 15]
           )
-      parse pFermionicString "" ("n↑₃₈f↓₁₅" :: Text)
+      parse pOperatorString "" ("n↑₃₈f↓₁₅" :: Text)
         `shouldBe` Right
           ( SpinfulFermionicOperator FermionicNumberCountingOperator 'n' SpinUp 38
               :| [SpinfulFermionicOperator FermionicAnnihilationOperator 'f' SpinDown 15]
           )
+  describe "sortByWithParity" $ do
+    it ".." $ do
+      sortByWithParity compare [3 :: Int, 1, 4, 8, 0] `shouldBe` (Odd, [0, 1, 3, 4, 8])
+      sortByWithParity compare [3 :: Int, 1] `shouldBe` (Odd, [1, 3])
+      sortByWithParity compare [1 :: Int, 3] `shouldBe` (Even, [1, 3])
+      sortByWithParity compare ([] :: [Int]) `shouldBe` (Even, [])
+  -- describe "csrMatMul" $ do
+  --   it ".." $
+  --     do
+  --       let a =
+  --             denseToCsr @Float . fromList $
+  --               [ [0.0, 0.0, 0.0, 0.87383316],
+  --                 [0.0, 0.0, 0.0, 0.13542224],
+  --                 [0.24292645, 0.0, 0.0, 0.0]
+  --               ]
+  --           b =
+  --             denseToCsr @Float . fromList $
+  --               [ [0.0, 0.0, 0.0, 0.67190817, 0.0],
+  --                 [0.80930562, 0.0, 0.0, 0.94956449, 0.51363394],
+  --                 [0.63021572, 0.94316889, 0.0, 0.89156391, 0.0],
+  --                 [0.0, 0.0, 0.64573977, 0.05604065, 0.28140917]
+  --               ]
+  --           c =
+  --             denseToCsr @Float . fromList $
+  --               [ [0.0, 0.0, 0.56426882, 0.048970178, 0.24590467],
+  --                 [0.0, 0.0, 0.08744753, 0.00758915, 0.03810906],
+  --                 [0.0, 0.0, 0.0, 0.16322428, 0.0]
+  --               ]
+  --       csrMatMul a b `shouldBe` c
+  describe "combineNeighbors" $ do
+    it ".." $ do
+      combineNeighbors (==) (+) (S.fromList [1 :: Int, 2, 3]) `shouldBe` (S.fromList [1, 2, 3])
+      combineNeighbors (==) (+) (S.fromList [1 :: Int, 1, 3]) `shouldBe` (S.fromList [2, 3])
+      combineNeighbors (==) (const) (S.fromList [1 :: Int, 1, 2, 1, 1, 1, 3, 3])
+        `shouldBe` (S.fromList [1, 2, 1, 3])
+      combineNeighbors (==) (+) (S.fromList ([] :: [Int])) `shouldBe` (S.fromList [])
 
 {-
 describe "BasisSpec" $ do

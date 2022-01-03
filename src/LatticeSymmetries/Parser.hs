@@ -1,12 +1,16 @@
 module LatticeSymmetries.Parser
-  ( pFermionicOperator,
-    pFermionicString,
-    FermionicOperator (..),
-    FermionicOperatorType (..),
+  ( pPrimitiveOperator,
+    pOperatorString,
+    PrimitiveOperator (..),
+    SpinOperatorType (..),
     SpinIndex (..),
+    FermionicOperatorType (..),
+    sortByWithParity,
+    Parity (..),
   )
 where
 
+import qualified Data.List.NonEmpty as NonEmpty
 import Text.Parsec
 import Prelude hiding ((<|>))
 
@@ -24,7 +28,7 @@ pSubscriptDigit =
       char '₈' *> pure '8',
       char '₉' *> pure '9'
     ]
-    <?> "index subscript (one of ₀₁₂₃₄₅₆₇₈₉)"
+    <?> "index subscript (one of ₀, ₁, ₂, ₃, ₄, ₅, ₆, ₇, ₈, ₉)"
 
 pUnicodeSubscriptNumber :: Stream s m Char => ParsecT s u m Int
 pUnicodeSubscriptNumber = readInteger <$> many1 pSubscriptDigit
@@ -37,17 +41,12 @@ data SpinIndex = SpinUp | SpinDown
   deriving (Show, Eq)
 
 pSpin :: Stream s m Char => ParsecT s u m SpinIndex
-pSpin = choice [char '↑' *> pure SpinUp, char '↓' *> pure SpinDown] <?> "spin label (one of ↑↓)"
+pSpin = choice [char '↑' *> pure SpinUp, char '↓' *> pure SpinDown] <?> "spin label (one of ↑, ↓)"
 
 data FermionicOperatorType
   = FermionicCreationOperator
   | FermionicAnnihilationOperator
   | FermionicNumberCountingOperator
-  deriving (Show, Eq)
-
-data FermionicOperator
-  = SpinfulFermionicOperator !FermionicOperatorType !Char !SpinIndex !Int
-  | SpinlessFermionicOperator !FermionicOperatorType !Char !Int
   deriving (Show, Eq)
 
 data SpinOperatorType
@@ -58,8 +57,16 @@ data SpinOperatorType
   | SpinZOperator
   deriving (Show, Eq)
 
-data SpinOperator = SpinOperator !SpinOperatorType !Char !Int
+data PrimitiveOperator
+  = SpinfulFermionicOperator !FermionicOperatorType !Char !SpinIndex !Int
+  | SpinlessFermionicOperator !FermionicOperatorType !Char !Int
+  | SpinOperator !SpinOperatorType !Char !Int
   deriving (Show, Eq)
+
+getSiteIndex :: PrimitiveOperator -> Int
+getSiteIndex (SpinfulFermionicOperator _ _ _ i) = i
+getSiteIndex (SpinlessFermionicOperator _ _ i) = i
+getSiteIndex (SpinOperator _ _ i) = i
 
 pFermionicOperatorType :: Stream s m Char => ParsecT s u m (Char, FermionicOperatorType)
 pFermionicOperatorType =
@@ -73,7 +80,7 @@ pFermionicOperatorType =
         True -> pure FermionicCreationOperator
         False -> pure FermionicAnnihilationOperator
 
-pFermionicOperator :: Stream s m Char => ParsecT s u m FermionicOperator
+pFermionicOperator :: Stream s m Char => ParsecT s u m PrimitiveOperator
 pFermionicOperator = do
   (c, t) <- pFermionicOperatorType
   s <- optionMaybe pSpin
@@ -82,10 +89,7 @@ pFermionicOperator = do
     Just s' -> SpinfulFermionicOperator t c s' i
     Nothing -> SpinlessFermionicOperator t c i
 
-pFermionicString :: Stream s m Char => ParsecT s u m (NonEmpty FermionicOperator)
-pFermionicString = fromList <$> pFermionicOperator `sepBy1` spaces
-
-pSpinOperator :: Stream s m Char => ParsecT s u m SpinOperator
+pSpinOperator :: Stream s m Char => ParsecT s u m PrimitiveOperator
 pSpinOperator = do
   c <- oneOf "σS" <?> "one of σ, S"
   superscript <- oneOf "⁺⁻ˣʸᶻ" <?> "one of ⁺, ⁻, ˣ, ʸ, ᶻ"
@@ -98,13 +102,77 @@ pSpinOperator = do
         'ᶻ' -> SpinZOperator
   pure $ SpinOperator t c i
 
-pSpinString :: Stream s m Char => ParsecT s u m (NonEmpty SpinOperator)
-pSpinString = fromList <$> pSpinOperator `sepBy1` spaces <?> "string of spin operators"
+pPrimitiveOperator :: Stream s m Char => ParsecT s u m PrimitiveOperator
+pPrimitiveOperator = (pSpinOperator <|> pFermionicOperator) <?> "primitive operator"
 
-data OperatorString
-  = SpinOperatorString (NonEmpty SpinOperator)
-  | FermionicOperatorString (NonEmpty FermionicOperator)
+pOperatorString :: Stream s m Char => ParsecT s u m (NonEmpty PrimitiveOperator)
+pOperatorString = fromList <$> pPrimitiveOperator `sepBy1` spaces <?> "operator string"
+
+-- isSpinful :: FermionicOperator -> Bool
+-- isSpinful x = case x of
+--   SpinfulFermionicOperator _ _ _ _ -> True
+--   SpinlessFermionicOperator _ _ _ -> False
+
+isSpinOperator :: PrimitiveOperator -> Bool
+isSpinOperator x = case x of
+  SpinOperator _ _ _ -> True
+  _ -> False
+
+isSpinfulFermionicOperator :: PrimitiveOperator -> Bool
+isSpinfulFermionicOperator x = case x of
+  SpinfulFermionicOperator _ _ _ _ -> True
+  _ -> False
+
+isSpinlessFermionicOperator :: PrimitiveOperator -> Bool
+isSpinlessFermionicOperator x = case x of
+  SpinlessFermionicOperator _ _ _ -> True
+  _ -> False
+
+isConsistent :: NonEmpty PrimitiveOperator -> Bool
+isConsistent xs
+  | all isSpinOperator xs = True
+  | all isSpinfulFermionicOperator xs = True
+  | all isSpinlessFermionicOperator xs = True
+  | otherwise = False
+
+sortIndices :: [PrimitiveOperator] -> (Parity, [PrimitiveOperator])
+sortIndices xs = (p, fromList ys)
+  where
+    (p, ys) = sortByWithParity (comparing getSiteIndex) (toList xs)
+
+groupIndices :: [PrimitiveOperator] -> [NonEmpty PrimitiveOperator]
+groupIndices xs = NonEmpty.groupWith getSiteIndex xs
+
+-- Left "operators are are of different type"
+
+data Parity = Even | Odd
   deriving (Show, Eq)
 
-pOperatorString :: Stream s m Char => ParsecT s u m OperatorString
-pOperatorString = (SpinOperatorString <$> pSpinString) <|> (FermionicOperatorString <$> pFermionicString)
+sortByWithParity :: forall a. (a -> a -> Ordering) -> [a] -> (Parity, [a])
+sortByWithParity cmp = go 0
+  where
+    toParity :: Int -> Parity
+    toParity k
+      | k `mod` 2 == 0 = Even
+      | otherwise = Odd
+    go :: Int -> [a] -> (Parity, [a])
+    go !n xs =
+      let (n', xs') = bubble n xs
+       in if n' > n then go n' xs' else (trace (show n') (toParity n'), xs')
+    bubble :: Int -> [a] -> (Int, [a])
+    bubble !n (x : y : ys) =
+      case cmp x y of
+        GT -> let (n', ys') = bubble (n + 1) (x : ys) in (n', y : ys')
+        _ -> let (n', ys') = bubble n (y : ys) in (n', x : ys')
+    bubble !n xs = (n, xs)
+
+-- sortIndices :: OperatorString -> (Parity, OperatorString)
+-- sortIndices (SpinOperatorString s) =
+--   let (p, s') = sortByWithParity (comparing getSiteIndex) (toList s)
+--    in (p, SpinOperatorString (fromList s'))
+-- sortIndices (FermionicOperatorString s) =
+--   let (p, s') = sortByWithParity (comparing getSiteIndex) (toList s)
+--    in (p, FermionicOperatorString (fromList s'))
+
+normalizeIndices :: NonEmpty PrimitiveOperator -> Either Text (NonEmpty PrimitiveOperator)
+normalizeIndices = undefined

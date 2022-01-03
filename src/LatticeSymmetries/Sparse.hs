@@ -1,6 +1,14 @@
-{-# LANGUAGE CApiFFI #-}
-{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module LatticeSymmetries.Sparse where
 
@@ -8,66 +16,125 @@ module LatticeSymmetries.Sparse where
 
 -- import Data.Vector.Binary
 
-import Control.Exception.Safe (bracket, impureThrow, throwIO)
-import qualified Control.Monad.Primitive as Primitive
+-- import Control.Exception.Safe (bracket, impureThrow, throwIO)
+-- import qualified Control.Monad.Primitive as Primitive
 import Control.Monad.ST
-import qualified Control.Monad.ST.Unsafe (unsafeIOToST)
-import Data.Aeson
-import Data.Aeson.Types (typeMismatch)
+-- import qualified Control.Monad.ST.Unsafe (unsafeIOToST)
+-- import Data.Aeson
+-- import Data.Aeson.Types (typeMismatch)
+
+-- import Data.Scientific (toRealFloat)
+
+-- import Data.Bits (toIntegralSized)
 import Data.Complex
-import qualified Data.List
-import qualified Data.List.NonEmpty as NonEmpty
-import Data.Scientific (toRealFloat)
+-- import qualified Data.List
+-- import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Vector as B
+import qualified Data.Vector.Algorithms.Intro as Intro
+import Data.Vector.Fusion.Bundle (Bundle)
+import qualified Data.Vector.Fusion.Bundle as Bundle (inplace)
+import qualified Data.Vector.Fusion.Bundle.Monadic as Bundle
+import Data.Vector.Fusion.Bundle.Size (Size (..), toMax)
+import Data.Vector.Fusion.Stream.Monadic (Step (..), Stream (..))
+-- import qualified Data.Vector.Fusion.Stream.Monadic as Stream
 import Data.Vector.Generic ((!))
 import qualified Data.Vector.Generic as G
-import qualified Data.Vector.Storable as S
-import qualified Data.Vector.Storable.Mutable as SM
-import qualified Data.Vector.Unboxed as U
-import Data.Yaml (decodeFileWithWarnings)
-import Foreign.C.String (CString, peekCString)
-import Foreign.C.Types (CInt (..), CUInt (..))
-import Foreign.ForeignPtr
-import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
-import Foreign.Marshal.Alloc (alloca, free, malloc, mallocBytes)
-import Foreign.Marshal.Array (newArray, withArrayLen)
-import Foreign.Marshal.Utils (new, with)
-import Foreign.Ptr (FunPtr, Ptr, castPtr)
-import Foreign.StablePtr
-import Foreign.Storable (Storable (..))
+import qualified Data.Vector.Generic.Mutable as GM
+-- import qualified Data.Vector.Storable as S
+-- import qualified Data.Vector.Storable.Mutable as SM
+-- import Data.Vector.Unboxed (Unbox)
+-- import qualified Data.Vector.Unboxed as U
+-- import Data.Yaml (decodeFileWithWarnings)
+-- import Foreign.C.String (CString, peekCString)
+-- import Foreign.C.Types (CInt (..), CUInt (..))
+-- import Foreign.ForeignPtr
+-- import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
+-- import Foreign.Marshal.Alloc (alloca, free, malloc, mallocBytes)
+-- import Foreign.Marshal.Array (newArray, withArrayLen)
+-- import Foreign.Marshal.Utils (new, with)
+-- import Foreign.Ptr (FunPtr, Ptr, castPtr)
+-- import Foreign.StablePtr
+-- import Foreign.Storable (Storable (..))
 import qualified GHC.Exts as GHC (IsList (..))
-import qualified GHC.ForeignPtr as GHC (Finalizers (..), ForeignPtr (..), ForeignPtrContents (..))
-import GHC.Generics
-import qualified GHC.IORef as GHC (atomicSwapIORef)
-import GHC.Prim
-import qualified GHC.Ptr as GHC (Ptr (..))
-import qualified Language.C.Inline as C
-import qualified Language.C.Inline.Unsafe as CU
-import LatticeSymmetries.Context
-import LatticeSymmetries.IO
-import LatticeSymmetries.Types
-import qualified System.IO.Unsafe
-import qualified System.Mem.Weak
+import GHC.TypeLits
+import qualified GHC.TypeLits as GHC
+-- import qualified GHC.ForeignPtr as GHC (Finalizers (..), ForeignPtr (..), ForeignPtrContents (..))
+-- import GHC.Generics
+-- import qualified GHC.IORef as GHC (atomicSwapIORef)
+-- import GHC.Prim
+-- import qualified GHC.Ptr as GHC (Ptr (..))
+-- import qualified Language.C.Inline as C
+-- import qualified Language.C.Inline.Unsafe as CU
+-- import LatticeSymmetries.Context
+-- import LatticeSymmetries.IO
+-- import LatticeSymmetries.Types
+-- import qualified System.IO.Unsafe
+-- import qualified System.Mem.Weak
+import Prelude hiding (group, product, sort)
 
-C.context (C.baseCtx <> C.bsCtx <> C.funCtx <> lsCtx)
-C.include "<lattice_symmetries/lattice_symmetries.h>"
-C.include "helpers.h"
+-- C.context (C.baseCtx <> C.bsCtx <> C.funCtx <> lsCtx)
+-- C.include "<lattice_symmetries/lattice_symmetries.h>"
+-- C.include "helpers.h"
 
--- Row-major order (C layout)
-data DenseMatrix a = DenseMatrix {denseMatrixShape :: (Int, Int), denseMatrixData :: S.Vector a}
+type KnownDenseMatrix v r c a = (G.Vector v a, KnownNat r, KnownNat c)
+
+type KnownCOO v i r c a = (G.Vector v (i, i, a), KnownNat r, KnownNat c)
+
+type KnownCSR v i r c a = (G.Vector v i, G.Vector v a, KnownNat r, KnownNat c)
+
+natToInt :: forall n. KnownNat n => Int
+natToInt = fromIntegral $ GHC.TypeLits.natVal (Proxy @n)
+
+-- | Dense matrix in row-major order (C layout)
+data DenseMatrix v (r :: Nat) (c :: Nat) a = DenseMatrix {dmData :: !(v a)}
   deriving stock (Show, Eq, Generic)
 
--- deriving anyclass (Binary)
+dmRows :: forall r c a v. KnownDenseMatrix v r c a => DenseMatrix v r c a -> Int
+dmRows _ = natToInt @r
 
-data SparseMatrix a = SparseMatrix
-  { smRows :: !Int,
-    smCols :: !Int,
-    smOffsets :: !(S.Vector CUInt),
-    smIndices :: !(S.Vector CUInt),
-    smData :: !(S.Vector a)
+dmCols :: forall r c a v. KnownDenseMatrix v r c a => DenseMatrix v r c a -> Int
+dmCols _ = natToInt @c
+
+dmShape :: forall r c a v. KnownDenseMatrix v r c a => DenseMatrix v r c a -> (Int, Int)
+dmShape m = (dmRows m, dmCols m)
+
+instance (KnownDenseMatrix v r c a, Num a) => Num (DenseMatrix v r c a) where
+  (+) a b = DenseMatrix $ G.zipWith (+) (dmData a) (dmData b)
+  (-) a b = DenseMatrix $ G.zipWith (-) (dmData a) (dmData b)
+  (*) a b = DenseMatrix $ G.zipWith (*) (dmData a) (dmData b)
+  abs a = DenseMatrix $ G.map abs (dmData a)
+  signum _ = error "Num instance for DenseMatrix does not implement signum"
+  fromInteger z = DenseMatrix $ G.replicate (natToInt @r * natToInt @c) (fromInteger z)
+
+-- | Sparse matrix in Coordinate format
+data COO v i (r :: Nat) (c :: Nat) a = COO {cooData :: !(v (i, i, a))}
+  deriving stock (Generic)
+
+deriving instance Show (v (i, i, a)) => Show (COO v i r c a)
+
+deriving instance Eq (v (i, i, a)) => Eq (COO v i r c a)
+
+cooRows :: forall r c a i v. KnownCOO v i r c a => COO v i r c a -> Int
+cooRows _ = natToInt @r
+
+cooCols :: forall r c a i v. KnownCOO v i r c a => COO v i r c a -> Int
+cooCols _ = natToInt @c
+
+cooShape :: forall r c a i v. KnownCOO v i r c a => COO v i r c a -> (Int, Int)
+cooShape m = (cooRows m, cooCols m)
+
+data CSR v i (r :: Nat) (c :: Nat) a = CSR
+  { csrOffsets :: !(v i),
+    csrIndices :: !(v i),
+    csrData :: !(v a)
   }
-  deriving stock (Show, Eq, Generic)
+  deriving stock (Generic)
 
+deriving instance (Show (v i), Show (v a)) => Show (CSR v i r c a)
+
+deriving instance (Eq (v i), Eq (v a)) => Eq (CSR v i r c a)
+
+-- | Binary search in a vector. Return index, if found.
 binarySearch :: (G.Vector v a, Ord a) => v a -> a -> Maybe Int
 binarySearch v z = go 0 (G.length v)
   where
@@ -81,87 +148,507 @@ binarySearch v z = go 0 (G.length v)
               GT -> go l m
       | otherwise = Nothing
 
-smIndex :: (Num a, Storable a) => SparseMatrix a -> (Int, Int) -> a
-smIndex matrix (i, j) =
-  case binarySearch (G.slice l (u - l) (smIndices matrix)) (fromIntegral j) of
-    Just k -> smData matrix ! (l + k)
+csrIndex :: (KnownCSR v i r c a, Integral i, Num a) => CSR v i r c a -> (Int, Int) -> a
+csrIndex matrix (i, j) =
+  case binarySearch (G.slice l (u - l) (csrIndices matrix)) (fromIntegral j) of
+    Just k -> csrData matrix ! (l + k)
     Nothing -> 0
   where
-    !l = fromIntegral $ smOffsets matrix ! i
-    !u = fromIntegral $ smOffsets matrix ! (i + 1)
-{-# INLINE smIndex #-}
+    !l = fromIntegral $ csrOffsets matrix ! i
+    !u = fromIntegral $ csrOffsets matrix ! (i + 1)
+{-# INLINE csrIndex #-}
 
-preprocessCoo :: Num a => [(Int, Int, a)] -> [(Int, Int, a)]
-preprocessCoo =
-  fmap (Data.List.foldl1' (\(!i, !j, !x) (_, _, y) -> (i, j, x + y)))
-    . Data.List.groupBy (\a b -> key a == key b)
-    . sortOn key
-  where
-    key (i, j, _) = (i, j)
+csrNumberNonZero :: KnownCSR v i r c a => CSR v i r c a -> Int
+csrNumberNonZero = G.length . csrIndices
+{-# INLINE csrNumberNonZero #-}
 
-unsafeCooToCsr :: forall a. (Storable a, Num a) => [(Int, Int, a)] -> SparseMatrix a
-unsafeCooToCsr coo = SparseMatrix n m offsets indices elements
+csrRows :: forall r c a i v. KnownNat r => CSR v i r c a -> Int
+csrRows _ = natToInt @r
+{-# INLINE csrRows #-}
+
+csrCols :: forall r c a i v. KnownNat c => CSR v i r c a -> Int
+csrCols _ = natToInt @c
+{-# INLINE csrCols #-}
+
+csrShape :: (KnownNat r, KnownNat c) => CSR v i r c a -> (Int, Int)
+csrShape csr = (csrRows csr, csrCols csr)
+{-# INLINE csrShape #-}
+
+csrReIndex ::
+  (KnownCSR v i1 r c a, KnownCSR v i2 r c a, Integral i1, Integral i2) =>
+  CSR v i1 r c a ->
+  CSR v i2 r c a
+csrReIndex (CSR offsets indices elements) = CSR (cast offsets) (cast indices) elements
   where
-    coordinates = B.fromList coo
-    indices = G.convert $ G.map (\(_, j, _) -> fromIntegral j) coordinates
+    cast = G.map fromIntegral -- (fromJust . toIntegralSized)
+{-# INLINE csrReIndex #-}
+
+csrReVector ::
+  (KnownCSR v1 i r c a, KnownCSR v2 i r c a) =>
+  CSR v1 i r c a ->
+  CSR v2 i r c a
+csrReVector (CSR offsets indices elements) =
+  CSR (G.convert offsets) (G.convert indices) (G.convert elements)
+{-# INLINE csrReVector #-}
+
+cooToBundle :: KnownCOO v i r c a => COO v i r c a -> Bundle v (i, i, a)
+cooToBundle = G.stream . cooData
+
+cooFromBundle :: KnownCOO v i r c a => Bundle v (i, i, a) -> COO v i r c a
+cooFromBundle = COO . G.unstream . Bundle.reVector
+
+computeShape :: (Integral i, G.Vector v (i, i, a)) => v (i, i, a) -> (Int, Int)
+computeShape v
+  | G.null v = (0, 0)
+  | otherwise = (fromIntegral maxRow + 1, fromIntegral maxColumn + 1)
+  where
+    (maxRow, maxColumn) = G.foldl' combine (0, 0) v
+    combine (!r, !c) (!i, !j, _) = let !r' = max i r; !c' = max j c in (r', c')
+
+data CombineNeighborsHelper a
+  = CombineNeighborsFirst
+  | CombineNeighborsPrevious !a
+  | CombineNeighborsDone
+
+combineNeighborsImpl :: Monad m => (a -> a -> Bool) -> (a -> a -> a) -> Stream m a -> Stream m a
+{-# INLINE combineNeighborsImpl #-}
+combineNeighborsImpl equal combine (Stream step s₀) = Stream step' (CombineNeighborsFirst, s₀)
+  where
+    {-# INLINE step' #-}
+    step' (CombineNeighborsFirst, s) = do
+      r <- step s
+      case r of
+        Yield a s' -> pure $ Skip (CombineNeighborsPrevious a, s')
+        Skip s' -> pure $ Skip (CombineNeighborsFirst, s')
+        Done -> pure $ Done
+    step' (CombineNeighborsPrevious a, s) = do
+      r <- step s
+      case r of
+        Yield b s' ->
+          if equal a b
+            then pure $ Skip (CombineNeighborsPrevious (combine a b), s')
+            else pure $ Yield a (CombineNeighborsPrevious b, s')
+        Skip s' -> pure $ Skip (CombineNeighborsPrevious a, s')
+        Done -> pure $ Yield a (CombineNeighborsDone, s)
+    step' (CombineNeighborsDone, _) = pure $ Done
+
+combineNeighbors :: G.Vector v a => (a -> a -> Bool) -> (a -> a -> a) -> v a -> v a
+combineNeighbors equal combine =
+  G.unstream . Bundle.inplace (combineNeighborsImpl equal combine) toMax . G.stream
+
+cooNormalize :: (KnownCOO v i r c a, Integral i, Num a) => COO v i r c a -> COO v i r c a
+cooNormalize (COO v) = COO v'
+  where
+    comparison (i₁, j₁, _) (i₂, j₂, _) = compare (i₁, j₁) (i₂, j₂)
+    group =
+      combineNeighbors
+        (\(i₁, j₁, _) (i₂, j₂, _) -> i₁ == i₂ && j₁ == j₂)
+        (\(i, j, a) (_, _, b) -> (i, j, a + b))
+    sort x = runST $ do
+      buffer <- G.thaw x
+      Intro.sortBy comparison buffer
+      G.unsafeFreeze buffer
+    v' = group $ sort v
+
+-- preprocessCoo :: Num a => [(Int, Int, a)] -> [(Int, Int, a)]
+-- preprocessCoo =
+--   fmap (Data.List.foldl1' (\(!i, !j, !x) (_, _, y) -> (i, j, x + y)))
+--     . Data.List.groupBy (\a b -> key a == key b)
+--     . sortOn key
+--   where
+--     key (i, j, _) = (i, j)
+
+unsafeCooToCsr ::
+  (KnownCOO v1 i r c a, KnownCSR v2 i r c a, G.Vector v1 a, G.Vector v1 i, Integral i) =>
+  COO v1 i r c a ->
+  CSR v2 i r c a
+unsafeCooToCsr coo@(COO coordinates) = CSR offsets indices elements
+  where
+    indices = G.convert $ G.map (\(_, j, _) -> j) coordinates
     elements = G.convert $ G.map (\(_, _, x) -> x) coordinates
-    n = (+ 1) . G.maximum . G.map (\(i, _, _) -> i) $ coordinates
-    m = (+ 1) . fromIntegral . G.maximum $ indices
+    n = cooRows coo
     offsets = runST $ do
-      rs <- SM.replicate (n + 1) 0
+      rs <- GM.replicate (n + 1) 0
       G.forM_ coordinates $ \(!i, _, _) ->
-        SM.modify rs (+ 1) (i + 1)
-      forM_ [0 .. n - 1] $ \(!i) -> do
-        r <- SM.read rs i
-        SM.modify rs (+ r) (i + 1)
-      S.unsafeFreeze rs
+        GM.modify rs (+ 1) (fromIntegral i + 1)
+      _ <- loopM 0 (< n) (+ 1) $ \ !i -> do
+        r <- GM.read rs i
+        GM.modify rs (+ r) (i + 1)
+      G.unsafeFreeze rs
 
-cooToCsr :: forall a. (Storable a, Num a) => [(Int, Int, a)] -> SparseMatrix a
-cooToCsr = unsafeCooToCsr . preprocessCoo
+cooToCsr ::
+  forall v1 v2 i r c a.
+  (KnownCOO v1 i r c a, KnownCSR v2 i r c a, G.Vector v1 a, G.Vector v1 i, Integral i, Num a) =>
+  COO v1 i r c a ->
+  CSR v2 i r c a
+cooToCsr = unsafeCooToCsr . cooNormalize
 
-csrToCoo :: Storable a => SparseMatrix a -> [(Int, Int, a)]
-csrToCoo csr = concat [row i | i <- [0 .. smRows csr - 1]]
+csrOffsetsToIndices :: (G.Vector v i, Integral i) => v i -> v i
+csrOffsetsToIndices offsets = runST $ do
+  let nRows = G.length offsets - 1
+      nnz = fromIntegral $ G.last offsets
+  indices <- GM.new nnz
+  _ <- loopM 0 (< nRows) (+ 1) $ \i ->
+    let !b = fromIntegral $ offsets ! i
+        !e = fromIntegral $ offsets ! (i + 1)
+     in GM.set (GM.slice b (e - b) indices) (fromIntegral i)
+  G.unsafeFreeze indices
+
+csrToCoo ::
+  forall v1 v2 i r c a.
+  (KnownCSR v1 i r c a, KnownCOO v2 i r c a, G.Vector v2 a, G.Vector v2 i, Integral i) =>
+  CSR v1 i r c a ->
+  COO v2 i r c a
+csrToCoo csr = COO v
   where
-    row !i =
-      let !l = fromIntegral $ smOffsets csr ! i
-          !u = fromIntegral $ smOffsets csr ! (i + 1)
-       in zipWith
-            (\j x -> (i, fromIntegral j, x))
-            (G.toList $ G.slice l (u - l) (smIndices csr))
-            (G.toList $ G.slice l (u - l) (smData csr))
+    v =
+      G.zip3
+        (G.convert $ csrOffsetsToIndices (csrOffsets csr))
+        (G.convert $ csrIndices csr)
+        (G.convert $ csrData csr)
 
-denseToCsr :: (Storable a, Eq a, Num a) => DenseMatrix a -> SparseMatrix a
-denseToCsr dense =
-  unsafeCooToCsr
-    [ (i, j, x)
-      | i <- [0 .. numberRows - 1],
-        j <- [0 .. numberCols - 1],
-        let x = indexDenseMatrix dense i j,
-        x /= 0
-    ]
+denseToCoo ::
+  forall v1 v2 i r c a.
+  (KnownDenseMatrix v1 r c a, KnownCOO v2 i r c a, Eq a, Num a, Integral i) =>
+  DenseMatrix v1 r c a ->
+  COO v2 i r c a
+denseToCoo dense = COO v
   where
-    (numberRows, numberCols) = denseMatrixShape dense
+    numberRows = dmRows dense
+    numberCols = dmCols dense
+    v =
+      G.unstream
+        . Bundle.filter (\(_, _, x) -> x /= 0)
+        . Bundle.map (\(i, j) -> (fromIntegral i, fromIntegral j, indexDenseMatrix dense i j))
+        $ cartesian
+          (Bundle.enumFromStepN 0 1 numberRows)
+          (Bundle.enumFromStepN 0 1 numberCols)
 
-csrToDense :: Storable a => SparseMatrix a -> DenseMatrix a
-csrToDense csr = runST $ do
-  elements <- SM.new (n * m)
-  forM_ (csrToCoo csr) $ \(i, j, x) ->
-    SM.write elements (i * m + j) x
-  DenseMatrix (n, m) <$> S.unsafeFreeze elements
-  where
-    !n = smRows csr
-    !m = smCols csr
+denseToCsr ::
+  forall v1 v2 i r c a.
+  (KnownDenseMatrix v1 r c a, KnownCSR v2 i r c a, Eq a, Num a, Integral i) =>
+  DenseMatrix v1 r c a ->
+  CSR v2 i r c a
+denseToCsr = cooToCsr . denseToCoo @v1 @B.Vector
 
-smKron :: (Storable a, Num a) => SparseMatrix a -> SparseMatrix a -> SparseMatrix a
-smKron a b =
-  cooToCsr
-    [ (i₁ * n + i₂, j₁ * m + j₂, x₁ * x₂)
-      | (i₁, j₁, x₁) <- csrToCoo a,
-        (i₂, j₂, x₂) <- csrToCoo b
-    ]
+cooToDense ::
+  forall r c a i v.
+  (HasCallStack, KnownCOO v i r c a, KnownDenseMatrix v r c a, Integral i) =>
+  COO v i r c a ->
+  DenseMatrix v r c a
+cooToDense coo
+  | (n, m) == (natToInt @r, natToInt @c) = runST $ do
+    elements <- GM.new (n * m)
+    G.forM_ (cooData coo) $ \(i, j, x) ->
+      GM.write elements (fromIntegral i * m + fromIntegral j) x
+    DenseMatrix <$> G.unsafeFreeze elements
+  | otherwise = error "incompatible shape"
   where
-    !n = smRows b
-    !m = smCols b
+    (n, m) = cooShape coo
+
+csrToDense ::
+  (KnownDenseMatrix v r c a, KnownCSR v i r c a, G.Vector v (i, i, a), Integral i) =>
+  CSR v i r c a ->
+  DenseMatrix v r c a
+csrToDense = cooToDense . csrToCoo
+
+cartesian :: Bundle v a -> Bundle v b -> Bundle v (a, b)
+cartesian a b =
+  Bundle.fromStream
+    (cartesianImpl (Bundle.elements a) (Bundle.elements b))
+    (Bundle.sSize a `product` Bundle.sSize b)
+  where
+    product Unknown _ = Unknown
+    product _ Unknown = Unknown
+    product (Exact x) (Exact y) = Exact (x * y)
+    product (Exact x) (Max y) = Max (x * y)
+    product (Max x) (Exact y) = Max (x * y)
+    product (Max x) (Max y) = Max (x * y)
+
+cartesianImpl :: Monad m => Stream m a -> Stream m b -> Stream m (a, b)
+cartesianImpl (Stream step1 s1₀) (Stream step2 s2₀) = Stream step' (Nothing, s1₀, s2₀)
+  where
+    step' (Just a, s1, s2) = do
+      r₂ <- step2 s2
+      case r₂ of
+        Yield b s2' -> pure $ Yield (a, b) (Just a, s1, s2')
+        Skip s2' -> pure $ Skip (Just a, s1, s2')
+        -- NOTE: It's important to pass s2₀ here!
+        Done -> pure $ Skip (Nothing, s1, s2₀)
+    step' (Nothing, s1, s2) = do
+      r₁ <- step1 s1
+      case r₁ of
+        Yield a s1' -> pure $ Skip (Just a, s1', s2)
+        Skip s1' -> pure $ Skip (Nothing, s1', s2)
+        Done -> pure $ Done
+
+-- mergeImpl :: Stream m a -> Stream m a -> Stream m a
+-- mergeImpl (Stream step1 s1₀) (Stream step2 s2₀) = Stream step' (s1₀, s2₀)
+--   where
+--     step' (s1, s2) = do
+
+cooKron ::
+  (KnownCOO v i r1 c1 a, KnownCOO v i r2 c2 a, Num i, Num a) =>
+  COO v i r1 c1 a ->
+  COO v i r2 c2 a ->
+  COO v i (r1 GHC.* r2) (c1 GHC.* c2) a
+cooKron a b = COO v
+  where
+    combine ((i₁, j₁, x₁), (i₂, j₂, x₂)) =
+      (i₁ * fromIntegral n₁ + i₂, j₁ * fromIntegral m₁ + j₂, x₁ * x₂)
+    v = G.unstream . Bundle.map combine $ cartesian (cooToBundle a) (cooToBundle b)
+    (n₁, m₁) = cooShape a
+
+-- cooPlus :: (Integral i, Unbox i, Num a, Unbox a) => COO v i r c a -> COO v i r c a -> COO v i r c a
+-- cooPlus a b = undefined
+
+withSomeNat :: forall r. HasCallStack => Int -> (forall n. KnownNat n => Proxy n -> r) -> r
+withSomeNat n f = case GHC.TypeLits.someNatVal (fromIntegral n) of
+  Just (SomeNat (Proxy :: Proxy n)) -> f (Proxy @n)
+  Nothing -> error "negative natural number"
+
+csrKron ::
+  forall v i r1 c1 r2 c2 a.
+  ( KnownCSR v i r1 c1 a,
+    KnownCSR v i r2 c2 a,
+    KnownNat (r1 GHC.* r2),
+    KnownNat (c1 GHC.* c2),
+    Integral i,
+    Num a
+  ) =>
+  CSR v i r1 c1 a ->
+  CSR v i r2 c2 a ->
+  CSR v i (r1 GHC.* r2) (c1 GHC.* c2) a
+csrKron a b = (cooToCsr @B.Vector) $ cooKron (csrToCoo a) (csrToCoo b)
+
+loopM :: Monad m => i -> (i -> Bool) -> (i -> i) -> (i -> m ()) -> m i
+loopM i₀ cond inc action = go i₀
+  where
+    go !i
+      | cond i = do () <- action i; go (inc i)
+      | otherwise = return i
+{-# INLINE loopM #-}
+
+iFoldM :: Monad m => i -> (i -> Bool) -> (i -> i) -> a -> (a -> i -> m a) -> m a
+iFoldM i₀ cond inc x₀ action = go x₀ i₀
+  where
+    go !x !i
+      | cond i = do !x' <- action x i; go x' (inc i)
+      | otherwise = pure x
+{-# INLINE iFoldM #-}
+
+instance (KnownCSR v i r c a, Integral i, Eq a, Num a) => Num (CSR v i r c a) where
+  (+) = csrBinaryOp (+)
+  (-) = csrBinaryOp (-)
+  (*) = csrBinaryOp (*)
+  abs m = m {csrData = G.map abs (csrData m)}
+  signum = error "Num instance for CSR does not implement signum"
+  fromInteger = error "Num instance for CSR does not implement fromInteger"
+
+csrBinaryOp ::
+  (KnownCSR v i r c a, Integral i, Eq a, Num a) =>
+  (a -> a -> a) ->
+  CSR v i r c a ->
+  CSR v i r c a ->
+  CSR v i r c a
+csrBinaryOp op a b = runST $ do
+  outOffsets <- GM.new (csrRows a + 1)
+  let estimatedNumberNonZero = csrNumberNonZero a + csrNumberNonZero b
+  outIndices <- GM.new estimatedNumberNonZero
+  outData <- GM.new estimatedNumberNonZero
+  let consumeBoth !kA !kB !nnz =
+        let !r = op (csrData a ! kA) (csrData b ! kB)
+         in if r /= 0
+              then do
+                GM.write outIndices nnz (csrIndices a ! kA)
+                GM.write outData nnz r
+                pure (nnz + 1)
+              else pure nnz
+      consumeLeft !kA !nnz =
+        let !r = op (csrData a ! kA) 0
+         in if r /= 0
+              then do
+                GM.write outIndices nnz (csrIndices a ! kA)
+                GM.write outData nnz r
+                pure (nnz + 1)
+              else pure nnz
+      consumeRight !kB !nnz =
+        let !r = op 0 (csrData b ! kB)
+         in if r /= 0
+              then do
+                GM.write outIndices nnz (csrIndices b ! kB)
+                GM.write outData nnz r
+                pure (nnz + 1)
+              else pure nnz
+  GM.write outOffsets 0 0
+  nnz <- iFoldM 0 (< csrRows a) (+ 1) 0 $ \_nnz i -> do
+    let !beginA = fromIntegral $ csrOffsets a ! i
+        !beginB = fromIntegral $ csrOffsets b ! i
+        !endA = fromIntegral $ csrOffsets a ! (i + 1)
+        !endB = fromIntegral $ csrOffsets b ! (i + 1)
+        loop !kA !kB !nnz
+          | kA < endA && kB < endB =
+            let !jA = csrIndices a ! kA
+                !jB = csrIndices b ! kB
+             in case compare jA jB of
+                  EQ -> consumeBoth kA kB nnz >>= loop (kA + 1) (kB + 1)
+                  LT -> consumeLeft kA nnz >>= loop (kA + 1) kB
+                  GT -> consumeRight kB nnz >>= loop kA (kB + 1)
+          | kA < endA = tailLeft kA nnz
+          | otherwise = tailRight kB nnz
+        tailLeft !kA !nnz
+          | kA < endA = consumeLeft kA nnz >>= tailLeft (kA + 1)
+          | otherwise = pure nnz
+        tailRight !kB !nnz
+          | kB < endB = consumeRight kB nnz >>= tailRight (kB + 1)
+          | otherwise = pure nnz
+    nnz <- loop beginA beginB _nnz
+    GM.write outOffsets (i + 1) (fromIntegral nnz)
+    pure nnz
+  CSR
+    <$> G.unsafeFreeze outOffsets
+    <*> G.unsafeFreeze (GM.slice 0 nnz outIndices)
+    <*> G.unsafeFreeze (GM.slice 0 nnz outData)
+
+-- template <class I, class T, class T2, class binary_op>
+-- void csr_binop_csr_canonical(const I n_row, const I n_col,
+--                              const I Ap[], const I Aj[], const T Ax[],
+--                              const I Bp[], const I Bj[], const T Bx[],
+--                                    I Cp[],       I Cj[],       T2 Cx[],
+--                              const binary_op& op)
+-- {
+--     //Method that works for canonical CSR matrices
+--
+--     Cp[0] = 0;
+--     I nnz = 0;
+--
+--     for(I i = 0; i < n_row; i++){
+--         I A_pos = Ap[i];
+--         I B_pos = Bp[i];
+--         I A_end = Ap[i+1];
+--         I B_end = Bp[i+1];
+--
+--         //while not finished with either row
+--         while(A_pos < A_end && B_pos < B_end){
+--             I A_j = Aj[A_pos];
+--             I B_j = Bj[B_pos];
+--
+--             if(A_j == B_j){
+--                 T result = op(Ax[A_pos],Bx[B_pos]);
+--                 if(result != 0){
+--                     Cj[nnz] = A_j;
+--                     Cx[nnz] = result;
+--                     nnz++;
+--                 }
+--                 A_pos++;
+--                 B_pos++;
+--             } else if (A_j < B_j) {
+--                 T result = op(Ax[A_pos],0);
+--                 if (result != 0){
+--                     Cj[nnz] = A_j;
+--                     Cx[nnz] = result;
+--                     nnz++;
+--                 }
+--                 A_pos++;
+--             } else {
+--                 //B_j < A_j
+--                 T result = op(0,Bx[B_pos]);
+--                 if (result != 0){
+--                     Cj[nnz] = B_j;
+--                     Cx[nnz] = result;
+--                     nnz++;
+--                 }
+--                 B_pos++;
+--             }
+--         }
+--
+--         //tail
+--         while(A_pos < A_end){
+--             T result = op(Ax[A_pos],0);
+--             if (result != 0){
+--                 Cj[nnz] = Aj[A_pos];
+--                 Cx[nnz] = result;
+--                 nnz++;
+--             }
+--             A_pos++;
+--         }
+--         while(B_pos < B_end){
+--             T result = op(0,Bx[B_pos]);
+--             if (result != 0){
+--                 Cj[nnz] = Bj[B_pos];
+--                 Cx[nnz] = result;
+--                 nnz++;
+--             }
+--             B_pos++;
+--         }
+--
+--         Cp[i+1] = nnz;
+--     }
+-- }
+
+{-
+maxNumNonZeroAfterMatMul :: SparseMatrix a -> SparseMatrix a -> Int
+maxNumNonZeroAfterMatMul a b = runST $ do
+  let nRows = csrRows a
+      nCols = csrCols b
+  mask <- SM.replicate nCols (-1)
+  iFoldM 0 0 nRows $ \nnz i ->
+    let jjBegin = fromIntegral $ csrOffsets a ! i
+        jjEnd = fromIntegral $ csrOffsets a ! (i + 1)
+     in iFoldM nnz jjBegin jjEnd $ \nnzRow jj ->
+          let j = fromIntegral $ csrIndices a ! jj
+              kkBegin = fromIntegral $ csrOffsets b ! j
+              kkEnd = fromIntegral $ csrOffsets b ! (j + 1)
+           in iFoldM nnzRow kkBegin kkEnd $ \acc kk -> do
+                let k = fromIntegral $ csrIndices b ! kk
+                m <- SM.read mask k
+                if m /= i
+                  then do SM.write mask k i; pure (acc + 1)
+                  else pure acc
+-}
+
+{-
+csrMatMul :: (Storable a, Num a, Unbox a) => SparseMatrix a -> SparseMatrix a -> SparseMatrix a
+csrMatMul a b = cooToCsr . csrToCoo $
+  runST $ do
+    let bufferSize = maxNumNonZeroAfterMatMul a b
+        nRows = csrRows a
+        nCols = csrCols b
+    outOffsets <- SM.new (nRows + 1)
+    outIndices <- SM.new bufferSize
+    outData <- SM.new bufferSize
+    next <- SM.replicate nCols (-1)
+    sums <- SM.new nCols
+    nnz <- iFoldM 0 0 nRows $ \nnz i -> do
+      let jjBegin = fromIntegral $ csrOffsets a ! i
+          jjEnd = fromIntegral $ csrOffsets a ! (i + 1)
+      (head, length) <- iFoldM (-2 :: Int, 0 :: Int) jjBegin jjEnd $ \(_head, _length) jj ->
+        let j = fromIntegral $ csrIndices a ! jj
+            v = csrData a ! jj
+            kkBegin = fromIntegral $ csrOffsets b ! j
+            kkEnd = fromIntegral $ csrOffsets b ! (j + 1)
+         in iFoldM (_head, _length) kkBegin kkEnd $ \(head, length) kk -> do
+              let k = fromIntegral $ csrIndices b ! kk
+              SM.modify sums (+ v * (csrData b ! kk)) k
+              _next <- SM.read next k
+              if _next == -1
+                then do SM.write next k head; pure (k, length + 1)
+                else pure (head, length)
+      (_, nnz') <- iFoldM (head, nnz) 0 length $ \(!head, !nnz) _ -> do
+        SM.write outIndices nnz (fromIntegral head)
+        SM.write outData nnz =<< SM.read sums head
+        head' <- SM.read next head
+        SM.write next head (-1)
+        SM.write sums head 0
+        pure (head', nnz + 1)
+      trace (show (nnz, nnz')) $ pure ()
+      SM.write outOffsets (i + 1) (fromIntegral nnz')
+      pure nnz'
+    SparseMatrix nRows nCols
+      <$> S.unsafeFreeze outOffsets
+      <*> S.unsafeFreeze (SM.slice 0 nnz outIndices)
+      <*> S.unsafeFreeze (SM.slice 0 nnz outData)
+-}
 
 -- void ls_csr_matrix_from_dense(unsigned const dimension,
 --                               _Complex double const *const dense,
@@ -187,18 +674,21 @@ smKron a b =
 --   }
 -- }
 
-isDenseMatrixSquare :: DenseMatrix a -> Bool
-isDenseMatrixSquare (DenseMatrix (r, c) _) = r == c
+isDenseMatrixSquare :: KnownDenseMatrix v r c a => DenseMatrix v r c a -> Bool
+isDenseMatrixSquare m = dmRows m == dmCols m
 
-isDenseMatrixEmpty :: DenseMatrix a -> Bool
-isDenseMatrixEmpty (DenseMatrix (r, c) _) = r * c == 0
+isDenseMatrixEmpty :: KnownDenseMatrix v r c a => DenseMatrix v r c a -> Bool
+isDenseMatrixEmpty m = dmRows m * dmCols m == 0
 
-indexDenseMatrix :: Storable a => DenseMatrix a -> Int -> Int -> a
-indexDenseMatrix (DenseMatrix (_, c) v) i j = v ! (c * i + j)
-
-isDenseMatrixHermitian :: (Storable a, Num a, Eq a) => DenseMatrix (Complex a) -> Bool
-isDenseMatrixHermitian matrix@(DenseMatrix (r, c) _) = isDenseMatrixSquare matrix && go 0 0
+indexDenseMatrix :: KnownDenseMatrix v r c a => DenseMatrix v r c a -> Int -> Int -> a
+indexDenseMatrix m i j = dmData m ! (c * i + j)
   where
+    c = dmCols m
+
+isDenseMatrixHermitian :: (KnownDenseMatrix v r c (Complex a), Num a, Eq a) => DenseMatrix v r c (Complex a) -> Bool
+isDenseMatrixHermitian matrix = isDenseMatrixSquare matrix && go 0 0
+  where
+    (r, c) = dmShape matrix
     -- Iterate over upper triangle (including the diagonal) of the matrix
     go :: Int -> Int -> Bool
     go !i !j
@@ -207,24 +697,43 @@ isDenseMatrixHermitian matrix@(DenseMatrix (r, c) _) = isDenseMatrixSquare matri
         let !p = indexDenseMatrix matrix i j == conjugate (indexDenseMatrix matrix j i)
          in p && go i (j + 1)
 
-denseMatrixFromList :: Storable a => [[a]] -> Either Text (DenseMatrix a)
-denseMatrixFromList [] = Right $ DenseMatrix (0, 0) S.empty
-denseMatrixFromList (r : rs) =
-  case all ((== nColumns) . length) rs of
-    True -> Right $ DenseMatrix (length (r : rs), nColumns) v
-    False -> Left "all rows of a matrix must have the same length"
-  where
-    nColumns = length r
-    v = fromList $ mconcat (r : rs)
+denseMatrixFromList ::
+  forall r c a v.
+  (G.Vector v a, KnownNat r, KnownNat c) =>
+  [[a]] ->
+  Either Text (DenseMatrix v r c a)
+denseMatrixFromList rs
+  | length rs /= natToInt @r = Left $ "expected " <> show (natToInt @r) <> " rows"
+  | any ((/= natToInt @c) . length) rs = Left $ "expected " <> show (natToInt @c) <> " columns"
+  | otherwise = Right . DenseMatrix . G.fromList . mconcat $ rs
 
-instance Storable a => GHC.IsList (DenseMatrix a) where
-  type Item (DenseMatrix a) = [a]
+instance (G.Vector v a, KnownNat r, KnownNat c) => GHC.IsList (DenseMatrix v r c a) where
+  type Item (DenseMatrix v r c a) = [a]
   fromList rows = case denseMatrixFromList rows of
     Right m -> m
     Left msg -> error msg
 
-data {-# CTYPE "ls_bit_index" #-} BitIndex = BitIndex !Word8 !Word8
-  deriving stock (Show, Eq, Generic)
+cooFromList ::
+  forall r c a i v.
+  (KnownCOO v i r c a, Integral i) =>
+  [(i, i, a)] ->
+  Either Text (COO v i r c a)
+cooFromList coordinates
+  | all valid coordinates = Right . COO . G.fromList $ coordinates
+  | otherwise = Left "index out of bounds"
+  where
+    valid (i, j, _) = 0 <= i && i < r && 0 <= j && j < c
+    r = fromIntegral $ natToInt @r
+    c = fromIntegral $ natToInt @c
+
+instance (KnownCOO v i r c a, Integral i) => GHC.IsList (COO v i r c a) where
+  type Item (COO v i r c a) = (i, i, a)
+  fromList coordinates = case cooFromList coordinates of
+    Right m -> m
+    Left msg -> error msg
+
+-- data {-# CTYPE "ls_bit_index" #-} BitIndex = BitIndex !Word8 !Word8
+--   deriving stock (Show, Eq, Generic)
 
 --  deriving anyclass (Binary)
 
@@ -232,34 +741,34 @@ data {-# CTYPE "ls_bit_index" #-} BitIndex = BitIndex !Word8 !Word8
 --   put (CUInt x) = Data.Binary.put x
 --   get = CUInt <$> Data.Binary.get
 
-data SparseSquareMatrix = SparseSquareMatrix
-  { ssmDimension :: {-# UNPACK #-} !Int,
-    ssmOffsets :: {-# UNPACK #-} !(S.Vector CUInt),
-    ssmColumns :: {-# UNPACK #-} !(S.Vector CUInt),
-    ssmOffDiagElements :: {-# UNPACK #-} !(S.Vector (Complex Double)),
-    ssmDiagElements :: {-# UNPACK #-} !(S.Vector (Complex Double))
-  }
-  deriving stock (Show, Eq, Generic)
+-- data SparseSquareMatrix = SparseSquareMatrix
+--   { ssmDimension :: {-# UNPACK #-} !Int,
+--     ssmOffsets :: {-# UNPACK #-} !(S.Vector CUInt),
+--     ssmColumns :: {-# UNPACK #-} !(S.Vector CUInt),
+--     ssmOffDiagElements :: {-# UNPACK #-} !(S.Vector (Complex Double)),
+--     ssmDiagElements :: {-# UNPACK #-} !(S.Vector (Complex Double))
+--   }
+--   deriving stock (Show, Eq, Generic)
 
 --   deriving anyclass (Binary)
 
-isSparseMatrixHermitian :: SparseSquareMatrix -> Bool
-isSparseMatrixHermitian = isDenseMatrixHermitian . sparseToDense
+-- isSparseMatrixHermitian :: SparseSquareMatrix -> Bool
+-- isSparseMatrixHermitian = isDenseMatrixHermitian . sparseToDense
 
-withCsparse_matrix :: SparseSquareMatrix -> (Csparse_matrix -> IO a) -> IO a
-withCsparse_matrix matrix action =
-  S.unsafeWith (ssmOffsets matrix) $ \offsetsPtr ->
-    S.unsafeWith (ssmColumns matrix) $ \columnsPtr ->
-      S.unsafeWith (ssmOffDiagElements matrix) $ \offDiagElementsPtr ->
-        S.unsafeWith (ssmDiagElements matrix) $ \diagElementsPtr ->
-          action $
-            Csparse_matrix
-              (fromIntegral . ssmDimension $ matrix)
-              (fromIntegral . S.length . ssmColumns $ matrix)
-              offsetsPtr
-              columnsPtr
-              offDiagElementsPtr
-              diagElementsPtr
+-- withCsparse_matrix :: SparseSquareMatrix -> (Csparse_matrix -> IO a) -> IO a
+-- withCsparse_matrix matrix action =
+--   S.unsafeWith (scsrOffsets matrix) $ \offsetsPtr ->
+--     S.unsafeWith (ssmColumns matrix) $ \columnsPtr ->
+--       S.unsafeWith (ssmOffDiagElements matrix) $ \offDiagElementsPtr ->
+--         S.unsafeWith (ssmDiagElements matrix) $ \diagElementsPtr ->
+--           action $
+--             Csparse_matrix
+--               (fromIntegral . ssmDimension $ matrix)
+--               (fromIntegral . S.length . ssmColumns $ matrix)
+--               offsetsPtr
+--               columnsPtr
+--               offDiagElementsPtr
+--               diagElementsPtr
 
 -- typedef struct ls_csr_matrix {
 --     unsigned         dimension;
@@ -269,61 +778,61 @@ withCsparse_matrix matrix action =
 --     _Complex double* off_diag_elements;
 --     _Complex double* diag_elements;
 -- } ls_csr_matrix;
-data {-# CTYPE "helpers.h" "ls_csr_matrix" #-} Csparse_matrix
-  = Csparse_matrix
-      {-# UNPACK #-} !CUInt
-      {-# UNPACK #-} !CUInt
-      {-# UNPACK #-} !(Ptr CUInt)
-      {-# UNPACK #-} !(Ptr CUInt)
-      {-# UNPACK #-} !(Ptr (Complex Double))
-      {-# UNPACK #-} !(Ptr (Complex Double))
+-- data {-# CTYPE "helpers.h" "ls_csr_matrix" #-} Csparse_matrix
+--   = Csparse_matrix
+--       {-# UNPACK #-} !CUInt
+--       {-# UNPACK #-} !CUInt
+--       {-# UNPACK #-} !(Ptr CUInt)
+--       {-# UNPACK #-} !(Ptr CUInt)
+--       {-# UNPACK #-} !(Ptr (Complex Double))
+--       {-# UNPACK #-} !(Ptr (Complex Double))
 
-instance Storable Csparse_matrix where
-  sizeOf _ = 40
-  alignment _ = 8
-  peek p =
-    Csparse_matrix
-      <$> peekByteOff p 0
-      <*> peekByteOff p 4
-      <*> peekByteOff p 8
-      <*> peekByteOff p 16
-      <*> peekByteOff p 24
-      <*> peekByteOff p 32
-  poke p (Csparse_matrix dimension number_nonzero offsets columns off_diag_elements diag_elements) = do
-    pokeByteOff p 0 dimension
-    pokeByteOff p 4 number_nonzero
-    pokeByteOff p 8 offsets
-    pokeByteOff p 16 columns
-    pokeByteOff p 24 off_diag_elements
-    pokeByteOff p 32 diag_elements
+-- instance Storable Csparse_matrix where
+--   sizeOf _ = 40
+--   alignment _ = 8
+--   peek p =
+--     Csparse_matrix
+--       <$> peekByteOff p 0
+--       <*> peekByteOff p 4
+--       <*> peekByteOff p 8
+--       <*> peekByteOff p 16
+--       <*> peekByteOff p 24
+--       <*> peekByteOff p 32
+--   poke p (Csparse_matrix dimension number_nonzero offsets columns off_diag_elements diag_elements) = do
+--     pokeByteOff p 0 dimension
+--     pokeByteOff p 4 number_nonzero
+--     pokeByteOff p 8 offsets
+--     pokeByteOff p 16 columns
+--     pokeByteOff p 24 off_diag_elements
+--     pokeByteOff p 32 diag_elements
 
-trueCsparse_matrixSizeOf :: Int
-trueCsparse_matrixSizeOf = fromIntegral [CU.pure| unsigned int { sizeof(ls_csr_matrix) } |]
+-- trueCsparse_matrixSizeOf :: Int
+-- trueCsparse_matrixSizeOf = fromIntegral [CU.pure| unsigned int { sizeof(ls_csr_matrix) } |]
 
-trueCsparse_matrixAlignment :: Int
-trueCsparse_matrixAlignment = fromIntegral [CU.pure| unsigned int { __alignof__(ls_csr_matrix) } |]
+-- trueCsparse_matrixAlignment :: Int
+-- trueCsparse_matrixAlignment = fromIntegral [CU.pure| unsigned int { __alignof__(ls_csr_matrix) } |]
 
 -- typedef struct ls_bit_index {
 --     uint8_t word;
 --     uint8_t bit;
 -- } ls_bit_index;
-data {-# CTYPE "helpers.h" "ls_bit_index" #-} Cbit_index
-  = Cbit_index {-# UNPACK #-} !Word8 {-# UNPACK #-} !Word8
-  deriving (Show, Eq, Generic)
+-- data {-# CTYPE "helpers.h" "ls_bit_index" #-} Cbit_index
+--   = Cbit_index {-# UNPACK #-} !Word8 {-# UNPACK #-} !Word8
+--   deriving (Show, Eq, Generic)
 
 --  deriving anyclass (Binary)
 
-instance Storable Cbit_index where
-  sizeOf _ = 2
-  alignment _ = 1
-  peek p = Cbit_index <$> peekByteOff p 0 <*> peekByteOff p 1
-  poke p (Cbit_index word bit) = pokeByteOff p 0 word >> pokeByteOff p 1 bit
+-- instance Storable Cbit_index where
+--   sizeOf _ = 2
+--   alignment _ = 1
+--   peek p = Cbit_index <$> peekByteOff p 0 <*> peekByteOff p 1
+--   poke p (Cbit_index word bit) = pokeByteOff p 0 word >> pokeByteOff p 1 bit
 
-trueCbit_indexSizeOf :: Int
-trueCbit_indexSizeOf = fromIntegral [CU.pure| unsigned int { sizeof(ls_bit_index) } |]
+-- trueCbit_indexSizeOf :: Int
+-- trueCbit_indexSizeOf = fromIntegral [CU.pure| unsigned int { sizeof(ls_bit_index) } |]
 
-trueCbit_indexAlignment :: Int
-trueCbit_indexAlignment = fromIntegral [CU.pure| unsigned int { __alignof__(ls_bit_index) } |]
+-- trueCbit_indexAlignment :: Int
+-- trueCbit_indexAlignment = fromIntegral [CU.pure| unsigned int { __alignof__(ls_bit_index) } |]
 
 -- typedef unsigned (*ls_term_gather_fn)(uint64_t const* /*source*/, ls_bit_index const* /*tuple*/);
 -- typedef void (*ls_term_scatter_fn)(unsigned, ls_bit_index const* /*tuple*/,
@@ -336,165 +845,165 @@ trueCbit_indexAlignment = fromIntegral [CU.pure| unsigned int { __alignof__(ls_b
 --     ls_term_gather_fn  gather_fn;
 --     ls_term_scatter_fn scatter_fn;
 -- } ls_term;
-data {-# CTYPE "helpers.h" "ls_term" #-} Cterm
-  = Cterm
-      {-# UNPACK #-} !Csparse_matrix
-      {-# UNPACK #-} !CUInt
-      {-# UNPACK #-} !CUInt
-      {-# UNPACK #-} !(Ptr Cbit_index)
-      {-# UNPACK #-} !(FunPtr (Ptr Word64 -> Ptr Cbit_index -> IO CUInt))
-      {-# UNPACK #-} !(FunPtr (CUInt -> Ptr Cbit_index -> Ptr Word64 -> IO ()))
+-- data {-# CTYPE "helpers.h" "ls_term" #-} Cterm
+--   = Cterm
+--       {-# UNPACK #-} !Csparse_matrix
+--       {-# UNPACK #-} !CUInt
+--       {-# UNPACK #-} !CUInt
+--       {-# UNPACK #-} !(Ptr Cbit_index)
+--       {-# UNPACK #-} !(FunPtr (Ptr Word64 -> Ptr Cbit_index -> IO CUInt))
+--       {-# UNPACK #-} !(FunPtr (CUInt -> Ptr Cbit_index -> Ptr Word64 -> IO ()))
 
-instance Storable Cterm where
-  sizeOf _ = 72
-  alignment _ = 8
-  peek p =
-    Cterm
-      <$> peekByteOff p 0
-      <*> peekByteOff p 40
-      <*> peekByteOff p 44
-      <*> peekByteOff p 48
-      <*> peekByteOff p 56
-      <*> peekByteOff p 64
-  poke p (Cterm matrix number_tuples tuple_size tuples gather_fn scatter_fn) = do
-    pokeByteOff p 0 matrix
-    pokeByteOff p 40 number_tuples
-    pokeByteOff p 44 tuple_size
-    pokeByteOff p 48 tuples
-    pokeByteOff p 56 gather_fn
-    pokeByteOff p 64 scatter_fn
+-- instance Storable Cterm where
+--   sizeOf _ = 72
+--   alignment _ = 8
+--   peek p =
+--     Cterm
+--       <$> peekByteOff p 0
+--       <*> peekByteOff p 40
+--       <*> peekByteOff p 44
+--       <*> peekByteOff p 48
+--       <*> peekByteOff p 56
+--       <*> peekByteOff p 64
+--   poke p (Cterm matrix number_tuples tuple_size tuples gather_fn scatter_fn) = do
+--     pokeByteOff p 0 matrix
+--     pokeByteOff p 40 number_tuples
+--     pokeByteOff p 44 tuple_size
+--     pokeByteOff p 48 tuples
+--     pokeByteOff p 56 gather_fn
+--     pokeByteOff p 64 scatter_fn
 
-trueCtermSizeOf :: Int
-trueCtermSizeOf = fromIntegral [CU.pure| unsigned int { sizeof(ls_term) } |]
+-- trueCtermSizeOf :: Int
+-- trueCtermSizeOf = fromIntegral [CU.pure| unsigned int { sizeof(ls_term) } |]
 
-trueCtermAlignment :: Int
-trueCtermAlignment = fromIntegral [CU.pure| unsigned int { __alignof__(ls_term) } |]
+-- trueCtermAlignment :: Int
+-- trueCtermAlignment = fromIntegral [CU.pure| unsigned int { __alignof__(ls_term) } |]
 
-data SitesList = SitesList
-  { slNumberTuples :: !Int,
-    slTupleSize :: !Int,
-    slData :: !(S.Vector Cbit_index)
-  }
-  deriving stock (Show, Eq, Generic)
+-- data SitesList = SitesList
+--   { slNumberTuples :: !Int,
+--     slTupleSize :: !Int,
+--     slData :: !(S.Vector Cbit_index)
+--   }
+--   deriving stock (Show, Eq, Generic)
 
 --  deriving anyclass (Binary)
 
-sitesListFromList :: [[Int]] -> Either Text SitesList
-sitesListFromList rows = do
-  (DenseMatrix (numberTuples, tupleSize) v) <- denseMatrixFromList rows
-  when (S.any (< 0) v) $
-    Left "sites list cannot have negative elements"
-  when (S.any (> fromIntegral (maxBound :: Word16)) v) $
-    Left "sites list cannot such large elements"
-  Right $ SitesList numberTuples tupleSize (S.map toBitIndex v)
-  where
-    toBitIndex x = Cbit_index (fromIntegral (x `div` 64)) (fromIntegral (x `mod` 64))
+-- sitesListFromList :: [[Int]] -> Either Text SitesList
+-- sitesListFromList rows = do
+--   (DenseMatrix (numberTuples, tupleSize) v) <- denseMatrixFromList rows
+--   when (S.any (< 0) v) $
+--     Left "sites list cannot have negative elements"
+--   when (S.any (> fromIntegral (maxBound :: Word16)) v) $
+--     Left "sites list cannot such large elements"
+--   Right $ SitesList numberTuples tupleSize (S.map toBitIndex v)
+--   where
+--     toBitIndex x = Cbit_index (fromIntegral (x `div` 64)) (fromIntegral (x `mod` 64))
 
 -- newtype SitesList = SitesList [[Int]]
 
-data OperatorTerm = OperatorTerm {otMatrix :: !SparseSquareMatrix, otSites :: !SitesList}
-  deriving stock (Show, Eq, Generic)
+-- data OperatorTerm = OperatorTerm {otMatrix :: !SparseSquareMatrix, otSites :: !SitesList}
+--   deriving stock (Show, Eq, Generic)
 
 --  deriving anyclass (Binary)
 
-data {-# CTYPE "ls_hs_operator_term" #-} OperatorTermWrapper
-  = OperatorTermWrapper
-      {-# UNPACK #-} !(Ptr Cterm)
-      {-# UNPACK #-} !(StablePtr OperatorTerm)
+-- data {-# CTYPE "ls_hs_operator_term" #-} OperatorTermWrapper
+--   = OperatorTermWrapper
+--       {-# UNPACK #-} !(Ptr Cterm)
+--       {-# UNPACK #-} !(StablePtr OperatorTerm)
 
-instance Storable OperatorTermWrapper where
-  {-# INLINE sizeOf #-}
-  sizeOf _ = 16
-  {-# INLINE alignment #-}
-  alignment _ = 8
-  {-# INLINE peek #-}
-  peek p = OperatorTermWrapper <$> peekByteOff p 0 <*> peekByteOff p 8
-  {-# INLINE poke #-}
-  poke p (OperatorTermWrapper term stable) =
-    pokeByteOff p 0 term >> pokeByteOff p 8 stable
+-- instance Storable OperatorTermWrapper where
+--   {-# INLINE sizeOf #-}
+--   sizeOf _ = 16
+--   {-# INLINE alignment #-}
+--   alignment _ = 8
+--   {-# INLINE peek #-}
+--   peek p = OperatorTermWrapper <$> peekByteOff p 0 <*> peekByteOff p 8
+--   {-# INLINE poke #-}
+--   poke p (OperatorTermWrapper term stable) =
+--     pokeByteOff p 0 term >> pokeByteOff p 8 stable
 
-vectorFromPtr :: Storable a => Int -> Ptr a -> IO (S.Vector a)
-vectorFromPtr n p = S.freeze =<< SM.unsafeFromForeignPtr0 <$> newForeignPtr_ p <*> pure n
+-- vectorFromPtr :: Storable a => Int -> Ptr a -> IO (S.Vector a)
+-- vectorFromPtr n p = S.freeze =<< SM.unsafeFromForeignPtr0 <$> newForeignPtr_ p <*> pure n
 
-denseMatrixFromPtr :: Int -> Int -> Ptr a -> IO (DenseMatrix a)
-denseMatrixFromPtr = undefined
+-- denseMatrixFromPtr :: Int -> Int -> Ptr a -> IO (DenseMatrix v r c a)
+-- denseMatrixFromPtr = undefined
 
-ls_hs_create_operator_term_from_dense ::
-  CUInt ->
-  Ptr (Complex Double) ->
-  CUInt ->
-  CUInt ->
-  Ptr Word16 ->
-  IO (Ptr OperatorTermWrapper)
-ls_hs_create_operator_term_from_dense dimension matrixData numberTuples tupleSize tuplesData = do
-  let dimension' = fromIntegral dimension
-      numberTuples' = fromIntegral numberTuples
-      tupleSize' = fromIntegral tupleSize
-  matrixContents <- vectorFromPtr (dimension' * dimension') matrixData
-  let matrix = case denseToSparse $ DenseMatrix (dimension', dimension') matrixContents of
-        Right m -> m
-        Left e -> error e
-      toBitIndex x = Cbit_index (fromIntegral (x `div` 64)) (fromIntegral (x `mod` 64))
-  sitesContents <- vectorFromPtr (numberTuples' * tupleSize') tuplesData
-  let sites = SitesList numberTuples' tupleSize' (S.map toBitIndex sitesContents)
-  when (2 ^ (slTupleSize sites) /= ssmDimension matrix) $
-    error $ "wrong matrix dimension"
-  let term = OperatorTerm matrix sites
-  wrapper <- OperatorTermWrapper <$> allocateCterm term <*> newStablePtr term
-  new wrapper
+-- ls_hs_create_operator_term_from_dense ::
+--   CUInt ->
+--   Ptr (Complex Double) ->
+--   CUInt ->
+--   CUInt ->
+--   Ptr Word16 ->
+--   IO (Ptr OperatorTermWrapper)
+-- ls_hs_create_operator_term_from_dense dimension matrixData numberTuples tupleSize tuplesData = do
+--   let dimension' = fromIntegral dimension
+--       numberTuples' = fromIntegral numberTuples
+--       tupleSize' = fromIntegral tupleSize
+--   matrixContents <- vectorFromPtr (dimension' * dimension') matrixData
+--   let matrix = case denseToSparse $ DenseMatrix (dimension', dimension') matrixContents of
+--         Right m -> m
+--         Left e -> error e
+--       toBitIndex x = Cbit_index (fromIntegral (x `div` 64)) (fromIntegral (x `mod` 64))
+--   sitesContents <- vectorFromPtr (numberTuples' * tupleSize') tuplesData
+--   let sites = SitesList numberTuples' tupleSize' (S.map toBitIndex sitesContents)
+--   when (2 ^ (slTupleSize sites) /= ssmDimension matrix) $
+--     error $ "wrong matrix dimension"
+--   let term = OperatorTerm matrix sites
+--   wrapper <- OperatorTermWrapper <$> allocateCterm term <*> newStablePtr term
+--   new wrapper
 
-allocateCterm :: OperatorTerm -> IO (Ptr Cterm)
-allocateCterm term = do
-  p <- malloc
-  withCterm term (poke p)
-  return p
+-- allocateCterm :: OperatorTerm -> IO (Ptr Cterm)
+-- allocateCterm term = do
+--   p <- malloc
+--   withCterm term (poke p)
+--   return p
 
-deallocateCterm :: Ptr Cterm -> IO ()
-deallocateCterm p = free p
+-- deallocateCterm :: Ptr Cterm -> IO ()
+-- deallocateCterm p = free p
 
-allocateCterms :: NonEmpty OperatorTerm -> IO (Ptr Cterm)
-allocateCterms terms = do
-  let !count = NonEmpty.length terms
-      !elemSize = let x = x in sizeOf (x :: Cterm)
-  p <- mallocBytes $ elemSize * count
-  forM_ (NonEmpty.zip terms (fromList [0 ..])) $ \(t, i) -> withCterm t (pokeElemOff p i)
-  return p
+-- allocateCterms :: NonEmpty OperatorTerm -> IO (Ptr Cterm)
+-- allocateCterms terms = do
+--   let !count = NonEmpty.length terms
+--       !elemSize = let x = x in sizeOf (x :: Cterm)
+--   p <- mallocBytes $ elemSize * count
+--   forM_ (NonEmpty.zip terms (fromList [0 ..])) $ \(t, i) -> withCterm t (pokeElemOff p i)
+--   return p
 
-deallocateCterms :: Ptr Cterm -> IO ()
-deallocateCterms p = free p
+-- deallocateCterms :: Ptr Cterm -> IO ()
+-- deallocateCterms p = free p
 
-withCterm :: OperatorTerm -> (Cterm -> IO a) -> IO a
-withCterm (OperatorTerm matrix sites) action =
-  withCsparse_matrix matrix $ \matrix' ->
-    S.unsafeWith (slData sites) $ \tuplesPtr ->
-      action $
-        Cterm
-          matrix'
-          (fromIntegral . slNumberTuples $ sites)
-          (fromIntegral . slTupleSize $ sites)
-          tuplesPtr
-          gatherPtr
-          scatterPtr
-  where
-    (gatherPtr, scatterPtr) = case slTupleSize sites of
-      1 -> (ls_internal_term_gather_1, ls_internal_term_scatter_1)
-      2 -> (ls_internal_term_gather_2, ls_internal_term_scatter_2)
-      3 -> (ls_internal_term_gather_3, ls_internal_term_scatter_3)
-      4 -> (ls_internal_term_gather_4, ls_internal_term_scatter_4)
-      _ -> error "Oops!"
+-- withCterm :: OperatorTerm -> (Cterm -> IO a) -> IO a
+-- withCterm (OperatorTerm matrix sites) action =
+--   withCsparse_matrix matrix $ \matrix' ->
+--     S.unsafeWith (slData sites) $ \tuplesPtr ->
+--       action $
+--         Cterm
+--           matrix'
+--           (fromIntegral . slNumberTuples $ sites)
+--           (fromIntegral . slTupleSize $ sites)
+--           tuplesPtr
+--           gatherPtr
+--           scatterPtr
+--   where
+--     (gatherPtr, scatterPtr) = case slTupleSize sites of
+--       1 -> (ls_internal_term_gather_1, ls_internal_term_scatter_1)
+--       2 -> (ls_internal_term_gather_2, ls_internal_term_scatter_2)
+--       3 -> (ls_internal_term_gather_3, ls_internal_term_scatter_3)
+--       4 -> (ls_internal_term_gather_4, ls_internal_term_scatter_4)
+--       _ -> error "Oops!"
 
-toOperatorTerm' :: InteractionSpec -> Either Text OperatorTerm
-toOperatorTerm' (InteractionSpec matrixSpec sitesSpec) = do
-  sites <- sitesListFromList sitesSpec
-  matrix <- denseToSparse =<< denseMatrixFromList matrixSpec
-  when (2 ^ (slTupleSize sites) /= ssmDimension matrix) $
-    Left $ "wrong matrix dimension"
-  Right $ OperatorTerm matrix sites
+-- toOperatorTerm' :: InteractionSpec -> Either Text OperatorTerm
+-- toOperatorTerm' (InteractionSpec matrixSpec sitesSpec) = do
+--   sites <- sitesListFromList sitesSpec
+--   matrix <- denseToSparse =<< denseMatrixFromList matrixSpec
+--   when (2 ^ (slTupleSize sites) /= ssmDimension matrix) $
+--     Left $ "wrong matrix dimension"
+--   Right $ OperatorTerm matrix sites
 
-toOperatorTerm :: InteractionSpec -> OperatorTerm
-toOperatorTerm spec = case toOperatorTerm' spec of
-  Right o -> o
-  Left e -> error e
+-- toOperatorTerm :: InteractionSpec -> OperatorTerm
+-- toOperatorTerm spec = case toOperatorTerm' spec of
+--   Right o -> o
+--   Left e -> error e
 
 -- foreign import capi "helpers.h ls_hs_apply_term"
 --   ls_hs_apply_term :: Ptr Cterm -> Ptr Word64 -> Ptr Coutput_buffer -> IO ()
@@ -531,14 +1040,14 @@ toOperatorTerm spec = case toOperatorTerm' spec of
 --   where
 --     bufferSize = estimateBufferSizeForTerm term
 
-applyOperatorTerm ::
-  OperatorTerm ->
-  Word64 ->
-  (S.Vector Word64, S.Vector (Complex Double), Complex Double)
-applyOperatorTerm = undefined
+-- applyOperatorTerm ::
+--   OperatorTerm ->
+--   Word64 ->
+--   (S.Vector Word64, S.Vector (Complex Double), Complex Double)
+-- applyOperatorTerm = undefined
 
-toOperator :: FlatSpinBasis -> OperatorSpec -> SparseOperator
-toOperator basis (OperatorSpec _ terms) = SparseOperator basis (toOperatorTerm <$> terms)
+-- toOperator :: FlatSpinBasis -> OperatorSpec -> SparseOperator
+-- toOperator basis (OperatorSpec _ terms) = SparseOperator basis (toOperatorTerm <$> terms)
 
 -- typedef struct ls_output_buffer {
 --   uint64_t *spins;
@@ -548,114 +1057,114 @@ toOperator basis (OperatorSpec _ terms) = SparseOperator basis (toOperatorTerm <
 --   ls_spin_copy_fn const spin_copy;
 --   ls_spin_fill_fn const spin_fill;
 -- } ls_output_buffer;
-data {-# CTYPE "helpers.h" "ls_output_buffer" #-} Coutput_buffer
-  = Coutput_buffer
-      {-# UNPACK #-} !(Ptr Word64)
-      {-# UNPACK #-} !(Ptr (Complex Double))
-      {-# UNPACK #-} !(Ptr (Complex Double))
-      {-# UNPACK #-} !Word64
-      {-# UNPACK #-} !(FunPtr Cspin_copy_fn)
-      {-# UNPACK #-} !(FunPtr Cspin_fill_fn)
+-- data {-# CTYPE "helpers.h" "ls_output_buffer" #-} Coutput_buffer
+--   = Coutput_buffer
+--       {-# UNPACK #-} !(Ptr Word64)
+--       {-# UNPACK #-} !(Ptr (Complex Double))
+--       {-# UNPACK #-} !(Ptr (Complex Double))
+--       {-# UNPACK #-} !Word64
+--       {-# UNPACK #-} !(FunPtr Cspin_copy_fn)
+--       {-# UNPACK #-} !(FunPtr Cspin_fill_fn)
 
-type Cspin_copy_fn = Ptr Word64 -> Ptr Word64 -> IO ()
+-- type Cspin_copy_fn = Ptr Word64 -> Ptr Word64 -> IO ()
 
-type Cspin_fill_fn = Ptr Word64 -> Word64 -> Ptr Word64 -> IO ()
+-- type Cspin_fill_fn = Ptr Word64 -> Word64 -> Ptr Word64 -> IO ()
 
-instance Storable Coutput_buffer where
-  sizeOf _ = 48
-  alignment _ = 8
-  peek p =
-    Coutput_buffer
-      <$> peekByteOff p 0
-      <*> peekByteOff p 8
-      <*> peekByteOff p 16
-      <*> peekByteOff p 24
-      <*> peekByteOff p 32
-      <*> peekByteOff p 40
-  poke p (Coutput_buffer spins coeffs diagonal number_words spin_copy spin_fill) = do
-    pokeByteOff p 0 spins
-    pokeByteOff p 8 coeffs
-    pokeByteOff p 16 diagonal
-    pokeByteOff p 24 number_words
-    pokeByteOff p 32 spin_copy
-    pokeByteOff p 40 spin_fill
+-- instance Storable Coutput_buffer where
+--   sizeOf _ = 48
+--   alignment _ = 8
+--   peek p =
+--     Coutput_buffer
+--       <$> peekByteOff p 0
+--       <*> peekByteOff p 8
+--       <*> peekByteOff p 16
+--       <*> peekByteOff p 24
+--       <*> peekByteOff p 32
+--       <*> peekByteOff p 40
+--   poke p (Coutput_buffer spins coeffs diagonal number_words spin_copy spin_fill) = do
+--     pokeByteOff p 0 spins
+--     pokeByteOff p 8 coeffs
+--     pokeByteOff p 16 diagonal
+--     pokeByteOff p 24 number_words
+--     pokeByteOff p 32 spin_copy
+--     pokeByteOff p 40 spin_fill
 
-trueCoutput_bufferSizeOf :: Int
-trueCoutput_bufferSizeOf = fromIntegral [CU.pure| unsigned int { sizeof(ls_output_buffer) } |]
+-- trueCoutput_bufferSizeOf :: Int
+-- trueCoutput_bufferSizeOf = fromIntegral [CU.pure| unsigned int { sizeof(ls_output_buffer) } |]
 
-trueCoutput_bufferAlignment :: Int
-trueCoutput_bufferAlignment = fromIntegral [CU.pure| unsigned int { __alignof__(ls_output_buffer) } |]
+-- trueCoutput_bufferAlignment :: Int
+-- trueCoutput_bufferAlignment = fromIntegral [CU.pure| unsigned int { __alignof__(ls_output_buffer) } |]
 
-data {-# CTYPE "helpers.h" "ls_workspace" #-} Cworkspace
-  = Cworkspace
-      {-# UNPACK #-} !(Ptr Word64)
-      {-# UNPACK #-} !(Ptr (Complex Double))
-      {-# UNPACK #-} !(Ptr Double)
+-- data {-# CTYPE "helpers.h" "ls_workspace" #-} Cworkspace
+--   = Cworkspace
+--       {-# UNPACK #-} !(Ptr Word64)
+--       {-# UNPACK #-} !(Ptr (Complex Double))
+--       {-# UNPACK #-} !(Ptr Double)
 
 -- typedef struct ls_sparse_operator {
 --   ls_flat_spin_basis const *basis;
 --   unsigned number_terms;
 --   ls_term *terms;
 -- } ls_sparse_operator;
-data {-# CTYPE "helpers.h" "ls_sparse_operator" #-} Csparse_operator
-  = Csparse_operator
-      {-# UNPACK #-} !(Ptr CFlatSpinBasis)
-      {-# UNPACK #-} !CUInt
-      {-# UNPACK #-} !(Ptr Cterm)
+-- data {-# CTYPE "helpers.h" "ls_sparse_operator" #-} Csparse_operator
+--   = Csparse_operator
+--       {-# UNPACK #-} !(Ptr CFlatSpinBasis)
+--       {-# UNPACK #-} !CUInt
+--       {-# UNPACK #-} !(Ptr Cterm)
 
-instance Storable Csparse_operator where
-  sizeOf _ = 24
-  alignment _ = 8
-  peek p =
-    Csparse_operator
-      <$> peekByteOff p 0
-      <*> peekByteOff p 8
-      <*> peekByteOff p 16
-  poke p (Csparse_operator basis number_terms terms) = do
-    pokeByteOff p 0 basis
-    pokeByteOff p 8 number_terms
-    pokeByteOff p 16 terms
+-- instance Storable Csparse_operator where
+--   sizeOf _ = 24
+--   alignment _ = 8
+--   peek p =
+--     Csparse_operator
+--       <$> peekByteOff p 0
+--       <*> peekByteOff p 8
+--       <*> peekByteOff p 16
+--   poke p (Csparse_operator basis number_terms terms) = do
+--     pokeByteOff p 0 basis
+--     pokeByteOff p 8 number_terms
+--     pokeByteOff p 16 terms
 
-trueCsparse_operatorSizeOf :: Int
-trueCsparse_operatorSizeOf = fromIntegral [CU.pure| unsigned int { sizeof(ls_sparse_operator) } |]
+-- trueCsparse_operatorSizeOf :: Int
+-- trueCsparse_operatorSizeOf = fromIntegral [CU.pure| unsigned int { sizeof(ls_sparse_operator) } |]
 
-trueCsparse_operatorAlignment :: Int
-trueCsparse_operatorAlignment = fromIntegral [CU.pure| unsigned int { __alignof__(ls_sparse_operator) } |]
+-- trueCsparse_operatorAlignment :: Int
+-- trueCsparse_operatorAlignment = fromIntegral [CU.pure| unsigned int { __alignof__(ls_sparse_operator) } |]
 
-estimateBufferSizeForTerm :: OperatorTerm -> Int
-estimateBufferSizeForTerm (OperatorTerm matrix (SitesList numberTuples _ _)) =
-  1 + maxNonZeroPerRow * numberTuples
-  where
-    maxNonZeroPerRow =
-      if ssmDimension matrix /= 0
-        then
-          fromIntegral . S.maximum $
-            S.generate
-              (ssmDimension matrix)
-              (\i -> ssmOffsets matrix ! (i + 1) - ssmOffsets matrix ! i)
-        else 0
+-- estimateBufferSizeForTerm :: OperatorTerm -> Int
+-- estimateBufferSizeForTerm (OperatorTerm matrix (SitesList numberTuples _ _)) =
+--   1 + maxNonZeroPerRow * numberTuples
+--   where
+--     maxNonZeroPerRow =
+--       if ssmDimension matrix /= 0
+--         then
+--           fromIntegral . S.maximum $
+--             S.generate
+--               (ssmDimension matrix)
+--               (\i -> scsrOffsets matrix ! (i + 1) - scsrOffsets matrix ! i)
+--         else 0
 
-data SparseOperator = SparseOperator FlatSpinBasis (NonEmpty OperatorTerm)
+-- data SparseOperator = SparseOperator FlatSpinBasis (NonEmpty OperatorTerm)
 
-data SparseOperatorWrapper = SparseOperatorWrapper (Ptr Csparse_operator) (StablePtr SparseOperator)
+-- data SparseOperatorWrapper = SparseOperatorWrapper (Ptr Csparse_operator) (StablePtr SparseOperator)
 
-mkSparseOperator :: FlatSpinBasis -> NonEmpty OperatorTerm -> SparseOperator
-mkSparseOperator = SparseOperator
+-- mkSparseOperator :: FlatSpinBasis -> NonEmpty OperatorTerm -> SparseOperator
+-- mkSparseOperator = SparseOperator
 
-allocateCsparse_operator :: SparseOperator -> IO (Ptr Csparse_operator)
-allocateCsparse_operator (SparseOperator (FlatSpinBasis basis) terms) = do
-  termsPtr <- allocateCterms terms
-  new $
-    Csparse_operator
-      (unsafeForeignPtrToPtr basis)
-      (fromIntegral $ NonEmpty.length terms)
-      termsPtr
+-- allocateCsparse_operator :: SparseOperator -> IO (Ptr Csparse_operator)
+-- allocateCsparse_operator (SparseOperator (FlatSpinBasis basis) terms) = do
+--   termsPtr <- allocateCterms terms
+--   new $
+--     Csparse_operator
+--       (unsafeForeignPtrToPtr basis)
+--       (fromIntegral $ NonEmpty.length terms)
+--       termsPtr
 
-deallocateCsparse_operator :: Ptr Csparse_operator -> IO ()
-deallocateCsparse_operator p = do
-  (Csparse_operator _ _ termsPtr) <- peek p
-  deallocateCterms termsPtr
-  free p
+-- deallocateCsparse_operator :: Ptr Csparse_operator -> IO ()
+-- deallocateCsparse_operator p = do
+--   (Csparse_operator _ _ termsPtr) <- peek p
+--   deallocateCterms termsPtr
+--   free p
 
 -- allocateCsparse_operator ::
 
@@ -674,8 +1183,8 @@ deallocateCsparse_operator p = do
 --     pokeByteOff p 8 (halideDimensionStride x)
 --     pokeByteOff p 12 (halideDimensionFlags x)
 
-denseMatrixCountNonZero :: (Storable a, Eq a, Num a) => DenseMatrix a -> Int
-denseMatrixCountNonZero matrix = S.foldl' (\(!n) !x -> if x /= 0 then n + 1 else n) 0 (denseMatrixData matrix)
+-- denseMatrixCountNonZero :: (Storable a, Eq a, Num a) => DenseMatrix v r c a -> Int
+-- denseMatrixCountNonZero matrix = S.foldl' (\(!n) !x -> if x /= 0 then n + 1 else n) 0 (denseMatrixData matrix)
 
 -- for (auto i = 0; i < numberRows; ++i) {
 --   unsigned numberNonZero = 0;
@@ -689,91 +1198,91 @@ denseMatrixCountNonZero matrix = S.foldl' (\(!n) !x -> if x /= 0 then n + 1 else
 --   offsets[i + 1] = offsets[i] + numberNonZero;
 -- }
 
-denseToSparse :: DenseMatrix (Complex Double) -> Either Text SparseSquareMatrix
-denseToSparse dense
-  | isDenseMatrixSquare dense = Right $
-    System.IO.Unsafe.unsafePerformIO $
-      do
-        let numberNonZero = denseMatrixCountNonZero dense
-            dimension = let (DenseMatrix (n, _) _) = dense in n
-        offsets <- SM.new (dimension + 1)
-        columns <- SM.new numberNonZero
-        offDiagElements <- SM.new numberNonZero
-        diagElements <- SM.new dimension
-        S.unsafeWith (denseMatrixData dense) $ \c_dense ->
-          SM.unsafeWith offsets $ \c_offsets ->
-            SM.unsafeWith columns $ \c_columns ->
-              SM.unsafeWith offDiagElements $ \c_off_diag_elements ->
-                SM.unsafeWith diagElements $ \c_diag_elements ->
-                  ls_csr_matrix_from_dense
-                    (fromIntegral dimension)
-                    c_dense
-                    c_offsets
-                    c_columns
-                    c_off_diag_elements
-                    c_diag_elements
-        numberNonZero' <- fromIntegral <$> SM.read offsets dimension
-        SparseSquareMatrix dimension
-          <$> S.freeze offsets
-          <*> S.freeze (SM.take numberNonZero' columns)
-          <*> S.freeze (SM.take numberNonZero' offDiagElements)
-          <*> S.freeze diagElements
-  | otherwise = Left "expected a square matrix"
+-- denseToSparse :: DenseMatrix (Complex Double) -> Either Text SparseSquareMatrix
+-- denseToSparse dense
+--   | isDenseMatrixSquare dense = Right $
+--     System.IO.Unsafe.unsafePerformIO $
+--       do
+--         let numberNonZero = denseMatrixCountNonZero dense
+--             dimension = let (DenseMatrix (n, _) _) = dense in n
+--         offsets <- SM.new (dimension + 1)
+--         columns <- SM.new numberNonZero
+--         offDiagElements <- SM.new numberNonZero
+--         diagElements <- SM.new dimension
+--         S.unsafeWith (denseMatrixData dense) $ \c_dense ->
+--           SM.unsafeWith offsets $ \c_offsets ->
+--             SM.unsafeWith columns $ \c_columns ->
+--               SM.unsafeWith offDiagElements $ \c_off_diag_elements ->
+--                 SM.unsafeWith diagElements $ \c_diag_elements ->
+--                   ls_csr_matrix_from_dense
+--                     (fromIntegral dimension)
+--                     c_dense
+--                     c_offsets
+--                     c_columns
+--                     c_off_diag_elements
+--                     c_diag_elements
+--         numberNonZero' <- fromIntegral <$> SM.read offsets dimension
+--         SparseSquareMatrix dimension
+--           <$> S.freeze offsets
+--           <*> S.freeze (SM.take numberNonZero' columns)
+--           <*> S.freeze (SM.take numberNonZero' offDiagElements)
+--           <*> S.freeze diagElements
+--   | otherwise = Left "expected a square matrix"
 
 {- ORMOLU_DISABLE -}
-foreign import capi unsafe "helpers.h ls_csr_matrix_from_dense"
-  ls_csr_matrix_from_dense :: CUInt -> Ptr (Complex Double) -> Ptr CUInt -> Ptr CUInt ->
-                              Ptr (Complex Double) -> Ptr (Complex Double) -> IO ()
+-- foreign import capi unsafe "helpers.h ls_csr_matrix_from_dense"
+--   ls_csr_matrix_from_dense :: CUInt -> Ptr (Complex Double) -> Ptr CUInt -> Ptr CUInt ->
+--                               Ptr (Complex Double) -> Ptr (Complex Double) -> IO ()
 
-foreign import capi unsafe "helpers.h ls_dense_from_csr_matrix"
-  ls_dense_from_csr_matrix :: CUInt -> Ptr CUInt -> Ptr CUInt -> Ptr (Complex Double) ->
-                              Ptr (Complex Double) -> Ptr (Complex Double) -> IO ()
+-- foreign import capi unsafe "helpers.h ls_dense_from_csr_matrix"
+--   ls_dense_from_csr_matrix :: CUInt -> Ptr CUInt -> Ptr CUInt -> Ptr (Complex Double) ->
+--                               Ptr (Complex Double) -> Ptr (Complex Double) -> IO ()
 {- ORMOLU_ENABLE -}
 
-sparseToDense :: SparseSquareMatrix -> DenseMatrix (Complex Double)
-sparseToDense sparse = System.IO.Unsafe.unsafePerformIO $ do
-  let dimension = ssmDimension sparse
-  elements <- SM.new (dimension * dimension)
-  S.unsafeWith (ssmOffsets sparse) $ \c_offsets ->
-    S.unsafeWith (ssmColumns sparse) $ \c_columns ->
-      S.unsafeWith (ssmOffDiagElements sparse) $ \c_off_diag_elements ->
-        S.unsafeWith (ssmDiagElements sparse) $ \c_diag_elements ->
-          SM.unsafeWith elements $ \c_dense ->
-            ls_dense_from_csr_matrix
-              (fromIntegral dimension)
-              c_offsets
-              c_columns
-              c_off_diag_elements
-              c_diag_elements
-              c_dense
-  DenseMatrix (dimension, dimension) <$> S.freeze elements
+-- sparseToDense :: SparseSquareMatrix -> DenseMatrix (Complex Double)
+-- sparseToDense sparse = System.IO.Unsafe.unsafePerformIO $ do
+--   let dimension = ssmDimension sparse
+--   elements <- SM.new (dimension * dimension)
+--   S.unsafeWith (scsrOffsets sparse) $ \c_offsets ->
+--     S.unsafeWith (ssmColumns sparse) $ \c_columns ->
+--       S.unsafeWith (ssmOffDiagElements sparse) $ \c_off_diag_elements ->
+--         S.unsafeWith (ssmDiagElements sparse) $ \c_diag_elements ->
+--           SM.unsafeWith elements $ \c_dense ->
+--             ls_dense_from_csr_matrix
+--               (fromIntegral dimension)
+--               c_offsets
+--               c_columns
+--               c_off_diag_elements
+--               c_diag_elements
+--               c_dense
+--   DenseMatrix (dimension, dimension) <$> S.freeze elements
 
-foreign import capi unsafe "helpers.h &ls_internal_term_gather_1"
-  ls_internal_term_gather_1 :: FunPtr (Ptr Word64 -> Ptr Cbit_index -> IO CUInt)
+-- foreign import capi unsafe "helpers.h &ls_internal_term_gather_1"
+--   ls_internal_term_gather_1 :: FunPtr (Ptr Word64 -> Ptr Cbit_index -> IO CUInt)
 
-foreign import capi unsafe "helpers.h &ls_internal_term_gather_2"
-  ls_internal_term_gather_2 :: FunPtr (Ptr Word64 -> Ptr Cbit_index -> IO CUInt)
+-- foreign import capi unsafe "helpers.h &ls_internal_term_gather_2"
+--   ls_internal_term_gather_2 :: FunPtr (Ptr Word64 -> Ptr Cbit_index -> IO CUInt)
 
-foreign import capi unsafe "helpers.h &ls_internal_term_gather_3"
-  ls_internal_term_gather_3 :: FunPtr (Ptr Word64 -> Ptr Cbit_index -> IO CUInt)
+-- foreign import capi unsafe "helpers.h &ls_internal_term_gather_3"
+--   ls_internal_term_gather_3 :: FunPtr (Ptr Word64 -> Ptr Cbit_index -> IO CUInt)
 
-foreign import capi unsafe "helpers.h &ls_internal_term_gather_4"
-  ls_internal_term_gather_4 :: FunPtr (Ptr Word64 -> Ptr Cbit_index -> IO CUInt)
+-- foreign import capi unsafe "helpers.h &ls_internal_term_gather_4"
+--   ls_internal_term_gather_4 :: FunPtr (Ptr Word64 -> Ptr Cbit_index -> IO CUInt)
 
-foreign import capi unsafe "helpers.h &ls_internal_term_scatter_1"
-  ls_internal_term_scatter_1 :: FunPtr (CUInt -> Ptr Cbit_index -> Ptr Word64 -> IO ())
+-- foreign import capi unsafe "helpers.h &ls_internal_term_scatter_1"
+--   ls_internal_term_scatter_1 :: FunPtr (CUInt -> Ptr Cbit_index -> Ptr Word64 -> IO ())
 
-foreign import capi unsafe "helpers.h &ls_internal_term_scatter_2"
-  ls_internal_term_scatter_2 :: FunPtr (CUInt -> Ptr Cbit_index -> Ptr Word64 -> IO ())
+-- foreign import capi unsafe "helpers.h &ls_internal_term_scatter_2"
+--   ls_internal_term_scatter_2 :: FunPtr (CUInt -> Ptr Cbit_index -> Ptr Word64 -> IO ())
 
-foreign import capi unsafe "helpers.h &ls_internal_term_scatter_3"
-  ls_internal_term_scatter_3 :: FunPtr (CUInt -> Ptr Cbit_index -> Ptr Word64 -> IO ())
+-- foreign import capi unsafe "helpers.h &ls_internal_term_scatter_3"
+--   ls_internal_term_scatter_3 :: FunPtr (CUInt -> Ptr Cbit_index -> Ptr Word64 -> IO ())
 
-foreign import capi unsafe "helpers.h &ls_internal_term_scatter_4"
-  ls_internal_term_scatter_4 :: FunPtr (CUInt -> Ptr Cbit_index -> Ptr Word64 -> IO ())
+-- foreign import capi unsafe "helpers.h &ls_internal_term_scatter_4"
+--   ls_internal_term_scatter_4 :: FunPtr (CUInt -> Ptr Cbit_index -> Ptr Word64 -> IO ())
 
-foreign import capi unsafe "helpers.h &ls_internal_spin_copy_1"
-  ls_internal_spin_copy_1 :: FunPtr (Ptr Word64 -> Ptr Word64 -> IO ())
+-- foreign import capi unsafe "helpers.h &ls_internal_spin_copy_1"
+--   ls_internal_spin_copy_1 :: FunPtr (Ptr Word64 -> Ptr Word64 -> IO ())
 
-foreign import capi unsafe "helpers.h &ls_internal_spin_fill_1"
-  ls_internal_spin_fill_1 :: FunPtr (Ptr Word64 -> Word64 -> Ptr Word64 -> IO ())
+-- foreign import capi unsafe "helpers.h &ls_internal_spin_fill_1"
+--   ls_internal_spin_fill_1 :: FunPtr (Ptr Word64 -> Word64 -> Ptr Word64 -> IO ())
