@@ -1,10 +1,12 @@
 module Main (main) where
 
 import Data.Complex
+import Data.Type.Equality
 import qualified Data.Vector.Storable as S
 import qualified Data.Vector.Unboxed as U
 import Data.Yaml.Aeson
 import Foreign.Storable
+import GHC.Exts (IsList (..))
 import LatticeSymmetries
 import LatticeSymmetries.IO
 import LatticeSymmetries.Parser
@@ -12,6 +14,7 @@ import LatticeSymmetries.Sparse
 import LatticeSymmetries.Types
 import Test.Hspec
 import Text.Parsec (parse)
+import Prelude hiding (toList)
 
 anySpinEDException :: Selector SpinEDException
 anySpinEDException = const True
@@ -180,6 +183,54 @@ main = hspec $ do
       print b
       print c
       a + b `shouldBe` c
+    it "(+)" $ do
+      let a₁' =
+            fromList @(SomeCSR S.Vector Int Double) $
+              [ (0, 0, 0.05052698254161314),
+                (0, 1, 0.34388186562432865),
+                (0, 2, 0.3736125370797053),
+                (0, 4, 0.37422323470438656),
+                (1, 1, 0.08956717735368347),
+                (1, 3, 0.20028803087704727),
+                (2, 0, 0.010520730797154432),
+                (2, 1, 0.7913535778080222),
+                (2, 3, 0.6557777513743904),
+                (2, 4, 0.9609587020099947)
+              ]
+          b₁' =
+            fromList @(SomeCSR S.Vector Int Double) $
+              [ (2, 3, 0.3942046813633675),
+                (2, 4, 0.0008746925379253812)
+              ]
+          (c₁ :: [(Int, Int, Double)]) =
+            [ (0, 0, 0.05052698254161314),
+              (0, 1, 0.34388186562432865),
+              (0, 2, 0.3736125370797053),
+              (0, 4, 0.37422323470438656),
+              (1, 1, 0.08956717735368347),
+              (1, 3, 0.20028803087704727),
+              (2, 0, 0.010520730797154432),
+              (2, 1, 0.7913535778080222),
+              (2, 3, 1.049982432737758),
+              (2, 4, 0.96183339454792)
+            ]
+          a₂ =
+            fromList @(CSR S.Vector Int 5 2 Double) $
+              [(1, 1, 0.9913900269818051), (2, 0, 0.701927418412059)]
+          b₂ =
+            fromList @(CSR S.Vector Int 5 2 Double) $
+              [(2, 0, 0.5563116167541139), (2, 1, 0.5507459794849707), (3, 1, 0.761606773358582)]
+          (c₂ :: [(Int, Int, Double)]) =
+            [ (1, 1, 0.9913900269818051),
+              (2, 0, 1.2582390351661727),
+              (2, 1, 0.5507459794849707),
+              (3, 1, 0.761606773358582)
+            ]
+      withSomeCsr a₁' $ \a₁ -> withSomeCsr b₁' $ \b₁ ->
+        case sameShape a₁ b₁ of
+          Just Refl -> toList (a₁ + b₁) `shouldBe` c₁
+          x -> x `shouldSatisfy` isJust
+      toList (a₂ + b₂) `shouldBe` c₂
   describe "pPrimitiveOperator" $ do
     it ".." $ do
       parse pPrimitiveOperator "" ("c†↓₁₀" :: Text)
@@ -207,28 +258,33 @@ main = hspec $ do
       sortByWithParity compare [1 :: Int, 3] `shouldBe` (Even, [1, 3])
       sortByWithParity compare ([] :: [Int]) `shouldBe` (Even, [])
   describe "csrMatMul" $ do
-    it ".." $
-      do
-        let (a :: StorableDenseMatrix 3 4 Float) =
-              fromList $
-                [ [0.0, 0.0, 0.0, 0.87383316],
-                  [0.0, 0.0, 0.0, 0.13542224],
-                  [0.24292645, 0.0, 0.0, 0.0]
-                ]
-            (b :: StorableDenseMatrix 4 5 Float) =
-              fromList $
-                [ [0.0, 0.0, 0.0, 0.67190817, 0.0],
-                  [0.80930562, 0.0, 0.0, 0.94956449, 0.51363394],
-                  [0.63021572, 0.94316889, 0.0, 0.89156391, 0.0],
-                  [0.0, 0.0, 0.64573977, 0.05604065, 0.28140917]
-                ]
-            (c :: StorableDenseMatrix 3 5 Float) =
-              fromList $
-                [ [0.0, 0.0, 0.56426882, 0.048970178, 0.24590467],
-                  [0.0, 0.0, 0.08744753, 0.00758915, 0.03810906],
-                  [0.0, 0.0, 0.0, 0.16322428, 0.0]
-                ]
-        csrMatMul (denseToCsr @S.Vector @Int a) (denseToCsr b) `shouldBe` (denseToCsr c)
+    it ".." $ do
+      let (a :: StorableDenseMatrix 3 4 Float) =
+            fromList $
+              [ [0.0, 0.0, 0.0, 0.87383316],
+                [0.0, 0.0, 0.0, 0.13542224],
+                [0.24292645, 0.0, 0.0, 0.0]
+              ]
+          (b :: StorableDenseMatrix 4 5 Float) =
+            fromList $
+              [ [0.0, 0.0, 0.0, 0.67190817, 0.0],
+                [0.80930562, 0.0, 0.0, 0.94956449, 0.51363394],
+                [0.63021572, 0.94316889, 0.0, 0.89156391, 0.0],
+                [0.0, 0.0, 0.64573977, 0.05604065, 0.28140917]
+              ]
+          (c :: StorableDenseMatrix 3 5 Float) =
+            fromList $
+              [ [0.0, 0.0, 0.56426882, 0.048970178, 0.24590467],
+                [0.0, 0.0, 0.08744753, 0.00758915, 0.03810906],
+                [0.0, 0.0, 0.0, 0.16322428, 0.0]
+              ]
+      csrMatMul (denseToCsr @S.Vector @Int a) (denseToCsr b) `shouldBe` (denseToCsr c)
+    it "multiplies matrices" $ do
+      let (a :: CSR S.Vector Int 5 2 Double) = fromList $ [(0, 0, 0.8213116953652885), (0, 1, 0.2721720739350296), (1, 1, 0.0004725096934642403), (2, 0, 0.03350833939255393), (4, 0, 0.2598645975559749)]
+          (b :: CSR S.Vector Int 2 6 Double) = fromList $ [(0, 2, 0.7175422685574337), (0, 3, 0.2603509882468078), (0, 5, 0.20233694825026882), (1, 0, 0.9695204042199307), (1, 1, 0.25913885822625227), (1, 3, 0.3241512404858632)]
+          (c :: CSR S.Vector Int 5 6 Double) = fromList $ [(0, 1, 0.07053036048059469), (0, 0, 0.2638763791388668), (0, 5, 0.16618170200246693), (0, 3, 0.3020542269386639), (0, 2, 0.589325857085161), (1, 3, 0.00015316460327802846), (1, 1, 0.00012244562246515968), (1, 0, 0.0004581077890052858), (2, 5, 0.006779975133623629), (2, 3, 0.008723929275360856), (2, 2, 0.02404364986332557), (4, 5, 0.05258020962776023), (4, 3, 0.06765600478405706), (4, 2, 0.1864638328480788)]
+      csrMatMul a b `shouldBe` c
+
   describe "combineNeighbors" $ do
     it ".." $ do
       combineNeighbors (==) (+) (S.fromList [1 :: Int, 2, 3]) `shouldBe` (S.fromList [1, 2, 3])

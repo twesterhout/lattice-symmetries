@@ -27,6 +27,7 @@ import Control.Monad.ST
 
 import Data.Bits (Bits, toIntegralSized)
 import Data.Complex
+import Data.Type.Equality
 -- import qualified Data.List
 -- import qualified Data.List.NonEmpty as NonEmpty
 
@@ -63,6 +64,7 @@ import qualified Data.Vector.Unboxed
 import qualified GHC.Exts as GHC (IsList (..))
 import GHC.TypeLits
 import qualified GHC.TypeLits as GHC
+import qualified Unsafe.Coerce
 -- import qualified GHC.ForeignPtr as GHC (Finalizers (..), ForeignPtr (..), ForeignPtrContents (..))
 -- import GHC.Generics
 -- import qualified GHC.IORef as GHC (atomicSwapIORef)
@@ -156,6 +158,30 @@ data CSR v i (r :: Nat) (c :: Nat) a = CSR
 deriving instance (Show (v i), Show (v a)) => Show (CSR v i r c a)
 
 deriving instance (Eq (v i), Eq (v a)) => Eq (CSR v i r c a)
+
+data SomeCSR v i a where
+  SomeCSR :: (KnownNat r, KnownNat c) => CSR v i r c a -> SomeCSR v i a
+
+sameShape ::
+  forall r₁ c₁ r₂ c₂ a₁ a₂ v₁ v₂ i₁ i₂.
+  (KnownCSR v₁ i₁ r₁ c₁ a₁, KnownCSR v₂ i₂ r₂ c₂ a₂) =>
+  CSR v₁ i₁ r₁ c₁ a₁ ->
+  CSR v₂ i₂ r₂ c₂ a₂ ->
+  Maybe ('(r₁, c₁) :~: '(r₂, c₂))
+sameShape a b =
+  case sameNat (Proxy @r₁) (Proxy @r₂) of
+    Just Refl -> case sameNat (Proxy @c₁) (Proxy @c₂) of
+      Just Refl -> Just Refl
+      Nothing -> Nothing
+    Nothing -> Nothing
+
+withSomeCsr ::
+  (G.Vector v i, G.Vector v a) =>
+  SomeCSR v i a ->
+  (forall r c. (KnownNat r, KnownNat c) => CSR v i r c a -> b) ->
+  b
+withSomeCsr (SomeCSR m) f = f m
+{-# INLINE withSomeCsr #-}
 
 -- | Binary search in a vector. Return index, if found.
 binarySearch :: (G.Vector v a, Ord a) => v a -> a -> Maybe Int
@@ -391,6 +417,12 @@ csrToDense ::
   CSR v i r c a ->
   DenseMatrix v r c a
 csrToDense = cooToDense . csrToCoo @v @Data.Vector.Vector
+
+-- csrFromList :: KnownCSR v i r c a => [(i, i, a)] -> CSR v i r c a
+-- csrFromList = undefined
+
+someCsrShape :: SomeCSR v i a -> (Int, Int)
+someCsrShape (SomeCSR m) = csrShape m
 
 cartesian :: Bundle v a -> Bundle v b -> Bundle v (a, b)
 cartesian a b =
@@ -804,6 +836,20 @@ instance (KnownCOO v i r c a, Integral i) => GHC.IsList (COO v i r c a) where
   fromList coordinates = case cooFromList coordinates of
     Right m -> m
     Left msg -> error msg
+
+instance (KnownCSR v i r c a, Integral i, Num a) => GHC.IsList (CSR v i r c a) where
+  type Item (CSR v i r c a) = (i, i, a)
+  fromList coordinates = cooToCsr @Data.Vector.Vector @v $ fromList coordinates
+  toList = G.toList . cooData . csrToCoo @v @Data.Vector.Vector
+
+instance (G.Vector v i, G.Vector v a, Integral i, Num a) => GHC.IsList (SomeCSR v i a) where
+  type Item (SomeCSR v i a) = (i, i, a)
+  fromList coordinates =
+    withSomeNat n $ \(Proxy :: Proxy r) ->
+      withSomeNat m $ \(Proxy :: Proxy c) ->
+        SomeCSR $ fromList @(CSR v i r c a) coordinates
+    where
+      (n, m) = computeShape (Data.Vector.fromList coordinates)
 
 -- data {-# CTYPE "ls_bit_index" #-} BitIndex = BitIndex !Word8 !Word8
 --   deriving stock (Show, Eq, Generic)
