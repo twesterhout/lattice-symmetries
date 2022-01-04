@@ -65,6 +65,7 @@ library
                        LatticeSymmetries.Types
                        LatticeSymmetries.Sparse
                        LatticeSymmetries.Parser
+                       LatticeSymmetries.Algebra
   c-sources:           cbits/helpers.c
   include-dirs:        cbits
   build-depends:       vector
