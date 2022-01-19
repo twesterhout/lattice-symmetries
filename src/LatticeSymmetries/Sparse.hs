@@ -42,6 +42,7 @@ import qualified Data.Vector.Fusion.Bundle as Bundle (inplace)
 import qualified Data.Vector.Fusion.Bundle.Monadic as Bundle
 import Data.Vector.Fusion.Bundle.Size (Size (..), toMax)
 import Data.Vector.Fusion.Stream.Monadic (Step (..), Stream (..))
+import qualified Data.Vector.Fusion.Util (unId)
 import Data.Vector.Generic ((!))
 import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Generic.Mutable as GM
@@ -336,7 +337,7 @@ unsafeCooToCsr coo@(COO coordinates) = CSR offsets indices elements
       rs <- GM.replicate (n + 1) 0
       G.forM_ coordinates $ \(!i, _, _) ->
         GM.modify rs (+ 1) (fromIntegral i + 1)
-      _ <- loopM 0 (< n) (+ 1) $ \ !i -> do
+      loopM 0 (< n) (+ 1) $ \ !i -> do
         r <- GM.read rs i
         GM.modify rs (+ r) (i + 1)
       G.unsafeFreeze rs
@@ -353,7 +354,7 @@ csrOffsetsToIndices offsets = runST $ do
   let nRows = G.length offsets - 1
       nnz = fromIntegral $ G.last offsets
   indices <- GM.new nnz
-  _ <- loopM 0 (< nRows) (+ 1) $ \i ->
+  loopM 0 (< nRows) (+ 1) $ \i ->
     let !b = fromIntegral $ offsets ! i
         !e = fromIntegral $ offsets ! (i + 1)
      in GM.set (GM.slice b (e - b) indices) (fromIntegral i)
@@ -493,12 +494,12 @@ csrKron ::
   CSR v i (r1 GHC.* r2) (c1 GHC.* c2) a
 csrKron a b = (cooToCsr @B.Vector) $ cooKron (csrToCoo a) (csrToCoo b)
 
-loopM :: Monad m => i -> (i -> Bool) -> (i -> i) -> (i -> m ()) -> m i
+loopM :: Monad m => i -> (i -> Bool) -> (i -> i) -> (i -> m ()) -> m ()
 loopM i₀ cond inc action = go i₀
   where
     go !i
       | cond i = do () <- action i; go (inc i)
-      | otherwise = return i
+      | otherwise = pure ()
 {-# INLINE loopM #-}
 
 iFoldM :: Monad m => i -> (i -> Bool) -> (i -> i) -> a -> (a -> i -> m a) -> m a
@@ -658,6 +659,33 @@ csrBinaryOp op a b = runST $ do
 --     }
 -- }
 
+denseDot ::
+  forall r c a v.
+  (KnownDenseMatrix v r c a, Num a) =>
+  DenseMatrix v r c a ->
+  DenseMatrix v r c a ->
+  a
+denseDot a b = let (DenseMatrix c) = a * b in G.sum c
+
+denseMatMul ::
+  forall r k c a v.
+  (KnownDenseMatrix v r k a, KnownDenseMatrix v k c a, Num a) =>
+  DenseMatrix v r k a ->
+  DenseMatrix v k c a ->
+  DenseMatrix v r c a
+denseMatMul a b = runST $ do
+  let nRows = natToInt @r
+      nCols = natToInt @c
+  cBuffer <- GM.new (nRows * nCols)
+  loopM 0 (< nRows) (+ 1) $ \i ->
+    loopM 0 (< nCols) (+ 1) $ \j -> do
+      !cij <- iFoldM 0 (< natToInt @k) (+ 1) (0 :: a) $ \ !acc k ->
+        let !aik = indexDenseMatrix a i k
+            !bkj = indexDenseMatrix b k j
+         in pure (aik * bkj)
+      GM.write cBuffer (i * nCols + j) cij
+  DenseMatrix <$> G.unsafeFreeze cBuffer
+
 maxNumNonZeroAfterMatMul ::
   forall r k c a i v.
   (KnownCSR v i r k a, KnownCSR v i k c a, G.Vector v Int, Integral i) =>
@@ -778,6 +806,26 @@ csrMatMul a b =
 --     offsets[i + 1] = offsets[i] + nonzero_in_row;
 --   }
 -- }
+
+denseEye :: forall r a v. (KnownDenseMatrix v r r a, Num a) => DenseMatrix v r r a
+denseEye = runST $ do
+  let n = natToInt @r
+  cBuffer <- GM.new (n * n)
+  loopM 0 (< n) (+ 1) $ \i ->
+    GM.write cBuffer (i * n + i) (1 :: a)
+  DenseMatrix <$> G.unsafeFreeze cBuffer
+
+isDenseMatrixDiagonal :: (KnownDenseMatrix v r r a, Eq a, Num a) => DenseMatrix v r r a -> Bool
+isDenseMatrixDiagonal matrix =
+  Data.Vector.Fusion.Util.unId
+    . Bundle.and
+    . Bundle.map (\(i, x) -> x == 0 || i `mod` n == i `div` n)
+    . Bundle.indexed
+    . G.stream
+    . dmData
+    $ matrix
+  where
+    n = dmRows matrix
 
 isDenseMatrixSquare :: KnownDenseMatrix v r c a => DenseMatrix v r c a -> Bool
 isDenseMatrixSquare m = dmRows m == dmCols m
