@@ -386,7 +386,7 @@ main = hspec $ do
       simplify x₀ `shouldBe` y₀
       simplify x₁ `shouldBe` y₁
 
-  describe "simplify" $ do
+  describe "simplify (spin)" $ do
     let parseString ::
           Text ->
           Sum (Scaled ComplexRational (Product (Generator Int SpinGeneratorType)))
@@ -416,6 +416,12 @@ main = hspec $ do
         `shouldBe` [ Scaled (fromRational (1 % 2)) [Generator 10 SpinIdentity],
                      Scaled (fromRational (-1 % 2)) [Generator 10 SpinZ]
                    ]
+    it "simplifies products with identities" $ do
+      forM_ ([SpinIdentity, SpinPlus, SpinMinus, SpinZ] :: [SpinGeneratorType]) $ \g -> do
+        simplify [Scaled 1 [Generator 5 SpinIdentity, Generator 5 g]]
+          `shouldBe` [Scaled (1 :: Rational) [Generator (5 :: Int) g]]
+        simplify [Scaled 1 [Generator 5 g, Generator 5 SpinIdentity]]
+          `shouldBe` [Scaled (1 :: Rational) [Generator (5 :: Int) g]]
 
 -- parse pPrimitiveOperator "" ("f₀" :: Text)
 --   `shouldBe` Right (SpinlessFermionicOperator FermionicAnnihilationOperator 'f' 0)
