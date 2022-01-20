@@ -674,15 +674,15 @@ denseMatMul ::
   DenseMatrix v k c a ->
   DenseMatrix v r c a
 denseMatMul a b = runST $ do
-  let nRows = natToInt @r
-      nCols = natToInt @c
+  let !nRows = natToInt @r
+      !nCols = natToInt @c
   cBuffer <- GM.new (nRows * nCols)
   loopM 0 (< nRows) (+ 1) $ \i ->
     loopM 0 (< nCols) (+ 1) $ \j -> do
       !cij <- iFoldM 0 (< natToInt @k) (+ 1) (0 :: a) $ \ !acc k ->
         let !aik = indexDenseMatrix a i k
             !bkj = indexDenseMatrix b k j
-         in pure (aik * bkj)
+         in pure (acc + aik * bkj)
       GM.write cBuffer (i * nCols + j) cij
   DenseMatrix <$> G.unsafeFreeze cBuffer
 
@@ -807,13 +807,14 @@ csrMatMul a b =
 --   }
 -- }
 
-denseEye :: forall r a v. (KnownDenseMatrix v r r a, Num a) => DenseMatrix v r r a
+denseEye :: forall r a v. (HasCallStack, KnownDenseMatrix v r r a, Num a, Show (v a), Show a) => DenseMatrix v r r a
 denseEye = runST $ do
   let n = natToInt @r
-  cBuffer <- GM.new (n * n)
+  cBuffer <- G.unsafeThaw $ G.replicate (n * n) (0 :: a)
   loopM 0 (< n) (+ 1) $ \i ->
     GM.write cBuffer (i * n + i) (1 :: a)
-  DenseMatrix <$> G.unsafeFreeze cBuffer
+  c <- G.freeze cBuffer
+  pure $ DenseMatrix c
 
 isDenseMatrixDiagonal :: (KnownDenseMatrix v r r a, Eq a, Num a) => DenseMatrix v r r a -> Bool
 isDenseMatrixDiagonal matrix =
@@ -833,7 +834,7 @@ isDenseMatrixSquare m = dmRows m == dmCols m
 isDenseMatrixEmpty :: KnownDenseMatrix v r c a => DenseMatrix v r c a -> Bool
 isDenseMatrixEmpty m = dmRows m * dmCols m == 0
 
-indexDenseMatrix :: KnownDenseMatrix v r c a => DenseMatrix v r c a -> Int -> Int -> a
+indexDenseMatrix :: (HasCallStack, KnownDenseMatrix v r c a) => DenseMatrix v r c a -> Int -> Int -> a
 indexDenseMatrix m i j = dmData m ! (c * i + j)
   where
     c = dmCols m

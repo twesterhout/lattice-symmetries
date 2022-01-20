@@ -1,20 +1,26 @@
+{-# LANGUAGE OverloadedLists #-}
+
 module Main (main) where
 
 import Data.Complex
+import Data.Ratio ((%))
 import Data.Type.Equality
+import qualified Data.Vector as V
 import qualified Data.Vector.Storable as S
 import qualified Data.Vector.Unboxed as U
 import Data.Yaml.Aeson
 import Foreign.Storable
 import GHC.Exts (IsList (..))
 import LatticeSymmetries
+import LatticeSymmetries.Algebra
+import LatticeSymmetries.ComplexRational
 import LatticeSymmetries.IO
 import LatticeSymmetries.Parser
 import LatticeSymmetries.Sparse
 import LatticeSymmetries.Types
 import Test.Hspec
 import Text.Parsec (parse)
-import Prelude hiding (toList)
+import Prelude hiding (Product, Sum, toList)
 
 anySpinEDException :: Selector SpinEDException
 anySpinEDException = const True
@@ -32,6 +38,14 @@ checkRight s y = case s of
 checkJust s y = case s of
   Just x -> x `shouldBe` y
   Nothing -> s `shouldSatisfy` isJust
+
+type SpinPolynomial =
+  Sum (Scaled ComplexRational (Product (Generator Int SpinGeneratorType)))
+
+type FermionicPolynomial =
+  Sum (Scaled ComplexRational (Product (Generator Int FermionGeneratorType)))
+
+type Dense r c = DenseMatrix V.Vector r c ComplexRational
 
 main :: IO ()
 main = hspec $ do
@@ -231,32 +245,32 @@ main = hspec $ do
           Just Refl -> toList (a₁ + b₁) `shouldBe` c₁
           x -> x `shouldSatisfy` isJust
       toList (a₂ + b₂) `shouldBe` c₂
-  describe "pPrimitiveOperator" $ do
-    it ".." $ do
-      parse pPrimitiveOperator "" ("c†↓₁₀" :: Text)
-        `shouldBe` Right (SpinfulFermionicOperator FermionicCreationOperator 'c' SpinDown 10)
-      parse pPrimitiveOperator "" ("f₀" :: Text)
-        `shouldBe` Right (SpinlessFermionicOperator FermionicAnnihilationOperator 'f' 0)
-      parse pPrimitiveOperator "" ("n↑₃₈" :: Text)
-        `shouldBe` Right (SpinfulFermionicOperator FermionicNumberCountingOperator 'n' SpinUp 38)
-      parse pPrimitiveOperator "" ("Sᶻ₃₈" :: Text)
-        `shouldBe` Right (SpinOperator SpinZOperator 'S' 38)
-      parse pOperatorString "" ("n₃₈ f↓₁₅" :: Text)
-        `shouldBe` Right
-          ( SpinlessFermionicOperator FermionicNumberCountingOperator 'n' 38
-              :| [SpinfulFermionicOperator FermionicAnnihilationOperator 'f' SpinDown 15]
-          )
-      parse pOperatorString "" ("n↑₃₈f↓₁₅" :: Text)
-        `shouldBe` Right
-          ( SpinfulFermionicOperator FermionicNumberCountingOperator 'n' SpinUp 38
-              :| [SpinfulFermionicOperator FermionicAnnihilationOperator 'f' SpinDown 15]
-          )
-  describe "sortByWithParity" $ do
-    it ".." $ do
-      sortByWithParity compare [3 :: Int, 1, 4, 8, 0] `shouldBe` (Odd, [0, 1, 3, 4, 8])
-      sortByWithParity compare [3 :: Int, 1] `shouldBe` (Odd, [1, 3])
-      sortByWithParity compare [1 :: Int, 3] `shouldBe` (Even, [1, 3])
-      sortByWithParity compare ([] :: [Int]) `shouldBe` (Even, [])
+  -- describe "pPrimitiveOperator" $ do
+  --   it ".." $ do
+  --     parse pPrimitiveOperator "" ("c†↓₁₀" :: Text)
+  --       `shouldBe` Right (SpinfulFermionicOperator FermionicCreationOperator 'c' SpinDown 10)
+  --     parse pPrimitiveOperator "" ("f₀" :: Text)
+  --       `shouldBe` Right (SpinlessFermionicOperator FermionicAnnihilationOperator 'f' 0)
+  --     parse pPrimitiveOperator "" ("n↑₃₈" :: Text)
+  --       `shouldBe` Right (SpinfulFermionicOperator FermionicNumberCountingOperator 'n' SpinUp 38)
+  --     parse pPrimitiveOperator "" ("Sᶻ₃₈" :: Text)
+  --       `shouldBe` Right (SpinOperator SpinZOperator 'S' 38)
+  --     parse pOperatorString "" ("n₃₈ f↓₁₅" :: Text)
+  --       `shouldBe` Right
+  --         ( SpinlessFermionicOperator FermionicNumberCountingOperator 'n' 38
+  --             :| [SpinfulFermionicOperator FermionicAnnihilationOperator 'f' SpinDown 15]
+  --         )
+  --     parse pOperatorString "" ("n↑₃₈f↓₁₅" :: Text)
+  --       `shouldBe` Right
+  --         ( SpinfulFermionicOperator FermionicNumberCountingOperator 'n' SpinUp 38
+  --             :| [SpinfulFermionicOperator FermionicAnnihilationOperator 'f' SpinDown 15]
+  --         )
+  -- describe "sortByWithParity" $ do
+  --   it ".." $ do
+  --     sortByWithParity compare [3 :: Int, 1, 4, 8, 0] `shouldBe` (Odd, [0, 1, 3, 4, 8])
+  --     sortByWithParity compare [3 :: Int, 1] `shouldBe` (Odd, [1, 3])
+  --     sortByWithParity compare [1 :: Int, 3] `shouldBe` (Even, [1, 3])
+  --     sortByWithParity compare ([] :: [Int]) `shouldBe` (Even, [])
   describe "csrMatMul" $ do
     it ".." $ do
       let (a :: StorableDenseMatrix 3 4 Float) =
@@ -292,6 +306,143 @@ main = hspec $ do
       combineNeighbors (==) (const) (S.fromList [1 :: Int, 1, 2, 1, 1, 1, 3, 3])
         `shouldBe` (S.fromList [1, 2, 1, 3])
       combineNeighbors (==) (+) (S.fromList ([] :: [Int])) `shouldBe` (S.fromList [])
+  describe "pSpinOperator" $ do
+    it "parses simple operators" $ do
+      parse pSpinOperator "" ("σᶻ₁₀" :: Text)
+        `shouldBe` Right (fromList [Scaled 1 (Generator 10 SpinZ)])
+      parse pSpinOperator "" ("S⁺₀" :: Text)
+        `shouldBe` Right (fromList [Scaled (fromRational (1 % 2)) (Generator 0 SpinPlus)])
+    it "parses composite operators" $ do
+      parse pSpinOperator "" ("σˣ₅" :: Text)
+        `shouldBe` Right
+          ( fromList
+              [ Scaled 1 (Generator 5 SpinPlus),
+                Scaled 1 (Generator 5 SpinMinus)
+              ]
+          )
+      parse pSpinOperator "" ("σʸ₈₉₄₃" :: Text)
+        `shouldBe` Right
+          ( fromList
+              [ Scaled (ComplexRational 0 (-1)) (Generator 8943 SpinPlus),
+                Scaled (ComplexRational 0 1) (Generator 8943 SpinMinus)
+              ]
+          )
+  describe "pOperatorString" $ do
+    it ".." $ do
+      parse (pOperatorString pSpinOperator) "" ("σᶻ₁₀σ⁺₁₁" :: Text)
+        `shouldBe` Right [Scaled 1 [Generator 10 SpinZ, Generator 11 SpinPlus]]
+      parse (pOperatorString pSpinOperator) "" ("σᶻ₁₀ σ⁺₁₁" :: Text)
+        `shouldBe` Right [Scaled 1 [Generator 10 SpinZ, Generator 11 SpinPlus]]
+      parse (pOperatorString pSpinOperator) "" ("σᶻ₁₀ Sˣ₅ σ⁺₁₁" :: Text)
+        `shouldBe` Right
+          ( [ Scaled
+                (fromRational (1 % 2))
+                [Generator 10 SpinZ, Generator 5 SpinPlus, Generator 11 SpinPlus],
+              Scaled
+                (fromRational (1 % 2))
+                [Generator 10 SpinZ, Generator 5 SpinMinus, Generator 11 SpinPlus]
+            ]
+          )
+  describe "sumToCanonical" $ do
+    it ".." $ do
+      -- let (Right [x₀]) =
+      --       toList <$> parse (pOperatorString pSpinOperator) "" ("σᶻ₁₀ σ⁺₅ σ⁺₁₁" :: Text)
+      -- productToCanonical x₀
+
+      let (Right x₀) = parse (pOperatorString pSpinOperator) "" ("σᶻ₁₀ Sˣ₅ σ⁺₁₁" :: Text)
+          y₀ :: SpinPolynomial
+          y₀ =
+            [ Scaled
+                (fromRational (1 % 2))
+                [Generator 5 SpinPlus, Generator 10 SpinZ, Generator 11 SpinPlus],
+              Scaled
+                (fromRational (1 % 2))
+                [Generator 5 SpinMinus, Generator 10 SpinZ, Generator 11 SpinPlus]
+            ]
+          x₁ :: SpinPolynomial
+          x₁ =
+            [ Scaled
+                5
+                [Generator 5 SpinMinus, Generator 10 SpinZ, Generator 11 SpinPlus],
+              Scaled
+                3
+                [Generator 11 SpinMinus, Generator 5 SpinPlus, Generator 10 SpinZ],
+              Scaled
+                (-1)
+                [Generator 11 SpinMinus, Generator 5 SpinZ]
+            ]
+          y₁ :: SpinPolynomial
+          y₁ =
+            [ Scaled
+                (-1)
+                [Generator 5 SpinZ, Generator 11 SpinMinus],
+              Scaled
+                3
+                [Generator 5 SpinPlus, Generator 10 SpinZ, Generator 11 SpinMinus],
+              Scaled
+                5
+                [Generator 5 SpinMinus, Generator 10 SpinZ, Generator 11 SpinPlus]
+            ]
+      simplify x₀ `shouldBe` y₀
+      simplify x₁ `shouldBe` y₁
+
+  describe "simplify" $ do
+    let parseString ::
+          Text ->
+          Sum (Scaled ComplexRational (Product (Generator Int SpinGeneratorType)))
+        parseString s = case parse (pOperatorString pSpinOperator) "" s of
+          Left e -> error (show e)
+          Right x -> x
+    it "computes spin commutators" $ do
+      simplify (parseString "σ⁺₁₀ σᶻ₁₀" - parseString "σᶻ₁₀ σ⁺₁₀")
+        `shouldBe` [Scaled (-2) [Generator 10 SpinPlus]]
+      simplify (parseString "σ⁺₁₀ σ⁻₁₀" - parseString "σ⁻₁₀ σ⁺₁₀")
+        `shouldBe` [Scaled 1 [Generator 10 SpinZ]]
+      simplify (parseString "σ⁻₁₀ σᶻ₁₀" - parseString "σᶻ₁₀ σ⁻₁₀")
+        `shouldBe` [Scaled 2 [Generator 10 SpinMinus]]
+    it "simplifies products of primitive operators" $ do
+      simplify (parseString "σᶻ₁₀ σᶻ₁₀") `shouldBe` [Scaled 1 [Generator 10 SpinIdentity]]
+      simplify (parseString "σ⁺₁₀ σ⁺₁₀") `shouldBe` []
+      simplify (parseString "σ⁻₁₀ σ⁻₁₀") `shouldBe` []
+      simplify (parseString "σ⁺₁₀ σᶻ₁₀") `shouldBe` [Scaled (-1) [Generator 10 SpinPlus]]
+      simplify (parseString "σ⁻₁₀ σᶻ₁₀") `shouldBe` [Scaled 1 [Generator 10 SpinMinus]]
+      simplify (parseString "σᶻ₁₀ σ⁺₁₀") `shouldBe` [Scaled 1 [Generator 10 SpinPlus]]
+      simplify (parseString "σᶻ₁₀ σ⁻₁₀") `shouldBe` [Scaled (-1) [Generator 10 SpinMinus]]
+      simplify (parseString "σ⁺₁₀ σ⁻₁₀")
+        `shouldBe` [ Scaled (fromRational (1 % 2)) [Generator 10 SpinIdentity],
+                     Scaled (fromRational (1 % 2)) [Generator 10 SpinZ]
+                   ]
+      simplify (parseString "σ⁻₁₀ σ⁺₁₀")
+        `shouldBe` [ Scaled (fromRational (1 % 2)) [Generator 10 SpinIdentity],
+                     Scaled (fromRational (-1 % 2)) [Generator 10 SpinZ]
+                   ]
+
+-- parse pPrimitiveOperator "" ("f₀" :: Text)
+--   `shouldBe` Right (SpinlessFermionicOperator FermionicAnnihilationOperator 'f' 0)
+-- parse pPrimitiveOperator "" ("n↑₃₈" :: Text)
+--   `shouldBe` Right (SpinfulFermionicOperator FermionicNumberCountingOperator 'n' SpinUp 38)
+-- parse pPrimitiveOperator "" ("Sᶻ₃₈" :: Text)
+--   `shouldBe` Right (SpinOperator SpinZOperator 'S' 38)
+-- parse pOperatorString "" ("n₃₈ f↓₁₅" :: Text)
+--   `shouldBe` Right
+--     ( SpinlessFermionicOperator FermionicNumberCountingOperator 'n' 38
+--         :| [SpinfulFermionicOperator FermionicAnnihilationOperator 'f' SpinDown 15]
+--     )
+-- parse pOperatorString "" ("n↑₃₈f↓₁₅" :: Text)
+--   `shouldBe` Right
+--     ( SpinfulFermionicOperator FermionicNumberCountingOperator 'n' SpinUp 38
+--         :| [SpinfulFermionicOperator FermionicAnnihilationOperator 'f' SpinDown 15]
+--     )
+
+-- describe "getValues" $ do
+--   it ".." $ do
+--     Algebra.getValues @Algebra.SpinGeneratorType
+--       `shouldBe` [Algebra.SpinIdentity, Algebra.SpinZ, Algebra.SpinPlus, Algebra.SpinMinus]
+--     let (expansion :: [(Rational, Algebra.SpinGeneratorType)]) =
+--           Algebra.getBasisExpansion $
+--             (Algebra.matrixRepresentation Algebra.SpinPlus :: DenseMatrix V.Vector 2 2 Rational)
+--               `denseMatMul` (Algebra.matrixRepresentation Algebra.SpinMinus)
+--     print expansion
 
 {-
 describe "BasisSpec" $ do

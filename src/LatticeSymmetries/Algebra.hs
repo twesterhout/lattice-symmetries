@@ -2,8 +2,22 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 
-module LatticeSymmetries.Algebra where
+module LatticeSymmetries.Algebra
+  ( SpinGeneratorType (..),
+    FermionGeneratorType (..),
+    HasMatrixRepresentation (..),
+    Generator (..),
+    Scaled (..),
+    Sum (..),
+    Product (..),
+    scale,
+    -- sumToCanonical,
+    expandProduct,
+    simplify,
+  )
+where
 
 import Control.Exception (assert)
 import Control.Monad.ST
@@ -20,7 +34,7 @@ import GHC.Exts (IsList (..))
 import qualified GHC.Show as GHC
 import LatticeSymmetries.Sparse (DenseMatrix, KnownDenseMatrix, combineNeighbors, denseDot, denseMatMul)
 import qualified LatticeSymmetries.Sparse as Sparse
-import Prelude hiding (identity)
+import Prelude hiding (Product, Sum, identity, toList)
 
 data SpinGeneratorType = SpinIdentity | SpinZ | SpinPlus | SpinMinus
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
@@ -30,6 +44,12 @@ data FermionGeneratorType = FermionIdentity | FermionCount | FermionCreate | Fer
 
 data Generator i g = Generator !i !g
   deriving stock (Eq, Ord, Show, Generic)
+
+data Scaled c g = Scaled !c !g
+  deriving stock (Eq, Ord, Show, Generic)
+
+withoutOrderingCoefficients :: Ord g => Scaled c g -> Scaled c g -> Ordering
+withoutOrderingCoefficients (Scaled _ a) (Scaled _ b) = compare a b
 
 -- class HasIdentity g where
 --   identity :: g
@@ -78,6 +98,26 @@ getBasisExpansion m = filter (\(c, _) -> c /= 0) $ getFactor <$> getValues
           !norm = denseDot a a
        in (dot / norm, g)
 
+getBasisExpansion' ::
+  (Enum g, Bounded g, HasMatrixRepresentation g r, KnownDenseMatrix v r r c, Eq c, Fractional c) =>
+  DenseMatrix v r r c ->
+  Sum (Scaled c g)
+getBasisExpansion' m =
+  Sum
+    . G.map (\(c, g) -> Scaled c g)
+    . G.filter (\(!c, _) -> c /= 0)
+    . G.map getFactor
+    $ G.fromList getValues
+  where
+    getFactor !g =
+      let !a = matrixRepresentation g
+          !dot = denseDot a m
+          !norm = denseDot a a
+       in (dot / norm, g)
+
+isIdentity :: forall g r. HasMatrixRepresentation g r => g -> Bool
+isIdentity g = matrixRepresentation g == (Sparse.denseEye :: DenseMatrix Vector r r Rational)
+
 data CommutatorType = Commutator | Anticommutator
   deriving stock (Show, Eq)
 
@@ -99,12 +139,11 @@ class Ord g => Algebra g where
     g ->
     g ->
     CommutationResult c g
-  commute a b
-    | isDiagonal a || isDiagonal b = CommutationResult []
-    | otherwise = case nonDiagonalCommutatorType @g of
-      Commutator -> CommutationResult commutator
-      Anticommutator -> AnticommutationResult anticommutator
+  commute a b = case nonDiagonalCommutatorType @g of
+    Commutator -> CommutationResult commutator
+    Anticommutator -> AnticommutationResult anticommutator
     where
+      -- isDiagonal a || isDiagonal b = CommutationResult []
       aMatrix :: DenseMatrix Vector r r c
       aMatrix = matrixRepresentation a
       bMatrix = matrixRepresentation b
@@ -123,7 +162,7 @@ instance (Algebra g, HasMatrixRepresentation g r, Ord i) => Algebra (Generator i
   isDiagonal (Generator _ g) = isDiagonal g
   nonDiagonalCommutatorType = nonDiagonalCommutatorType @g
   commute ga@(Generator i a) gb@(Generator j b)
-    | isDiagonal a || isDiagonal b = CommutationResult []
+    | i /= j && (isDiagonal a || isDiagonal b) = CommutationResult []
     | i /= j = case nonDiagonalCommutatorType @g of
       Commutator -> CommutationResult []
       Anticommutator -> AnticommutationResult []
@@ -135,8 +174,44 @@ instance (Algebra g, HasMatrixRepresentation g r, Ord i) => Algebra (Generator i
 
 infix 9 :*:
 
+class Num c => CanScale c a where
+  scale :: c -> a -> a
+
+instance Num c => CanScale c (Scaled c g) where
+  scale c (Scaled c' g) = Scaled (c * c') g
+
+newtype Product g = Product (Vector g)
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving newtype (IsList, Functor, Semigroup, Foldable)
+
+instance Traversable Product where
+  traverse f (Product v) = Product <$> traverse f v
+
+newtype Sum g = Sum (Vector g)
+  deriving stock (Eq, Show, Generic)
+  deriving newtype (IsList, Functor, Semigroup, Monoid, Foldable)
+
+instance CanScale c g => CanScale c (Sum g) where
+  scale c (Sum v) = Sum $ G.map (scale c) v
+
+instance Traversable Sum where
+  traverse f (Sum v) = Sum <$> traverse f v
+
+instance Num c => Num (Sum (Scaled c (Product g))) where
+  (+) = (<>)
+  (Sum a) * (Sum b) = Sum . G.fromList $ multiply <$> G.toList a <*> G.toList b
+    where
+      multiply (Scaled c g) (Scaled c' g') = Scaled (c * c') (g <> g')
+  negate = scale (-1 :: c)
+  abs = fmap (\(Scaled c g) -> Scaled (abs c) g)
+  signum _ = error "Num instance of Sum does not implement signum"
+  fromInteger _ = error "Num instance of Sum does not implement fromInteger"
+
 data Monomial c g = !c :*: !(Vector g)
   deriving stock (Eq, Ord, Show, Generic)
+
+-- data SignedMonomial c g = SignedMonomial !c !(Vector g) ![(i, i)]
+--   deriving stock (Eq, Ord, Show, Generic)
 
 -- instance (Ord c, Ord g) => Ord (Monomial c g) where
 --   compare (c₁ :*: t₁) (c₂ :*: t₂) = compare (t₁, c₁) (t₂, c₂)
@@ -199,7 +274,7 @@ scaleMonomial c = monomialMapCoeff (c *)
 scalePolynomial :: Num c => c -> Polynomial c g -> Polynomial c g
 scalePolynomial c = polynomialMapCoeff (c *)
 
-instance (Fractional c) => Num (Polynomial c g) where
+instance (Num c) => Num (Polynomial c g) where
   (+) (Polynomial a) (Polynomial b) = Polynomial (a G.++ b)
   (*) (Polynomial a) (Polynomial b) = Polynomial . G.fromList $ (<>) <$> G.toList a <*> G.toList b
   negate a = (-1) `scalePolynomial` a
@@ -218,7 +293,13 @@ instance (Fractional c) => Num (Polynomial c g) where
 -- dropIdentities (Polynomial v) = Polynomial $ G.map monomialDropIdentities v
 
 dropZeros :: (Num c, Eq c) => Polynomial c g -> Polynomial c g
-dropZeros (Polynomial v) = Polynomial $ G.filter (\(c :*: g) -> c /= 0 && not (G.null g)) v
+dropZeros (Polynomial v) = Polynomial $ G.filter (\(c :*: g) -> c /= 0) v
+
+sortVectorBy :: G.Vector v a => (a -> a -> Ordering) -> v a -> v a
+sortVectorBy comp v = runST $ do
+  buffer <- G.thaw v
+  Data.Vector.Algorithms.Intro.sortBy comp buffer
+  G.unsafeFreeze buffer
 
 sortMonomials :: (Ord c, Ord g) => Polynomial c g -> Polynomial c g
 sortMonomials (Polynomial v) = Polynomial $
@@ -250,6 +331,162 @@ groupMonomials (Polynomial v) =
 --     c = case commutatorTypeOf (Proxy @g) of
 --       Commutator -> 1
 --       Anticommutator -> -1
+swapGenerators' ::
+  (Fractional c, Eq c, Algebra g) =>
+  Int ->
+  Product g ->
+  Sum (Scaled c (Product g))
+swapGenerators' i (Product v) = Sum (G.fromList newTerms)
+  where
+    !before = G.take i v
+    !a = v ! i
+    !b = v ! (i + 1)
+    !after = G.drop (i + 2) v
+    combined c terms =
+      Scaled c (Product $ before <> [b, a] <> after) :
+        [Scaled zᵢ (Product $ before <> [gᵢ] <> after) | (zᵢ, gᵢ) <- terms]
+    newTerms = case commute a b of
+      CommutationResult terms -> combined 1 terms
+      AnticommutationResult terms -> combined (-1) terms
+
+productToCanonical ::
+  forall c g.
+  (Fractional c, Eq c, Algebra g) =>
+  Product g ->
+  Sum (Scaled c (Product g))
+productToCanonical t₀ = go (Scaled 1 t₀) 0 False
+  where
+    go :: Scaled c (Product g) -> Int -> Bool -> Sum (Scaled c (Product g))
+    go x@(Scaled c t@(Product v)) i keepGoing
+      | i < G.length v - 1 =
+        case compare (v ! i) (v ! (i + 1)) of
+          GT ->
+            let newTerms = swapGenerators' i t
+             in scale c $ foldMap (\x -> go x i True) newTerms
+          _ -> go x (i + 1) keepGoing
+      | keepGoing = go x 0 False
+      | otherwise = Sum (G.singleton x)
+
+sumToCanonical ::
+  (Fractional c, Eq c, Algebra g) =>
+  Sum (Scaled c (Product g)) ->
+  Sum (Scaled c (Product g))
+sumToCanonical = order . foldMap single
+  where
+    single (Scaled c p) = c `scale` productToCanonical p
+    order (Sum v) = Sum $ sortVectorBy withoutOrderingCoefficients v
+
+simplifyPrimitiveProduct' ::
+  forall c g r.
+  (HasCallStack, Enum g, Bounded g, HasMatrixRepresentation g r, Fractional c, Eq c, Show c, Show g) =>
+  Product g ->
+  Sum (Scaled c g)
+simplifyPrimitiveProduct' (Product !v)
+  | G.null v = []
+  | otherwise = getBasisExpansion' $ G.foldl' combine acc₀ v
+  where
+    acc₀ :: DenseMatrix Vector r r c
+    acc₀ = Sparse.denseEye
+    combine !acc !g = acc `denseMatMul` (matrixRepresentation g)
+
+-- in trace ("combining " <> show acc <> " with " <> show g <> " --> " <> show r) r
+-- basis x = let y = getBasisExpansion' x
+--    in trace ("basis expansion of " <> show x <> " is " <> show y) y
+
+dropIdentities' :: HasMatrixRepresentation g r => Product (Generator i g) -> Product (Generator i g)
+dropIdentities' (Product v)
+  | not (G.null useful) = Product useful
+  | otherwise = Product $ G.take 1 identities
+  where
+    (identities, useful) = G.partition (\(Generator _ g) -> isIdentity g) v
+
+simplifyProduct ::
+  forall c g i r.
+  (Enum g, Bounded g, HasMatrixRepresentation g r, Fractional c, Eq c, Eq i, Show c, Show g, Show i) =>
+  Product (Generator i g) ->
+  Sum (Scaled c (Product (Generator i g)))
+simplifyProduct =
+  fmap (\(Scaled c p) -> Scaled c (dropIdentities' p))
+    . expandProduct
+    . fromList
+    . fmap (simplifyOneSite . fromList)
+    . List.groupBy (\(Generator i _) (Generator j _) -> i == j)
+    . toList
+  where
+    unpack (Generator _ g) = g
+    pack i (Scaled c g) = Scaled c (Generator i g)
+    simplifyOneSite :: HasCallStack => Product (Generator i g) -> Sum (Scaled c (Generator i g))
+    simplifyOneSite p@(Product !v)
+      | G.null v = assert False []
+      | otherwise =
+        let (Generator i _) = G.head v
+         in fmap (pack i) . simplifyPrimitiveProduct' . fmap unpack $ p
+
+dropZeros' :: (Num c, Eq c) => Sum (Scaled c g) -> Sum (Scaled c g)
+dropZeros' (Sum v) = Sum $ G.filter (\(Scaled c _) -> c /= 0) v
+
+combineFactors' :: (Num c, Eq g) => Sum (Scaled c g) -> Sum (Scaled c g)
+combineFactors' (Sum v) =
+  Sum $
+    combineNeighbors
+      (\(Scaled _ g) (Scaled _ g') -> g == g')
+      (\(Scaled c g) (Scaled c' _) -> Scaled (c + c') g)
+      v
+
+simplify ::
+  forall c g r i.
+  (Fractional c, Eq c, Enum g, Bounded g, HasMatrixRepresentation g r, Algebra g, Ord i, Show c, Show g, Show i) =>
+  Sum (Scaled c (Product (Generator i g))) ->
+  Sum (Scaled c (Product (Generator i g)))
+simplify =
+  dropZeros'
+    . combineFactors'
+    . reorder
+    . foldMap (withScaled simplifyProduct)
+    . foldMap (withScaled productToCanonical)
+  where
+    withScaled ::
+      (Product (Generator i g) -> Sum (Scaled c (Product (Generator i g)))) ->
+      Scaled c (Product (Generator i g)) ->
+      Sum (Scaled c (Product (Generator i g)))
+    withScaled f (Scaled c p) = scale c (f p)
+    reorder (Sum v) = Sum $ sortVectorBy withoutOrderingCoefficients v
+
+---
+--- monomialDropIdentities :: HasMatrixRepresentation g r => Monomial c (Generator i g) -> Monomial c (Generator i g)
+--- monomialDropIdentities (c :*: v)
+---   | not (G.null useful) = c :*: useful
+---   | otherwise = c :*: (G.take 1 identities)
+---   where
+---     (identities, useful) = G.partition (\(Generator _ g) -> isIdentity g) v
+---
+-- simplifyMonomial ::
+--   (Fractional c, Ord c, Ord i, Enum g, Bounded g, Ord g, HasMatrixRepresentation g r) =>
+--   Monomial c (Generator i g) ->
+--   Polynomial c (Generator i g)
+-- simplifyMonomial (z :*: v) =
+--   -- groupMonomials
+--   -- . sortMonomials
+--   scalePolynomial z
+--     . polynomialMapCoeff fromRational
+--     . mapPolynomial monomialDropIdentities
+--     . product
+--     . fmap simplifyOneSite
+--     . List.groupBy (\(Generator i _) (Generator j _) -> i == j)
+--     . G.toList
+--     $ v
+
+expandProduct ::
+  forall c g.
+  (HasCallStack, Num c) =>
+  Product (Sum (Scaled c g)) ->
+  Sum (Scaled c (Product g))
+expandProduct p@(Product v)
+  | G.null v = Sum G.empty
+  | otherwise = G.foldl1' (*) $ fmap asProducts v
+  where
+    asProducts :: Sum (Scaled c g) -> Sum (Scaled c (Product g))
+    asProducts = fmap (\(Scaled c g) -> (Scaled c (Product (G.singleton g))))
 
 -- | Swaps generators at positions i and i + 1
 swapGenerators ::
@@ -281,7 +518,7 @@ monomialToCanonical ::
   (Fractional c, Eq c, Ord c, Algebra g) =>
   Monomial c g ->
   Polynomial c g
-monomialToCanonical t₀ = groupMonomials . sortMonomials . Polynomial $ go t₀ 0 False
+monomialToCanonical t₀ = Polynomial $ go t₀ 0 False
   where
     go :: Monomial c g -> Int -> Bool -> Vector (Monomial c g)
     go term@(_ :*: v) i keepGoing
@@ -294,8 +531,14 @@ monomialToCanonical t₀ = groupMonomials . sortMonomials . Polynomial $ go t₀
       | keepGoing = go term 0 False
       | otherwise = G.singleton term
 
--- polynomialToCanonical ::
+polynomialToCanonical ::
+  forall c g r.
+  (Fractional c, Eq c, Ord c, Algebra g) =>
+  Polynomial c g ->
+  Polynomial c g
+polynomialToCanonical = sortMonomials . concatMapPolynomial monomialToCanonical
 
+--
 -- data SpinGenerator = SpinGenerator {sgId :: !Int, sgType :: !SpinGeneratorType}
 --   deriving stock (Eq, Ord, Generic)
 --
@@ -434,18 +677,34 @@ simplifyOneSite gs@((Generator i _) : _) =
     pack (c, g) = c :*: G.singleton (Generator i g)
 simplifyOneSite [] = []
 
+monomialDropIdentities :: HasMatrixRepresentation g r => Monomial c (Generator i g) -> Monomial c (Generator i g)
+monomialDropIdentities (c :*: v)
+  | not (G.null useful) = c :*: useful
+  | otherwise = c :*: (G.take 1 identities)
+  where
+    (identities, useful) = G.partition (\(Generator _ g) -> isIdentity g) v
+
 simplifyMonomial ::
-  (Fractional c, Eq i, Enum g, Bounded g, HasMatrixRepresentation g r) =>
+  (Fractional c, Ord c, Ord i, Enum g, Bounded g, Ord g, HasMatrixRepresentation g r) =>
   Monomial c (Generator i g) ->
   Polynomial c (Generator i g)
 simplifyMonomial (z :*: v) =
+  -- groupMonomials
+  -- . sortMonomials
   scalePolynomial z
     . polynomialMapCoeff fromRational
+    . mapPolynomial monomialDropIdentities
     . product
     . fmap simplifyOneSite
     . List.groupBy (\(Generator i _) (Generator j _) -> i == j)
     . G.toList
     $ v
+
+simplifyPolynomial ::
+  (Fractional c, Ord c, Ord g, Enum g, Bounded g, HasMatrixRepresentation g r, Ord i) =>
+  Polynomial c (Generator i g) ->
+  Polynomial c (Generator i g)
+simplifyPolynomial (Polynomial v) = groupMonomials . sortMonomials . sum $ simplifyMonomial <$> (G.toList v)
 
 -- spinSimplifyProduct ::
 --   (HasCallStack, Fractional c) =>
@@ -509,12 +768,6 @@ simplifyMonomial (z :*: v) =
 --         suffix = c :*: G.drop 2 v
 --      in concatMapPolynomial go $
 --           mapPolynomial (<> suffix) (simplifyProduct a b)
-
-simplifyPolynomial ::
-  (Fractional c, Ord c, Ord g, Enum g, Bounded g, HasMatrixRepresentation g r, Ord i) =>
-  Polynomial c (Generator i g) ->
-  Polynomial c (Generator i g)
-simplifyPolynomial = groupMonomials . sortMonomials . concatMapPolynomial simplifyMonomial
 
 -- spinSimplifyProduct ::
 --   Fractional c =>
