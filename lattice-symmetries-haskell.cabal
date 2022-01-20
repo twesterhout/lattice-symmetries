@@ -64,6 +64,7 @@ library
                        LatticeSymmetries.IO
                        LatticeSymmetries.Types
                        LatticeSymmetries.Sparse
+                       LatticeSymmetries.ComplexRational
                        LatticeSymmetries.Parser
                        LatticeSymmetries.Algebra
   c-sources:           cbits/helpers.c
