@@ -48,7 +48,8 @@ jobs:
         cd lattice-symmetries
         cmake -Bbuild \
               -DCMAKE_BUILD_TYPE=Release \
-              -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/lattice-symmetries
+              -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/lattice-symmetries \
+              -DLatticeSymmetries_ENABLE_UNIT_TESTING=OFF
         cmake --build build -j4
         cmake --build build --target install
         cd ..
