@@ -95,13 +95,28 @@ typedef struct ls_internal_output_buffer {
   uint64_t const number_words;
 } ls_internal_output_buffer;
 
+static inline double ls_internal_sign_prefactor(int const number_words,
+                                                ls_term const *const term,
+                                                uint64_t const *const spin) {
+  if (term->sign_mask == NULL) {
+    return 1.0;
+  }
+  int n = 0;
+  for (int i = 0; i < number_words; ++i) {
+    n += __builtin_popcountl(spin[i] & term->sign_mask[i]);
+  }
+  return (double)(1 - 2 * (n % 2));
+}
+
 static inline void
 ls_internal_apply_term(ls_term const *const term, uint64_t const *const spin,
                        ls_internal_output_buffer *const out) {
+  double const prefactor =
+      ls_internal_sign_prefactor(out->number_words, term, spin);
   unsigned const k =
       ls_internal_gather_bits(term->tuple_size, term->tuple, spin);
   // Handle the diagonal
-  out->diagonal += term->matrix->diag_elements[k];
+  out->diagonal += prefactor * term->matrix->diag_elements[k];
   // Handle off-diagonal elements
   unsigned const b = term->matrix->offsets[k];
   unsigned const e = term->matrix->offsets[k + 1];
@@ -115,7 +130,7 @@ ls_internal_apply_term(ls_term const *const term, uint64_t const *const spin,
     ls_internal_scatter_bits(term->tuple_size, term->tuple,
                              term->matrix->columns[j],
                              spins_dest + offset * out->number_words);
-    coeff_dest[offset] = term->matrix->off_diag_elements[j];
+    coeff_dest[offset] = prefactor * term->matrix->off_diag_elements[j];
   }
   out->size += count;
 }

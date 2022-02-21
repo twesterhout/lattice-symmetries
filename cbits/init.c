@@ -24,7 +24,7 @@ static ls_error_code ls_hs_operator_apply_callback(ls_bits512 const *_bits,
                                                    void const *_coeff,
                                                    void *_cxt) {
   ls_hs_operator_apply_callback_context *cxt = _cxt;
-  *(cxt->spins + +cxt->count) = _bits->words[0];
+  *(cxt->spins + cxt->count) = _bits->words[0];
   *(cxt->coeffs + cxt->count) = *(_Complex double const *)_coeff;
   ++cxt->count;
   return LS_SUCCESS;

@@ -807,7 +807,7 @@ csrMatMul a b =
 --   }
 -- }
 
-denseEye :: forall r a v. (HasCallStack, KnownDenseMatrix v r r a, Num a, Show (v a), Show a) => DenseMatrix v r r a
+denseEye :: forall r a v. (HasCallStack, KnownDenseMatrix v r r a, Num a) => DenseMatrix v r r a
 denseEye = runST $ do
   let n = natToInt @r
   cBuffer <- G.unsafeThaw $ G.replicate (n * n) (0 :: a)

@@ -5,6 +5,9 @@ package *
   split-sections: true
   ghc-options: -fPIC -fexpose-all-unfoldings -fspecialise-aggressively
 
+package hdf5-hs
+  flags: +use-pkgconfig
+
 package lattice-symmetries-haskell
   optimization: 0
   split-sections: true

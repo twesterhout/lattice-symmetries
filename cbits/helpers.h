@@ -19,12 +19,11 @@ typedef struct ls_bit_index {
   uint8_t bit;
 } ls_bit_index;
 
-// WARNING: be very careful about allocating ls_term. It needs additional
-// storage!
 typedef struct ls_term {
   ls_csr_matrix const *const matrix;
-  unsigned const tuple_size;   // 32 bits
-  ls_bit_index const tuple[2]; // 2 * 16 bits
+  ls_bit_index const *const tuple;
+  uint64_t const *const sign_mask;
+  unsigned const tuple_size;
 } ls_term;
 
 void ls_internal_apply_operator(uint64_t number_terms, ls_term const terms[],
