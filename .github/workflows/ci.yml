@@ -1,0 +1,61 @@
+name: CI
+
+# Trigger the workflow on push or pull request, but only for the master branch
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  build:
+    name: Building on ${{ matrix.os }} with ghc-${{ matrix.ghc }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            cabal: "3.4.0.0"
+            ghc: "8.10.7"
+          - os: macos-latest
+            cabal: "3.4.0.0"
+            ghc: "8.10.7"
+    steps:
+    - uses: actions/checkout@v2
+    - uses: haskell/actions/setup@v1
+      name: Setup Haskell
+      with:
+        ghc-version: ${{ matrix.ghc }}
+        cabal-version: ${{ matrix.cabal }}
+    - uses: actions/cache@v1
+      name: Cache ~/.cabal/store
+      with:
+        path: ~/.cabal/store
+        key: ${{ runner.os }}-${{ matrix.ghc }}-cabal
+    - name: Install system dependencies
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends ninja-build libhdf5-dev
+    - name: Install system dependencies
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install libomp hdf5 
+    - name: Build lattice-symmetries
+      run: |
+        mkdir -p third_party
+        cd third_party
+        git clone --recursive https://github.com/twesterhout/lattice-symmetries.git
+        cmake -Bbuild \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/lattice-symmetries
+        cmake --build build -j4
+        cmake --build build --target install
+        cd ..
+    - name: Build
+      run: |
+        export PKG_CONFIG_PATH=$GITHUB_WORKSPACE/lattice-symmetries/lib/pkgconfig
+        cabal v2-update
+        cabal v2-build --disable-tests
+        # - name: Test
+        #   run: |
+        #     cabal v2-test --enable-tests --test-show-details=direct
