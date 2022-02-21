@@ -45,6 +45,7 @@ jobs:
         mkdir -p third_party
         cd third_party
         git clone --recursive https://github.com/twesterhout/lattice-symmetries.git
+        cd lattice-symmetries
         cmake -Bbuild \
               -DCMAKE_BUILD_TYPE=Release \
               -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/lattice-symmetries
