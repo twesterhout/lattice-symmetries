@@ -92,7 +92,7 @@ createDataset _fileName _datasetName _dim shapePtr = do
   H5.withFile fileName H5.WriteAppend $ \file -> do
     exists <- H5.exists file datasetName
     when exists $ H5.delete file datasetName
-    void . join $ H5.createDataset' file datasetName <$> H5.ofType @a <*> H5.ofShape shape
+    void . join $ H5.createEmptyDataset file datasetName <$> H5.ofType @a <*> H5.ofShape shape
 
 ls_hs_hdf5_create_dataset_u64 :: CString -> CString -> CUInt -> Ptr Word64 -> IO ()
 ls_hs_hdf5_create_dataset_u64 = createDataset @Word64
