@@ -109,20 +109,20 @@ ls_hs_hdf5_create_dataset_c64 = createDataset @(Complex Float)
 ls_hs_hdf5_create_dataset_c128 :: CString -> CString -> CUInt -> Ptr Word64 -> IO ()
 ls_hs_hdf5_create_dataset_c128 = createDataset @(Complex Double)
 
-foreign export ccall "ls_hs_hdf5_create_dataset_u64"
-  ls_hs_hdf5_create_dataset_u64 :: CString -> CString -> CUInt -> Ptr Word64 -> IO ()
+-- foreign export ccall "ls_hs_hdf5_create_dataset_u64"
+--   ls_hs_hdf5_create_dataset_u64 :: CString -> CString -> CUInt -> Ptr Word64 -> IO ()
 
-foreign export ccall "ls_hs_hdf5_create_dataset_f32"
-  ls_hs_hdf5_create_dataset_f32 :: CString -> CString -> CUInt -> Ptr Word64 -> IO ()
+-- foreign export ccall "ls_hs_hdf5_create_dataset_f32"
+--   ls_hs_hdf5_create_dataset_f32 :: CString -> CString -> CUInt -> Ptr Word64 -> IO ()
 
-foreign export ccall "ls_hs_hdf5_create_dataset_f64"
-  ls_hs_hdf5_create_dataset_f64 :: CString -> CString -> CUInt -> Ptr Word64 -> IO ()
+-- foreign export ccall "ls_hs_hdf5_create_dataset_f64"
+--   ls_hs_hdf5_create_dataset_f64 :: CString -> CString -> CUInt -> Ptr Word64 -> IO ()
 
-foreign export ccall "ls_hs_hdf5_create_dataset_c64"
-  ls_hs_hdf5_create_dataset_c64 :: CString -> CString -> CUInt -> Ptr Word64 -> IO ()
+-- foreign export ccall "ls_hs_hdf5_create_dataset_c64"
+--   ls_hs_hdf5_create_dataset_c64 :: CString -> CString -> CUInt -> Ptr Word64 -> IO ()
 
-foreign export ccall "ls_hs_hdf5_create_dataset_c128"
-  ls_hs_hdf5_create_dataset_c128 :: CString -> CString -> CUInt -> Ptr Word64 -> IO ()
+-- foreign export ccall "ls_hs_hdf5_create_dataset_c128"
+--   ls_hs_hdf5_create_dataset_c128 :: CString -> CString -> CUInt -> Ptr Word64 -> IO ()
 
 writeDatasetChunk ::
   forall a.
@@ -170,11 +170,11 @@ ls_hs_hdf5_write_chunk_c128 ::
   CString -> CString -> CUInt -> Ptr Word64 -> Ptr Word64 -> Ptr (Complex Double) -> IO ()
 ls_hs_hdf5_write_chunk_c128 = writeDatasetChunk @(Complex Double)
 
-foreign export ccall "ls_hs_hdf5_write_chunk_u64"
-  ls_hs_hdf5_write_chunk_u64 :: CString -> CString -> CUInt -> Ptr Word64 -> Ptr Word64 -> Ptr Word64 -> IO ()
+-- foreign export ccall "ls_hs_hdf5_write_chunk_u64"
+--   ls_hs_hdf5_write_chunk_u64 :: CString -> CString -> CUInt -> Ptr Word64 -> Ptr Word64 -> Ptr Word64 -> IO ()
 
-foreign export ccall "ls_hs_hdf5_write_chunk_f64"
-  ls_hs_hdf5_write_chunk_f64 :: CString -> CString -> CUInt -> Ptr Word64 -> Ptr Word64 -> Ptr Double -> IO ()
+-- foreign export ccall "ls_hs_hdf5_write_chunk_f64"
+--   ls_hs_hdf5_write_chunk_f64 :: CString -> CString -> CUInt -> Ptr Word64 -> Ptr Word64 -> Ptr Double -> IO ()
 
 readDatasetChunk ::
   forall a.
@@ -222,11 +222,11 @@ ls_hs_hdf5_read_chunk_c128 ::
   CString -> CString -> CUInt -> Ptr Word64 -> Ptr Word64 -> Ptr (Complex Double) -> IO ()
 ls_hs_hdf5_read_chunk_c128 = readDatasetChunk @(Complex Double)
 
-foreign export ccall "ls_hs_hdf5_read_chunk_u64"
-  ls_hs_hdf5_read_chunk_u64 :: CString -> CString -> CUInt -> Ptr Word64 -> Ptr Word64 -> Ptr Word64 -> IO ()
+-- foreign export ccall "ls_hs_hdf5_read_chunk_u64"
+--   ls_hs_hdf5_read_chunk_u64 :: CString -> CString -> CUInt -> Ptr Word64 -> Ptr Word64 -> Ptr Word64 -> IO ()
 
-foreign export ccall "ls_hs_hdf5_read_chunk_f64"
-  ls_hs_hdf5_read_chunk_f64 :: CString -> CString -> CUInt -> Ptr Word64 -> Ptr Word64 -> Ptr Double -> IO ()
+-- foreign export ccall "ls_hs_hdf5_read_chunk_f64"
+--   ls_hs_hdf5_read_chunk_f64 :: CString -> CString -> CUInt -> Ptr Word64 -> Ptr Word64 -> Ptr Double -> IO ()
 
 ls_hs_hdf5_get_dataset_rank :: CString -> CString -> IO CUInt
 ls_hs_hdf5_get_dataset_rank _fileName _datasetName = do
@@ -236,8 +236,8 @@ ls_hs_hdf5_get_dataset_rank _fileName _datasetName = do
     H5.open file datasetName >>= return . H5.datasetRank
   pure (fromIntegral rank)
 
-foreign export ccall "ls_hs_hdf5_get_dataset_rank"
-  ls_hs_hdf5_get_dataset_rank :: CString -> CString -> IO CUInt
+-- foreign export ccall "ls_hs_hdf5_get_dataset_rank"
+--   ls_hs_hdf5_get_dataset_rank :: CString -> CString -> IO CUInt
 
 ls_hs_hdf5_get_dataset_shape :: CString -> CString -> Ptr Word64 -> IO ()
 ls_hs_hdf5_get_dataset_shape _fileName _datasetName sizePtr = do
@@ -247,8 +247,8 @@ ls_hs_hdf5_get_dataset_shape _fileName _datasetName sizePtr = do
     H5.open file datasetName >>= return . H5.datasetShape
   pokeArray sizePtr (fromIntegral <$> shape)
 
-foreign export ccall "ls_hs_hdf5_get_dataset_shape"
-  ls_hs_hdf5_get_dataset_shape :: CString -> CString -> Ptr Word64 -> IO ()
+-- foreign export ccall "ls_hs_hdf5_get_dataset_shape"
+--   ls_hs_hdf5_get_dataset_shape :: CString -> CString -> Ptr Word64 -> IO ()
 
 -- writeDatasetChunk _fileName _datasetName offset size ptr = do
 --   fileName <- fromString <$> peekCString _fileName
@@ -279,8 +279,8 @@ ls_hs_basis_and_hamiltonian_from_yaml path basisPtr operatorPtr = do
 -- void ls_hs_basis_and_hamiltonian_from_yaml(char const *path,
 --                                            ls_hs_spin_basis_v1 *basis,
 --                                            ls_hs_operator_v1 *hamiltonian);
-foreign export ccall "ls_hs_basis_and_hamiltonian_from_yaml"
-  ls_hs_basis_and_hamiltonian_from_yaml :: CString -> Ptr SpinBasisWrapper -> Ptr OperatorWrapper -> IO ()
+-- foreign export ccall "ls_hs_basis_and_hamiltonian_from_yaml"
+--   ls_hs_basis_and_hamiltonian_from_yaml :: CString -> Ptr SpinBasisWrapper -> Ptr OperatorWrapper -> IO ()
 
 ls_hs_destroy_spin_basis :: Ptr SpinBasisWrapper -> IO ()
 ls_hs_destroy_spin_basis ptr = do
@@ -288,8 +288,8 @@ ls_hs_destroy_spin_basis ptr = do
   poke ptr $ SpinBasisWrapper nullPtr (castPtrToStablePtr nullPtr)
 
 -- void ls_hs_destroy_spin_basis(ls_hs_spin_basis_v1 *basis);
-foreign export ccall "ls_hs_destroy_spin_basis"
-  ls_hs_destroy_spin_basis :: Ptr SpinBasisWrapper -> IO ()
+-- foreign export ccall "ls_hs_destroy_spin_basis"
+--   ls_hs_destroy_spin_basis :: Ptr SpinBasisWrapper -> IO ()
 
 ls_hs_destroy_operator :: Ptr OperatorWrapper -> IO ()
 ls_hs_destroy_operator ptr = do
@@ -297,8 +297,8 @@ ls_hs_destroy_operator ptr = do
   poke ptr $ OperatorWrapper nullPtr (castPtrToStablePtr nullPtr)
 
 -- void ls_hs_destroy_operator(ls_hs_operator_v1 *op);
-foreign export ccall "ls_hs_destroy_operator"
-  ls_hs_destroy_operator :: Ptr OperatorWrapper -> IO ()
+-- foreign export ccall "ls_hs_destroy_operator"
+--   ls_hs_destroy_operator :: Ptr OperatorWrapper -> IO ()
 
 toSymmetry :: SymmetrySpec -> Symmetry
 toSymmetry (SymmetrySpec p s) = mkSymmetry p s

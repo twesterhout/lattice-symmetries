@@ -9,13 +9,20 @@ author:                Tom Westerhout
 maintainer:            Tom Westerhout <14264576+twesterhout@users.noreply.github.com>
 copyright:             2021 Tom Westerhout
 category:              Math
-build-type:            Custom
+build-type:            Simple
+-- Custom
 extra-doc-files:       README.md
                        CHANGELOG.md
 tested-with:           GHC == 8.10.4
+                       GHC == 8.10.7
 
-custom-setup
-  setup-depends:       base, containers, Cabal, filepath
+flag use-standalone
+  description: Use standalone option for foreign-library (requires GHC which was built with -fPIC support)
+  manual: True
+  default: False
+
+-- custom-setup
+--   setup-depends:       base, containers, Cabal, filepath
 
 common common-options
   build-depends:       base >= 4.13.0.0
@@ -104,6 +111,31 @@ library
                      -- , vector-binary-instances
                      , hdf5-hs
   pkgconfig-depends:   lattice_symmetries
+
+foreign-library lattice_symmetries_haskell
+  import:              common-options
+  type:                native-shared
+  if os(Windows) || os(darwin) || os(osx)
+    options: standalone
+  if os(linux) && flag(use-standalone)
+    options: standalone
+  --   mod-def-file: MyForeignLib.def
+  hs-source-dirs:      lib
+  other-modules:       ForeignLibrary
+  -- MyForeignLib.SomeModule
+  -- MyForeignLib.SomeOtherModule
+  -- c-sources:           csrc/MyForeignLibWrapper.c
+  build-depends:       lattice-symmetries-haskell
+
+-- executable liblattice_symmetries_haskell.so
+--   import:              common-options
+--   hs-source-dirs:      lib
+--   main-is:             ForeignLibrary.hs
+--   build-depends:       lattice-symmetries-haskell
+--   -- extra-libraries:     -- HSrts-ghc8.10.7
+--                        -- HSghc-prim-0.6.1
+--                        -- HSghc-boot-th-8.10.7
+--   ghc-options:         -no-hs-main -fPIC -shared -threaded
 
 -- executable ising-ground-state
 --   import:              common-options
