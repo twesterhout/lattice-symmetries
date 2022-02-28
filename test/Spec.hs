@@ -13,7 +13,9 @@ import Foreign.Storable
 import GHC.Exts (IsList (..))
 import LatticeSymmetries
 import LatticeSymmetries.Algebra
+import qualified LatticeSymmetries.CSR as CSR
 import LatticeSymmetries.ComplexRational
+import qualified LatticeSymmetries.Dense as Dense
 import LatticeSymmetries.IO
 import LatticeSymmetries.Parser
 import LatticeSymmetries.Sparse
@@ -423,92 +425,14 @@ main = hspec $ do
         simplify [Scaled 1 [Generator 5 g, Generator 5 SpinIdentity]]
           `shouldBe` [Scaled (1 :: Rational) [Generator (5 :: Int) g]]
 
--- parse pPrimitiveOperator "" ("f₀" :: Text)
---   `shouldBe` Right (SpinlessFermionicOperator FermionicAnnihilationOperator 'f' 0)
--- parse pPrimitiveOperator "" ("n↑₃₈" :: Text)
---   `shouldBe` Right (SpinfulFermionicOperator FermionicNumberCountingOperator 'n' SpinUp 38)
--- parse pPrimitiveOperator "" ("Sᶻ₃₈" :: Text)
---   `shouldBe` Right (SpinOperator SpinZOperator 'S' 38)
--- parse pOperatorString "" ("n₃₈ f↓₁₅" :: Text)
---   `shouldBe` Right
---     ( SpinlessFermionicOperator FermionicNumberCountingOperator 'n' 38
---         :| [SpinfulFermionicOperator FermionicAnnihilationOperator 'f' SpinDown 15]
---     )
--- parse pOperatorString "" ("n↑₃₈f↓₁₅" :: Text)
---   `shouldBe` Right
---     ( SpinfulFermionicOperator FermionicNumberCountingOperator 'n' SpinUp 38
---         :| [SpinfulFermionicOperator FermionicAnnihilationOperator 'f' SpinDown 15]
---     )
-
--- describe "getValues" $ do
---   it ".." $ do
---     Algebra.getValues @Algebra.SpinGeneratorType
---       `shouldBe` [Algebra.SpinIdentity, Algebra.SpinZ, Algebra.SpinPlus, Algebra.SpinMinus]
---     let (expansion :: [(Rational, Algebra.SpinGeneratorType)]) =
---           Algebra.getBasisExpansion $
---             (Algebra.matrixRepresentation Algebra.SpinPlus :: DenseMatrix V.Vector 2 2 Rational)
---               `denseMatMul` (Algebra.matrixRepresentation Algebra.SpinMinus)
---     print expansion
-
-{-
-describe "BasisSpec" $ do
-  it "parses JSON specifications" $ do
-    let s₁ =
-          parseLines @BasisSpec $
-            [ "number_spins: 4",
-              "hamming_weight: 2",
-              "symmetries:",
-              "  - permutation: [1, 2, 3, 0]",
-              "    sector: 0",
-              "  - permutation: [3, 2, 1, 0]",
-              "    sector: 0"
-            ]
-        expected₁ = BasisSpec 4 (Just 2) [SymmetrySpec [1, 2, 3, 0] False 0, SymmetrySpec [3, 2, 1, 0] False 0]
-    case s₁ of
-      Left _ -> s₁ `shouldSatisfy` isRight
-      Right x -> x `shouldBe` expected₁
-
-    let s₂ =
-          parseLines @BasisSpec $
-            [ "number_spins: 100",
-              "hamming_weight: null",
-              "symmetries: []"
-            ]
-        expected₂ = BasisSpec 100 Nothing []
-    case s₂ of
-      Left _ -> s₂ `shouldSatisfy` isRight
-      Right x -> x `shouldBe` expected₂
-  it "creates SymmetryGroup" $ do
-    s₁ <- toSymmetry $ SymmetrySpec [3, 2, 1, 0] False 0
-    s₂ <- toSymmetry $ SymmetrySpec [1, 2, 3, 0] False 0
-    s₂' <- toSymmetry $ SymmetrySpec [1, 2, 3, 0] False 1
-    s₃ <- toSymmetry $ SymmetrySpec [0, 1, 2, 3] True 0
-    g <- mkGroup [s₁, s₂, s₃]
-    getGroupSize g `shouldBe` 16
-    mkGroup [s₁, s₂', s₃] `shouldThrow` anyLatticeSymmetriesException
-  it "creates SpinBasis" $ do
-    let s₁ = BasisSpec 4 (Just 2) [SymmetrySpec [1, 2, 3, 0] False 0, SymmetrySpec [3, 2, 1, 0] False 0]
-    _ <- toBasis s₁
-    let s₂ = BasisSpec (-2) Nothing [SymmetrySpec [1, 2, 3, 0] False 0]
-    toBasis s₂ `shouldThrow` anySpinEDException
-
-describe "InteractionSpec" $ do
-  it "parses JSON specifications" $ do
-    let (s₁ :: Either ParseException InteractionSpec) =
-          decodeEither' . encodeUtf8 . unlines $
-            [ "matrix: [[1, 2,  1],",
-              "         [4, 2,  1],",
-              "         [1, -2, 3]]",
-              "sites: [[0, 0, 0], [1, 1, 1]]"
-            ]
-    s₁ `shouldSatisfy` isRight
-  it "creates Interaction from InteractionSpec" $ do
-    let matrix =
-          [ [1.0 :+ 0.0, 0.0 :+ 0.0],
-            [0.0 :+ 0.0, (-1.0) :+ 0.0]
-          ]
-        sites = [[0], [2]]
-        spec = InteractionSpec matrix sites
-    x <- toInteraction spec
-    isRealInteraction x `shouldBe` True
--}
+  describe "CSR.csrMatrixFromDense" $ do
+    it "converts dense matrices to sparse form" $ do
+      CSR.csrMatrixFromDense ([[1, 2], [3, 4]] :: Dense.DenseMatrix S.Vector (Complex Double))
+        `shouldBe` (CSR.CsrMatrix [0, 1, 2] [1, 0] [2, 3] [1, 4])
+  describe "Num CSR" $ do
+    it "(+)" $
+      do
+        let a = CSR.csrMatrixFromDense ([[1, 2], [0, 2]] :: Dense.DenseMatrix S.Vector (Complex Double))
+            b = CSR.csrMatrixFromDense ([[0, 0], [1, 3]] :: Dense.DenseMatrix S.Vector (Complex Double))
+            c = CSR.csrMatrixFromDense ([[1, 2], [1, 5]] :: Dense.DenseMatrix S.Vector (Complex Double))
+        (a + b) `shouldBe` c

@@ -74,7 +74,10 @@ library
                        LatticeSymmetries.ComplexRational
                        LatticeSymmetries.Parser
                        LatticeSymmetries.Algebra
+                       LatticeSymmetries.Dense
+                       LatticeSymmetries.CSR
   c-sources:           cbits/helpers.c
+                       cbits/csr.c
   include-dirs:        cbits
   build-depends:       vector
                      -- , binary
