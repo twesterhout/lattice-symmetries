@@ -32,8 +32,10 @@ import qualified Data.Vector.Generic as G
 -- import qualified Data.Vector.Generic.Mutable as GM
 import GHC.Exts (IsList (..))
 -- import qualified GHC.Show as GHC
-import LatticeSymmetries.Sparse (DenseMatrix, KnownDenseMatrix, combineNeighbors, denseDot, denseMatMul)
-import qualified LatticeSymmetries.Sparse as Sparse
+
+-- import qualified LatticeSymmetries.Sparse as Sparse
+import LatticeSymmetries.Dense
+import LatticeSymmetries.Sparse (combineNeighbors)
 import Prelude hiding (Product, Sum, identity, toList)
 
 data SpinGeneratorType = SpinIdentity | SpinZ | SpinPlus | SpinMinus
@@ -60,23 +62,23 @@ withoutOrderingCoefficients (Scaled _ a) (Scaled _ b) = compare a b
 -- instance HasIdentity FermionGeneratorType where
 --   identity = FermionIdentity
 
-class KnownNat r => HasMatrixRepresentation g r | g -> r where
-  matrixRepresentation :: (G.Vector v c, Num c) => g -> DenseMatrix v r r c
+class HasMatrixRepresentation g where
+  matrixRepresentation :: (G.Vector v c, Num c) => g -> DenseMatrix v c
 
-instance HasMatrixRepresentation SpinGeneratorType 2 where
+instance HasMatrixRepresentation SpinGeneratorType where
   matrixRepresentation = spinMatrixRepresentation
 
-instance HasMatrixRepresentation FermionGeneratorType 2 where
+instance HasMatrixRepresentation FermionGeneratorType where
   matrixRepresentation = fermionMatrixRepresentation
 
-spinMatrixRepresentation :: (G.Vector v c, Num c) => SpinGeneratorType -> DenseMatrix v 2 2 c
+spinMatrixRepresentation :: (G.Vector v c, Num c) => SpinGeneratorType -> DenseMatrix v c
 spinMatrixRepresentation g = fromList $ case g of
   SpinIdentity -> [[1, 0], [0, 1]]
   SpinZ -> [[1, 0], [0, -1]]
   SpinPlus -> [[0, 1], [0, 0]]
   SpinMinus -> [[0, 0], [1, 0]]
 
-fermionMatrixRepresentation :: (G.Vector v c, Num c) => FermionGeneratorType -> DenseMatrix v 2 2 c
+fermionMatrixRepresentation :: (G.Vector v c, Num c) => FermionGeneratorType -> DenseMatrix v c
 fermionMatrixRepresentation g = fromList $ case g of
   FermionIdentity -> [[1, 0], [0, 1]]
   FermionCount -> [[1, 0], [0, 0]]
@@ -87,8 +89,8 @@ getValues :: (Enum g, Bounded g) => [g]
 getValues = enumFromTo minBound maxBound
 
 getBasisExpansion ::
-  (Enum g, Bounded g, HasMatrixRepresentation g r, KnownDenseMatrix v r r c, Eq c, Fractional c) =>
-  DenseMatrix v r r c ->
+  (Enum g, Bounded g, HasMatrixRepresentation g, G.Vector v c, Eq c, Fractional c) =>
+  DenseMatrix v c ->
   [(c, g)]
 getBasisExpansion m = filter (\(c, _) -> c /= 0) $ getFactor <$> getValues
   where
@@ -99,8 +101,8 @@ getBasisExpansion m = filter (\(c, _) -> c /= 0) $ getFactor <$> getValues
        in (dot / norm, g)
 
 getBasisExpansion' ::
-  (Enum g, Bounded g, HasMatrixRepresentation g r, KnownDenseMatrix v r r c, Eq c, Fractional c) =>
-  DenseMatrix v r r c ->
+  (Enum g, Bounded g, HasMatrixRepresentation g, G.Vector v c, Eq c, Fractional c) =>
+  DenseMatrix v c ->
   Sum (Scaled c g)
 getBasisExpansion' m =
   Sum
@@ -115,8 +117,10 @@ getBasisExpansion' m =
           !norm = denseDot a a
        in (dot / norm, g)
 
-isIdentity :: forall g r. HasMatrixRepresentation g r => g -> Bool
-isIdentity g = matrixRepresentation g == (Sparse.denseEye :: DenseMatrix Vector r r Rational)
+isIdentity :: forall g. HasMatrixRepresentation g => g -> Bool
+isIdentity g = m == (denseEye (dmRows m) :: DenseMatrix Vector Rational)
+  where
+    m = matrixRepresentation g
 
 data CommutatorType = Commutator | Anticommutator
   deriving stock (Show, Eq)
@@ -130,13 +134,13 @@ class Ord g => Algebra g where
   nonDiagonalCommutatorType :: CommutatorType
 
   isDiagonal :: g -> Bool
-  default isDiagonal :: forall r. HasMatrixRepresentation g r => g -> Bool
-  isDiagonal = Sparse.isDenseMatrixDiagonal @Vector @r @Rational . matrixRepresentation
+  default isDiagonal :: HasMatrixRepresentation g => g -> Bool
+  isDiagonal = denseIsDiagonal @Vector @Rational . matrixRepresentation
 
   commute :: (Eq c, Fractional c) => g -> g -> CommutationResult c g
   default commute ::
-    forall c r.
-    (Enum g, Bounded g, HasMatrixRepresentation g r, Eq c, Fractional c) =>
+    forall c.
+    (Enum g, Bounded g, HasMatrixRepresentation g, Eq c, Fractional c) =>
     g ->
     g ->
     CommutationResult c g
@@ -145,7 +149,7 @@ class Ord g => Algebra g where
     Anticommutator -> AnticommutationResult anticommutator
     where
       -- isDiagonal a || isDiagonal b = CommutationResult []
-      aMatrix :: DenseMatrix Vector r r c
+      aMatrix :: DenseMatrix Vector c
       aMatrix = matrixRepresentation a
       bMatrix = matrixRepresentation b
       ab = aMatrix `denseMatMul` bMatrix
@@ -159,7 +163,7 @@ instance Algebra SpinGeneratorType where
 instance Algebra FermionGeneratorType where
   nonDiagonalCommutatorType = Anticommutator
 
-instance (Algebra g, HasMatrixRepresentation g r, Ord i) => Algebra (Generator i g) where
+instance (Algebra g, HasMatrixRepresentation g, Ord i) => Algebra (Generator i g) where
   isDiagonal (Generator _ g) = isDiagonal g
   nonDiagonalCommutatorType = nonDiagonalCommutatorType @g
   commute (Generator i a) (Generator j b)
@@ -362,23 +366,23 @@ productToCanonical t₀ = go (Scaled 1 t₀) 0 False
 --     order (Sum v) = Sum $ sortVectorBy withoutOrderingCoefficients v
 
 simplifyPrimitiveProduct' ::
-  forall c g r.
-  (HasCallStack, Enum g, Bounded g, HasMatrixRepresentation g r, Fractional c, Eq c) =>
+  forall c g.
+  (HasCallStack, Enum g, Bounded g, HasMatrixRepresentation g, Fractional c, Eq c) =>
   Product g ->
   Sum (Scaled c g)
 simplifyPrimitiveProduct' (Product !v)
   | G.null v = []
   | otherwise = getBasisExpansion' $ G.foldl' combine acc₀ v
   where
-    acc₀ :: DenseMatrix Vector r r c
-    acc₀ = Sparse.denseEye
+    acc₀ :: DenseMatrix Vector c
+    acc₀ = denseEye $ dmRows (matrixRepresentation (G.head v) :: DenseMatrix Vector c)
     combine !acc !g = acc `denseMatMul` (matrixRepresentation g)
 
 -- in trace ("combining " <> show acc <> " with " <> show g <> " --> " <> show r) r
 -- basis x = let y = getBasisExpansion' x
 --    in trace ("basis expansion of " <> show x <> " is " <> show y) y
 
-dropIdentities' :: HasMatrixRepresentation g r => Product (Generator i g) -> Product (Generator i g)
+dropIdentities' :: HasMatrixRepresentation g => Product (Generator i g) -> Product (Generator i g)
 dropIdentities' (Product v)
   | not (G.null useful) = Product useful
   | otherwise = Product $ G.take 1 identities
@@ -386,8 +390,8 @@ dropIdentities' (Product v)
     (identities, useful) = G.partition (\(Generator _ g) -> isIdentity g) v
 
 simplifyProduct ::
-  forall c g i r.
-  (HasCallStack, Enum g, Bounded g, HasMatrixRepresentation g r, Fractional c, Eq c, Eq i) =>
+  forall c g i.
+  (HasCallStack, Enum g, Bounded g, HasMatrixRepresentation g, Fractional c, Eq c, Eq i) =>
   Product (Generator i g) ->
   Sum (Scaled c (Product (Generator i g)))
 simplifyProduct =
@@ -419,8 +423,8 @@ combineFactors' (Sum v) =
       v
 
 simplify ::
-  forall c g r i.
-  (HasCallStack, Fractional c, Eq c, Enum g, Bounded g, HasMatrixRepresentation g r, Algebra g, Ord i) =>
+  forall c g i.
+  (HasCallStack, Fractional c, Eq c, Enum g, Bounded g, HasMatrixRepresentation g, Algebra g, Ord i) =>
   Sum (Scaled c (Product (Generator i g))) ->
   Sum (Scaled c (Product (Generator i g)))
 simplify =
@@ -695,7 +699,7 @@ data SignMask i = SignMask ![(i, i)]
   deriving stock (Show, Eq, Ord)
 
 getSignMask ::
-  (HasMatrixRepresentation g r, Algebra g, Ord i) =>
+  (HasMatrixRepresentation g, Algebra g, Ord i) =>
   i ->
   Product (Generator i g) ->
   SignMask i
@@ -729,7 +733,7 @@ extractGenerators :: Product (Generator i g) -> Product g
 extractGenerators (Product v) = Product $ G.map (\(Generator _ g) -> g) v
 
 lower0 ::
-  (HasMatrixRepresentation g r, Algebra g, Ord i) =>
+  (HasMatrixRepresentation g, Algebra g, Ord i) =>
   i ->
   Product (Generator i g) ->
   LoweredOperator i (Product g)
@@ -739,7 +743,7 @@ type Polynomial c g = Sum (Scaled c (Product g))
 
 groupTerms ::
   forall c i g r.
-  (HasMatrixRepresentation g r, Algebra g, Ord i, Num c) =>
+  (HasMatrixRepresentation g, Algebra g, Ord i, Num c) =>
   i ->
   Polynomial c (Generator i g) ->
   Sum (LoweredOperator i (Polynomial c g))
@@ -767,130 +771,9 @@ groupTerms i₀ = step4 . step3 . step2 . step1
           (\(LoweredOperator i1 s1 g1) (LoweredOperator _ _ g2) -> (LoweredOperator i1 s1 (g1 + g2)))
           v
 
--- lower = undefined
-
--- spinSimplifyProduct ::
---   (HasCallStack, Fractional c) =>
---   SpinGeneratorType ->
---   SpinGeneratorType ->
---   Polynomial c SpinGeneratorType
--- spinSimplifyProduct a b = case (a, b) of
---   -- We simply drop identities: g⋅1 = 1⋅g = g
---   (SpinIdentity, _) -> [1 :*: [b]]
---   (_, SpinIdentity) -> [1 :*: [a]]
---   -- σᶻ⋅σ⁺ = σ⁺
---   (SpinZ, SpinPlus) -> [1 :*: [SpinPlus]]
---   (SpinPlus, SpinZ) -> [(-1) :*: [SpinPlus]]
---   -- σᶻ⋅σ⁻ = -σ⁻
---   (SpinZ, SpinMinus) -> [(-1) :*: [SpinMinus]]
---   (SpinMinus, SpinZ) -> [1 :*: [SpinMinus]]
---   -- σ⁺⋅σ⁻ = 1/2 (1 + σᶻ)
---   (SpinPlus, SpinMinus) -> [half :*: [SpinIdentity], half :*: [SpinZ]]
---   (SpinMinus, SpinPlus) -> [half :*: [SpinIdentity], (-half) :*: [SpinZ]]
---   -- σ⁺⋅σ⁺ = 0
---   (SpinPlus, SpinPlus) -> []
---   -- σ⁻⋅σ⁻ = 0
---   (SpinMinus, SpinMinus) -> []
---   _ -> error "this should not have happened"
---   where
---     half = fromRational (1 % 2)
-
--- fermionSimplifyProduct ::
---   (HasCallStack, Num c) =>
---   FermionGeneratorType ->
---   FermionGeneratorType ->
---   Polynomial c FermionGeneratorType
--- fermionSimplifyProduct a b = case (a, b) of
---   -- We simply drop identities: g⋅1 = 1⋅g = g
---   (FermionIdentity, _) -> [1 :*: [b]]
---   (_, FermionIdentity) -> [1 :*: [a]]
---   -- n⋅a† = (a†⋅a)⋅a† = (1 - a⋅a†)⋅a† = a†
---   (FermionCount, FermionCreate) -> [1 :*: [FermionCreate]]
---   -- n⋅a = (a†⋅a)⋅a = 0
---   (FermionCount, FermionAnnihilate) -> []
---   -- a†⋅n = a†⋅(a†⋅a) = 0
---   (FermionCreate, FermionCount) -> []
---   -- a⋅n = a⋅(a†⋅a) = a⋅(1 - a⋅a†) = a
---   (FermionAnnihilate, FermionCount) -> [1 :*: [FermionAnnihilate]]
---   -- a†⋅a = n
---   (FermionCreate, FermionAnnihilate) -> [1 :*: [FermionCount]]
---   -- a⋅a† = 1 - n
---   (FermionAnnihilate, FermionCreate) -> [identity, (-1) :*: [FermionCount]]
---   -- a†⋅a† = 0
---   (FermionCreate, FermionCreate) -> []
---   -- a⋅a = 0
---   (FermionAnnihilate, FermionAnnihilate) -> []
---   _ -> error "this should not have happened"
-
--- go (c :*: v)
---   | G.length v == 0 = []
---   | G.length v == 1 = [c :*: v]
---   | otherwise =
---     let a = v ! 0
---         b = v ! 1
---         suffix = c :*: G.drop 2 v
---      in concatMapPolynomial go $
---           mapPolynomial (<> suffix) (simplifyProduct a b)
-
--- spinSimplifyProduct ::
---   Fractional c =>
---   SpinGeneratorType ->
---   SpinGeneratorType ->
---   Expr c SpinGeneratorType
--- spinSimplifyProduct (SpinGenerator ia ta) (SpinGenerator ib tb)
---   | ia == ib && ta <= tb = case (ta, tb) of
---     (SpinPlus, SpinPlus) -> zeroExpr
---     (SpinPlus, SpinMinus) -> [half :*: IdentityTerm, half :*: [SpinGenerator ia SpinZ]]
---     (SpinPlus, SpinZ) -> [(-1) :*: [SpinGenerator ia SpinPlus]]
---     -- (SpinMinus, SpinPlus) -> [half :*: IdentityTerm, (-half) :*: [SpinGenerator ia SpinZ]]
---     (SpinMinus, SpinMinus) -> zeroExpr
---     (SpinMinus, SpinZ) -> [1 :*: [SpinGenerator ia SpinMinus]]
---     -- (SpinZ, SpinPlus) -> [1 :*: [SpinGenerator ia SpinPlus]]
---     -- (SpinZ, SpinMinus) -> [(-1) :*: [SpinGenerator ia SpinMinus]]
---     (SpinZ, SpinZ) -> [1 :*: IdentityTerm]
---     _ -> error "this should not have happened"
---   | ta > tb = error "expected generators in canonical order"
---   | otherwise = error "expected generators on the same site"
---   where
---     half = fromRational (1 % 2)
-
--- data Term g = Term !(Vector g) | IdentityTerm
---   deriving stock (Eq, Ord, Show, Generic)
---
--- instance IsList (Term g) where
---   type Item (Term g) = g
---   fromList = Term . G.fromList
---   toList = error "IsList instance of Term does not implement toList"
---
--- instance IsList (Expr c g) where
---   type Item (Expr c g) = ScaledTerm c g
---   fromList = Expr . G.fromList
---   toList = error "IsList instance of Expr does not implement toList"
-
--- tOrder :: Term g -> Int
--- tOrder (Term v) = G.length v
---
--- data Expr c g = Expr !(Vector (ScaledTerm c g))
---   deriving stock (Eq, Show, Generic)
---
--- zeroExpr :: Expr c g
--- zeroExpr = Expr G.empty
---
--- scaleTerm :: Num c => c -> ScaledTerm c g -> ScaledTerm c g
--- scaleTerm z (c :*: g) = (z * c) :*: g
---
--- scaleExpr :: Num c => c -> Expr c g -> Expr c g
--- scaleExpr z (Expr v) = Expr $ G.map (scaleTerm z) v
---
--- fromTerms :: Num c => [Term g] -> Expr c g
--- fromTerms ts = Expr . G.fromList $ (1 :*:) <$> ts
-
--- type ℂ = Complex Double
-
--- | Specifies the algebra
---
--- g_α g_β - c g_β g_α = F_αβ + \sum_γ f^γ_ab g_γ
---
--- @commute ga gb@ returns a tuple of @(c, [(f^γ_ab, g_γ)], F_αβ)@
--- class Ord g => AlgebraGenerator c g where
---   commute :: g -> g -> (c, [(c, g)], c)
+lowerToMatrix ::
+  forall c i g r.
+  (HasMatrixRepresentation g, Algebra g, Ord i, Num c) =>
+  Polynomial c g ->
+  CsrMatrix
+lowerToMatrix = undefined

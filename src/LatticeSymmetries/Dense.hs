@@ -4,14 +4,21 @@ module LatticeSymmetries.Dense
     denseMatrixFromList,
     denseMatrixToList,
     indexDenseMatrix,
+    denseDot,
+    denseMatMul,
+    denseEye,
+    denseIsDiagonal,
     extractDiagonal,
     countOffDiagNonZero,
   )
 where
 
+import Control.Monad.ST
 import Data.Vector.Generic ((!))
 import qualified Data.Vector.Generic as G
+import qualified Data.Vector.Generic.Mutable as GM
 import qualified GHC.Exts as GHC (IsList (..))
+import LatticeSymmetries.Utils
 
 -- | Dense matrix in row-major order (C layout)
 data DenseMatrix v a = DenseMatrix {dmRows :: !Int, dmCols :: !Int, dmData :: !(v a)}
@@ -76,3 +83,39 @@ extractDiagonal :: (HasCallStack, G.Vector v a, G.Vector v Int) => DenseMatrix v
 extractDiagonal m@(DenseMatrix nRows nCols _)
   | nRows == nCols = G.map (\i -> indexDenseMatrix m (i, i)) (G.enumFromN 0 nRows)
   | otherwise = error "cannot extract the diagonal of a non-square matrix"
+
+denseDot :: (G.Vector v a, Num a) => DenseMatrix v a -> DenseMatrix v a -> a
+denseDot a b = let (DenseMatrix _ _ c) = a * b in G.sum c
+
+denseMatMul :: forall a v. (G.Vector v a, Num a) => DenseMatrix v a -> DenseMatrix v a -> DenseMatrix v a
+denseMatMul a b = runST $ do
+  let !nRows = dmRows a
+      !nCols = dmCols b
+  cBuffer <- GM.new (nRows * nCols)
+  loopM 0 (< nRows) (+ 1) $ \i ->
+    loopM 0 (< nCols) (+ 1) $ \j -> do
+      !cij <- iFoldM 0 (< dmCols a) (+ 1) (0 :: a) $ \ !acc k ->
+        let !aik = indexDenseMatrix a (i, k)
+            !bkj = indexDenseMatrix b (k, j)
+         in pure (acc + aik * bkj)
+      GM.write cBuffer (i * nCols + j) cij
+  DenseMatrix nRows nCols <$> G.unsafeFreeze cBuffer
+
+denseEye :: (G.Vector v a, Num a) => Int -> DenseMatrix v a
+denseEye n = runST $ do
+  cBuffer <- G.unsafeThaw $ G.replicate (n * n) 0
+  loopM 0 (< n) (+ 1) $ \i ->
+    GM.write cBuffer (i * n + i) 1
+  c <- G.freeze cBuffer
+  pure $ DenseMatrix n n c
+
+denseIsDiagonal :: (G.Vector v a, Eq a, Num a) => DenseMatrix v a -> Bool
+denseIsDiagonal m@(DenseMatrix nRows nCols _) = go1 0
+  where
+    go1 !i
+      | i < nRows = go2 i 0 && go1 (i + 1)
+      | otherwise = True
+    go2 !i !j
+      | i == j = go2 i (j + 1)
+      | j < nCols = indexDenseMatrix m (i, j) == 0 && go2 i (j + 1)
+      | otherwise = True
