@@ -76,6 +76,7 @@ library
                        LatticeSymmetries.Algebra
                        LatticeSymmetries.Dense
                        LatticeSymmetries.CSR
+                       LatticeSymmetries.Basis
                        LatticeSymmetries.Utils
   c-sources:           cbits/helpers.c
                        cbits/csr.c
