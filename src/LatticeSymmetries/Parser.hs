@@ -5,6 +5,7 @@ module LatticeSymmetries.Parser
     pSpinOperator,
     pOperatorString,
     SpinIndex (..),
+    mkSpinOperator,
   )
 where
 
@@ -132,6 +133,15 @@ pOperatorString ::
 pOperatorString pPrimitive =
   expandProduct . fromList
     <$> (pPrimitive `sepBy1` spaces <?> "operator string")
+
+mkSpinOperator ::
+  HasCallStack =>
+  Text ->
+  [[Int]] ->
+  Polynomial ℂ (Generator Int SpinGeneratorType)
+mkSpinOperator s indices = case parse (pOperatorString pSpinOperator) "" s of
+  Left e -> error (show e)
+  Right x -> simplify $ forIndices x indices
 
 -- isSpinful :: FermionicOperator -> Bool
 -- isSpinful x = case x of

@@ -12,43 +12,83 @@ module LatticeSymmetries.Algebra
     Scaled (..),
     Sum (..),
     Product (..),
+    Polynomial,
     scale,
     -- sumToCanonical,
     expandProduct,
     simplify,
+    groupTerms,
+    lowerToMatrix,
+    forIndices,
+    NonbranchingTerm (..),
+    HasNonbranchingRepresentation (..),
   )
 where
 
 import Control.Exception (assert)
 import Control.Monad.ST
--- import Data.Complex
+import Data.Bits
 import qualified Data.List as List
--- import Data.Ratio ((%))
+import qualified Data.Text as Text
 import Data.Vector (Vector)
--- import qualified Data.Vector
 import qualified Data.Vector.Algorithms.Intro
 import Data.Vector.Generic ((!))
 import qualified Data.Vector.Generic as G
--- import qualified Data.Vector.Generic.Mutable as GM
 import GHC.Exts (IsList (..))
--- import qualified GHC.Show as GHC
-
--- import qualified LatticeSymmetries.Sparse as Sparse
+import LatticeSymmetries.CSR
+import LatticeSymmetries.ComplexRational
 import LatticeSymmetries.Dense
 import LatticeSymmetries.Sparse (combineNeighbors)
+import Numeric.Natural
+import Text.PrettyPrint.ANSI.Leijen (Pretty (..))
+import qualified Text.PrettyPrint.ANSI.Leijen as Pretty
 import Prelude hiding (Product, Sum, identity, toList)
 
 data SpinGeneratorType = SpinIdentity | SpinZ | SpinPlus | SpinMinus
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
 
+instance Pretty SpinGeneratorType where
+  pretty x = case x of
+    SpinIdentity -> "1"
+    SpinZ -> "σᶻ"
+    SpinPlus -> "σ⁺"
+    SpinMinus -> "σ⁻"
+
 data FermionGeneratorType = FermionIdentity | FermionCount | FermionCreate | FermionAnnihilate
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
+
+instance Pretty FermionGeneratorType where
+  pretty x = case x of
+    FermionIdentity -> "1"
+    FermionCount -> "n"
+    FermionCreate -> "c†"
+    FermionAnnihilate -> "c"
 
 data Generator i g = Generator !i !g
   deriving stock (Eq, Ord, Show, Generic)
 
+toSubscript :: Int -> Text
+toSubscript n = Text.map h (show n)
+  where
+    h '0' = '₀'
+    h '1' = '₁'
+    h '2' = '₂'
+    h '3' = '₃'
+    h '4' = '₄'
+    h '5' = '₅'
+    h '6' = '₆'
+    h '7' = '₇'
+    h '8' = '₈'
+    h '9' = '₉'
+
+instance Pretty g => Pretty (Generator Int g) where
+  pretty (Generator i g) = pretty g <> Pretty.text (Text.unpack (toSubscript i))
+
 data Scaled c g = Scaled !c !g
   deriving stock (Eq, Ord, Show, Generic)
+
+instance Functor (Scaled c) where
+  fmap f (Scaled c g) = Scaled c (f g)
 
 withoutOrderingCoefficients :: Ord g => Scaled c g -> Scaled c g -> Ordering
 withoutOrderingCoefficients (Scaled _ a) (Scaled _ b) = compare a b
@@ -84,6 +124,42 @@ fermionMatrixRepresentation g = fromList $ case g of
   FermionCount -> [[1, 0], [0, 0]]
   FermionCreate -> [[0, 1], [0, 0]]
   FermionAnnihilate -> [[0, 0], [1, 0]]
+
+data NonbranchingTerm c i = NonbranchingTerm !c !i !i !i !i !i
+  deriving (Show, Eq)
+
+instance (Num c, Bits i) => Semigroup (NonbranchingTerm c i) where
+  (<>) (NonbranchingTerm vₐ mₐ lₐ rₐ xₐ sₐ) (NonbranchingTerm vᵦ mᵦ lᵦ rᵦ xᵦ sᵦ) = undefined
+    where
+      v = if (rₐ `xor` lᵦ) .&. mₐ .&. mᵦ /= zeroBits then 0 else ((-1) ^ p) * vₐ * vᵦ
+      m = mₐ .|. mᵦ
+      r = rᵦ .|. (rₐ .&. complement mᵦ)
+      l = lₐ .|. (lᵦ .&. complement mₐ)
+      x = l `xor` r
+      s = (sₐ `xor` sᵦ) .&. complement m
+      z = (r .&. sᵦ) `xor` xᵦ
+      p = popCount $ (r .&. sᵦ) `xor` (z .&. sₐ)
+
+class HasNonbranchingRepresentation g where
+  -- (v, m, l, r, x, s)
+  nonbranchingRepresentation :: Num c => g -> NonbranchingTerm c Natural
+
+instance HasNonbranchingRepresentation (Generator Int SpinGeneratorType) where
+  nonbranchingRepresentation (Generator _ SpinIdentity) = NonbranchingTerm 1 0 0 0 0 0
+  nonbranchingRepresentation (Generator i SpinZ) = NonbranchingTerm (-1) 0 0 0 0 (1 `shiftL` i)
+  nonbranchingRepresentation (Generator i SpinPlus) =
+    NonbranchingTerm 1 (1 `shiftL` i) (1 `shiftL` i) 0 (1 `shiftL` i) 0
+  nonbranchingRepresentation (Generator i SpinMinus) =
+    NonbranchingTerm 1 (1 `shiftL` i) 0 (1 `shiftL` i) (1 `shiftL` i) 0
+
+instance HasNonbranchingRepresentation (Generator Int FermionGeneratorType) where
+  nonbranchingRepresentation (Generator _ FermionIdentity) = NonbranchingTerm 1 0 0 0 0 0
+  nonbranchingRepresentation (Generator i FermionCount) =
+    NonbranchingTerm 1 (1 `shiftL` i) (1 `shiftL` i) (1 `shiftL` i) 0 0
+  nonbranchingRepresentation (Generator i FermionCreate) =
+    NonbranchingTerm 1 (1 `shiftL` i) (1 `shiftL` i) 0 (1 `shiftL` i) ((1 `shiftL` i) - 1)
+  nonbranchingRepresentation (Generator i FermionAnnihilate) =
+    NonbranchingTerm 1 (1 `shiftL` i) 0 (1 `shiftL` i) (1 `shiftL` i) ((1 `shiftL` i) - 1)
 
 getValues :: (Enum g, Bounded g) => [g]
 getValues = enumFromTo minBound maxBound
@@ -441,30 +517,6 @@ simplify =
     withScaled f (Scaled c p) = scale c (f p)
     reorder (Sum v) = Sum $ sortVectorBy withoutOrderingCoefficients v
 
----
---- monomialDropIdentities :: HasMatrixRepresentation g r => Monomial c (Generator i g) -> Monomial c (Generator i g)
---- monomialDropIdentities (c :*: v)
----   | not (G.null useful) = c :*: useful
----   | otherwise = c :*: (G.take 1 identities)
----   where
----     (identities, useful) = G.partition (\(Generator _ g) -> isIdentity g) v
----
--- simplifyMonomial ::
---   (Fractional c, Ord c, Ord i, Enum g, Bounded g, Ord g, HasMatrixRepresentation g r) =>
---   Monomial c (Generator i g) ->
---   Polynomial c (Generator i g)
--- simplifyMonomial (z :*: v) =
---   -- groupMonomials
---   -- . sortMonomials
---   scalePolynomial z
---     . polynomialMapCoeff fromRational
---     . mapPolynomial monomialDropIdentities
---     . product
---     . fmap simplifyOneSite
---     . List.groupBy (\(Generator i _) (Generator j _) -> i == j)
---     . G.toList
---     $ v
-
 expandProduct ::
   forall c g.
   Num c =>
@@ -476,224 +528,6 @@ expandProduct (Product v)
   where
     asProducts :: Sum (Scaled c g) -> Sum (Scaled c (Product g))
     asProducts = fmap (\(Scaled c g) -> (Scaled c (Product (G.singleton g))))
-
--- | Swaps generators at positions i and i + 1
--- swapGenerators ::
---   forall c g.
---   (Fractional c, Eq c, Algebra g) =>
---   Int ->
---   Monomial c g ->
---   Polynomial c g
--- swapGenerators i (z :*: v) =
---   dropZeros
---     . scalePolynomial z
---     . Polynomial
---     . G.fromList
---     $ newTerms
---   where
---     before = G.take i v
---     !a = v ! i
---     !b = v ! (i + 1)
---     after = G.drop (i + 2) v
---     combined c terms =
---       c :*: (G.concat [before, G.singleton b, G.singleton a, after]) :
---         [zᵢ :*: (G.concat [before, G.singleton gᵢ, after]) | (zᵢ, gᵢ) <- terms]
---     newTerms = case commute a b of
---       CommutationResult terms -> combined 1 terms
---       AnticommutationResult terms -> combined (-1) terms
-
--- monomialToCanonical ::
---   forall c g r.
---   (Fractional c, Eq c, Ord c, Algebra g) =>
---   Monomial c g ->
---   Polynomial c g
--- monomialToCanonical t₀ = Polynomial $ go t₀ 0 False
---   where
---     go :: Monomial c g -> Int -> Bool -> Vector (Monomial c g)
---     go term@(_ :*: v) i keepGoing
---       | i < G.length v - 1 =
---         case compare (v ! i) (v ! (i + 1)) of
---           GT ->
---             let (Polynomial newTerms) = swapGenerators i term
---              in G.concatMap (\x -> go x i True) newTerms
---           _ -> go term (i + 1) keepGoing
---       | keepGoing = go term 0 False
---       | otherwise = G.singleton term
-
--- polynomialToCanonical ::
---   forall c g r.
---   (Fractional c, Eq c, Ord c, Algebra g) =>
---   Polynomial c g ->
---   Polynomial c g
--- polynomialToCanonical = sortMonomials . concatMapPolynomial monomialToCanonical
-
---
--- data SpinGenerator = SpinGenerator {sgId :: !Int, sgType :: !SpinGeneratorType}
---   deriving stock (Eq, Ord, Generic)
---
--- data FermionGenerator = FermionGenerator {fgId :: !Int, fgType :: !FermionGeneratorType}
---   deriving stock (Eq, Ord, Generic)
-
--- instance GHC.Show FermionGenerator where
---   show (FermionGenerator i t) = letter <> dagger <> index
---     where
---       letter = "c"
---       dagger = if t == FermionCreate then "†" else ""
---       index = toSubscript <$> (show i)
---       toSubscript c = case c of
---         '0' -> '₀'
---         '1' -> '₁'
---         '2' -> '₂'
---         '3' -> '₃'
---         '4' -> '₄'
---         '5' -> '₅'
---         '6' -> '₆'
---         '7' -> '₇'
---         '8' -> '₈'
---         '9' -> '₉'
-
--- instance Num c => AlgebraGenerator c FermionGenerator where
---   commute (FermionGenerator i t₁) (FermionGenerator j t₂)
---     | t₁ == t₂ = (-1, [], 0)
---     | i /= j = (-1, [], 0)
---     | otherwise = (-1, [], 1)
-
--- instance Num c => AlgebraGenerator c SpinGenerator where
---   commute (SpinGenerator i tᵢ) (SpinGenerator j tⱼ)
---     | i /= j = (1, [], 0)
---     | tᵢ == tⱼ = (1, [], 0)
---   commute (SpinGenerator i SpinPlus) (SpinGenerator _ SpinMinus) = (1, [(1, (SpinGenerator i SpinZ))], 0)
---   commute (SpinGenerator i SpinMinus) (SpinGenerator _ SpinPlus) = (1, [(-1, (SpinGenerator i SpinZ))], 0)
---   commute (SpinGenerator i SpinPlus) (SpinGenerator _ SpinZ) = (1, [(-2, (SpinGenerator i SpinPlus))], 0)
---   commute (SpinGenerator i SpinZ) (SpinGenerator _ SpinPlus) = (1, [(2, (SpinGenerator i SpinPlus))], 0)
---   commute (SpinGenerator i SpinMinus) (SpinGenerator _ SpinZ) = (1, [(2, (SpinGenerator i SpinMinus))], 0)
---   commute (SpinGenerator i SpinZ) (SpinGenerator _ SpinMinus) = (1, [(-2, (SpinGenerator i SpinMinus))], 0)
-
--- viaOrdered :: (Fractional c, Ord g) => (g -> g -> (c, [(c, g)])) -> g -> g -> (c, [(c, g)])
--- viaOrdered f a b = case compare a b of
---   EQ -> (1, [])
---   LT -> f a b
---   -- f a b computes ab - c*ba = X
---   -- then ba - 1/c*ab = -1/c*X
---   GT ->
---     let (c, terms) = f b a
---      in (-1 / c, fmap (\(x, g) -> (-x / c, g)) terms)
-
--- instance Algebra SpinGeneratorType where
---   commute = viaOrdered $ \a b -> case (a, b) of
---     (SpinIdentity, _) -> (1, [])
---     (SpinZ, SpinPlus) -> (1, [(2, SpinPlus)])
---     (SpinZ, SpinMinus) -> (1, [(-2, SpinMinus)])
---     (SpinPlus, SpinMinus) -> (1, [(1, SpinZ)])
---     _ -> error "this should not have happened"
---   needsSignFlip _ = False
---
--- instance Algebra FermionGeneratorType where
---   commute = viaOrdered $ \a b -> case (a, b) of
---     -- [1, g] = 0 for any g
---     (FermionIdentity, _) -> (1, [])
---     -- {n, a†} = na† + a†n = (a†a)a† + a†(a†a) = (1 - aa†)a† + 0 = a†
---     (FermionCount, FermionCreate) -> (-1, [(1, FermionCreate)])
---     -- {n, a} = na + an = (a†a)a + a(a†a) = 0 + a(1 - aa†) = a
---     (FermionCount, FermionAnnihilate) -> (-1, [(1, FermionAnnihilate)])
---     -- {a†, a} = 1
---     (FermionCreate, FermionAnnihilate) -> (-1, [(1, FermionIdentity)])
---     _ -> error "this should not have happened"
---   needsSignFlip g = case g of
---     FermionIdentity -> False
---     FermionCount -> False
---     FermionCreate -> True
---     FermionAnnihilate -> True
-
--- commute (Generator ia a) (Generator ib b)
---   | ia == ib = let (c, terms) = commute a b in (c, liftToIndex ia <$> terms)
---   | otherwise = (1, [])
---   where
---     liftToIndex i (z, g) = (z, Generator i g)
--- needsSignFlip (Generator _ g) = needsSignFlip g
-
--- instance Ord i => Algebra (Generator i FermionGeneratorType) where
---   commute (Generator ia a) (Generator ib b)
---     | ia == ib = let (c, terms) = commute a b in (c, liftToIndex ia <$> terms)
---     -- NOTE: This is tricky. In general, we have that for fermionic operators on different sites:
---     -- {a, b} = ab + ba = 0.
---     -- However, if now either a or b is identity 1, then we want to use the commutator:
---     -- [a, 1] = [1, b] = 0
---     | a == FermionIdentity || b == FermionIdentity = (1, [])
---     | otherwise = (-1, [])
---     where
---       liftToIndex i (z, g) = (z, Generator i g)
---   needsSignFlip (Generator _ g) = needsSignFlip g
-
--- instance Num c => Semigroup (Monomial c g) where
---   (<>) (ca :*: ga) (cb :*: gb) = (ca * cb) :*: (G.concat [ga, gb])
-
--- mapPolynomial :: (Monomial c1 g1 -> Monomial c2 g2) -> Polynomial c1 g1 -> Polynomial c2 g2
--- mapPolynomial f (Polynomial v) = Polynomial $ G.map f v
-
--- concatMapPolynomial :: (Monomial c1 g1 -> Polynomial c2 g2) -> Polynomial c1 g1 -> Polynomial c2 g2
--- concatMapPolynomial f (Polynomial v) = Polynomial $ G.concatMap f' v
---   where
---     f' x = let (Polynomial y) = f x in y
-
--- simplifyPrimitiveProduct ::
---   forall g r.
---   (Enum g, Bounded g, HasMatrixRepresentation g r) =>
---   [g] ->
---   [(Rational, g)]
--- simplifyPrimitiveProduct v
---   | null v = []
---   | otherwise = getBasisExpansion $ foldl' combine acc₀ v
---   where
---     acc₀ :: DenseMatrix Vector r r Rational
---     acc₀ = Sparse.denseEye
---     combine !acc !g = acc `denseMatMul` (matrixRepresentation g)
-
--- simplifyOneSite ::
---   forall g i r.
---   (Enum g, Bounded g, HasMatrixRepresentation g r) =>
---   [Generator i g] ->
---   Polynomial Rational (Generator i g)
--- simplifyOneSite gs@((Generator i _) : _) =
---   Polynomial
---     . G.fromList
---     . fmap pack
---     . simplifyPrimitiveProduct
---     . fmap unpack
---     $ gs
---   where
---     unpack (Generator _ g) = g
---     pack (c, g) = c :*: G.singleton (Generator i g)
--- simplifyOneSite [] = []
-
--- monomialDropIdentities :: HasMatrixRepresentation g r => Monomial c (Generator i g) -> Monomial c (Generator i g)
--- monomialDropIdentities (c :*: v)
---   | not (G.null useful) = c :*: useful
---   | otherwise = c :*: (G.take 1 identities)
---   where
---     (identities, useful) = G.partition (\(Generator _ g) -> isIdentity g) v
-
--- simplifyMonomial ::
---   (Fractional c, Ord c, Ord i, Enum g, Bounded g, Ord g, HasMatrixRepresentation g r) =>
---   Monomial c (Generator i g) ->
---   Polynomial c (Generator i g)
--- simplifyMonomial (z :*: v) =
---   -- groupMonomials
---   -- . sortMonomials
---   scalePolynomial z
---     . polynomialMapCoeff fromRational
---     . mapPolynomial monomialDropIdentities
---     . product
---     . fmap simplifyOneSite
---     . List.groupBy (\(Generator i _) (Generator j _) -> i == j)
---     . G.toList
---     $ v
-
--- simplifyPolynomial ::
---   (Fractional c, Ord c, Ord g, Enum g, Bounded g, HasMatrixRepresentation g r, Ord i) =>
---   Polynomial c (Generator i g) ->
---   Polynomial c (Generator i g)
--- simplifyPolynomial (Polynomial v) = groupMonomials . sortMonomials . sum $ simplifyMonomial <$> (G.toList v)
 
 data SignMask i = SignMask ![(i, i)]
   deriving stock (Show, Eq, Ord)
@@ -719,6 +553,9 @@ getSignMask iₘᵢₙ (Product gs)
 data LoweredOperator i g = LoweredOperator !(Vector i) !(SignMask i) !g
   deriving stock (Show, Eq, Ord)
 
+data LoweredTerm i g = LoweredTerm !(Vector i) !(SignMask i) !g
+  deriving stock (Show, Eq, Ord)
+
 isStrictlyOrdered :: Ord i => Vector i -> Bool
 isStrictlyOrdered v = G.all id $ G.zipWith (\i j -> i < j) v (G.drop 1 v)
 
@@ -740,6 +577,32 @@ lower0 ::
 lower0 i₀ p = LoweredOperator (extractIndices p) (getSignMask i₀ p) (extractGenerators p)
 
 type Polynomial c g = Sum (Scaled c (Product g))
+
+collectIndices :: Ord i => Polynomial c (Generator i g) -> [i]
+collectIndices = List.nub . List.sort . collectSum
+  where
+    collectSum (Sum v) = concatMap collectScaled (G.toList v)
+    collectScaled (Scaled _ p) = collectProduct p
+    collectProduct (Product v) = (\(Generator i _) -> i) <$> (G.toList v)
+
+replaceIndices :: Ord i => Polynomial c (Generator i g) -> [(i, i)] -> Polynomial c (Generator i g)
+replaceIndices poly map = replaceSum poly
+  where
+    replaceSum = fmap replaceScaled
+    replaceScaled = fmap replaceProduct
+    replaceProduct = fmap replaceGenerator
+    replaceGenerator (Generator i g) = Generator i' g
+      where
+        i' = case [to | (from, to) <- map, from == i] of
+          [to] -> to
+          [] -> error "index missing in mapping"
+          _ -> error "multiple indices found in mapping"
+
+forIndices :: Ord i => Polynomial c (Generator i g) -> [[i]] -> Polynomial c (Generator i g)
+forIndices poly indices = mconcat (fmap processOne indices)
+  where
+    processOne newIndices = replaceIndices poly (zipWith (,) symbols newIndices)
+    symbols = collectIndices poly
 
 groupTerms ::
   forall c i g r.
@@ -772,8 +635,12 @@ groupTerms i₀ = step4 . step3 . step2 . step1
           v
 
 lowerToMatrix ::
-  forall c i g r.
-  (HasMatrixRepresentation g, Algebra g, Ord i, Num c) =>
+  forall c g.
+  (HasMatrixRepresentation g, Algebra g, ComplexFloating c) =>
   Polynomial c g ->
   CsrMatrix
-lowerToMatrix = undefined
+lowerToMatrix = sumToMatrix
+  where
+    productToMatrix (Product v) = csrKronMany $ csrMatrixFromDense @Vector . matrixRepresentation <$> G.toList v
+    scaledToMatrix (Scaled c p) = csrScale (toComplexDouble c) (productToMatrix p)
+    sumToMatrix (Sum v) = G.foldl1' (+) (G.map scaledToMatrix v)

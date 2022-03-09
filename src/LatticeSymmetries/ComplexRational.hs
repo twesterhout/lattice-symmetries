@@ -1,11 +1,14 @@
 module LatticeSymmetries.ComplexRational
   ( ComplexRational (..),
+    ComplexFloating (..),
     realPart,
     imagPart,
     conjugate,
     magnitudeSquared,
   )
 where
+
+import Data.Complex (Complex (..))
 
 data ComplexRational = ComplexRational {-# UNPACK #-} !Rational {-# UNPACK #-} !Rational
   deriving (Eq, Show)
@@ -47,3 +50,11 @@ instance Fractional ComplexRational where
     where
       d = r' * r' + i' * i'
   fromRational a = ComplexRational a 0
+
+class Fractional a => ComplexFloating a where
+  toComplexDouble :: a -> Complex Double
+  fromComplexDouble :: Complex Double -> a
+
+instance ComplexFloating ComplexRational where
+  toComplexDouble (ComplexRational r i) = (fromRational r) :+ (fromRational i)
+  fromComplexDouble (r :+ i) = ComplexRational (toRational r) (toRational i)
