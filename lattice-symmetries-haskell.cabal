@@ -114,6 +114,7 @@ library
                      -- , binary
                      -- , vector-binary-instances
                      , hdf5-hs
+                     , ansi-wl-pprint
   pkgconfig-depends:   lattice_symmetries
 
 foreign-library lattice_symmetries_haskell

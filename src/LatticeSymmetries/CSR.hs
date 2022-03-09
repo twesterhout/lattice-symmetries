@@ -28,8 +28,8 @@ import Control.Monad.ST
 
 import Data.Bits (Bits, toIntegralSized)
 import Data.Complex
+import qualified Data.List
 import Data.Type.Equality
--- import qualified Data.List
 -- import qualified Data.List.NonEmpty as NonEmpty
 
 -- import qualified Data.Vector.Fusion.Stream.Monadic as Stream
@@ -217,8 +217,6 @@ binaryOp opKernel a b = System.IO.Unsafe.unsafePerformIO $ do
         withCsrMatrix c $ \cPtr -> do
           opKernel aPtr bPtr cPtr
           fromIntegral . c_csr_matrix_number_nonzero <$> peek cPtr
-  print pessimisticNNZ
-  print nnz
   pure $ csrMatrixShrink nnz c
 
 instance Num CsrMatrix where
@@ -228,3 +226,26 @@ instance Num CsrMatrix where
   abs (CsrMatrix offsets columns offDiagElems diagElems) = CsrMatrix offsets columns (G.map abs offDiagElems) (G.map abs diagElems)
   signum (CsrMatrix offsets columns offDiagElems diagElems) = CsrMatrix offsets columns (G.map signum offDiagElems) (G.map signum diagElems)
   fromInteger _ = error "Num instance of CsrMatrix does not implement fromInteger"
+
+csrScale :: Complex Double -> CsrMatrix -> CsrMatrix
+csrScale c (CsrMatrix offsets columns offDiagElems diagElems) =
+  CsrMatrix offsets columns (G.map (c *) offDiagElems) (G.map (c *) diagElems)
+
+csrKron :: CsrMatrix -> CsrMatrix -> CsrMatrix
+csrKron a b = System.IO.Unsafe.unsafePerformIO $ do
+  let dimension = csrDim a * csrDim b
+      nnz = csrNumberNonZero a * csrNumberNonZero b
+  c <- unsafeNewCsrMatrix dimension nnz
+  nnz' <-
+    withCsrMatrix a $ \aPtr ->
+      withCsrMatrix b $ \bPtr ->
+        withCsrMatrix c $ \cPtr -> do
+          ls_csr_kron aPtr bPtr cPtr
+          fromIntegral . c_csr_matrix_number_nonzero <$> peek cPtr
+  unless (nnz == nnz') $
+    error $ "this is probably a bug: " <> show nnz <> " /= " <> show nnz'
+  pure c
+
+csrKronMany :: HasCallStack => [CsrMatrix] -> CsrMatrix
+csrKronMany [] = error "expected a non-empty list of matrices"
+csrKronMany xs = Data.List.foldl1' csrKron xs
