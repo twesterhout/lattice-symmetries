@@ -1,8 +1,11 @@
 #pragma once
 
 #if defined(__cplusplus)
+#include <complex>
+#include <cstddef>
 #include <cstdint>
 #else
+#include <stddef.h>
 #include <stdint.h>
 #endif
 
@@ -61,6 +64,78 @@ void ls_hs_hdf5_read_chunk_u64(char const *filename, char const *dataset,
 void ls_hs_hdf5_read_chunk_f64(char const *filename, char const *dataset,
                                unsigned dim, uint64_t const *offset,
                                uint64_t const *shape, double *data);
+
+typedef enum ls_hs_particle_type {
+  LS_HS_SPIN,
+  LS_HS_FERMION
+} ls_hs_particle_type;
+
+typedef struct ls_hs_basis {
+  ls_hs_particle_type particle_type;
+  int number_sites; // always >= 0
+  int number_up;    // either >= 0 or == -1, -1 means "unspecified"
+  int number_down;  // either >= 0 or == -1, -1 means "unspecified"
+  bool state_index_is_identity;
+  // if number_up >= 0 and number_down >= 0
+  //   then
+  //     number_up + number_down <= number_sites
+  //        when particle_type == LS_HS_FERMION
+  //     number_up + number_down == number_sites
+  //        when particle_type == LS_HS_SPIN
+} ls_hs_basis;
+
+#if defined(__cplusplus)
+using ls_hs_scalar = std::complex<double>;
+#else
+typedef _Complex double ls_hs_scalar;
+#endif
+
+typedef struct ls_hs_nonbranching_terms {
+  int number_terms;
+  int number_bits;
+  // number_words = ceil(number_bits / 64)
+  ls_hs_scalar const *v; // array of shape [number_terms]
+  uint64_t const *m;     // array of shape [number_terms, number_words]
+  uint64_t const *l;     // array of shape [number_terms, number_words]
+  uint64_t const *r;     // array of shape [number_terms, number_words]
+  uint64_t const *x;     // array of shape [number_terms, number_words]
+  uint64_t const *s;     // array of shape [number_terms, number_words]
+  // all arrays are contiguous in row-major order
+} ls_hs_nonbranching_terms;
+
+typedef struct ls_hs_operator {
+  ls_hs_basis const *basis;
+  ls_hs_nonbranching_terms const *off_diag_terms;
+  ls_hs_nonbranching_terms const *diag_terms;
+  bool needs_projection;
+} ls_hs_operator;
+
+// {{{ Binomials
+typedef struct ls_hs_binomials {
+  int dimension;
+  uint64_t *coefficients; // array of shape [dimension, dimension]
+                          // stored in row-major order
+  // coefficients[n, k] corresponds to binomial(n, k)
+} ls_hs_binomials;
+
+ls_hs_binomials *ls_hs_internal_malloc_binomials(int number_bits);
+void ls_hs_internal_free_binomials(ls_hs_binomials *p);
+void ls_hs_internal_compute_binomials(ls_hs_binomials *p);
+uint64_t ls_hs_internal_binomial(int n, int k, ls_hs_binomials const *cache);
+
+void ls_hs_state_index_combinadics_kernel(ptrdiff_t batch_size,
+                                          uint64_t const *spins,
+                                          ptrdiff_t spins_stride,
+                                          ptrdiff_t *indices,
+                                          ptrdiff_t indices_stride,
+                                          void const *private_kernel_data);
+void ls_hs_state_index_identity_kernel(ptrdiff_t batch_size,
+                                       uint64_t const *spins,
+                                       ptrdiff_t spins_stride,
+                                       ptrdiff_t *indices,
+                                       ptrdiff_t indices_stride,
+                                       void const *private_kernel_data);
+// }}}
 
 #if 0
 typedef struct ls_sparse_operator ls_sparse_operator;

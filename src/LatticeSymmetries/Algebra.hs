@@ -126,10 +126,14 @@ fermionMatrixRepresentation g = fromList $ case g of
   FermionAnnihilate -> [[0, 0], [1, 0]]
 
 data NonbranchingTerm c i = NonbranchingTerm !c !i !i !i !i !i
-  deriving (Show, Eq)
+  deriving stock (Show, Eq)
+
+newtype BitMask = BitMask Word64
+  deriving stock (Show, Eq)
+  deriving newtype (Bits)
 
 instance (Num c, Bits i) => Semigroup (NonbranchingTerm c i) where
-  (<>) (NonbranchingTerm vₐ mₐ lₐ rₐ xₐ sₐ) (NonbranchingTerm vᵦ mᵦ lᵦ rᵦ xᵦ sᵦ) = undefined
+  (<>) (NonbranchingTerm vₐ mₐ lₐ rₐ xₐ sₐ) (NonbranchingTerm vᵦ mᵦ lᵦ rᵦ xᵦ sᵦ) = NonbranchingTerm v m l r x s
     where
       v = if (rₐ `xor` lᵦ) .&. mₐ .&. mᵦ /= zeroBits then 0 else ((-1) ^ p) * vₐ * vᵦ
       m = mₐ .|. mᵦ
@@ -142,24 +146,34 @@ instance (Num c, Bits i) => Semigroup (NonbranchingTerm c i) where
 
 class HasNonbranchingRepresentation g where
   -- (v, m, l, r, x, s)
-  nonbranchingRepresentation :: Num c => g -> NonbranchingTerm c Natural
+  nonbranchingRepresentation :: Num c => g -> NonbranchingTerm c BitMask
 
 instance HasNonbranchingRepresentation (Generator Int SpinGeneratorType) where
-  nonbranchingRepresentation (Generator _ SpinIdentity) = NonbranchingTerm 1 0 0 0 0 0
-  nonbranchingRepresentation (Generator i SpinZ) = NonbranchingTerm (-1) 0 0 0 0 (1 `shiftL` i)
+  nonbranchingRepresentation (Generator _ SpinIdentity) =
+    NonbranchingTerm 1 zeroBits zeroBits zeroBits zeroBits zeroBits
+  nonbranchingRepresentation (Generator i SpinZ) =
+    NonbranchingTerm (-1) zeroBits zeroBits zeroBits zeroBits (bit i)
   nonbranchingRepresentation (Generator i SpinPlus) =
-    NonbranchingTerm 1 (1 `shiftL` i) (1 `shiftL` i) 0 (1 `shiftL` i) 0
+    NonbranchingTerm 1 (bit i) (bit i) zeroBits (bit i) zeroBits
   nonbranchingRepresentation (Generator i SpinMinus) =
-    NonbranchingTerm 1 (1 `shiftL` i) 0 (1 `shiftL` i) (1 `shiftL` i) 0
+    NonbranchingTerm 1 (bit i) zeroBits (bit i) (bit i) zeroBits
+
+setFirstBits :: Bits a => a -> Int -> a
+setFirstBits x₀ n = go x₀ 0
+  where
+    go !x !i
+      | i < n = go (setBit x i) (i + 1)
+      | otherwise = x
 
 instance HasNonbranchingRepresentation (Generator Int FermionGeneratorType) where
-  nonbranchingRepresentation (Generator _ FermionIdentity) = NonbranchingTerm 1 0 0 0 0 0
+  nonbranchingRepresentation (Generator _ FermionIdentity) =
+    NonbranchingTerm 1 zeroBits zeroBits zeroBits zeroBits zeroBits
   nonbranchingRepresentation (Generator i FermionCount) =
-    NonbranchingTerm 1 (1 `shiftL` i) (1 `shiftL` i) (1 `shiftL` i) 0 0
+    NonbranchingTerm 1 (bit i) (bit i) (bit i) zeroBits zeroBits
   nonbranchingRepresentation (Generator i FermionCreate) =
-    NonbranchingTerm 1 (1 `shiftL` i) (1 `shiftL` i) 0 (1 `shiftL` i) ((1 `shiftL` i) - 1)
+    NonbranchingTerm 1 (bit i) (bit i) zeroBits (bit i) (setFirstBits zeroBits i)
   nonbranchingRepresentation (Generator i FermionAnnihilate) =
-    NonbranchingTerm 1 (1 `shiftL` i) 0 (1 `shiftL` i) (1 `shiftL` i) ((1 `shiftL` i) - 1)
+    NonbranchingTerm 1 (bit i) zeroBits (bit i) (bit i) (setFirstBits zeroBits i)
 
 getValues :: (Enum g, Bounded g) => [g]
 getValues = enumFromTo minBound maxBound

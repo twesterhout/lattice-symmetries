@@ -80,6 +80,7 @@ library
                        LatticeSymmetries.Utils
   c-sources:           cbits/helpers.c
                        cbits/csr.c
+                       cbits/reference.c
   include-dirs:        cbits
   build-depends:       vector
                      -- , binary

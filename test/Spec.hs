@@ -13,6 +13,7 @@ import Foreign.Storable
 import GHC.Exts (IsList (..))
 import LatticeSymmetries
 import LatticeSymmetries.Algebra
+import LatticeSymmetries.Basis
 import qualified LatticeSymmetries.CSR as CSR
 import LatticeSymmetries.ComplexRational
 import qualified LatticeSymmetries.Dense as Dense
@@ -391,7 +392,8 @@ main = hspec $ do
   describe "simplify (spin)" $ do
     let parseString ::
           Text ->
-          Sum (Scaled ComplexRational (Product (Generator Int SpinGeneratorType)))
+          Polynomial ComplexRational (Generator Int SpinGeneratorType)
+        -- Sum (Scaled ComplexRational (Product (Generator Int SpinGeneratorType)))
         parseString s = case parse (pOperatorString pSpinOperator) "" s of
           Left e -> error (show e)
           Right x -> x
@@ -436,3 +438,39 @@ main = hspec $ do
             b = CSR.csrMatrixFromDense ([[0, 0], [1, 3]] :: Dense.DenseMatrix S.Vector (Complex Double))
             c = CSR.csrMatrixFromDense ([[1, 2], [1, 5]] :: Dense.DenseMatrix S.Vector (Complex Double))
         (a + b) `shouldBe` c
+
+  describe "builds operators" $ do
+    it ".." $ do
+      print $ mkSpinOperator "σ⁺₁ σ⁻₂" [[0, 1], [1, 2], [2, 0]]
+      True `shouldBe` True
+
+  describe "NonbranchingTerm" $ do
+    it ".." $ do
+      let a = nonbranchingRepresentation (Generator (3 :: Int) FermionCreate)
+          b = nonbranchingRepresentation (Generator (4 :: Int) FermionAnnihilate)
+          c = nonbranchingRepresentation (Generator (3 :: Int) FermionAnnihilate)
+          d = nonbranchingRepresentation (Generator (4 :: Int) FermionIdentity)
+      print a
+      print b
+      case a <> a of
+        (NonbranchingTerm (v :: Float) _ _ _ _ _) -> v `shouldBe` 0
+      case b <> b of
+        (NonbranchingTerm (v :: Float) _ _ _ _ _) -> v `shouldBe` 0
+      (a <> c) `shouldBe` (nonbranchingRepresentation (Generator (3 :: Int) FermionCount))
+      (d <> d) `shouldBe` d
+      (a <> d) `shouldBe` a
+      (d <> a) `shouldBe` a
+      (b <> d) `shouldBe` b
+      (d <> b) `shouldBe` b
+      print (a <> b)
+      print (b <> a)
+
+  describe "binomialCoefficient" $ do
+    it "computes binomial(n, k)" $ do
+      binomialCoefficient 10 5 `shouldBe` 252
+      binomialCoefficient 10 0 `shouldBe` 1
+      binomialCoefficient 10 24 `shouldBe` 0
+      binomialCoefficient 4 1 `shouldBe` 4
+  describe "stateIndex" $ do
+    it "computes indices of representatives" $ do
+      stateIndex (LatticeSymmetries.Basis.SpinBasis 10 Nothing) 5 `shouldBe` Just 5
