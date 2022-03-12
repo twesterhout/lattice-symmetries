@@ -473,4 +473,5 @@ main = hspec $ do
       binomialCoefficient 4 1 `shouldBe` 4
   describe "stateIndex" $ do
     it "computes indices of representatives" $ do
-      stateIndex (LatticeSymmetries.Basis.SpinBasis 10 Nothing) 5 `shouldBe` Just 5
+      stateIndex (LatticeSymmetries.Basis.SpinBasis 10 Nothing) (BasisState 5) `shouldBe` Just 5
+      stateIndex (LatticeSymmetries.Basis.SpinBasis 10 (Just 2)) (BasisState 5) `shouldBe` Just 1

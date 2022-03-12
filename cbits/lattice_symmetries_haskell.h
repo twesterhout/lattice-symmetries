@@ -110,6 +110,17 @@ typedef struct ls_hs_operator {
   bool needs_projection;
 } ls_hs_operator;
 
+void ls_hs_operator_apply_diag_kernel(ls_hs_operator const *op,
+                                      ptrdiff_t batch_size,
+                                      uint64_t const *alphas,
+                                      ptrdiff_t alphas_stride,
+                                      ls_hs_scalar *coeffs);
+
+void ls_hs_operator_apply_off_diag_kernel(
+    ls_hs_operator const *op, ptrdiff_t batch_size, uint64_t const *alphas,
+    ptrdiff_t alphas_stride, uint64_t *betas, ptrdiff_t betas_stride,
+    ls_hs_scalar *coeffs);
+
 // {{{ Binomials
 typedef struct ls_hs_binomials {
   int dimension;

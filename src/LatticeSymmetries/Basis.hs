@@ -1,7 +1,8 @@
 {-# LANGUAGE CApiFFI #-}
 
 module LatticeSymmetries.Basis
-  ( SpinBasis (..),
+  ( BasisState (..),
+    SpinBasis (..),
     SpinfulFermionicBasis (..),
     SpinlessFermionicBasis (..),
     SpinfulOccupation (..),
@@ -19,7 +20,12 @@ import Foreign.Marshal.Alloc (alloca)
 import Foreign.Marshal.Utils (fromBool, with)
 import Foreign.Ptr
 import Foreign.Storable (peek)
+import LatticeSymmetries.Algebra (FermionGeneratorType, SpinGeneratorType)
+import LatticeSymmetries.Parser (SpinIndex)
 import System.IO.Unsafe (unsafePerformIO)
+
+newtype BasisState = BasisState Integer
+  deriving stock (Show, Eq, Ord)
 
 data SpinBasis = SpinBasis
   { sbNumberSites :: !Int,
@@ -76,8 +82,8 @@ data Cbasis_kernels = Cbasis_kernels
     cbasis_state_index_data :: {-# UNPACK #-} !(Ptr ())
   }
 
-stateIndex :: IsBasis basis => basis -> Integer -> Maybe Int
-stateIndex basis α
+stateIndex :: IsBasis basis => basis -> BasisState -> Maybe Int
+stateIndex basis (BasisState α)
   | α <= fromIntegral (maxBound :: Word64) = unsafePerformIO $
     bracket (createCbasis_kernels basis) (destroyCbasis_kernels basis) $ \kernels ->
       with (fromIntegral α :: Word64) $ \spinsPtr ->
@@ -141,6 +147,8 @@ autoDestroyStateIndexKernel kernel env
   | otherwise = error "failed to automatically deallocate state_index kernel"
 
 class IsBasis a where
+  type IndexType a
+  type GeneratorType a
   toCbasis :: a -> Cbasis
   createCbasis_kernels :: HasCallStack => a -> IO Cbasis_kernels
   destroyCbasis_kernels :: a -> Cbasis_kernels -> IO ()
@@ -148,6 +156,8 @@ class IsBasis a where
   maxStateEstimate :: a -> Integer
 
 instance IsBasis SpinBasis where
+  type IndexType SpinBasis = Int
+  type GeneratorType SpinBasis = SpinGeneratorType
   toCbasis (SpinBasis n (Just m)) =
     Cbasis
       { cbasis_number_sites = fromIntegral n,
@@ -196,6 +206,8 @@ instance IsBasis SpinBasis where
   maxStateEstimate (SpinBasis n (Just m)) = (bit (m + 1) - 1) `shiftL` (n - m)
 
 instance IsBasis SpinfulFermionicBasis where
+  type IndexType SpinfulFermionicBasis = (SpinIndex, Int)
+  type GeneratorType SpinfulFermionicBasis = FermionGeneratorType
   toCbasis (SpinfulFermionicBasis n SpinfulNoOccupation) =
     Cbasis
       { cbasis_number_sites = fromIntegral n,
@@ -245,6 +257,8 @@ instance IsBasis SpinfulFermionicBasis where
          in (minUp `shiftL` n) .|. minDown
 
 instance IsBasis SpinlessFermionicBasis where
+  type IndexType SpinlessFermionicBasis = Int
+  type GeneratorType SpinlessFermionicBasis = FermionGeneratorType
   toCbasis (SpinlessFermionicBasis n (Just p)) =
     Cbasis
       { cbasis_number_sites = fromIntegral n,

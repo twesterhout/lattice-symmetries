@@ -3,7 +3,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 typedef uint64_t ls_hs_bits;
 
@@ -27,6 +29,135 @@ void ls_hs_apply_nonbranching_term(ls_hs_nonbranching_term const *const term,
   int const sign = 1 - 2 * (popcount(alpha & term->s) % 2);
   *beta = alpha ^ term->x;
   *coeff = term->v * (delta * sign);
+}
+
+#if 0
+void strided_memset(void *const restrict dest, ptrdiff_t const count,
+                    ptrdiff_t const stride, void const *const restrict element,
+                    ptrdiff_t const size) {
+  for (ptrdiff_t i = 0; i < count; ++i) {
+    // Fill one element
+    memcpy(dest + i * stride * size, element, size);
+  }
+}
+#endif
+
+static inline void bitstring_and(int const number_words,
+                                 uint64_t const *const a,
+                                 uint64_t const *const b,
+                                 uint64_t *restrict const out) {
+  for (int i = 0; i < number_words; ++i) {
+    out[i] = a[i] & b[i];
+  }
+}
+
+static inline void bitstring_xor(int const number_words,
+                                 uint64_t const *const a,
+                                 uint64_t const *const b,
+                                 uint64_t *restrict const out) {
+  for (int i = 0; i < number_words; ++i) {
+    out[i] = a[i] ^ b[i];
+  }
+}
+
+static inline bool bitstring_equal(int const number_words,
+                                   uint64_t const *const a,
+                                   uint64_t const *const b) {
+  for (int i = 0; i < number_words; ++i) {
+    if (a[i] != b[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static inline bool bitstring_popcount(int const number_words,
+                                      uint64_t const *const a) {
+  int acc = 0;
+  for (int i = 0; i < number_words; ++i) {
+    acc += popcount(a[i]);
+  }
+  return acc;
+}
+
+void ls_hs_operator_apply_diag_kernel(ls_hs_operator const *op,
+                                      ptrdiff_t const batch_size,
+                                      uint64_t const *restrict const alphas,
+                                      ptrdiff_t const alphas_stride,
+                                      ls_hs_scalar *restrict const coeffs) {
+  if (op->diag_terms == NULL ||
+      op->diag_terms->number_terms == 0) { // the diagonal is zero
+    memset(coeffs, 0, (size_t)batch_size * sizeof(ls_hs_scalar));
+    return;
+  }
+
+  int const number_words = (op->diag_terms->number_bits + 63) / 64;
+  uint64_t *restrict const temp = malloc(number_words * sizeof(uint64_t));
+  if (temp == NULL) {
+    fprintf(stderr, "%s\n", "failed to allocate memory");
+    abort();
+  }
+
+  ls_hs_nonbranching_terms const *restrict terms = op->diag_terms;
+  ptrdiff_t const number_terms = terms->number_terms;
+  for (ptrdiff_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+    ls_hs_scalar acc = 0;
+    uint64_t const *restrict const alpha = alphas + batch_idx * alphas_stride;
+    for (ptrdiff_t term_idx = 0; term_idx < number_terms; ++term_idx) {
+      ls_hs_scalar const v = terms->v[term_idx];
+      uint64_t const *restrict const m = terms->m + term_idx * number_words;
+      uint64_t const *restrict const r = terms->r + term_idx * number_words;
+      uint64_t const *restrict const s = terms->s + term_idx * number_words;
+
+      bitstring_and(number_words, alpha, m, temp);
+      int const delta = bitstring_equal(number_words, temp, r);
+      bitstring_and(number_words, alpha, s, temp);
+      int const sign = 1 - 2 * (bitstring_popcount(number_words, temp) % 2);
+      acc += v * (delta * sign);
+    }
+    coeffs[batch_idx] = acc;
+  }
+  free(temp);
+}
+
+void ls_hs_operator_apply_off_diag_kernel(
+    ls_hs_operator const *op, ptrdiff_t batch_size, uint64_t const *alphas,
+    ptrdiff_t alphas_stride, uint64_t *betas, ptrdiff_t betas_stride,
+    ls_hs_scalar *coeffs) {
+  if (op->off_diag_terms == NULL ||
+      op->off_diag_terms->number_terms == 0) { // nothing to apply
+    return;
+  }
+
+  int const number_words = (op->off_diag_terms->number_bits + 63) / 64;
+  uint64_t *restrict const temp = malloc(number_words * sizeof(uint64_t));
+  if (temp == NULL) {
+    fprintf(stderr, "%s\n", "failed to allocate memory");
+    abort();
+  }
+
+  ls_hs_nonbranching_terms const *restrict terms = op->diag_terms;
+  ptrdiff_t const number_terms = terms->number_terms;
+  for (ptrdiff_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+    uint64_t const *restrict const alpha = alphas + batch_idx * alphas_stride;
+    for (ptrdiff_t term_idx = 0; term_idx < number_terms; ++term_idx) {
+      ls_hs_scalar const v = terms->v[term_idx];
+      uint64_t const *restrict const m = terms->m + term_idx * number_words;
+      uint64_t const *restrict const r = terms->r + term_idx * number_words;
+      uint64_t const *restrict const x = terms->x + term_idx * number_words;
+      uint64_t const *restrict const s = terms->s + term_idx * number_words;
+      uint64_t *restrict const beta =
+          betas + (batch_idx * number_terms + term_idx) * betas_stride;
+
+      bitstring_and(number_words, alpha, m, temp);
+      int const delta = bitstring_equal(number_words, temp, r);
+      bitstring_and(number_words, alpha, s, temp);
+      int const sign = 1 - 2 * (bitstring_popcount(number_words, temp) % 2);
+      coeffs[batch_idx * number_terms + term_idx] = v * (delta * sign);
+      bitstring_xor(number_words, alpha, x, beta);
+    }
+  }
+  free(temp);
 }
 
 ls_hs_binomials *ls_hs_internal_malloc_binomials(int const number_bits) {
