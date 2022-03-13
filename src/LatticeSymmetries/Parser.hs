@@ -85,7 +85,7 @@ instance KnownIndex Int where
   pIndex = pUnicodeSubscriptNumber
 
 instance KnownIndex (SpinIndex, Int) where
-  pIndex = flip (,) <$> pUnicodeSubscriptNumber <*> pSpin
+  pIndex = (,) <$> pSpin <*> pUnicodeSubscriptNumber
 
 pFermionicOperatorType :: Stream s m Char => ParsecT s u m (Char, FermionGeneratorType)
 pFermionicOperatorType =
@@ -164,6 +164,7 @@ instance KnownBasis SpinlessFermionicBasis where
 operatorFromString ::
   ( KnownBasis basis,
     Ord (IndexType basis),
+    HasSiteIndex (IndexType basis),
     Bounded (GeneratorType basis),
     Enum (GeneratorType basis),
     HasMatrixRepresentation (GeneratorType basis),
@@ -171,12 +172,12 @@ operatorFromString ::
   ) =>
   basis ->
   Text ->
-  [[IndexType basis]] ->
+  [[Int]] ->
   Operator ComplexRational basis
 operatorFromString basis s indices = case parse (pOperatorString (getPrimitiveParser basis)) "" s of
   Left e -> error (show e)
   Right x ->
-    let terms = simplify $ forIndices x indices
+    let terms = simplify $ forSiteIndices x indices
      in Operator basis terms
 
 pBasisState :: Stream s m Char => ParsecT s u m BasisState

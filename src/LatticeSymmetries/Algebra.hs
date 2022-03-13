@@ -22,6 +22,8 @@ module LatticeSymmetries.Algebra
     groupTerms,
     -- lowerToMatrix,
     forIndices,
+    forSiteIndices,
+    HasSiteIndex,
   )
 where
 
@@ -47,7 +49,11 @@ import qualified Text.PrettyPrint.ANSI.Leijen as Pretty
 import Prelude hiding (Product, Sum, identity, toList)
 
 data SpinIndex = SpinUp | SpinDown
-  deriving (Show, Eq)
+  deriving (Show, Eq, Ord)
+
+instance Pretty SpinIndex where
+  pretty SpinUp = "↑"
+  pretty SpinDown = "↓"
 
 data SpinGeneratorType = SpinIdentity | SpinZ | SpinPlus | SpinMinus
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
@@ -88,6 +94,9 @@ toSubscript n = Text.map h (show n)
 
 instance Pretty g => Pretty (Generator Int g) where
   pretty (Generator i g) = pretty g <> Pretty.text (Text.unpack (toSubscript i))
+
+instance Pretty g => Pretty (Generator (SpinIndex, Int) g) where
+  pretty (Generator (σ, i) g) = pretty g <> pretty σ <> Pretty.text (Text.unpack (toSubscript i))
 
 data Scaled c g = Scaled !c !g
   deriving stock (Eq, Ord, Show, Generic)
@@ -619,6 +628,37 @@ forIndices poly indices = mconcat (fmap processOne indices)
   where
     processOne newIndices = replaceIndices poly (zipWith (,) symbols newIndices)
     symbols = collectIndices poly
+
+class HasSiteIndex i where
+  getSiteIndex :: i -> Int
+  mapSiteIndex :: (Int -> Int) -> i -> i
+
+instance HasSiteIndex Int where
+  getSiteIndex = id
+  mapSiteIndex f i = f i
+
+instance HasSiteIndex (SpinIndex, Int) where
+  getSiteIndex (σ, i) = i
+  mapSiteIndex f (σ, i) = (σ, f i)
+
+replaceSiteIndices :: (Ord i, HasSiteIndex i) => Polynomial c (Generator i g) -> [(Int, Int)] -> Polynomial c (Generator i g)
+replaceSiteIndices poly map = replaceSum poly
+  where
+    replaceSum = fmap replaceScaled
+    replaceScaled = fmap replaceProduct
+    replaceProduct = fmap replaceGenerator
+    replaceGenerator (Generator i g) = Generator (mapSiteIndex f i) g
+      where
+        f i = case [to | (from, to) <- map, from == getSiteIndex i] of
+          [to] -> to
+          [] -> error "index missing in mapping"
+          _ -> error "multiple indices found in mapping"
+
+forSiteIndices :: (Ord i, HasSiteIndex i) => Polynomial c (Generator i g) -> [[Int]] -> Polynomial c (Generator i g)
+forSiteIndices poly indices = mconcat (fmap processOne indices)
+  where
+    processOne newIndices = replaceSiteIndices poly (zipWith (,) symbols newIndices)
+    symbols = fmap getSiteIndex $ collectIndices poly
 
 groupTerms ::
   forall c i g.
