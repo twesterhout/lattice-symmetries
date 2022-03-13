@@ -6,15 +6,21 @@ module LatticeSymmetries.Parser
     pOperatorString,
     SpinIndex (..),
     mkSpinOperator,
+    operatorFromString,
   )
 where
 
+import Data.Bits
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Ratio
+import Data.String (IsString (..))
 import qualified Data.Vector.Generic as G
 import LatticeSymmetries.Algebra
+import LatticeSymmetries.Basis
 import LatticeSymmetries.ComplexRational
+import LatticeSymmetries.Operator
 import Text.Parsec
+import qualified Text.Read (read)
 import Prelude hiding (Product, Sum, (<|>))
 
 type ℝ = Rational
@@ -43,9 +49,6 @@ pUnicodeSubscriptNumber = readInteger <$> many1 pSubscriptDigit
     readInteger s = case readEither s of
       Right x -> x
       Left _ -> error "should not have happened"
-
-data SpinIndex = SpinUp | SpinDown
-  deriving (Show, Eq)
 
 pSpin :: Stream s m Char => ParsecT s u m SpinIndex
 pSpin = choice [char '↑' *> pure SpinUp, char '↓' *> pure SpinDown] <?> "spin label (one of ↑, ↓)"
@@ -142,6 +145,58 @@ mkSpinOperator ::
 mkSpinOperator s indices = case parse (pOperatorString pSpinOperator) "" s of
   Left e -> error (show e)
   Right x -> simplify $ forIndices x indices
+
+class IsBasis basis => KnownBasis basis where
+  getPrimitiveParser ::
+    Stream s m Char =>
+    basis ->
+    ParsecT s u m (Sum (Scaled ComplexRational (Generator (IndexType basis) (GeneratorType basis))))
+
+instance KnownBasis SpinBasis where
+  getPrimitiveParser _ = pSpinOperator
+
+instance KnownBasis SpinfulFermionicBasis where
+  getPrimitiveParser _ = pFermionicOperator
+
+instance KnownBasis SpinlessFermionicBasis where
+  getPrimitiveParser _ = pFermionicOperator
+
+operatorFromString ::
+  ( KnownBasis basis,
+    Ord (IndexType basis),
+    Bounded (GeneratorType basis),
+    Enum (GeneratorType basis),
+    HasMatrixRepresentation (GeneratorType basis),
+    Algebra (GeneratorType basis)
+  ) =>
+  basis ->
+  Text ->
+  [[IndexType basis]] ->
+  Operator ComplexRational basis
+operatorFromString basis s indices = case parse (pOperatorString (getPrimitiveParser basis)) "" s of
+  Left e -> error (show e)
+  Right x ->
+    let terms = simplify $ forIndices x indices
+     in Operator basis terms
+
+pBasisState :: Stream s m Char => ParsecT s u m BasisState
+pBasisState = do
+  _ <- char '|'
+  s <- many1 (char '0' <|> char '1')
+  _ <- char '⟩'
+  let go !n !count [] = BasisState count (BitString n)
+      go !n !count (c : cs) = go ((n `shiftL` 1) .|. x) (count + 1) cs
+        where
+          x = case c of
+            '0' -> 0
+            '1' -> 1
+            _ -> error "should never happen"
+  pure $ go 0 0 s
+
+instance IsString BasisState where
+  fromString s = case parse pBasisState "" s of
+    Left e -> error (show e)
+    Right x -> x
 
 -- isSpinful :: FermionicOperator -> Bool
 -- isSpinful x = case x of

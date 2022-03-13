@@ -27,6 +27,7 @@ import LatticeSymmetries.Sparse
 import LatticeSymmetries.Types
 import Test.Hspec
 import Text.Parsec (parse)
+import Text.PrettyPrint.ANSI.Leijen (hPutDoc, hardline, pretty, putDoc)
 import Prelude hiding (Product, Sum, toList)
 
 anySpinEDException :: Selector SpinEDException
@@ -477,40 +478,36 @@ main = hspec $ do
       binomialCoefficient 4 1 `shouldBe` 4
   describe "stateIndex" $ do
     it "computes indices of representatives" $ do
-      stateIndex (LatticeSymmetries.Basis.SpinBasis 10 Nothing) (BasisState (BitString 5)) `shouldBe` Just 5
-      stateIndex (LatticeSymmetries.Basis.SpinBasis 10 (Just 2)) (BasisState (BitString 5)) `shouldBe` Just 1
+      stateIndex (LatticeSymmetries.Basis.SpinBasis 10 Nothing) "|0000000101⟩" `shouldBe` Just 5
+      stateIndex (LatticeSymmetries.Basis.SpinBasis 10 (Just 2)) "|0000000101⟩" `shouldBe` Just 1
 
   -- describe "BitString" $ do
   --   it ".." $ do
   --     let x =
   describe "applyOperator" $ do
     it ".." $ do
-      let operator1 =
-            LatticeSymmetries.Operator.Operator
-              (LatticeSymmetries.Basis.SpinBasis 10 Nothing)
-              (mkSpinOperator "σ⁺₀" [[5]])
-      applyOperator operator1 (BasisState (BitString zeroBits))
-        `shouldBe` [(1, BasisState (BitString (bit 5)))]
-      applyOperator operator1 (BasisState (BitString (bit 5)))
-        `shouldBe` []
-      applyOperator operator1 (BasisState (BitString 0b0111011111))
-        `shouldBe` [(1, BasisState (BitString 0b0111111111))]
-      let operator2 =
-            LatticeSymmetries.Operator.Operator
-              (LatticeSymmetries.Basis.SpinBasis 2 Nothing)
-              (mkSpinOperator "σˣ₀ σˣ₁" [[0, 1]])
-              + LatticeSymmetries.Operator.Operator
-                (LatticeSymmetries.Basis.SpinBasis 2 Nothing)
-                (mkSpinOperator "σʸ₀ σʸ₁" [[0, 1]])
-              + LatticeSymmetries.Operator.Operator
-                (LatticeSymmetries.Basis.SpinBasis 2 Nothing)
-                (mkSpinOperator "σᶻ₀ σᶻ₁" [[0, 1]])
+      let basis1 = LatticeSymmetries.Basis.SpinBasis 10 Nothing
+          operator1 = operatorFromString basis1 "σ⁺₀" [[5]]
+      -- hPutDoc stdout (pretty (opTerms operator1) <> hardline)
+      applyOperator operator1 "|0000000000⟩" `shouldBe` [(1, "|0000100000⟩")]
+      applyOperator operator1 "|0000100000⟩" `shouldBe` []
+      applyOperator operator1 "|0111011111⟩" `shouldBe` [(1, "|0111111111⟩")]
+      let basis2 = LatticeSymmetries.Basis.SpinBasis 2 Nothing
+          operator2 =
+            operatorFromString basis2 "σˣ₀ σˣ₁" [[0, 1]]
+              + operatorFromString basis2 "σʸ₀ σʸ₁" [[0, 1]]
+              + operatorFromString basis2 "σᶻ₀ σᶻ₁" [[0, 1]]
+      -- hPutDoc stdout (pretty (opTerms operator2) <> hardline)
       -- print $ getNonbranchingTerms operator2
-      applyOperator operator2 (BasisState (BitString 0))
-        `shouldBe` [(1, BasisState (BitString 0))]
-      applyOperator operator2 (BasisState (BitString 1))
-        `shouldBe` [(2, BasisState (BitString 2)), (-1, BasisState (BitString 1))]
-      applyOperator operator2 (BasisState (BitString 2))
-        `shouldBe` [(2, BasisState (BitString 1)), (-1, BasisState (BitString 2))]
-      applyOperator operator2 (BasisState (BitString 3))
-        `shouldBe` [(1, BasisState (BitString 3))]
+      applyOperator operator2 "|00⟩" `shouldBe` [(1, "|00⟩")]
+      applyOperator operator2 "|01⟩" `shouldBe` [(2, "|10⟩"), (-1, "|01⟩")]
+      applyOperator operator2 "|10⟩" `shouldBe` [(2, "|01⟩"), (-1, "|10⟩")]
+      applyOperator operator2 "|11⟩" `shouldBe` [(1, "|11⟩")]
+
+-- let basis3 = LatticeSymmetries.Basis.SpinfulFermionicBasis 2 SpinfulNoOccupation
+--     operator3 =
+--       operatorFromString basis3 "c†ᵢᵣ cᵢₚ" [[(SpinDown, 0), (SpinDown, 1)]]
+-- hPutDoc stdout (pretty (opTerms operator3) <> hardline)
+
+-- let basis3 = LatticeSymmetries.Basis.SpinfulFermionicBasis 2 SpinfulNoOccupation
+--     operator3 =

@@ -169,6 +169,7 @@ test-suite lattice-symmetries-haskell-test
                      , yaml
                      , vector
                      , parsec
+                     , ansi-wl-pprint
                      -- , mwc-random
   ghc-options:         -threaded
                        -rtsopts

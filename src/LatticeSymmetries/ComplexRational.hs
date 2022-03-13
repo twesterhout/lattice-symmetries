@@ -12,9 +12,21 @@ where
 import Data.Coerce
 import Data.Complex (Complex (..))
 import Foreign.C.Types (CDouble (..), CFloat (..))
+import Text.PrettyPrint.ANSI.Leijen (Pretty (..))
+import qualified Text.PrettyPrint.ANSI.Leijen as Pretty
 
 data ComplexRational = ComplexRational {-# UNPACK #-} !Rational {-# UNPACK #-} !Rational
   deriving (Eq, Show)
+
+prettyRational :: Rational -> Pretty.Doc
+prettyRational x
+  | realToFrac (fromRational x :: Double) == x = Pretty.double (fromRational x :: Double)
+  | otherwise = Pretty.rational x
+
+instance Pretty ComplexRational where
+  pretty (ComplexRational r i)
+    | i == 0 = prettyRational r
+    | otherwise = Pretty.parens $ prettyRational r <> Pretty.text " + " <> prettyRational i <> "𝕚"
 
 realPart :: ComplexRational -> Rational
 realPart (ComplexRational r _) = r

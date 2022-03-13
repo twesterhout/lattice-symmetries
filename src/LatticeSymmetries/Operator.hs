@@ -259,7 +259,7 @@ applyOperator ::
   Operator ComplexRational basis ->
   BasisState ->
   Vector (ComplexRational, BasisState)
-applyOperator operator (BasisState x) = unsafePerformIO $
+applyOperator operator (BasisState _ x) = unsafePerformIO $
   bracket (createCoperator operator) destroyCoperator $ \c_operator -> do
     numberTerms <- peekNumberOffDiagTerms c_operator
     hPutStrLn stderr $ printf "numberTerms = %d" numberTerms
@@ -297,10 +297,12 @@ applyOperator operator (BasisState x) = unsafePerformIO $
     cs' <- G.map fromComplexDouble <$> G.convert <$> G.unsafeFreeze cs
     (hPutStrLn stderr . show) cs'
     (hPutStrLn stderr . show) =<< G.unsafeFreeze βs
+    let numberBits = getNumberBits (opBasis operator)
     βs' <-
       SM.unsafeWith βs $ \p ->
         G.generateM (numberTerms + 1) $ \i ->
-          BasisState <$> readBitString numberWords (P.advancePtr p (i * numberWords))
+          BasisState numberBits
+            <$> readBitString numberWords (P.advancePtr p (i * numberWords))
     hPutStrLn stderr $ "Done"
     (hPutStrLn stderr . show) βs'
     let !r = G.filter (\(c, _) -> c /= 0) $ G.zip cs' βs'

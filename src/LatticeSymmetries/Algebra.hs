@@ -13,6 +13,7 @@ module LatticeSymmetries.Algebra
     Sum (..),
     Product (..),
     Algebra (..),
+    SpinIndex (..),
     Polynomial,
     scale,
     -- sumToCanonical,
@@ -44,6 +45,9 @@ import Numeric.Natural
 import Text.PrettyPrint.ANSI.Leijen (Pretty (..))
 import qualified Text.PrettyPrint.ANSI.Leijen as Pretty
 import Prelude hiding (Product, Sum, identity, toList)
+
+data SpinIndex = SpinUp | SpinDown
+  deriving (Show, Eq)
 
 data SpinGeneratorType = SpinIdentity | SpinZ | SpinPlus | SpinMinus
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
