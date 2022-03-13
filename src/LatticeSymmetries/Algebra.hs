@@ -12,16 +12,15 @@ module LatticeSymmetries.Algebra
     Scaled (..),
     Sum (..),
     Product (..),
+    Algebra (..),
     Polynomial,
     scale,
     -- sumToCanonical,
     expandProduct,
     simplify,
     groupTerms,
-    lowerToMatrix,
+    -- lowerToMatrix,
     forIndices,
-    NonbranchingTerm (..),
-    HasNonbranchingRepresentation (..),
   )
 where
 
@@ -35,9 +34,11 @@ import qualified Data.Vector.Algorithms.Intro
 import Data.Vector.Generic ((!))
 import qualified Data.Vector.Generic as G
 import GHC.Exts (IsList (..))
+import LatticeSymmetries.BitString
 import LatticeSymmetries.CSR
 import LatticeSymmetries.ComplexRational
 import LatticeSymmetries.Dense
+import LatticeSymmetries.NonbranchingTerm
 import LatticeSymmetries.Sparse (combineNeighbors)
 import Numeric.Natural
 import Text.PrettyPrint.ANSI.Leijen (Pretty (..))
@@ -90,6 +91,9 @@ data Scaled c g = Scaled !c !g
 instance Functor (Scaled c) where
   fmap f (Scaled c g) = Scaled c (f g)
 
+instance (Pretty c, Pretty g) => Pretty (Scaled c g) where
+  pretty (Scaled c g) = pretty c <> Pretty.text " × " <> pretty g
+
 withoutOrderingCoefficients :: Ord g => Scaled c g -> Scaled c g -> Ordering
 withoutOrderingCoefficients (Scaled _ a) (Scaled _ b) = compare a b
 
@@ -125,29 +129,6 @@ fermionMatrixRepresentation g = fromList $ case g of
   FermionCreate -> [[0, 1], [0, 0]]
   FermionAnnihilate -> [[0, 0], [1, 0]]
 
-data NonbranchingTerm c i = NonbranchingTerm !c !i !i !i !i !i
-  deriving stock (Show, Eq)
-
-newtype BitMask = BitMask Word64
-  deriving stock (Show, Eq)
-  deriving newtype (Bits)
-
-instance (Num c, Bits i) => Semigroup (NonbranchingTerm c i) where
-  (<>) (NonbranchingTerm vₐ mₐ lₐ rₐ xₐ sₐ) (NonbranchingTerm vᵦ mᵦ lᵦ rᵦ xᵦ sᵦ) = NonbranchingTerm v m l r x s
-    where
-      v = if (rₐ `xor` lᵦ) .&. mₐ .&. mᵦ /= zeroBits then 0 else ((-1) ^ p) * vₐ * vᵦ
-      m = mₐ .|. mᵦ
-      r = rᵦ .|. (rₐ .&. complement mᵦ)
-      l = lₐ .|. (lᵦ .&. complement mₐ)
-      x = l `xor` r
-      s = (sₐ `xor` sᵦ) .&. complement m
-      z = (r .&. sᵦ) `xor` xᵦ
-      p = popCount $ (r .&. sᵦ) `xor` (z .&. sₐ)
-
-class HasNonbranchingRepresentation g where
-  -- (v, m, l, r, x, s)
-  nonbranchingRepresentation :: Num c => g -> NonbranchingTerm c BitMask
-
 instance HasNonbranchingRepresentation (Generator Int SpinGeneratorType) where
   nonbranchingRepresentation (Generator _ SpinIdentity) =
     NonbranchingTerm 1 zeroBits zeroBits zeroBits zeroBits zeroBits
@@ -158,22 +139,31 @@ instance HasNonbranchingRepresentation (Generator Int SpinGeneratorType) where
   nonbranchingRepresentation (Generator i SpinMinus) =
     NonbranchingTerm 1 (bit i) zeroBits (bit i) (bit i) zeroBits
 
-setFirstBits :: Bits a => a -> Int -> a
-setFirstBits x₀ n = go x₀ 0
-  where
-    go !x !i
-      | i < n = go (setBit x i) (i + 1)
-      | otherwise = x
-
 instance HasNonbranchingRepresentation (Generator Int FermionGeneratorType) where
   nonbranchingRepresentation (Generator _ FermionIdentity) =
     NonbranchingTerm 1 zeroBits zeroBits zeroBits zeroBits zeroBits
   nonbranchingRepresentation (Generator i FermionCount) =
     NonbranchingTerm 1 (bit i) (bit i) (bit i) zeroBits zeroBits
   nonbranchingRepresentation (Generator i FermionCreate) =
-    NonbranchingTerm 1 (bit i) (bit i) zeroBits (bit i) (setFirstBits zeroBits i)
+    NonbranchingTerm 1 (bit i) (bit i) zeroBits (bit i) (BitString (bit i - 1))
   nonbranchingRepresentation (Generator i FermionAnnihilate) =
-    NonbranchingTerm 1 (bit i) zeroBits (bit i) (bit i) (setFirstBits zeroBits i)
+    NonbranchingTerm 1 (bit i) zeroBits (bit i) (bit i) (BitString (bit i - 1))
+
+instance
+  HasNonbranchingRepresentation g =>
+  HasNonbranchingRepresentation (Scaled ComplexRational g)
+  where
+  nonbranchingRepresentation (Scaled c g) = t {nbtV = c * nbtV t}
+    where
+      t = nonbranchingRepresentation g
+
+instance
+  HasNonbranchingRepresentation g =>
+  HasNonbranchingRepresentation (Product g)
+  where
+  nonbranchingRepresentation (Product v)
+    | not (G.null v) = G.foldl1' (<>) . G.map nonbranchingRepresentation $ v
+    | otherwise = error "empty products do not have a nonbranching representation"
 
 getValues :: (Enum g, Bounded g) => [g]
 getValues = enumFromTo minBound maxBound
@@ -282,9 +272,17 @@ newtype Product g = Product (Vector g)
 instance Traversable Product where
   traverse f (Product v) = Product <$> traverse f v
 
+instance Pretty g => Pretty (Product g) where
+  pretty (Product v) =
+    Pretty.encloseSep mempty mempty (Pretty.char ' ') (G.toList $ fmap pretty v)
+
 newtype Sum g = Sum (Vector g)
   deriving stock (Eq, Show, Generic)
   deriving newtype (IsList, Functor, Semigroup, Monoid, Foldable)
+
+instance Pretty g => Pretty (Sum g) where
+  pretty (Sum v) =
+    Pretty.encloseSep mempty mempty (Pretty.text " + ") (G.toList $ fmap pretty v)
 
 instance CanScale c g => CanScale c (Sum g) where
   scale c (Sum v) = Sum $ G.map (scale c) v
@@ -619,7 +617,7 @@ forIndices poly indices = mconcat (fmap processOne indices)
     symbols = collectIndices poly
 
 groupTerms ::
-  forall c i g r.
+  forall c i g.
   (HasMatrixRepresentation g, Algebra g, Ord i, Num c) =>
   i ->
   Polynomial c (Generator i g) ->
@@ -648,13 +646,13 @@ groupTerms i₀ = step4 . step3 . step2 . step1
           (\(LoweredOperator i1 s1 g1) (LoweredOperator _ _ g2) -> (LoweredOperator i1 s1 (g1 + g2)))
           v
 
-lowerToMatrix ::
-  forall c g.
-  (HasMatrixRepresentation g, Algebra g, ComplexFloating c) =>
-  Polynomial c g ->
-  CsrMatrix
-lowerToMatrix = sumToMatrix
-  where
-    productToMatrix (Product v) = csrKronMany $ csrMatrixFromDense @Vector . matrixRepresentation <$> G.toList v
-    scaledToMatrix (Scaled c p) = csrScale (toComplexDouble c) (productToMatrix p)
-    sumToMatrix (Sum v) = G.foldl1' (+) (G.map scaledToMatrix v)
+-- lowerToMatrix ::
+--   forall c g.
+--   (HasMatrixRepresentation g, Algebra g, ComplexFloating c) =>
+--   Polynomial c g ->
+--   CsrMatrix
+-- lowerToMatrix = sumToMatrix
+--   where
+--     productToMatrix (Product v) = csrKronMany $ csrMatrixFromDense @Vector . matrixRepresentation <$> G.toList v
+--     scaledToMatrix (Scaled c p) = csrScale (toComplexDouble c) (productToMatrix p)
+--     sumToMatrix (Sum v) = G.foldl1' (+) (G.map scaledToMatrix v)

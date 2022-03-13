@@ -1,4 +1,6 @@
 {-# LANGUAGE CApiFFI #-}
+{-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 
 module LatticeSymmetries.Basis
   ( BasisState (..),
@@ -10,6 +12,11 @@ module LatticeSymmetries.Basis
     Cbasis (..),
     stateIndex,
     binomialCoefficient,
+    getNumberBits,
+    getNumberWords,
+    BitString (..),
+    wordsFromBitString,
+    writeBitString,
   )
 where
 
@@ -19,36 +26,55 @@ import Foreign.C.Types
 import Foreign.Marshal.Alloc (alloca)
 import Foreign.Marshal.Utils (fromBool, with)
 import Foreign.Ptr
-import Foreign.Storable (peek)
+import Foreign.Storable
 import LatticeSymmetries.Algebra (FermionGeneratorType, SpinGeneratorType)
-import LatticeSymmetries.Parser (SpinIndex)
+import LatticeSymmetries.BitString
+import LatticeSymmetries.Parser (SpinIndex (..))
 import System.IO.Unsafe (unsafePerformIO)
 
-newtype BasisState = BasisState Integer
+-- writeWords :: (Bits i, Integral i) => Int -> Ptr Word64 -> i -> IO ()
+-- writeWords count p x₀ = go 0 x₀
+--   where
+--     nextWord !x = case bitSizeMaybe x of
+--       Just n -> if n > 64 then x `shiftR` 64 else 0
+--       Nothing -> x `shiftR` 64
+--     go !i !x
+--       | i < count = do
+--         pokeElemOff p i (fromIntegral x :: Word64)
+--         go (i + 1) (nextWord x)
+--       | otherwise = pure ()
+
+newtype BasisState = BasisState BitString
   deriving stock (Show, Eq, Ord)
 
 data SpinBasis = SpinBasis
   { sbNumberSites :: !Int,
     sbMagnetization :: !(Maybe Int)
   }
+  deriving stock (Show, Eq)
 
 data SpinfulOccupation
   = SpinfulNoOccupation
   | SpinfulTotalParticles !Int
   | -- | @SpinfulPerSector numberDown numberUp@
     SpinfulPerSector !Int !Int
+  deriving stock (Show, Eq)
 
 data SpinfulFermionicBasis = SpinfulFermionicBasis
   { sfbNumberSites :: !Int,
     sfbOccupation :: !SpinfulOccupation
   }
+  deriving stock (Show, Eq)
 
 data SpinlessFermionicBasis = SpinlessFermionicBasis
   { fbNumberSites :: !Int,
     fbOccupation :: !(Maybe Int)
   }
+  deriving stock (Show, Eq)
 
 newtype Cparticle_type = Cparticle_type CInt
+  deriving stock (Show, Eq)
+  deriving newtype (Storable)
 
 c_LS_HS_SPIN :: Cparticle_type
 c_LS_HS_SPIN = Cparticle_type 0
@@ -77,13 +103,30 @@ data Cbasis = Cbasis
     cbasis_state_index_is_identity :: {-# UNPACK #-} !CBool
   }
 
+instance Storable Cbasis where
+  sizeOf _ = 20
+  alignment _ = 4
+  peek p =
+    Cbasis
+      <$> peekByteOff p 0
+      <*> peekByteOff p 4
+      <*> peekByteOff p 8
+      <*> peekByteOff p 12
+      <*> peekByteOff p 16
+  poke p (Cbasis number_sites number_particles number_up particle_type state_index_is_identity) = do
+    pokeByteOff p 0 number_sites
+    pokeByteOff p 4 number_particles
+    pokeByteOff p 8 number_up
+    pokeByteOff p 12 particle_type
+    pokeByteOff p 16 state_index_is_identity
+
 data Cbasis_kernels = Cbasis_kernels
   { cbasis_state_index_kernel :: {-# UNPACK #-} !(FunPtr Cindex_kernel),
     cbasis_state_index_data :: {-# UNPACK #-} !(Ptr ())
   }
 
 stateIndex :: IsBasis basis => basis -> BasisState -> Maybe Int
-stateIndex basis (BasisState α)
+stateIndex basis (BasisState (BitString α))
   | α <= fromIntegral (maxBound :: Word64) = unsafePerformIO $
     bracket (createCbasis_kernels basis) (destroyCbasis_kernels basis) $ \kernels ->
       with (fromIntegral α :: Word64) $ \spinsPtr ->
@@ -152,8 +195,21 @@ class IsBasis a where
   toCbasis :: a -> Cbasis
   createCbasis_kernels :: HasCallStack => a -> IO Cbasis_kernels
   destroyCbasis_kernels :: a -> Cbasis_kernels -> IO ()
-  minStateEstimate :: a -> Integer
-  maxStateEstimate :: a -> Integer
+
+  minStateEstimate :: a -> BasisState
+  maxStateEstimate :: a -> BasisState
+
+  flattenIndex :: a -> IndexType a -> Int
+  default flattenIndex :: IndexType a ~ Int => a -> IndexType a -> Int
+  flattenIndex _ = id
+
+getNumberBits :: IsBasis a => a -> Int
+getNumberBits = fromIntegral . cbasis_number_sites . toCbasis
+
+getNumberWords :: IsBasis a => a -> Int
+getNumberWords b = (n + 63) `div` 64
+  where
+    n = getNumberBits b
 
 instance IsBasis SpinBasis where
   type IndexType SpinBasis = Int
@@ -200,10 +256,10 @@ instance IsBasis SpinBasis where
           }
   destroyCbasis_kernels _ (Cbasis_kernels stateIndexKernel stateIndexEnv) = do
     autoDestroyStateIndexKernel stateIndexKernel stateIndexEnv
-  minStateEstimate (SpinBasis _ Nothing) = 0
-  minStateEstimate (SpinBasis _ (Just m)) = bit (m + 1) - 1
-  maxStateEstimate (SpinBasis n Nothing) = bit (n + 1) - 1
-  maxStateEstimate (SpinBasis n (Just m)) = (bit (m + 1) - 1) `shiftL` (n - m)
+  minStateEstimate (SpinBasis _ Nothing) = BasisState $ zeroBits
+  minStateEstimate (SpinBasis _ (Just m)) = BasisState . BitString $ bit (m + 1) - 1
+  maxStateEstimate (SpinBasis n Nothing) = BasisState . BitString $ bit (n + 1) - 1
+  maxStateEstimate (SpinBasis n (Just m)) = BasisState . BitString $ (bit (m + 1) - 1) `shiftL` (n - m)
 
 instance IsBasis SpinfulFermionicBasis where
   type IndexType SpinfulFermionicBasis = (SpinIndex, Int)
@@ -244,17 +300,20 @@ instance IsBasis SpinfulFermionicBasis where
       SpinfulNoOccupation -> minStateEstimate (SpinlessFermionicBasis (2 * n) Nothing)
       SpinfulTotalParticles p -> minStateEstimate (SpinlessFermionicBasis (2 * n) (Just p))
       SpinfulPerSector down up ->
-        let minDown = minStateEstimate (SpinlessFermionicBasis n (Just down))
-            minUp = minStateEstimate (SpinlessFermionicBasis n (Just up))
-         in (minUp `shiftL` n) .|. minDown
+        let (BasisState minDown) = minStateEstimate (SpinlessFermionicBasis n (Just down))
+            (BasisState minUp) = minStateEstimate (SpinlessFermionicBasis n (Just up))
+         in BasisState $ (minUp `shiftL` n) .|. minDown
   maxStateEstimate (SpinfulFermionicBasis n occupation) =
     case occupation of
       SpinfulNoOccupation -> maxStateEstimate (SpinlessFermionicBasis (2 * n) Nothing)
       SpinfulTotalParticles p -> maxStateEstimate (SpinlessFermionicBasis (2 * n) (Just p))
       SpinfulPerSector down up ->
-        let minDown = maxStateEstimate (SpinlessFermionicBasis n (Just down))
-            minUp = maxStateEstimate (SpinlessFermionicBasis n (Just up))
-         in (minUp `shiftL` n) .|. minDown
+        let (BasisState minDown) = maxStateEstimate (SpinlessFermionicBasis n (Just down))
+            (BasisState minUp) = maxStateEstimate (SpinlessFermionicBasis n (Just up))
+         in BasisState $ (minUp `shiftL` n) .|. minDown
+  flattenIndex (SpinfulFermionicBasis n _) i = case i of
+    (SpinUp, k) -> k
+    (SpinDown, k) -> k `shiftL` n
 
 instance IsBasis SpinlessFermionicBasis where
   type IndexType SpinlessFermionicBasis = Int

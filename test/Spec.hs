@@ -1,7 +1,9 @@
+{-# LANGUAGE BinaryLiterals #-}
 {-# LANGUAGE OverloadedLists #-}
 
 module Main (main) where
 
+import Data.Bits
 import Data.Complex
 import Data.Ratio ((%))
 import Data.Type.Equality
@@ -18,6 +20,8 @@ import qualified LatticeSymmetries.CSR as CSR
 import LatticeSymmetries.ComplexRational
 import qualified LatticeSymmetries.Dense as Dense
 import LatticeSymmetries.IO
+import LatticeSymmetries.NonbranchingTerm
+import LatticeSymmetries.Operator
 import LatticeSymmetries.Parser
 import LatticeSymmetries.Sparse
 import LatticeSymmetries.Types
@@ -453,9 +457,9 @@ main = hspec $ do
       print a
       print b
       case a <> a of
-        (NonbranchingTerm (v :: Float) _ _ _ _ _) -> v `shouldBe` 0
+        (NonbranchingTerm v _ _ _ _ _) -> v `shouldBe` 0
       case b <> b of
-        (NonbranchingTerm (v :: Float) _ _ _ _ _) -> v `shouldBe` 0
+        (NonbranchingTerm v _ _ _ _ _) -> v `shouldBe` 0
       (a <> c) `shouldBe` (nonbranchingRepresentation (Generator (3 :: Int) FermionCount))
       (d <> d) `shouldBe` d
       (a <> d) `shouldBe` a
@@ -473,5 +477,40 @@ main = hspec $ do
       binomialCoefficient 4 1 `shouldBe` 4
   describe "stateIndex" $ do
     it "computes indices of representatives" $ do
-      stateIndex (LatticeSymmetries.Basis.SpinBasis 10 Nothing) (BasisState 5) `shouldBe` Just 5
-      stateIndex (LatticeSymmetries.Basis.SpinBasis 10 (Just 2)) (BasisState 5) `shouldBe` Just 1
+      stateIndex (LatticeSymmetries.Basis.SpinBasis 10 Nothing) (BasisState (BitString 5)) `shouldBe` Just 5
+      stateIndex (LatticeSymmetries.Basis.SpinBasis 10 (Just 2)) (BasisState (BitString 5)) `shouldBe` Just 1
+
+  -- describe "BitString" $ do
+  --   it ".." $ do
+  --     let x =
+  describe "applyOperator" $ do
+    it ".." $ do
+      let operator1 =
+            LatticeSymmetries.Operator.Operator
+              (LatticeSymmetries.Basis.SpinBasis 10 Nothing)
+              (mkSpinOperator "σ⁺₀" [[5]])
+      applyOperator operator1 (BasisState (BitString zeroBits))
+        `shouldBe` [(1, BasisState (BitString (bit 5)))]
+      applyOperator operator1 (BasisState (BitString (bit 5)))
+        `shouldBe` []
+      applyOperator operator1 (BasisState (BitString 0b0111011111))
+        `shouldBe` [(1, BasisState (BitString 0b0111111111))]
+      let operator2 =
+            LatticeSymmetries.Operator.Operator
+              (LatticeSymmetries.Basis.SpinBasis 2 Nothing)
+              (mkSpinOperator "σˣ₀ σˣ₁" [[0, 1]])
+              + LatticeSymmetries.Operator.Operator
+                (LatticeSymmetries.Basis.SpinBasis 2 Nothing)
+                (mkSpinOperator "σʸ₀ σʸ₁" [[0, 1]])
+              + LatticeSymmetries.Operator.Operator
+                (LatticeSymmetries.Basis.SpinBasis 2 Nothing)
+                (mkSpinOperator "σᶻ₀ σᶻ₁" [[0, 1]])
+      -- print $ getNonbranchingTerms operator2
+      applyOperator operator2 (BasisState (BitString 0))
+        `shouldBe` [(1, BasisState (BitString 0))]
+      applyOperator operator2 (BasisState (BitString 1))
+        `shouldBe` [(2, BasisState (BitString 2)), (-1, BasisState (BitString 1))]
+      applyOperator operator2 (BasisState (BitString 2))
+        `shouldBe` [(2, BasisState (BitString 1)), (-1, BasisState (BitString 2))]
+      applyOperator operator2 (BasisState (BitString 3))
+        `shouldBe` [(1, BasisState (BitString 3))]
