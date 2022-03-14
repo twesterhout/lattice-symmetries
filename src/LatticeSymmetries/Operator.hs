@@ -13,13 +13,15 @@ import qualified Data.Vector.Storable as S
 import qualified Data.Vector.Storable.Mutable as SM
 import Foreign.C.Types
 import Foreign.Marshal.Alloc
-import Foreign.Marshal.Utils (fromBool)
+import Foreign.Marshal.Utils (fromBool, new)
 import Foreign.Ptr
+import Foreign.StablePtr
 import Foreign.Storable
 import LatticeSymmetries.Algebra
 import LatticeSymmetries.Basis
 import LatticeSymmetries.BitString
 import LatticeSymmetries.ComplexRational
+import LatticeSymmetries.Generator
 import LatticeSymmetries.NonbranchingTerm
 import LatticeSymmetries.Utils (loopM)
 import System.IO (hPutStrLn)
@@ -27,26 +29,27 @@ import System.IO.Unsafe (unsafePerformIO)
 import Text.Printf
 import Prelude hiding (Sum)
 
-type Factor basis = Generator (IndexType basis) (GeneratorType basis)
-
-data Operator c basis = Operator
-  { opBasis :: !basis,
-    opTerms :: !(Polynomial c (Generator (IndexType basis) (GeneratorType basis)))
+data Operator (t :: ParticleTy) = Operator
+  { opBasis :: !(Basis t),
+    opTerms :: !(Polynomial ComplexRational (Generator (IndexType t) (GeneratorType t)))
   }
 
-deriving instance (Show basis, Show c, Show (IndexType basis), Show (GeneratorType basis)) => Show (Operator c basis)
+deriving instance (Show (IndexType t), Show (GeneratorType t)) => Show (Operator t)
+
+opTermsFlat :: Operator t -> Polynomial ComplexRational (Generator Int (GeneratorType t))
+opTermsFlat operator =
+  fmap (fmap (fmap (\(Generator i g) -> Generator (flattenIndex basis i) g))) (opTerms operator)
+  where
+    basis = opBasis operator
 
 instance
-  ( Eq basis,
-    Fractional c,
-    Eq c,
-    Enum (GeneratorType basis),
-    Bounded (GeneratorType basis),
-    HasMatrixRepresentation (GeneratorType basis),
-    Algebra (GeneratorType basis),
-    Ord (IndexType basis)
+  ( Enum (GeneratorType t),
+    Bounded (GeneratorType t),
+    HasMatrixRepresentation (GeneratorType t),
+    Algebra (GeneratorType t),
+    Ord (IndexType t)
   ) =>
-  Num (Operator c basis)
+  Num (Operator t)
   where
   (+) a b
     | opBasis a == opBasis b = Operator (opBasis a) (simplify $ opTerms a + opTerms b)
@@ -55,11 +58,11 @@ instance
 -- getNumberTerms operator = let (Sum v) = opTerms operator in G.length v
 
 getNonbranchingTerms ::
-  HasNonbranchingRepresentation (Factor basis) =>
-  Operator ComplexRational basis ->
+  HasNonbranchingRepresentation (Generator Int (GeneratorType t)) =>
+  Operator t ->
   Vector NonbranchingTerm
 getNonbranchingTerms operator =
-  case nonbranchingRepresentation <$> opTerms operator of
+  case nonbranchingRepresentation <$> opTermsFlat operator of
     (Sum v) -> v
 
 -- typedef struct ls_hs_nonbranching_terms {
@@ -184,11 +187,12 @@ data Coperator = Coperator
   { coperator_basis :: {-# UNPACK #-} !(Ptr Cbasis),
     coperator_off_diag_terms :: {-# UNPACK #-} !(Ptr Cnonbranching_terms),
     coperator_diag_terms :: {-# UNPACK #-} !(Ptr Cnonbranching_terms),
-    coperator_needs_projection :: {-# UNPACK #-} !CBool
+    coperator_needs_projection :: {-# UNPACK #-} !CBool,
+    coperator_haskell_payload :: {-# UNPACK #-} !(Ptr ())
   }
 
 instance Storable Coperator where
-  sizeOf _ = 32
+  sizeOf _ = 40
   alignment _ = 8
   peek p =
     Coperator
@@ -196,29 +200,19 @@ instance Storable Coperator where
       <*> peekByteOff p 8
       <*> peekByteOff p 16
       <*> peekByteOff p 24
-  poke p (Coperator basis off_diag_terms diag_terms needs_projection) = do
+      <*> peekByteOff p 32
+  poke p (Coperator basis off_diag_terms diag_terms needs_projection payload) = do
     pokeByteOff p 0 basis
     pokeByteOff p 8 off_diag_terms
     pokeByteOff p 16 diag_terms
     pokeByteOff p 24 needs_projection
-
-createCbasis :: IsBasis basis => basis -> IO (Ptr Cbasis)
-createCbasis basis = do
-  p <- malloc
-  poke p (toCbasis basis)
-  pure p
-
-destroyCbasis :: HasCallStack => Ptr Cbasis -> IO ()
-destroyCbasis p
-  | p /= nullPtr = free p
-  | otherwise = error "should not happen"
+    pokeByteOff p 32 payload
 
 createCoperator ::
-  forall basis.
-  ( IsBasis basis,
-    HasNonbranchingRepresentation (Factor basis)
+  forall t.
+  ( HasNonbranchingRepresentation (Generator Int (GeneratorType t))
   ) =>
-  Operator ComplexRational basis ->
+  Operator t ->
   IO (Ptr Coperator)
 createCoperator operator = do
   let (diag, offDiag) = G.partition isNonbranchingTermDiagonal (getNonbranchingTerms operator)
@@ -226,22 +220,27 @@ createCoperator operator = do
   basis <- createCbasis (opBasis operator)
   diag_terms <- createCnonbranching_terms numberBits diag
   off_diag_terms <- createCnonbranching_terms numberBits offDiag
-  p <- malloc
-  poke p $
+  p <- castStablePtrToPtr <$> newStablePtr operator
+  new $
     Coperator
       basis
       off_diag_terms
       diag_terms
       (fromBool False)
-  pure p
+      p
 
 destroyCoperator :: HasCallStack => Ptr Coperator -> IO ()
 destroyCoperator p
   | p /= nullPtr = do
-    (Coperator basis off_diag_terms diag_terms _) <- peek p
+    (Coperator basis off_diag_terms diag_terms _ payload) <- peek p
+    !particleType <- cbasis_particle_type <$> peek basis
     destroyCbasis basis
     destroyCnonbranching_terms off_diag_terms
     destroyCnonbranching_terms diag_terms
+    let freeHaskellPayload :: forall (t :: ParticleTy). Proxy t -> IO ()
+        freeHaskellPayload _ =
+          freeStablePtr (castPtrToStablePtr payload :: StablePtr (Operator t))
+    withParticleType particleType freeHaskellPayload
     free p
   | otherwise = error "should not happen"
 
@@ -253,10 +252,9 @@ peekNumberOffDiagTerms p = do
     else pure 0
 
 applyOperator ::
-  ( IsBasis basis,
-    HasNonbranchingRepresentation (Factor basis)
-  ) =>
-  Operator ComplexRational basis ->
+  forall t.
+  HasNonbranchingRepresentation (Generator Int (GeneratorType t)) =>
+  Operator t ->
   BasisState ->
   Vector (ComplexRational, BasisState)
 applyOperator operator (BasisState _ x) = unsafePerformIO $

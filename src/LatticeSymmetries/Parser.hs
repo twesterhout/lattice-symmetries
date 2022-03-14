@@ -4,28 +4,32 @@ module LatticeSymmetries.Parser
   ( pFermionicOperator,
     pSpinOperator,
     pOperatorString,
+    pBasisState,
     SpinIndex (..),
-    mkSpinOperator,
+    -- mkSpinOperator,
     operatorFromString,
   )
 where
 
 import Data.Bits
-import qualified Data.List.NonEmpty as NonEmpty
+-- import qualified Data.List.NonEmpty as NonEmpty
 import Data.Ratio
-import Data.String (IsString (..))
-import qualified Data.Vector.Generic as G
+-- import Data.String (IsString (..))
+-- import qualified Data.Vector.Generic as G
+
 import LatticeSymmetries.Algebra
 import LatticeSymmetries.Basis
+import LatticeSymmetries.BitString
 import LatticeSymmetries.ComplexRational
+import LatticeSymmetries.Generator
 import LatticeSymmetries.Operator
 import Text.Parsec
-import qualified Text.Read (read)
+-- import qualified Text.Read (read)
 import Prelude hiding (Product, Sum, (<|>))
 
-type ℝ = Rational
+-- type ℝ = Rational
 
-type ℂ = ComplexRational
+-- type ℂ = ComplexRational
 
 pSubscriptDigit :: Stream s m Char => ParsecT s u m Char
 pSubscriptDigit =
@@ -57,7 +61,7 @@ data FermionicOperatorType
   = FermionicCreationOperator
   | FermionicAnnihilationOperator
   | FermionicNumberCountingOperator
-  deriving (Show, Eq)
+  deriving stock (Show, Eq)
 
 data SpinOperatorType
   = SpinPlusOperator
@@ -65,18 +69,18 @@ data SpinOperatorType
   | SpinXOperator
   | SpinYOperator
   | SpinZOperator
-  deriving (Show, Eq)
+  deriving stock (Show, Eq)
 
 data PrimitiveOperator
   = SpinfulFermionicOperator !FermionicOperatorType !Char !SpinIndex !Int
   | SpinlessFermionicOperator !FermionicOperatorType !Char !Int
   | SpinOperator !SpinOperatorType !Char !Int
-  deriving (Show, Eq)
+  deriving stock (Show, Eq)
 
-getSiteIndex :: PrimitiveOperator -> Int
-getSiteIndex (SpinfulFermionicOperator _ _ _ i) = i
-getSiteIndex (SpinlessFermionicOperator _ _ i) = i
-getSiteIndex (SpinOperator _ _ i) = i
+-- getSiteIndex :: PrimitiveOperator -> Int
+-- getSiteIndex (SpinfulFermionicOperator _ _ _ i) = i
+-- getSiteIndex (SpinlessFermionicOperator _ _ i) = i
+-- getSiteIndex (SpinOperator _ _ i) = i
 
 class KnownIndex i where
   pIndex :: Stream s m Char => ParsecT s u m i
@@ -124,6 +128,7 @@ pSpinOperator = do
           (ComplexRational 0 (-1))
             `scale` [Scaled 1 (Generator i SpinPlus), Scaled (-1) (Generator i SpinMinus)]
         'ᶻ' -> [Scaled 1 (Generator i SpinZ)]
+        _ -> error "should not have happened"
   pure $ pre `scale` t
 
 -- pPrimitiveOperator :: Stream s m Char => ParsecT s u m PrimitiveOperator
@@ -137,43 +142,32 @@ pOperatorString pPrimitive =
   expandProduct . fromList
     <$> (pPrimitive `sepBy1` spaces <?> "operator string")
 
-mkSpinOperator ::
-  HasCallStack =>
-  Text ->
-  [[Int]] ->
-  Polynomial ℂ (Generator Int SpinGeneratorType)
-mkSpinOperator s indices = case parse (pOperatorString pSpinOperator) "" s of
-  Left e -> error (show e)
-  Right x -> simplify $ forIndices x indices
+-- mkSpinOperator ::
+--   HasCallStack =>
+--   Text ->
+--   [[Int]] ->
+--   Polynomial ℂ (Generator Int SpinGeneratorType)
+-- mkSpinOperator s indices = case parse (pOperatorString pSpinOperator) "" s of
+--   Left e -> error (show e)
+--   Right x -> simplify $ forIndices x indices
 
-class IsBasis basis => KnownBasis basis where
-  getPrimitiveParser ::
-    Stream s m Char =>
-    basis ->
-    ParsecT s u m (Sum (Scaled ComplexRational (Generator (IndexType basis) (GeneratorType basis))))
-
-instance KnownBasis SpinBasis where
-  getPrimitiveParser _ = pSpinOperator
-
-instance KnownBasis SpinfulFermionicBasis where
-  getPrimitiveParser _ = pFermionicOperator
-
-instance KnownBasis SpinlessFermionicBasis where
-  getPrimitiveParser _ = pFermionicOperator
+getPrimitiveParser :: Stream s m Char => Basis t -> ParsecT s u m (Sum (Scaled ComplexRational (Factor t)))
+getPrimitiveParser (SpinBasis _ _) = pSpinOperator
+getPrimitiveParser (SpinfulFermionicBasis _ _) = pFermionicOperator
+getPrimitiveParser (SpinlessFermionicBasis _ _) = pFermionicOperator
 
 operatorFromString ::
-  ( KnownBasis basis,
-    Ord (IndexType basis),
-    HasSiteIndex (IndexType basis),
-    Bounded (GeneratorType basis),
-    Enum (GeneratorType basis),
-    HasMatrixRepresentation (GeneratorType basis),
-    Algebra (GeneratorType basis)
+  ( Ord (IndexType t),
+    HasSiteIndex (IndexType t),
+    Bounded (GeneratorType t),
+    Enum (GeneratorType t),
+    HasMatrixRepresentation (GeneratorType t),
+    Algebra (GeneratorType t)
   ) =>
-  basis ->
+  Basis t ->
   Text ->
   [[Int]] ->
-  Operator ComplexRational basis
+  Operator t
 operatorFromString basis s indices = case parse (pOperatorString (getPrimitiveParser basis)) "" s of
   Left e -> error (show e)
   Right x ->
@@ -185,8 +179,8 @@ pBasisState = do
   _ <- char '|'
   s <- many1 (char '0' <|> char '1')
   _ <- char '⟩'
-  let go !n !count [] = BasisState count (BitString n)
-      go !n !count (c : cs) = go ((n `shiftL` 1) .|. x) (count + 1) cs
+  let go !n !size [] = BasisState size (BitString n)
+      go !n !size (c : cs) = go ((n `shiftL` 1) .|. x) (size + 1) cs
         where
           x = case c of
             '0' -> 0

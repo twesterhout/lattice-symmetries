@@ -19,6 +19,7 @@ import LatticeSymmetries.Basis
 import qualified LatticeSymmetries.CSR as CSR
 import LatticeSymmetries.ComplexRational
 import qualified LatticeSymmetries.Dense as Dense
+import LatticeSymmetries.Generator
 import LatticeSymmetries.IO
 import LatticeSymmetries.NonbranchingTerm
 import LatticeSymmetries.Operator
@@ -444,10 +445,10 @@ main = hspec $ do
             c = CSR.csrMatrixFromDense ([[1, 2], [1, 5]] :: Dense.DenseMatrix S.Vector (Complex Double))
         (a + b) `shouldBe` c
 
-  describe "builds operators" $ do
-    it ".." $ do
-      print $ mkSpinOperator "σ⁺₁ σ⁻₂" [[0, 1], [1, 2], [2, 0]]
-      True `shouldBe` True
+  -- describe "builds operators" $ do
+  --   it ".." $ do
+  --     print $ mkSpinOperator "σ⁺₁ σ⁻₂" [[0, 1], [1, 2], [2, 0]]
+  --     True `shouldBe` True
 
   describe "NonbranchingTerm" $ do
     it ".." $ do
@@ -478,6 +479,8 @@ main = hspec $ do
       binomialCoefficient 4 1 `shouldBe` 4
   describe "stateIndex" $ do
     it "computes indices of representatives" $ do
+      isStateIndexIdentity (LatticeSymmetries.Basis.SpinBasis 10 Nothing) `shouldBe` True
+      isStateIndexIdentity (LatticeSymmetries.Basis.SpinBasis 10 (Just 8)) `shouldBe` False
       stateIndex (LatticeSymmetries.Basis.SpinBasis 10 Nothing) "|0000000101⟩" `shouldBe` Just 5
       stateIndex (LatticeSymmetries.Basis.SpinBasis 10 (Just 2)) "|0000000101⟩" `shouldBe` Just 1
 

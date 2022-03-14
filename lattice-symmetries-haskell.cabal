@@ -77,6 +77,7 @@ library
                        LatticeSymmetries.Dense
                        LatticeSymmetries.CSR
                        LatticeSymmetries.Basis
+                       LatticeSymmetries.Generator
                        LatticeSymmetries.BitString
                        LatticeSymmetries.NonbranchingTerm
                        LatticeSymmetries.Operator
@@ -91,6 +92,7 @@ library
                      -- , vector-binary-instances
                      , exceptions
                      , safe-exceptions
+                     , some
                      -- , resourcet
                      -- , unliftio
                      , unliftio-core
@@ -136,8 +138,13 @@ foreign-library lattice_symmetries_haskell
   -- MyForeignLib.SomeModule
   -- MyForeignLib.SomeOtherModule
   -- c-sources:           csrc/MyForeignLibWrapper.c
+  c-sources:           cbits/init.c
+  cc-options:          -Wall -Wextra -Wpedantic
+  include-dirs:        cbits
   build-depends:       lattice-symmetries-haskell
-
+                     , text
+                     , ansi-wl-pprint
+                     , split
 -- executable liblattice_symmetries_haskell.so
 --   import:              common-options
 --   hs-source-dirs:      lib

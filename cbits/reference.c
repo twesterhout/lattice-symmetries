@@ -10,6 +10,7 @@
 
 typedef uint64_t ls_hs_bits;
 
+#if 0
 typedef struct ls_hs_nonbranching_term {
   ls_hs_scalar v;
   ls_hs_bits m;
@@ -31,6 +32,7 @@ void ls_hs_apply_nonbranching_term(ls_hs_nonbranching_term const *const term,
   *beta = alpha ^ term->x;
   *coeff = term->v * (delta * sign);
 }
+#endif
 
 #if 0
 void strided_memset(void *const restrict dest, ptrdiff_t const count,
@@ -279,4 +281,32 @@ void ls_hs_state_index_identity_kernel(ptrdiff_t const batch_size,
     indices[batch_idx * indices_stride] =
         (ptrdiff_t)spins[batch_idx * spins_stride];
   }
+}
+
+void ls_hs_evaluate_wavefunction_via_statevector(
+    ls_hs_basis_kernels const *const kernels, ptrdiff_t const batch_size,
+    uint64_t const *const restrict alphas, ptrdiff_t const alphas_stride,
+    void const *const restrict state_vector, size_t const element_size,
+    void *const restrict coeffs) {
+  ptrdiff_t *const indices = malloc(batch_size * sizeof(ptrdiff_t));
+  if (indices == NULL) {
+    fprintf(stderr, "failed to allocate space for indices\n");
+    abort();
+  }
+
+  if (kernels->state_index_kernel == NULL) {
+    free(indices);
+    fprintf(stderr, "no kernel to compute indices\n");
+    abort();
+  }
+  (*kernels->state_index_kernel)(batch_size, alphas, alphas_stride, indices, 1,
+                                 kernels->state_index_data);
+  for (ptrdiff_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+    void const *src =
+        (uint8_t const *)state_vector + indices[batch_idx] * element_size;
+    void *dest = (uint8_t *)coeffs + batch_idx * element_size;
+    memcpy(dest, src, element_size);
+  }
+
+  free(indices);
 }

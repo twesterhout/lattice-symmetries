@@ -5,23 +5,18 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
 
 module LatticeSymmetries.Algebra
-  ( SpinGeneratorType (..),
-    FermionGeneratorType (..),
-    HasMatrixRepresentation (..),
-    Generator (..),
-    Scaled (..),
+  ( Scaled (..),
     Sum (..),
     Product (..),
     Algebra (..),
-    SpinIndex (..),
     Polynomial,
     scale,
     -- sumToCanonical,
     expandProduct,
     simplify,
-    groupTerms,
+    -- groupTerms,
     -- lowerToMatrix,
-    forIndices,
+    -- forIndices,
     forSiteIndices,
     HasSiteIndex,
   )
@@ -37,66 +32,18 @@ import qualified Data.Vector.Algorithms.Intro
 import Data.Vector.Generic ((!))
 import qualified Data.Vector.Generic as G
 import GHC.Exts (IsList (..))
+-- import LatticeSymmetries.CSR
+
 import LatticeSymmetries.BitString
-import LatticeSymmetries.CSR
 import LatticeSymmetries.ComplexRational
 import LatticeSymmetries.Dense
+import LatticeSymmetries.Generator
 import LatticeSymmetries.NonbranchingTerm
 import LatticeSymmetries.Sparse (combineNeighbors)
-import Numeric.Natural
+-- import Numeric.Natural
 import Text.PrettyPrint.ANSI.Leijen (Pretty (..))
 import qualified Text.PrettyPrint.ANSI.Leijen as Pretty
 import Prelude hiding (Product, Sum, identity, toList)
-
-data SpinIndex = SpinUp | SpinDown
-  deriving (Show, Eq, Ord)
-
-instance Pretty SpinIndex where
-  pretty SpinUp = "↑"
-  pretty SpinDown = "↓"
-
-data SpinGeneratorType = SpinIdentity | SpinZ | SpinPlus | SpinMinus
-  deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
-
-instance Pretty SpinGeneratorType where
-  pretty x = case x of
-    SpinIdentity -> "1"
-    SpinZ -> "σᶻ"
-    SpinPlus -> "σ⁺"
-    SpinMinus -> "σ⁻"
-
-data FermionGeneratorType = FermionIdentity | FermionCount | FermionCreate | FermionAnnihilate
-  deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
-
-instance Pretty FermionGeneratorType where
-  pretty x = case x of
-    FermionIdentity -> "1"
-    FermionCount -> "n"
-    FermionCreate -> "c†"
-    FermionAnnihilate -> "c"
-
-data Generator i g = Generator !i !g
-  deriving stock (Eq, Ord, Show, Generic)
-
-toSubscript :: Int -> Text
-toSubscript n = Text.map h (show n)
-  where
-    h '0' = '₀'
-    h '1' = '₁'
-    h '2' = '₂'
-    h '3' = '₃'
-    h '4' = '₄'
-    h '5' = '₅'
-    h '6' = '₆'
-    h '7' = '₇'
-    h '8' = '₈'
-    h '9' = '₉'
-
-instance Pretty g => Pretty (Generator Int g) where
-  pretty (Generator i g) = pretty g <> Pretty.text (Text.unpack (toSubscript i))
-
-instance Pretty g => Pretty (Generator (SpinIndex, Int) g) where
-  pretty (Generator (σ, i) g) = pretty g <> pretty σ <> Pretty.text (Text.unpack (toSubscript i))
 
 data Scaled c g = Scaled !c !g
   deriving stock (Eq, Ord, Show, Generic)
@@ -118,49 +65,6 @@ withoutOrderingCoefficients (Scaled _ a) (Scaled _ b) = compare a b
 
 -- instance HasIdentity FermionGeneratorType where
 --   identity = FermionIdentity
-
-class HasMatrixRepresentation g where
-  matrixRepresentation :: (G.Vector v c, Num c) => g -> DenseMatrix v c
-
-instance HasMatrixRepresentation SpinGeneratorType where
-  matrixRepresentation = spinMatrixRepresentation
-
-instance HasMatrixRepresentation FermionGeneratorType where
-  matrixRepresentation = fermionMatrixRepresentation
-
-spinMatrixRepresentation :: (G.Vector v c, Num c) => SpinGeneratorType -> DenseMatrix v c
-spinMatrixRepresentation g = fromList $ case g of
-  SpinIdentity -> [[1, 0], [0, 1]]
-  SpinZ -> [[1, 0], [0, -1]]
-  SpinPlus -> [[0, 1], [0, 0]]
-  SpinMinus -> [[0, 0], [1, 0]]
-
-fermionMatrixRepresentation :: (G.Vector v c, Num c) => FermionGeneratorType -> DenseMatrix v c
-fermionMatrixRepresentation g = fromList $ case g of
-  FermionIdentity -> [[1, 0], [0, 1]]
-  FermionCount -> [[1, 0], [0, 0]]
-  FermionCreate -> [[0, 1], [0, 0]]
-  FermionAnnihilate -> [[0, 0], [1, 0]]
-
-instance HasNonbranchingRepresentation (Generator Int SpinGeneratorType) where
-  nonbranchingRepresentation (Generator _ SpinIdentity) =
-    NonbranchingTerm 1 zeroBits zeroBits zeroBits zeroBits zeroBits
-  nonbranchingRepresentation (Generator i SpinZ) =
-    NonbranchingTerm (-1) zeroBits zeroBits zeroBits zeroBits (bit i)
-  nonbranchingRepresentation (Generator i SpinPlus) =
-    NonbranchingTerm 1 (bit i) (bit i) zeroBits (bit i) zeroBits
-  nonbranchingRepresentation (Generator i SpinMinus) =
-    NonbranchingTerm 1 (bit i) zeroBits (bit i) (bit i) zeroBits
-
-instance HasNonbranchingRepresentation (Generator Int FermionGeneratorType) where
-  nonbranchingRepresentation (Generator _ FermionIdentity) =
-    NonbranchingTerm 1 zeroBits zeroBits zeroBits zeroBits zeroBits
-  nonbranchingRepresentation (Generator i FermionCount) =
-    NonbranchingTerm 1 (bit i) (bit i) (bit i) zeroBits zeroBits
-  nonbranchingRepresentation (Generator i FermionCreate) =
-    NonbranchingTerm 1 (bit i) (bit i) zeroBits (bit i) (BitString (bit i - 1))
-  nonbranchingRepresentation (Generator i FermionAnnihilate) =
-    NonbranchingTerm 1 (bit i) zeroBits (bit i) (bit i) (BitString (bit i - 1))
 
 instance
   HasNonbranchingRepresentation g =>
@@ -256,7 +160,7 @@ instance Algebra SpinGeneratorType where
 instance Algebra FermionGeneratorType where
   nonDiagonalCommutatorType = Anticommutator
 
-instance (Algebra g, HasMatrixRepresentation g, Ord i) => Algebra (Generator i g) where
+instance (Algebra g, Ord i) => Algebra (Generator i g) where
   isDiagonal (Generator _ g) = isDiagonal g
   nonDiagonalCommutatorType = nonDiagonalCommutatorType @g
   commute (Generator i a) (Generator j b)
@@ -468,7 +372,7 @@ productToCanonical t₀ = go (Scaled 1 t₀) 0 False
 
 simplifyPrimitiveProduct' ::
   forall c g.
-  (HasCallStack, Enum g, Bounded g, HasMatrixRepresentation g, Fractional c, Eq c) =>
+  (Enum g, Bounded g, HasMatrixRepresentation g, Fractional c, Eq c) =>
   Product g ->
   Sum (Scaled c g)
 simplifyPrimitiveProduct' (Product !v)
@@ -554,6 +458,7 @@ expandProduct (Product v)
     asProducts :: Sum (Scaled c g) -> Sum (Scaled c (Product g))
     asProducts = fmap (\(Scaled c g) -> (Scaled c (Product (G.singleton g))))
 
+{-
 data SignMask i = SignMask ![(i, i)]
   deriving stock (Show, Eq, Ord)
 
@@ -574,7 +479,9 @@ getSignMask iₘᵢₙ (Product gs)
       let acc' = if flag then (i, j) : acc else acc
        in go acc' (not flag) (j : rest)
     go _ _ [_] = error "this should not have happened"
+-}
 
+{-
 data LoweredOperator i g = LoweredOperator !(Vector i) !(SignMask i) !g
   deriving stock (Show, Eq, Ord)
 
@@ -600,6 +507,7 @@ lower0 ::
   Product (Generator i g) ->
   LoweredOperator i (Product g)
 lower0 i₀ p = LoweredOperator (extractIndices p) (getSignMask i₀ p) (extractGenerators p)
+-}
 
 type Polynomial c g = Sum (Scaled c (Product g))
 
@@ -610,6 +518,7 @@ collectIndices = List.nub . List.sort . collectSum
     collectScaled (Scaled _ p) = collectProduct p
     collectProduct (Product v) = (\(Generator i _) -> i) <$> (G.toList v)
 
+{-
 replaceIndices :: Ord i => Polynomial c (Generator i g) -> [(i, i)] -> Polynomial c (Generator i g)
 replaceIndices poly map = replaceSum poly
   where
@@ -628,28 +537,17 @@ forIndices poly indices = mconcat (fmap processOne indices)
   where
     processOne newIndices = replaceIndices poly (zipWith (,) symbols newIndices)
     symbols = collectIndices poly
+-}
 
-class HasSiteIndex i where
-  getSiteIndex :: i -> Int
-  mapSiteIndex :: (Int -> Int) -> i -> i
-
-instance HasSiteIndex Int where
-  getSiteIndex = id
-  mapSiteIndex f i = f i
-
-instance HasSiteIndex (SpinIndex, Int) where
-  getSiteIndex (σ, i) = i
-  mapSiteIndex f (σ, i) = (σ, f i)
-
-replaceSiteIndices :: (Ord i, HasSiteIndex i) => Polynomial c (Generator i g) -> [(Int, Int)] -> Polynomial c (Generator i g)
-replaceSiteIndices poly map = replaceSum poly
+replaceSiteIndices :: HasSiteIndex i => Polynomial c (Generator i g) -> [(Int, Int)] -> Polynomial c (Generator i g)
+replaceSiteIndices poly indexMap = replaceSum poly
   where
     replaceSum = fmap replaceScaled
     replaceScaled = fmap replaceProduct
     replaceProduct = fmap replaceGenerator
     replaceGenerator (Generator i g) = Generator (mapSiteIndex f i) g
       where
-        f i = case [to | (from, to) <- map, from == getSiteIndex i] of
+        f i' = case [to | (from, to) <- indexMap, from == getSiteIndex i'] of
           [to] -> to
           [] -> error "index missing in mapping"
           _ -> error "multiple indices found in mapping"
@@ -660,6 +558,7 @@ forSiteIndices poly indices = mconcat (fmap processOne indices)
     processOne newIndices = replaceSiteIndices poly (zipWith (,) symbols newIndices)
     symbols = fmap getSiteIndex $ collectIndices poly
 
+{-
 groupTerms ::
   forall c i g.
   (HasMatrixRepresentation g, Algebra g, Ord i, Num c) =>
@@ -689,6 +588,7 @@ groupTerms i₀ = step4 . step3 . step2 . step1
           (\(LoweredOperator i1 s1 _) (LoweredOperator i2 s2 _) -> i1 == i2 && s1 == s2)
           (\(LoweredOperator i1 s1 g1) (LoweredOperator _ _ g2) -> (LoweredOperator i1 s1 (g1 + g2)))
           v
+-}
 
 -- lowerToMatrix ::
 --   forall c g.
