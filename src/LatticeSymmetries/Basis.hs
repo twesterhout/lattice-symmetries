@@ -13,6 +13,7 @@ module LatticeSymmetries.Basis
     GeneratorType (..),
     SpinfulOccupation (..),
     Cbasis (..),
+    IsBasis (..),
     createCbasis,
     destroyCbasis,
     Cbasis_kernels (..),
@@ -33,6 +34,7 @@ import Control.Exception.Safe (bracket)
 -- import Data.Bits
 import Data.Some
 import qualified Data.Text as Text
+import qualified Data.Vector.Storable as S
 import Foreign.C.Types
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc (alloca, free)
@@ -84,6 +86,38 @@ deriving stock instance Show (Basis t)
 
 deriving stock instance Eq (Basis t)
 
+-- typedef struct {
+--   void* elts;
+--   uint64_t num_elts;
+--
+--   void* freer;
+-- } chpl_external_array;
+data Cexternal_array = Cexternal_array
+  { external_array_elts :: !(Ptr ()),
+    external_array_num_elts :: !Word64,
+    external_array_freer :: !(Ptr ())
+  }
+
+instance Storable Cexternal_array where
+  sizeOf _ = 24
+  alignment _ = 8
+  peek p =
+    Cexternal_array
+      <$> peekByteOff p 0
+      <*> peekByteOff p 8
+      <*> peekByteOff p 16
+  poke p x = do
+    pokeByteOff p 0 (external_array_elts x)
+    pokeByteOff p 8 (external_array_num_elts x)
+    pokeByteOff p 16 (external_array_freer x)
+
+newtype ChapelArray = ChapelArray (ForeignPtr Cexternal_array)
+
+data Representatives = Representatives {rStates :: !ChapelArray, rRanges :: !ChapelArray}
+
+buildRepresentatives :: Basis t -> Representatives
+buildRepresentatives = undefined
+
 type family IndexType (t :: ParticleTy) where
   IndexType 'SpinTy = Int
   IndexType 'SpinfulFermionTy = (SpinIndex, Int)
@@ -103,7 +137,7 @@ data SpinfulOccupation
     SpinfulPerSector !Int !Int
   deriving stock (Show, Eq)
 
-newtype Cparticle_type = Cparticle_type CInt
+newtype {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_particle_type" #-} Cparticle_type = Cparticle_type CInt
   deriving stock (Show, Eq)
   deriving newtype (Storable)
 
@@ -116,48 +150,12 @@ c_LS_HS_SPINFUL_FERMION = Cparticle_type 1
 c_LS_HS_SPINLESS_FERMION :: Cparticle_type
 c_LS_HS_SPINLESS_FERMION = Cparticle_type 2
 
-data Cbasis = Cbasis
-  { cbasis_number_sites :: {-# UNPACK #-} !CInt,
-    cbasis_number_particles :: {-# UNPACK #-} !CInt,
-    cbasis_number_up :: {-# UNPACK #-} !CInt,
-    cbasis_particle_type :: {-# UNPACK #-} !Cparticle_type,
-    cbasis_state_index_is_identity :: {-# UNPACK #-} !CBool,
-    cbasis_haskell_payload :: {-# UNPACK #-} !(Ptr ())
-  }
-
-instance Storable Cbasis where
-  sizeOf _ = 32
-  alignment _ = 8
-  peek p =
-    Cbasis
-      <$> peekByteOff p 0
-      <*> peekByteOff p 4
-      <*> peekByteOff p 8
-      <*> peekByteOff p 12
-      <*> peekByteOff p 16
-      <*> peekByteOff p 24
-  poke p (Cbasis number_sites number_particles number_up particle_type state_index_is_identity haskell_payload) = do
-    pokeByteOff p 0 number_sites
-    pokeByteOff p 4 number_particles
-    pokeByteOff p 8 number_up
-    pokeByteOff p 12 particle_type
-    pokeByteOff p 16 state_index_is_identity
-    pokeByteOff p 24 haskell_payload
-
--- |
--- Cstate_index_kernel
---   batch_size
---   spins
---   spins_stride
---   indices
---   indices_stride
---   private_kernel_data
 type Cindex_kernel = CPtrdiff -> Ptr Word64 -> CPtrdiff -> Ptr CPtrdiff -> CPtrdiff -> Ptr () -> IO ()
 
 foreign import ccall "dynamic"
   mkCindex_kernel :: FunPtr Cindex_kernel -> Cindex_kernel
 
-data Cbasis_kernels = Cbasis_kernels
+data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_basis_kernels" #-} Cbasis_kernels = Cbasis_kernels
   { cbasis_state_index_kernel :: {-# UNPACK #-} !(FunPtr Cindex_kernel),
     cbasis_state_index_data :: {-# UNPACK #-} !(Ptr ())
   }
@@ -172,6 +170,40 @@ instance Storable Cbasis_kernels where
   poke p (Cbasis_kernels index_kernel index_data) = do
     pokeByteOff p 0 index_kernel
     pokeByteOff p 8 index_data
+
+data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_basis" #-} Cbasis = Cbasis
+  { cbasis_number_sites :: {-# UNPACK #-} !CInt,
+    cbasis_number_particles :: {-# UNPACK #-} !CInt,
+    cbasis_number_up :: {-# UNPACK #-} !CInt,
+    cbasis_particle_type :: {-# UNPACK #-} !Cparticle_type,
+    cbasis_state_index_is_identity :: {-# UNPACK #-} !CBool,
+    cbasis_requires_projection :: {-# UNPACK #-} !CBool,
+    cbasis_kernels :: {-# UNPACK #-} !(Ptr Cbasis_kernels),
+    cbasis_haskell_payload :: {-# UNPACK #-} !(Ptr ())
+  }
+
+instance Storable Cbasis where
+  sizeOf _ = 40
+  alignment _ = 8
+  peek p =
+    Cbasis
+      <$> peekByteOff p 0
+      <*> peekByteOff p 4
+      <*> peekByteOff p 8
+      <*> peekByteOff p 12
+      <*> peekByteOff p 16
+      <*> peekByteOff p 17
+      <*> peekByteOff p 24
+      <*> peekByteOff p 32
+  poke p x = do
+    pokeByteOff p 0 (cbasis_number_sites x)
+    pokeByteOff p 4 (cbasis_number_particles x)
+    pokeByteOff p 8 (cbasis_number_up x)
+    pokeByteOff p 12 (cbasis_particle_type x)
+    pokeByteOff p 16 (cbasis_state_index_is_identity x)
+    pokeByteOff p 17 (cbasis_requires_projection x)
+    pokeByteOff p 24 (cbasis_kernels x)
+    pokeByteOff p 32 (cbasis_haskell_payload x)
 
 stateIndex :: Basis t -> BasisState -> Maybe Int
 stateIndex basis (BasisState _ (BitString α))
@@ -336,6 +368,7 @@ optionalNatural x = case x of
 createCbasis :: Basis t -> IO (Ptr Cbasis)
 createCbasis basis = do
   p <- castStablePtrToPtr <$> newStablePtr basis
+  kernels <- createCbasis_kernels basis
   new $
     Cbasis
       { cbasis_number_sites = fromIntegral (getNumberSites basis),
@@ -343,6 +376,8 @@ createCbasis basis = do
         cbasis_number_up = optionalNatural (getNumberUp basis),
         cbasis_particle_type = getParticleType basis,
         cbasis_state_index_is_identity = fromBool (isStateIndexIdentity basis),
+        cbasis_requires_projection = fromBool False,
+        cbasis_kernels = kernels,
         cbasis_haskell_payload = p
       }
 
@@ -367,6 +402,7 @@ destroyCbasis p
   | p == nullPtr = pure ()
   | otherwise = do
     b <- peek p
+    destroyCbasis_kernels (cbasis_kernels b)
     let freeHaskellPayload :: forall (t :: ParticleTy). Proxy t -> IO ()
         freeHaskellPayload _ = freeStablePtr (castPtrToStablePtr (cbasis_haskell_payload b) :: StablePtr (Basis t))
     withParticleType (cbasis_particle_type b) freeHaskellPayload
@@ -396,7 +432,7 @@ createCbasis_kernels basis -- (SpinBasis n hammingWeight)
             cbasis_state_index_data = castPtr cache
           }
 
-destroyCbasis_kernels :: Ptr Cbasis_kernels -> IO ()
+destroyCbasis_kernels :: HasCallStack => Ptr Cbasis_kernels -> IO ()
 destroyCbasis_kernels p
   | p == nullPtr = pure ()
   | otherwise = do

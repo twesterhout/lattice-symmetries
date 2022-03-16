@@ -1,4 +1,5 @@
 {-# LANGUAGE CApiFFI #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module LatticeSymmetries.Operator where
@@ -244,6 +245,38 @@ destroyCoperator p
     free p
   | otherwise = error "should not happen"
 
+withReconstructedOperator ::
+  forall a.
+  Ptr Coperator ->
+  (forall (t :: ParticleTy). IsBasis t => Operator t -> IO a) ->
+  IO a
+withReconstructedOperator p action = do
+  operator <- peek p
+  particleType <- cbasis_particle_type <$> peek (coperator_basis operator)
+  let run :: forall (t :: ParticleTy). IsBasis t => Proxy t -> IO a
+      run _ = do
+        (x :: Operator t) <-
+          deRefStablePtr $
+            castPtrToStablePtr (coperator_haskell_payload operator)
+        action x
+  withParticleType particleType run
+
+withSameTypeAs ::
+  forall t a.
+  HasCallStack =>
+  Operator t ->
+  ((forall t'. Operator t' -> a) -> a) ->
+  (Operator t -> a) ->
+  a
+withSameTypeAs a _with _action = _with f
+  where
+    f :: forall t'. Operator t' -> a
+    f b = case (a, b) of
+      ((Operator (SpinBasis _ _) _), b'@(Operator (SpinBasis _ _) _)) -> _action b'
+      ((Operator (SpinfulFermionicBasis _ _) _), b'@(Operator (SpinfulFermionicBasis _ _) _)) -> _action b'
+      ((Operator (SpinlessFermionicBasis _ _) _), b'@(Operator (SpinlessFermionicBasis _ _) _)) -> _action b'
+      _ -> error "operators have different types"
+
 peekNumberOffDiagTerms :: Ptr Coperator -> IO Int
 peekNumberOffDiagTerms p = do
   p' <- coperator_off_diag_terms <$> peek p
@@ -321,3 +354,6 @@ foreign import capi unsafe "lattice_symmetries_haskell.h ls_hs_operator_apply_di
 --     ls_hs_scalar *coeffs);
 foreign import capi unsafe "lattice_symmetries_haskell.h ls_hs_operator_apply_off_diag_kernel"
   ls_hs_operator_apply_off_diag_kernel :: Ptr Coperator -> CPtrdiff -> Ptr Word64 -> CPtrdiff -> Ptr Word64 -> CPtrdiff -> Ptr Cscalar -> IO ()
+
+foreign import capi unsafe "lattice_symmetries_haskell.h ls_hs_evaluate_wavefunction_via_statevector"
+  ls_hs_evaluate_wavefunction_via_statevector :: Ptr Cbasis_kernels -> CPtrdiff -> Ptr Word64 -> CPtrdiff -> Ptr () -> CSize -> Ptr () -> IO ()

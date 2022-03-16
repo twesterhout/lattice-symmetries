@@ -67,22 +67,28 @@ void ls_hs_hdf5_read_chunk_f64(char const *filename, char const *dataset,
 
 typedef enum ls_hs_particle_type {
   LS_HS_SPIN,
-  LS_HS_FERMION
+  LS_HS_SPINFUL_FERMION,
+  LS_HS_SPINLESS_FERMION
 } ls_hs_particle_type;
 
+typedef void (*ls_hs_internal_state_index_kernel_type)(
+    ptrdiff_t batch_size, uint64_t const *alphas, ptrdiff_t alphas_stride,
+    ptrdiff_t *indices, ptrdiff_t indices_stride, void const *private_data);
+
+typedef struct ls_hs_basis_kernels {
+  ls_hs_internal_state_index_kernel_type state_index_kernel;
+  void *state_index_data;
+} ls_hs_basis_kernels;
+
 typedef struct ls_hs_basis {
+  int number_sites;
+  int number_particles;
+  int number_up;
   ls_hs_particle_type particle_type;
-  int number_sites; // always >= 0
-  int number_up;    // either >= 0 or == -1, -1 means "unspecified"
-  int number_down;  // either >= 0 or == -1, -1 means "unspecified"
   bool state_index_is_identity;
+  bool requires_projection;
+  ls_hs_basis_kernels *kernels;
   void *haskell_payload;
-  // if number_up >= 0 and number_down >= 0
-  //   then
-  //     number_up + number_down <= number_sites
-  //        when particle_type == LS_HS_FERMION
-  //     number_up + number_down == number_sites
-  //        when particle_type == LS_HS_SPIN
 } ls_hs_basis;
 
 ls_hs_basis *ls_hs_create_spin_basis(int, int);
@@ -107,18 +113,6 @@ void ls_hs_destroy_basis_v2(ls_hs_basis *);
 //   { cbasis_state_index_kernel :: {-# UNPACK #-} !(FunPtr Cindex_kernel),
 //     cbasis_state_index_data :: {-# UNPACK #-} !(Ptr ())
 //   }
-typedef void (*ls_hs_internal_state_index_kernel_type)(
-    ptrdiff_t batch_size, uint64_t const *alphas, ptrdiff_t alphas_stride,
-    ptrdiff_t *indices, ptrdiff_t indices_stride, void const *private_data);
-
-typedef struct ls_hs_basis_kernels {
-  ls_hs_internal_state_index_kernel_type state_index_kernel;
-  void *state_index_data;
-} ls_hs_basis_kernels;
-
-ls_hs_basis_kernels *ls_hs_create_basis_kernels(ls_hs_basis const *);
-void ls_hs_destroy_basis_kernels(ls_hs_basis_kernels *);
-
 #if defined(__cplusplus)
 using ls_hs_scalar = std::complex<double>;
 #else
@@ -147,6 +141,9 @@ typedef struct ls_hs_operator {
 
 ls_hs_operator *ls_hs_create_operator(ls_hs_basis const *, char const *, int,
                                       int, int const *);
+ls_hs_operator *ls_hs_operator_plus(ls_hs_operator const *,
+                                    ls_hs_operator const *);
+void ls_hs_print_terms(ls_hs_operator const *);
 void ls_hs_destroy_operator_v2(ls_hs_operator *);
 
 void ls_hs_operator_apply_diag_kernel(ls_hs_operator const *op,
@@ -173,18 +170,42 @@ void ls_hs_internal_free_binomials(ls_hs_binomials *p);
 void ls_hs_internal_compute_binomials(ls_hs_binomials *p);
 uint64_t ls_hs_internal_binomial(int n, int k, ls_hs_binomials const *cache);
 
+ptrdiff_t ls_hs_internal_rank_via_combinadics(uint64_t alpha,
+                                              ls_hs_binomials const *cache);
+
 void ls_hs_state_index_combinadics_kernel(ptrdiff_t batch_size,
                                           uint64_t const *spins,
                                           ptrdiff_t spins_stride,
                                           ptrdiff_t *indices,
                                           ptrdiff_t indices_stride,
                                           void const *private_kernel_data);
+// }}}
+
 void ls_hs_state_index_identity_kernel(ptrdiff_t batch_size,
                                        uint64_t const *spins,
                                        ptrdiff_t spins_stride,
                                        ptrdiff_t *indices,
                                        ptrdiff_t indices_stride,
                                        void const *private_kernel_data);
+
+// {{{ Indexing
+
+typedef struct ls_hs_internal_lookup_cache {
+  int number_prefix_bits;
+  int bit_shift;
+  ptrdiff_t number_representatives;
+  ptrdiff_t number_ranges;
+  uint64_t *representatives;
+  ptrdiff_t *ranges;
+} ls_hs_internal_lookup_cache;
+
+void ls_hs_state_index_binary_search_kernel(ptrdiff_t batch_size,
+                                            uint64_t const *spins,
+                                            ptrdiff_t spins_stride,
+                                            ptrdiff_t *indices,
+                                            ptrdiff_t indices_stride,
+                                            void const *private_kernel_data);
+
 // }}}
 
 void ls_hs_evaluate_wavefunction_via_statevector(

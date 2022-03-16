@@ -145,15 +145,20 @@ foreign-library lattice_symmetries_haskell
                      , text
                      , ansi-wl-pprint
                      , split
--- executable liblattice_symmetries_haskell.so
---   import:              common-options
---   hs-source-dirs:      lib
---   main-is:             ForeignLibrary.hs
---   build-depends:       lattice-symmetries-haskell
---   -- extra-libraries:     -- HSrts-ghc8.10.7
---                        -- HSghc-prim-0.6.1
---                        -- HSghc-boot-th-8.10.7
---   ghc-options:         -no-hs-main -fPIC -shared -threaded
+  buildable: True
+
+executable example01
+  import:              common-options
+  hs-source-dirs:      app
+  main-is:             Example01.hs
+  build-depends:       lattice-symmetries-haskell
+                     , ansi-wl-pprint
+  -- extra-libraries:     -- HSrts-ghc8.10.7
+                       -- HSghc-prim-0.6.1
+                       -- HSghc-boot-th-8.10.7
+  ghc-options:         -threaded
+                       -rtsopts
+                       -with-rtsopts=-N
 
 -- executable ising-ground-state
 --   import:              common-options
@@ -181,3 +186,4 @@ test-suite lattice-symmetries-haskell-test
   ghc-options:         -threaded
                        -rtsopts
                        -with-rtsopts=-N
+  buildable: False

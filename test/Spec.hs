@@ -507,10 +507,12 @@ main = hspec $ do
       applyOperator operator2 "|10⟩" `shouldBe` [(2, "|01⟩"), (-1, "|10⟩")]
       applyOperator operator2 "|11⟩" `shouldBe` [(1, "|11⟩")]
 
-      let basis3 = LatticeSymmetries.Basis.SpinfulFermionicBasis 2 SpinfulNoOccupation
+      let basis3 = LatticeSymmetries.Basis.SpinfulFermionicBasis 4 SpinfulNoOccupation
           operator3 =
             operatorFromString basis3 "c†↑₀ c↑₁" [[0, 1], [3, 2]]
       hPutDoc stdout (pretty (opTerms operator3) <> hardline)
+      applyOperator operator3 "|00000010⟩" `shouldBe` [(1, "|00000001⟩")]
+      applyOperator operator3 "|00000100⟩" `shouldBe` [(-1, "|00001000⟩")]
 
 -- let basis3 = LatticeSymmetries.Basis.SpinfulFermionicBasis 2 SpinfulNoOccupation
 --     operator3 =

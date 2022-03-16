@@ -8,6 +8,7 @@ module LatticeSymmetries where
 import Control.Exception.Safe (MonadThrow, bracket, impureThrow, throwIO)
 import Data.Complex
 import qualified Data.HDF5 as H5
+import qualified Data.HDF5.Types as H5
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
 import Data.Yaml.Aeson
