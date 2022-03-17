@@ -1,20 +1,26 @@
 module ForeignLibrary () where
 
+import Control.Concurrent
 import Data.Complex
 import Data.List.Split (chunksOf)
 import qualified Data.Text as T
+import qualified Data.Vector.Generic as G
 import Foreign.C.String (CString, peekCString)
 import Foreign.C.Types (CBool (..), CInt (..), CPtrdiff (..), CSize (..), CUInt (..), CUShort (..))
+import Foreign.ForeignPtr
 import Foreign.Marshal.Array (peekArray)
+import Foreign.Marshal.Utils (fromBool)
 import Foreign.Ptr (FunPtr, Ptr)
+import Foreign.StablePtr
 import LatticeSymmetries
-import LatticeSymmetries.Algebra
+-- import LatticeSymmetries.Algebra
 import LatticeSymmetries.Basis
-import LatticeSymmetries.ComplexRational
-import LatticeSymmetries.Generator
-import LatticeSymmetries.Operator
-import LatticeSymmetries.Parser
+-- import LatticeSymmetries.ComplexRational
+-- import LatticeSymmetries.Generator
+-- import LatticeSymmetries.Operator
+-- import LatticeSymmetries.Parser
 import qualified LatticeSymmetries.Types as Types
+import System.Mem
 import Text.PrettyPrint.ANSI.Leijen (hardline, pretty, putDoc)
 
 foreign export ccall "ls_hs_hdf5_create_dataset_u64"
@@ -59,85 +65,69 @@ foreign export ccall "ls_hs_destroy_spin_basis"
 foreign export ccall "ls_hs_destroy_operator"
   ls_hs_destroy_operator :: Ptr Types.OperatorWrapper -> IO ()
 
-ls_hs_create_spin_basis :: CInt -> CInt -> IO (Ptr Cbasis)
-ls_hs_create_spin_basis numberSites hammingWeight = do
-  putStrLn "Creating SpinBasis ..."
-  createCbasis $ SpinBasis numberSites' hammingWeight'
-  where
-    numberSites' = fromIntegral numberSites
-    hammingWeight'
-      | hammingWeight == -1 = Nothing
-      | otherwise = Just (fromIntegral hammingWeight)
-
-ls_hs_create_spinful_fermionic_basis :: CInt -> CInt -> CInt -> IO (Ptr Cbasis)
-ls_hs_create_spinful_fermionic_basis numberSites numberUp numberDown = do
-  putStrLn "Creating SpinfulFermionicBasis ..."
-  createCbasis $ SpinfulFermionicBasis numberSites' occupation
-  where
-    numberSites' = fromIntegral numberSites
-    occupation
-      | numberUp == -1 && numberDown == -1 = SpinfulNoOccupation
-      | numberUp >= 0 && numberDown == -1 = SpinfulTotalParticles (fromIntegral numberUp)
-      | otherwise = SpinfulPerSector (fromIntegral numberUp) (fromIntegral numberDown)
-
--- ls_hs_create_basis_kernels :: Ptr Cbasis -> IO (Ptr Cbasis_kernels)
--- ls_hs_create_basis_kernels p = withReconstructedBasis p createCbasis_kernels
-
-foreign export ccall "ls_hs_create_spin_basis"
-  ls_hs_create_spin_basis :: CInt -> CInt -> IO (Ptr Cbasis)
-
-foreign export ccall "ls_hs_create_spinful_fermionic_basis"
-  ls_hs_create_spinful_fermionic_basis :: CInt -> CInt -> CInt -> IO (Ptr Cbasis)
-
-foreign export ccall "ls_hs_destroy_basis_v2"
-  destroyCbasis :: Ptr Cbasis -> IO ()
-
--- foreign export ccall "ls_hs_create_basis_kernels"
---   ls_hs_create_basis_kernels :: Ptr Cbasis -> IO (Ptr Cbasis_kernels)
+-- ls_hs_create_spin_basis :: CInt -> CInt -> IO (Ptr Cbasis)
+-- ls_hs_create_spin_basis numberSites hammingWeight = do
+--   putStrLn "Creating SpinBasis ..."
+--   createCbasis $ SpinBasis numberSites' hammingWeight'
+--   where
+--     numberSites' = fromIntegral numberSites
+--     hammingWeight'
+--       | hammingWeight == -1 = Nothing
+--       | otherwise = Just (fromIntegral hammingWeight)
 --
--- foreign export ccall "ls_hs_destroy_basis_kernels"
---   destroyCbasis_kernels :: Ptr Cbasis_kernels -> IO ()
+-- ls_hs_create_spinful_fermionic_basis :: CInt -> CInt -> CInt -> IO (Ptr Cbasis)
+-- ls_hs_create_spinful_fermionic_basis numberSites numberUp numberDown = do
+--   putStrLn "Creating SpinfulFermionicBasis ..."
+--   createCbasis $ SpinfulFermionicBasis numberSites' occupation
+--   where
+--     numberSites' = fromIntegral numberSites
+--     occupation
+--       | numberUp == -1 && numberDown == -1 = SpinfulNoOccupation
+--       | numberUp >= 0 && numberDown == -1 = SpinfulTotalParticles (fromIntegral numberUp)
+--       | otherwise = SpinfulPerSector (fromIntegral numberUp) (fromIntegral numberDown)
 
-ls_hs_create_operator :: Ptr Cbasis -> CString -> CInt -> CInt -> Ptr CInt -> IO (Ptr Coperator)
-ls_hs_create_operator basisPtr cStr numberTuples tupleSize tuplesPtr =
-  withReconstructedBasis basisPtr $ \basis -> do
-    indices <-
-      chunksOf (fromIntegral tupleSize)
-        <$> fmap fromIntegral
-        <$> peekArray (fromIntegral (numberTuples * tupleSize)) tuplesPtr
-    s <- peekCString cStr
-    let operator = operatorFromString basis (T.pack s) indices
-    -- putDoc (pretty (opTerms operator) <> hardline)
-    createCoperator operator
+foreign export ccall "ls_hs_create_basis"
+  ls_hs_create_basis :: Cparticle_type -> CInt -> CInt -> CInt -> IO (Ptr Cbasis)
 
-foreign export ccall "ls_hs_create_operator"
-  ls_hs_create_operator :: Ptr Cbasis -> CString -> CInt -> CInt -> Ptr CInt -> IO (Ptr Coperator)
+ls_hs_basis_has_fixed_hamming_weight :: Ptr Cbasis -> IO CBool
+ls_hs_basis_has_fixed_hamming_weight basis =
+  fromBool
+    <$> withReconstructedBasis basis (pure . hasFixedHammingWeight . basisHeader)
 
-ls_hs_operator_plus :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
-ls_hs_operator_plus aPtr bPtr =
-  withReconstructedOperator aPtr $ \a ->
-    withSameTypeAs a (withReconstructedOperator bPtr) $ \b ->
-      createCoperator (a + b)
+foreign export ccall "ls_hs_basis_has_fixed_hamming_weight"
+  ls_hs_basis_has_fixed_hamming_weight :: Ptr Cbasis -> IO CBool
 
-foreign export ccall "ls_hs_operator_plus"
-  ls_hs_operator_plus :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
+-- ls_hs_create_operator :: Ptr Cbasis -> CString -> CInt -> CInt -> Ptr CInt -> IO (Ptr Coperator)
+-- ls_hs_create_operator basisPtr cStr numberTuples tupleSize tuplesPtr =
+--   withReconstructedBasis basisPtr $ \basis -> do
+--     indices <-
+--       chunksOf (fromIntegral tupleSize)
+--         <$> fmap fromIntegral
+--         <$> peekArray (fromIntegral (numberTuples * tupleSize)) tuplesPtr
+--     s <- peekCString cStr
+--     let operator = operatorFromString basis (T.pack s) indices
+--     -- putDoc (pretty (opTerms operator) <> hardline)
+--     createCoperator operator
+--
+-- foreign export ccall "ls_hs_create_operator"
+--   ls_hs_create_operator :: Ptr Cbasis -> CString -> CInt -> CInt -> Ptr CInt -> IO (Ptr Coperator)
 
-ls_hs_print_terms :: Ptr Coperator -> IO ()
-ls_hs_print_terms p =
-  withReconstructedOperator p $ \operator ->
-    putDoc (pretty (opTerms operator) <> hardline)
+-- ls_hs_operator_plus :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
+-- ls_hs_operator_plus aPtr bPtr =
+--   withReconstructedOperator aPtr $ \a ->
+--     withSameTypeAs a (withReconstructedOperator bPtr) $ \b ->
+--       createCoperator (a + b)
+--
+-- foreign export ccall "ls_hs_operator_plus"
+--   ls_hs_operator_plus :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
 
-foreign export ccall "ls_hs_print_terms"
-  ls_hs_print_terms :: Ptr Coperator -> IO ()
-
-foreign export ccall "ls_hs_destroy_operator_v2"
-  destroyCoperator :: Ptr Coperator -> IO ()
-
-foreign export ccall "ls_hs_operator_apply_diag_kernel"
-  ls_hs_operator_apply_diag_kernel :: Ptr Coperator -> CPtrdiff -> Ptr Word64 -> CPtrdiff -> Ptr Cscalar -> IO ()
-
-foreign export ccall "ls_hs_operator_apply_off_diag_kernel"
-  ls_hs_operator_apply_off_diag_kernel :: Ptr Coperator -> CPtrdiff -> Ptr Word64 -> CPtrdiff -> Ptr Word64 -> CPtrdiff -> Ptr Cscalar -> IO ()
-
-foreign export ccall "ls_hs_evaluate_wavefunction_via_statevector"
-  ls_hs_evaluate_wavefunction_via_statevector :: Ptr Cbasis_kernels -> CPtrdiff -> Ptr Word64 -> CPtrdiff -> Ptr () -> CSize -> Ptr () -> IO ()
+-- ls_hs_print_terms :: Ptr Coperator -> IO ()
+-- ls_hs_print_terms p =
+--   withReconstructedOperator p $ \operator ->
+--     putDoc (pretty (opTerms operator) <> hardline)
+--
+-- foreign export ccall "ls_hs_print_terms"
+--   ls_hs_print_terms :: Ptr Coperator -> IO ()
+--
+-- foreign export ccall "ls_hs_destroy_operator_v2"
+--   destroyCoperator :: Ptr Coperator -> IO ()

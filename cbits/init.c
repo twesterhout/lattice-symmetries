@@ -5,6 +5,8 @@
 void ls_hs_init(void) {
   // LATTICE_SYMMETRIES_LOG_DEBUG("%s", "Calling hs_init...\n");
   hs_init(NULL, NULL);
+  ls_hs_internal_set_free_stable_ptr(&hs_free_stable_ptr);
+  // ls_hs_internal_set_free_stable_ptr(&ls_hs_free_stable_ptr);
   // LATTICE_SYMMETRIES_LOG_DEBUG("%s", "Initialized RTS!\n");
 }
 

@@ -13,11 +13,13 @@ import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Storable as S
 import qualified Data.Vector.Storable.Mutable as SM
 import Foreign.C.Types
+import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc
 import Foreign.Marshal.Utils (fromBool, new)
 import Foreign.Ptr
 import Foreign.StablePtr
 import Foreign.Storable
+import GHC.ForeignPtr
 import LatticeSymmetries.Algebra
 import LatticeSymmetries.Basis
 import LatticeSymmetries.BitString
@@ -30,37 +32,34 @@ import System.IO.Unsafe (unsafePerformIO)
 import Text.Printf
 import Prelude hiding (Sum)
 
-data Operator (t :: ParticleTy) = Operator
+data OperatorHeader (t :: ParticleTy) = OperatorHeader
   { opBasis :: !(Basis t),
     opTerms :: !(Polynomial ComplexRational (Generator (IndexType t) (GeneratorType t)))
   }
 
-deriving instance (Show (IndexType t), Show (GeneratorType t)) => Show (Operator t)
+deriving instance (Show (Basis t), Show (IndexType t), Show (GeneratorType t)) => Show (OperatorHeader t)
 
-opTermsFlat :: Operator t -> Polynomial ComplexRational (Generator Int (GeneratorType t))
-opTermsFlat operator =
-  fmap (fmap (fmap (\(Generator i g) -> Generator (flattenIndex basis i) g))) (opTerms operator)
-  where
-    basis = opBasis operator
+data Operator (t :: ParticleTy) = Operator
+  { opHeader :: !(OperatorHeader t),
+    opContents :: !(ForeignPtr Coperator)
+  }
 
-instance
-  ( Enum (GeneratorType t),
-    Bounded (GeneratorType t),
-    HasMatrixRepresentation (GeneratorType t),
-    Algebra (GeneratorType t),
-    Ord (IndexType t)
-  ) =>
-  Num (Operator t)
-  where
+deriving instance (Show (OperatorHeader t)) => Show (Operator t)
+
+opTermsFlat :: OperatorHeader t -> Polynomial ComplexRational (Generator Int (GeneratorType t))
+opTermsFlat (OperatorHeader basis terms) =
+  fmap (fmap (fmap (\(Generator i g) -> Generator (flattenIndex basis i) g))) terms
+
+instance IsBasis t => Num (OperatorHeader t) where
   (+) a b
-    | opBasis a == opBasis b = Operator (opBasis a) (simplify $ opTerms a + opTerms b)
+    | opBasis a == opBasis b = OperatorHeader (opBasis a) (simplify $ opTerms a + opTerms b)
 
 -- getNumberTerms :: Operator c basis -> Int
 -- getNumberTerms operator = let (Sum v) = opTerms operator in G.length v
 
 getNonbranchingTerms ::
   HasNonbranchingRepresentation (Generator Int (GeneratorType t)) =>
-  Operator t ->
+  OperatorHeader t ->
   Vector NonbranchingTerm
 getNonbranchingTerms operator =
   case nonbranchingRepresentation <$> opTermsFlat operator of
@@ -185,65 +184,111 @@ instance Storable Cnonbranching_terms where
 -- } ls_hs_operator;
 
 data Coperator = Coperator
-  { coperator_basis :: {-# UNPACK #-} !(Ptr Cbasis),
+  { coperator_refcount :: {-# UNPACK #-} !CInt,
+    coperator_basis :: {-# UNPACK #-} !(Ptr Cbasis),
     coperator_off_diag_terms :: {-# UNPACK #-} !(Ptr Cnonbranching_terms),
     coperator_diag_terms :: {-# UNPACK #-} !(Ptr Cnonbranching_terms),
-    coperator_needs_projection :: {-# UNPACK #-} !CBool,
     coperator_haskell_payload :: {-# UNPACK #-} !(Ptr ())
   }
+
+foreign import ccall unsafe "ls_hs_internal_operator_read_refcount"
+  peekRefCount :: Ptr Coperator -> IO CInt
+
+foreign import ccall unsafe "ls_hs_internal_operator_write_refcount"
+  pokeRefCount :: Ptr Coperator -> CInt -> IO CInt
+
+foreign import ccall unsafe "ls_hs_internal_operator_inc_refcount"
+  incRefCount :: Ptr Coperator -> IO CInt
+
+foreign import ccall unsafe "ls_hs_internal_operator_dec_refcount"
+  decRefCount :: Ptr Coperator -> IO CInt
 
 instance Storable Coperator where
   sizeOf _ = 40
   alignment _ = 8
   peek p =
     Coperator
-      <$> peekByteOff p 0
+      <$> peekRefCount p
       <*> peekByteOff p 8
       <*> peekByteOff p 16
       <*> peekByteOff p 24
       <*> peekByteOff p 32
-  poke p (Coperator basis off_diag_terms diag_terms needs_projection payload) = do
-    pokeByteOff p 0 basis
-    pokeByteOff p 8 off_diag_terms
-    pokeByteOff p 16 diag_terms
-    pokeByteOff p 24 needs_projection
-    pokeByteOff p 32 payload
+  poke p x = do
+    pokeRefCount p (coperator_refcount x)
+    pokeByteOff p 8 (coperator_basis x)
+    pokeByteOff p 16 (coperator_off_diag_terms x)
+    pokeByteOff p 24 (coperator_diag_terms x)
+    pokeByteOff p 32 (coperator_haskell_payload x)
 
-createCoperator ::
-  forall t.
-  ( HasNonbranchingRepresentation (Generator Int (GeneratorType t))
-  ) =>
-  Operator t ->
-  IO (Ptr Coperator)
-createCoperator operator = do
-  let (diag, offDiag) = G.partition isNonbranchingTermDiagonal (getNonbranchingTerms operator)
-      numberBits = getNumberBits (opBasis operator)
-  basis <- createCbasis (opBasis operator)
+foreign import ccall unsafe "ls_hs_destroy_basis_v2"
+  ls_hs_destroy_basis_v2 :: Ptr Cbasis -> IO ()
+
+operatorFromHeader ::
+  HasNonbranchingRepresentation (Generator Int (GeneratorType t)) =>
+  OperatorHeader t ->
+  Operator t
+operatorFromHeader x = unsafePerformIO $ do
+  putStrLn "operatorFromHeader ..."
+  let (diag, offDiag) = G.partition isNonbranchingTermDiagonal (getNonbranchingTerms x)
+      numberBits = getNumberBits . basisHeader . opBasis $ x
   diag_terms <- createCnonbranching_terms numberBits diag
   off_diag_terms <- createCnonbranching_terms numberBits offDiag
-  p <- castStablePtrToPtr <$> newStablePtr operator
-  new $
-    Coperator
-      basis
-      off_diag_terms
-      diag_terms
-      (fromBool False)
-      p
+  basis <- borrowCbasis (opBasis x)
 
-destroyCoperator :: HasCallStack => Ptr Coperator -> IO ()
-destroyCoperator p
-  | p /= nullPtr = do
-    (Coperator basis off_diag_terms diag_terms _ payload) <- peek p
-    !particleType <- cbasis_particle_type <$> peek basis
-    destroyCbasis basis
-    destroyCnonbranching_terms off_diag_terms
-    destroyCnonbranching_terms diag_terms
-    let freeHaskellPayload :: forall (t :: ParticleTy). Proxy t -> IO ()
-        freeHaskellPayload _ =
-          freeStablePtr (castPtrToStablePtr payload :: StablePtr (Operator t))
-    withParticleType particleType freeHaskellPayload
-    free p
-  | otherwise = error "should not happen"
+  fp <- mallocForeignPtr
+  addForeignPtrConcFinalizer fp (ls_hs_destroy_basis_v2 basis)
+  addForeignPtrConcFinalizer fp (destroyCnonbranching_terms off_diag_terms)
+  addForeignPtrConcFinalizer fp (destroyCnonbranching_terms diag_terms)
+  withForeignPtr fp $ \ptr ->
+    poke ptr $
+      Coperator
+        { coperator_refcount = 0,
+          coperator_basis = basis,
+          coperator_off_diag_terms = off_diag_terms,
+          coperator_diag_terms = diag_terms,
+          coperator_haskell_payload = nullPtr
+        }
+  pure (Operator x fp)
+{-# NOINLINE operatorFromHeader #-}
+
+--
+-- createCoperator ::
+--   forall t.
+--   ( HasNonbranchingRepresentation (Generator Int (GeneratorType t))
+--   ) =>
+--   Operator t ->
+--   IO (Ptr Coperator)
+-- createCoperator operator = do
+--   let (diag, offDiag) = G.partition isNonbranchingTermDiagonal (getNonbranchingTerms operator)
+--       numberBits = getNumberBits (opBasis operator)
+--   basis <- createCbasis (opBasis operator)
+--   diag_terms <- createCnonbranching_terms numberBits diag
+--   off_diag_terms <- createCnonbranching_terms numberBits offDiag
+--   p <- castStablePtrToPtr <$> newStablePtr operator
+--   putStrLn $ "Created Coperator: " <> show p
+--   new $
+--     Coperator
+--       basis
+--       off_diag_terms
+--       diag_terms
+--       (fromBool False)
+--       p
+
+-- destroyCoperator :: HasCallStack => Ptr Coperator -> IO ()
+-- destroyCoperator p
+--   | p /= nullPtr = do
+--     (Coperator basis off_diag_terms diag_terms _ payload) <- peek p
+--     putStrLn $ "Destroying Coperator: " <> show payload
+--     !particleType <- cbasis_particle_type <$> peek basis
+--     destroyCbasis basis
+--     destroyCnonbranching_terms off_diag_terms
+--     destroyCnonbranching_terms diag_terms
+--     let freeHaskellPayload :: forall (t :: ParticleTy). Proxy t -> IO ()
+--         freeHaskellPayload _ =
+--           freeStablePtr (castPtrToStablePtr payload :: StablePtr (Operator t))
+--     withParticleType particleType freeHaskellPayload
+--     free p
+--   | otherwise = error "should not happen"
 
 withReconstructedOperator ::
   forall a.
@@ -271,10 +316,10 @@ withSameTypeAs ::
 withSameTypeAs a _with _action = _with f
   where
     f :: forall t'. Operator t' -> a
-    f b = case (a, b) of
-      ((Operator (SpinBasis _ _) _), b'@(Operator (SpinBasis _ _) _)) -> _action b'
-      ((Operator (SpinfulFermionicBasis _ _) _), b'@(Operator (SpinfulFermionicBasis _ _) _)) -> _action b'
-      ((Operator (SpinlessFermionicBasis _ _) _), b'@(Operator (SpinlessFermionicBasis _ _) _)) -> _action b'
+    f b = case (basisHeader . opBasis . opHeader $ a, basisHeader . opBasis . opHeader $ b) of
+      ((SpinHeader _ _), (SpinHeader _ _)) -> _action b
+      ((SpinfulFermionHeader _ _), (SpinfulFermionHeader _ _)) -> _action b
+      ((SpinlessFermionHeader _ _), (SpinlessFermionHeader _ _)) -> _action b
       _ -> error "operators have different types"
 
 peekNumberOffDiagTerms :: Ptr Coperator -> IO Int
@@ -284,61 +329,61 @@ peekNumberOffDiagTerms p = do
     then (fromIntegral . cnonbranching_terms_number_terms) <$> peek p'
     else pure 0
 
-applyOperator ::
-  forall t.
-  HasNonbranchingRepresentation (Generator Int (GeneratorType t)) =>
-  Operator t ->
-  BasisState ->
-  Vector (ComplexRational, BasisState)
-applyOperator operator (BasisState _ x) = unsafePerformIO $
-  bracket (createCoperator operator) destroyCoperator $ \c_operator -> do
-    numberTerms <- peekNumberOffDiagTerms c_operator
-    hPutStrLn stderr $ printf "numberTerms = %d" numberTerms
-    let numberWords = getNumberWords (opBasis operator)
-        -- numberTerms = getNumberTerms operator
-        αs = wordsFromBitString numberWords x
-        αsStride = fromIntegral numberWords
-        βsStride = fromIntegral numberWords
-        batchSize = 1
-    βs <- SM.unsafeNew ((numberTerms + 1) * numberWords)
-    cs <- SM.unsafeNew (numberTerms + 1)
-    S.unsafeWith αs $ \αsPtr ->
-      SM.unsafeWith βs $ \βsPtr ->
-        SM.unsafeWith cs $ \csPtr ->
-          do
-            writeBitString
-              numberWords
-              (P.advancePtr βsPtr (numberTerms * numberWords))
-              x
-            ls_hs_operator_apply_diag_kernel
-              c_operator
-              batchSize
-              αsPtr
-              αsStride
-              (plusPtr csPtr (numberTerms * sizeOf (undefined :: Cscalar)))
-            ls_hs_operator_apply_off_diag_kernel
-              c_operator
-              batchSize
-              αsPtr
-              αsStride
-              βsPtr
-              βsStride
-              csPtr
-    (hPutStrLn stderr . show) =<< G.unsafeFreeze cs
-    cs' <- G.map fromComplexDouble <$> G.convert <$> G.unsafeFreeze cs
-    (hPutStrLn stderr . show) cs'
-    (hPutStrLn stderr . show) =<< G.unsafeFreeze βs
-    let numberBits = getNumberBits (opBasis operator)
-    βs' <-
-      SM.unsafeWith βs $ \p ->
-        G.generateM (numberTerms + 1) $ \i ->
-          BasisState numberBits
-            <$> readBitString numberWords (P.advancePtr p (i * numberWords))
-    hPutStrLn stderr $ "Done"
-    (hPutStrLn stderr . show) βs'
-    let !r = G.filter (\(c, _) -> c /= 0) $ G.zip cs' βs'
-    (hPutStrLn stderr . show) r
-    pure $ r
+-- applyOperator ::
+--   forall t.
+--   HasNonbranchingRepresentation (Generator Int (GeneratorType t)) =>
+--   Operator t ->
+--   BasisState ->
+--   Vector (ComplexRational, BasisState)
+-- applyOperator operator (BasisState _ x) = unsafePerformIO $
+--   bracket (createCoperator operator) destroyCoperator $ \c_operator -> do
+--     numberTerms <- peekNumberOffDiagTerms c_operator
+--     hPutStrLn stderr $ printf "numberTerms = %d" numberTerms
+--     let numberWords = getNumberWords (opBasis operator)
+--         -- numberTerms = getNumberTerms operator
+--         αs = wordsFromBitString numberWords x
+--         αsStride = fromIntegral numberWords
+--         βsStride = fromIntegral numberWords
+--         batchSize = 1
+--     βs <- SM.unsafeNew ((numberTerms + 1) * numberWords)
+--     cs <- SM.unsafeNew (numberTerms + 1)
+--     S.unsafeWith αs $ \αsPtr ->
+--       SM.unsafeWith βs $ \βsPtr ->
+--         SM.unsafeWith cs $ \csPtr ->
+--           do
+--             writeBitString
+--               numberWords
+--               (P.advancePtr βsPtr (numberTerms * numberWords))
+--               x
+--             ls_hs_operator_apply_diag_kernel
+--               c_operator
+--               batchSize
+--               αsPtr
+--               αsStride
+--               (plusPtr csPtr (numberTerms * sizeOf (undefined :: Cscalar)))
+--             ls_hs_operator_apply_off_diag_kernel
+--               c_operator
+--               batchSize
+--               αsPtr
+--               αsStride
+--               βsPtr
+--               βsStride
+--               csPtr
+--     (hPutStrLn stderr . show) =<< G.unsafeFreeze cs
+--     cs' <- G.map fromComplexDouble <$> G.convert <$> G.unsafeFreeze cs
+--     (hPutStrLn stderr . show) cs'
+--     (hPutStrLn stderr . show) =<< G.unsafeFreeze βs
+--     let numberBits = getNumberBits (opBasis operator)
+--     βs' <-
+--       SM.unsafeWith βs $ \p ->
+--         G.generateM (numberTerms + 1) $ \i ->
+--           BasisState numberBits
+--             <$> readBitString numberWords (P.advancePtr p (i * numberWords))
+--     hPutStrLn stderr $ "Done"
+--     (hPutStrLn stderr . show) βs'
+--     let !r = G.filter (\(c, _) -> c /= 0) $ G.zip cs' βs'
+--     (hPutStrLn stderr . show) r
+--     pure $ r
 
 -- void ls_hs_operator_apply_diag_kernel(ls_hs_operator const *op,
 --                                       ptrdiff_t batch_size,

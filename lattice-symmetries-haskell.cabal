@@ -82,10 +82,10 @@ library
                        LatticeSymmetries.NonbranchingTerm
                        LatticeSymmetries.Operator
                        LatticeSymmetries.Utils
-  c-sources:           cbits/helpers.c
-                       cbits/csr.c
-                       cbits/reference.c
-  cc-options:          -Wall -Wextra -Wpedantic
+  -- c-sources:           cbits/helpers.c
+  --                      cbits/csr.c
+  --                      cbits/reference.c
+  -- cc-options:          -Wall -Wextra -Wpedantic
   include-dirs:        cbits
   build-depends:       vector
                      -- , binary
@@ -123,6 +123,7 @@ library
                      -- , vector-binary-instances
                      , hdf5-hs
                      , ansi-wl-pprint
+  extra-libraries:     lattice_symmetries_core
   pkgconfig-depends:   lattice_symmetries
 
 foreign-library lattice_symmetries_haskell
@@ -139,11 +140,13 @@ foreign-library lattice_symmetries_haskell
   -- MyForeignLib.SomeOtherModule
   -- c-sources:           csrc/MyForeignLibWrapper.c
   c-sources:           cbits/init.c
-  cc-options:          -Wall -Wextra -Wpedantic
+  cc-options:          -fPIC -Wall -Wextra -Wpedantic
+  -- ghc-options:         -optl -Wl,--retain-symbols-file=api.txt
   include-dirs:        cbits
   build-depends:       lattice-symmetries-haskell
                      , text
                      , ansi-wl-pprint
+                     , vector
                      , split
   buildable: True
 
@@ -159,6 +162,7 @@ executable example01
   ghc-options:         -threaded
                        -rtsopts
                        -with-rtsopts=-N
+  buildable: False
 
 -- executable ising-ground-state
 --   import:              common-options

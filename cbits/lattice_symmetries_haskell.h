@@ -5,8 +5,22 @@
 #include <cstddef>
 #include <cstdint>
 #else
+#include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
+#endif
+
+#if defined __has_include
+#if __has_include("chpl-external-array.h")
+#include "chpl-external-array.h"
+#else
+typedef struct {
+  void *elts;
+  uint64_t num_elts;
+
+  void *freer;
+} chpl_external_array;
+#endif
 #endif
 
 #include <lattice_symmetries/lattice_symmetries.h>
@@ -17,6 +31,7 @@ extern "C" {
 
 void ls_hs_init(void);
 void ls_hs_exit(void);
+void ls_hs_internal_set_free_stable_ptr(void (*f)(void *));
 
 typedef struct ls_hs_spin_basis_v1 {
   ls_spin_basis const *const payload;
@@ -81,6 +96,7 @@ typedef struct ls_hs_basis_kernels {
 } ls_hs_basis_kernels;
 
 typedef struct ls_hs_basis {
+  _Atomic int refcount;
   int number_sites;
   int number_particles;
   int number_up;
@@ -91,10 +107,17 @@ typedef struct ls_hs_basis {
   void *haskell_payload;
 } ls_hs_basis;
 
-ls_hs_basis *ls_hs_create_spin_basis(int, int);
-ls_hs_basis *ls_hs_create_spinful_fermionic_basis(int, int, int);
+ls_hs_basis *ls_hs_create_basis(ls_hs_particle_type, int, int, int);
 void ls_hs_destroy_basis_v2(ls_hs_basis *);
 
+bool ls_hs_basis_has_fixed_hamming_weight(ls_hs_basis const *);
+
+void ls_hs_state_index(ls_hs_basis const *basis, ptrdiff_t batch_size,
+                       uint64_t const *spins, ptrdiff_t spins_stride,
+                       ptrdiff_t *indices, ptrdiff_t indices_stride);
+
+void ls_hs_perform_gc();
+void ls_hs_free_stable_ptr(void *);
 // -- |
 // -- Cstate_index_kernel
 // --   batch_size
@@ -133,10 +156,10 @@ typedef struct ls_hs_nonbranching_terms {
 } ls_hs_nonbranching_terms;
 
 typedef struct ls_hs_operator {
+  _Atomic int refcount;
   ls_hs_basis const *basis;
   ls_hs_nonbranching_terms const *off_diag_terms;
   ls_hs_nonbranching_terms const *diag_terms;
-  bool needs_projection;
 } ls_hs_operator;
 
 ls_hs_operator *ls_hs_create_operator(ls_hs_basis const *, char const *, int,
@@ -212,6 +235,14 @@ void ls_hs_evaluate_wavefunction_via_statevector(
     ls_hs_basis_kernels const *kernels, ptrdiff_t batch_size,
     uint64_t const *alphas, ptrdiff_t alphas_stride, void const *state_vector,
     size_t element_size, void *coeffs);
+
+typedef struct ls_chpl_kernels {
+  chpl_external_array (*enumerate_states)(ls_hs_basis const *, uint64_t,
+                                          uint64_t);
+} ls_chpl_kernels;
+
+ls_chpl_kernels const *ls_hs_internal_get_chpl_kernels();
+void ls_hs_internal_set_chpl_kernels(ls_chpl_kernels const *kernels);
 
 #if 0
 typedef struct ls_sparse_operator ls_sparse_operator;

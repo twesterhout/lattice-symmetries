@@ -10,6 +10,73 @@
 
 typedef uint64_t ls_hs_bits;
 
+typedef void (*free_stable_ptr_type)(void *);
+static free_stable_ptr_type ls_hs_internal_free_stable_ptr;
+
+void ls_hs_internal_set_free_stable_ptr(free_stable_ptr_type f) {
+  ls_hs_internal_free_stable_ptr = f;
+}
+
+int ls_hs_internal_basis_read_refcount(ls_hs_basis const *basis) {
+  return atomic_load(&basis->refcount);
+}
+
+void ls_hs_internal_basis_write_refcount(ls_hs_basis *basis, int value) {
+  atomic_store(&basis->refcount, value);
+}
+
+int ls_hs_internal_basis_inc_refcount(ls_hs_basis *basis) {
+  return atomic_fetch_add(&basis->refcount, 1);
+}
+
+int ls_hs_internal_basis_dec_refcount(ls_hs_basis *basis) {
+  return atomic_fetch_sub(&basis->refcount, 1);
+}
+
+void ls_hs_internal_basis_set_payload(ls_hs_basis *basis, void *payload) {
+  basis->haskell_payload = payload;
+}
+
+void *ls_hs_internal_basis_get_payload(ls_hs_basis *basis) {
+  return basis->haskell_payload;
+}
+
+int ls_hs_internal_operator_read_refcount(ls_hs_operator const *op) {
+  return atomic_load(&op->refcount);
+}
+
+void ls_hs_internal_operator_write_refcount(ls_hs_operator *op, int value) {
+  atomic_store(&op->refcount, value);
+}
+
+int ls_hs_internal_operator_inc_refcount(ls_hs_operator *op) {
+  return atomic_fetch_add(&op->refcount, 1);
+}
+
+int ls_hs_internal_operator_dec_refcount(ls_hs_operator *op) {
+  return atomic_fetch_sub(&op->refcount, 1);
+}
+
+void ls_hs_internal_operator_set_payload(ls_hs_operator *op, void *payload) {
+  op->haskell_payload = payload;
+}
+
+void *ls_hs_internal_operator_get_payload(ls_hs_operator *op) {
+  return op->haskell_payload;
+}
+
+void ls_hs_destroy_basis_v2(ls_hs_basis *basis) {
+  fprintf(stdout, "ls_hs_destroy_basis_v2 ...\n");
+  if (ls_hs_internal_basis_dec_refcount(basis) == 1) {
+    if (ls_hs_internal_free_stable_ptr == NULL) {
+      fprintf(stderr, "ls_hs_internal_free_stable_ptr not set :(\n");
+      abort();
+    }
+    fprintf(stdout, "Calling hs_free_stable_ptr ...\n");
+    (*ls_hs_internal_free_stable_ptr)(basis->haskell_payload);
+  }
+}
+
 #if 0
 typedef struct ls_hs_nonbranching_term {
   ls_hs_scalar v;
@@ -276,6 +343,21 @@ void ls_hs_state_index_identity_kernel(ptrdiff_t const batch_size,
   }
 }
 
+void ls_hs_state_index(ls_hs_basis const *const basis,
+                       ptrdiff_t const batch_size,
+                       uint64_t const *const restrict spins,
+                       ptrdiff_t const spins_stride,
+                       ptrdiff_t *const restrict indices,
+                       ptrdiff_t const indices_stride) {
+  if (basis->kernels->state_index_kernel == NULL) {
+    fprintf(stderr, "state_index_kernel is NULL\n");
+    abort();
+  }
+  (*basis->kernels->state_index_kernel)(batch_size, spins, spins_stride,
+                                        indices, indices_stride,
+                                        basis->kernels->state_index_data);
+}
+
 void ls_hs_evaluate_wavefunction_via_statevector(
     ls_hs_basis_kernels const *const kernels, ptrdiff_t const batch_size,
     uint64_t const *const restrict alphas, ptrdiff_t const alphas_stride,
@@ -302,4 +384,15 @@ void ls_hs_evaluate_wavefunction_via_statevector(
   }
 
   free(indices);
+}
+
+// TODO: currently not thread-safe, fix it
+static ls_chpl_kernels global_chpl_kernels = {.enumerate_states = NULL};
+// static pthread_mutex_t global_chpl_kernels_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+ls_chpl_kernels const *ls_hs_internal_get_chpl_kernels() {
+  return &global_chpl_kernels;
+}
+void ls_hs_internal_set_chpl_kernels(ls_chpl_kernels const *kernels) {
+  global_chpl_kernels = *kernels;
 }

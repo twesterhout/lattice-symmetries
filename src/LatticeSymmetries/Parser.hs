@@ -152,18 +152,13 @@ pOperatorString pPrimitive =
 --   Right x -> simplify $ forIndices x indices
 
 getPrimitiveParser :: Stream s m Char => Basis t -> ParsecT s u m (Sum (Scaled ComplexRational (Factor t)))
-getPrimitiveParser (SpinBasis _ _) = pSpinOperator
-getPrimitiveParser (SpinfulFermionicBasis _ _) = pFermionicOperator
-getPrimitiveParser (SpinlessFermionicBasis _ _) = pFermionicOperator
+getPrimitiveParser b = case basisHeader b of
+  SpinHeader _ _ -> pSpinOperator
+  SpinfulFermionHeader _ _ -> pFermionicOperator
+  SpinlessFermionHeader _ _ -> pFermionicOperator
 
 operatorFromString ::
-  ( Ord (IndexType t),
-    HasSiteIndex (IndexType t),
-    Bounded (GeneratorType t),
-    Enum (GeneratorType t),
-    HasMatrixRepresentation (GeneratorType t),
-    Algebra (GeneratorType t)
-  ) =>
+  IsBasis t =>
   Basis t ->
   Text ->
   [[Int]] ->
@@ -172,7 +167,7 @@ operatorFromString basis s indices = case parse (pOperatorString (getPrimitivePa
   Left e -> error (show e)
   Right x ->
     let terms = simplify $ forSiteIndices x indices
-     in Operator basis terms
+     in operatorFromHeader $ OperatorHeader basis terms
 
 pBasisState :: Stream s m Char => ParsecT s u m BasisState
 pBasisState = do
