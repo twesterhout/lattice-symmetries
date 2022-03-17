@@ -16,6 +16,7 @@ import LatticeSymmetries
 import LatticeSymmetries.Algebra
 import LatticeSymmetries.Basis
 import LatticeSymmetries.ComplexRational
+import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
 import LatticeSymmetries.Operator
 import LatticeSymmetries.Parser
@@ -105,8 +106,7 @@ ls_hs_create_operator basisPtr cStr numberTuples tupleSize tuplesPtr =
         <$> fmap fromIntegral
         <$> peekArray (fromIntegral (numberTuples * tupleSize)) tuplesPtr
     s <- peekCString cStr
-    let operator = operatorFromString basis (T.pack s) indices
-    -- putDoc (pretty (opTerms operator) <> hardline)
+    let !operator = operatorFromString basis (T.pack s) indices
     borrowCoperator operator
 
 foreign export ccall "ls_hs_create_operator"

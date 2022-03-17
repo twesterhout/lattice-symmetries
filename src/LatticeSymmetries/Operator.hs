@@ -24,6 +24,7 @@ import LatticeSymmetries.Algebra
 import LatticeSymmetries.Basis
 import LatticeSymmetries.BitString
 import LatticeSymmetries.ComplexRational
+import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
 import LatticeSymmetries.NonbranchingTerm
 import LatticeSymmetries.Utils (loopM)
@@ -143,41 +144,6 @@ destroyCnonbranching_terms p
     free p
   | otherwise = pure ()
 
-data Cnonbranching_terms = Cnonbranching_terms
-  { cnonbranching_terms_number_terms :: {-# UNPACK #-} !CInt,
-    cnonbranching_terms_number_bits :: {-# UNPACK #-} !CInt,
-    cnonbranching_terms_v :: {-# UNPACK #-} !(Ptr Cscalar),
-    cnonbranching_terms_m :: {-# UNPACK #-} !(Ptr Word64),
-    cnonbranching_terms_l :: {-# UNPACK #-} !(Ptr Word64),
-    cnonbranching_terms_r :: {-# UNPACK #-} !(Ptr Word64),
-    cnonbranching_terms_x :: {-# UNPACK #-} !(Ptr Word64),
-    cnonbranching_terms_s :: {-# UNPACK #-} !(Ptr Word64)
-  }
-  deriving stock (Show)
-
-instance Storable Cnonbranching_terms where
-  sizeOf _ = 56 -- 2 * 4 + 6 * 8
-  alignment _ = 8
-  peek p =
-    Cnonbranching_terms
-      <$> peekByteOff p 0
-      <*> peekByteOff p 4
-      <*> peekByteOff p 8
-      <*> peekByteOff p 16
-      <*> peekByteOff p 24
-      <*> peekByteOff p 32
-      <*> peekByteOff p 40
-      <*> peekByteOff p 48
-  poke p (Cnonbranching_terms nTerms nBits v m l r x s) = do
-    pokeByteOff p 0 nTerms
-    pokeByteOff p 4 nBits
-    pokeByteOff p 8 v
-    pokeByteOff p 16 m
-    pokeByteOff p 24 l
-    pokeByteOff p 32 r
-    pokeByteOff p 40 x
-    pokeByteOff p 48 s
-
 --
 -- typedef struct ls_hs_operator {
 --   ls_hs_basis const *basis;
@@ -186,58 +152,14 @@ instance Storable Cnonbranching_terms where
 --   bool needs_projection;
 -- } ls_hs_operator;
 
-data Coperator = Coperator
-  { coperator_refcount :: {-# UNPACK #-} !CInt,
-    coperator_basis :: {-# UNPACK #-} !(Ptr Cbasis),
-    coperator_off_diag_terms :: {-# UNPACK #-} !(Ptr Cnonbranching_terms),
-    coperator_diag_terms :: {-# UNPACK #-} !(Ptr Cnonbranching_terms),
-    coperator_haskell_payload :: {-# UNPACK #-} !(Ptr ())
-  }
-
-foreign import ccall unsafe "ls_hs_internal_operator_read_refcount"
-  peekRefCount :: Ptr Coperator -> IO CInt
-
-foreign import ccall unsafe "ls_hs_internal_operator_write_refcount"
-  pokeRefCount :: Ptr Coperator -> CInt -> IO CInt
-
-foreign import ccall unsafe "ls_hs_internal_operator_inc_refcount"
-  incRefCount :: Ptr Coperator -> IO CInt
-
-foreign import ccall unsafe "ls_hs_internal_operator_dec_refcount"
-  decRefCount :: Ptr Coperator -> IO CInt
-
-foreign import ccall unsafe "ls_hs_internal_operator_set_payload"
-  pokePayload :: Ptr Coperator -> Ptr () -> IO ()
-
-foreign import ccall unsafe "ls_hs_internal_operator_get_payload"
-  peekPayload :: Ptr Coperator -> IO (Ptr ())
-
-instance Storable Coperator where
-  sizeOf _ = 40
-  alignment _ = 8
-  peek p =
-    Coperator
-      <$> peekRefCount p
-      <*> peekByteOff p 8
-      <*> peekByteOff p 16
-      <*> peekByteOff p 24
-      <*> peekByteOff p 32
-  poke p x = do
-    pokeRefCount p (coperator_refcount x)
-    pokeByteOff p 8 (coperator_basis x)
-    pokeByteOff p 16 (coperator_off_diag_terms x)
-    pokeByteOff p 24 (coperator_diag_terms x)
-    pokeByteOff p 32 (coperator_haskell_payload x)
-
 foreign import ccall unsafe "ls_hs_destroy_basis_v2"
-  ls_hs_destroy_basis_v2 :: Ptr Cbasis -> IO ()
+  ls_hs_destroy_basis :: Ptr Cbasis -> IO ()
 
 operatorFromHeader ::
   HasNonbranchingRepresentation (Generator Int (GeneratorType t)) =>
   OperatorHeader t ->
   Operator t
 operatorFromHeader x = unsafePerformIO $ do
-  putStrLn "operatorFromHeader ..."
   let (diag, offDiag) = G.partition isNonbranchingTermDiagonal (getNonbranchingTerms x)
       numberBits = getNumberBits . basisHeader . opBasis $ x
   diag_terms <- createCnonbranching_terms numberBits diag
@@ -245,7 +167,7 @@ operatorFromHeader x = unsafePerformIO $ do
   basis <- borrowCbasis (opBasis x)
 
   fp <- mallocForeignPtr
-  addForeignPtrConcFinalizer fp (ls_hs_destroy_basis_v2 basis)
+  addForeignPtrConcFinalizer fp (ls_hs_destroy_basis basis)
   addForeignPtrConcFinalizer fp (destroyCnonbranching_terms off_diag_terms)
   addForeignPtrConcFinalizer fp (destroyCnonbranching_terms diag_terms)
   withForeignPtr fp $ \ptr ->
@@ -257,16 +179,15 @@ operatorFromHeader x = unsafePerformIO $ do
           coperator_diag_terms = diag_terms,
           coperator_haskell_payload = nullPtr
         }
-  pure (Operator x fp)
+  pure $ Operator x fp
 {-# NOINLINE operatorFromHeader #-}
 
 borrowCoperator :: Operator t -> IO (Ptr Coperator)
 borrowCoperator operator = do
-  putStrLn "borrowCoperator ..."
-  payload <- castStablePtrToPtr <$> newStablePtr operator
+  payload <- newStablePtr operator
   withForeignPtr (opContents operator) $ \ptr -> do
-    _ <- incRefCount ptr
-    pokePayload ptr payload
+    _ <- operatorIncRefCount ptr
+    operatorPokePayload ptr payload
   pure $ unsafeForeignPtrToPtr (opContents operator)
 
 --
@@ -314,15 +235,10 @@ withReconstructedOperator ::
   (forall (t :: ParticleTy). IsBasis t => Operator t -> IO a) ->
   IO a
 withReconstructedOperator p action = do
-  operator <- peek p
-  particleType <- cbasis_particle_type <$> peek (coperator_basis operator)
   let run :: forall (t :: ParticleTy). IsBasis t => Proxy t -> IO a
-      run _ = do
-        (x :: Operator t) <-
-          deRefStablePtr $
-            castPtrToStablePtr (coperator_haskell_payload operator)
-        action x
-  withParticleType particleType run
+      run _ = (action :: Operator t -> IO a) =<< deRefStablePtr =<< operatorPeekPayload p
+  tp <- operatorPeekParticleType p
+  withParticleType tp run
 
 withSameTypeAs ::
   forall t a.
@@ -339,13 +255,6 @@ withSameTypeAs a _with _action = _with f
       ((SpinfulFermionHeader _ _), (SpinfulFermionHeader _ _)) -> _action b
       ((SpinlessFermionHeader _ _), (SpinlessFermionHeader _ _)) -> _action b
       _ -> error "operators have different types"
-
-peekNumberOffDiagTerms :: Ptr Coperator -> IO Int
-peekNumberOffDiagTerms p = do
-  p' <- coperator_off_diag_terms <$> peek p
-  if p' /= nullPtr
-    then (fromIntegral . cnonbranching_terms_number_terms) <$> peek p'
-    else pure 0
 
 -- applyOperator ::
 --   forall t.

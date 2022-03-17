@@ -1,0 +1,228 @@
+module LatticeSymmetries.FFI
+  ( Cparticle_type (..),
+    c_LS_HS_SPIN,
+    c_LS_HS_SPINFUL_FERMION,
+    c_LS_HS_SPINLESS_FERMION,
+    Cbasis_kernels (..),
+    Cindex_kernel,
+    mkCindex_kernel,
+    Cbasis (..),
+    basisIncRefCount,
+    basisPeekParticleType,
+    basisPeekPayload,
+    basisPokePayload,
+    Cnonbranching_terms (..),
+    Coperator (..),
+    Cscalar,
+    operatorIncRefCount,
+    operatorPeekParticleType,
+    operatorPeekNumberOffDiagTerms,
+    operatorPeekPayload,
+    operatorPokePayload
+  ) where
+
+import Foreign
+import Foreign.C.Types
+import LatticeSymmetries.ComplexRational (Cscalar)
+
+#include "lattice_symmetries_haskell.h"
+
+newtype {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_particle_type" #-} Cparticle_type = Cparticle_type CInt
+  deriving stock (Show, Eq)
+  deriving newtype (Storable)
+
+c_LS_HS_SPIN :: Cparticle_type
+c_LS_HS_SPIN = Cparticle_type 0
+
+c_LS_HS_SPINFUL_FERMION :: Cparticle_type
+c_LS_HS_SPINFUL_FERMION = Cparticle_type 1
+
+c_LS_HS_SPINLESS_FERMION :: Cparticle_type
+c_LS_HS_SPINLESS_FERMION = Cparticle_type 2
+
+type Cindex_kernel = CPtrdiff -> Ptr Word64 -> CPtrdiff -> Ptr CPtrdiff -> CPtrdiff -> Ptr () -> IO ()
+
+foreign import ccall "dynamic"
+  mkCindex_kernel :: FunPtr Cindex_kernel -> Cindex_kernel
+
+data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_basis_kernels" #-} Cbasis_kernels = Cbasis_kernels
+  { cbasis_state_index_kernel :: {-# UNPACK #-} !(FunPtr Cindex_kernel),
+    cbasis_state_index_data :: {-# UNPACK #-} !(Ptr ())
+  }
+
+instance Storable Cbasis_kernels where
+  sizeOf _ = #{size ls_hs_basis_kernels}
+  {-# INLINE sizeOf #-}
+  alignment _ = #{alignment ls_hs_basis_kernels}
+  {-# INLINE alignment #-}
+  peek p =
+    Cbasis_kernels
+      <$> #{peek ls_hs_basis_kernels, state_index_kernel} p
+      <*> #{peek ls_hs_basis_kernels, state_index_data} p
+  {-# INLINE peek #-}
+  poke p x = do
+    #{poke ls_hs_basis_kernels, state_index_kernel} p (cbasis_state_index_kernel x)
+    #{poke ls_hs_basis_kernels, state_index_data} p (cbasis_state_index_data x)
+  {-# INLINE poke #-}
+
+data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_basis" #-} Cbasis = Cbasis
+  { cbasis_refcount :: {-# UNPACK #-} !CInt,
+    cbasis_number_sites :: {-# UNPACK #-} !CInt,
+    cbasis_number_particles :: {-# UNPACK #-} !CInt,
+    cbasis_number_up :: {-# UNPACK #-} !CInt,
+    cbasis_particle_type :: {-# UNPACK #-} !Cparticle_type,
+    cbasis_state_index_is_identity :: {-# UNPACK #-} !CBool,
+    cbasis_requires_projection :: {-# UNPACK #-} !CBool,
+    cbasis_kernels :: {-# UNPACK #-} !(Ptr Cbasis_kernels),
+    cbasis_haskell_payload :: {-# UNPACK #-} !(Ptr ())
+  }
+
+foreign import ccall unsafe "ls_hs_internal_read_refcount"
+  peekRefCount :: Ptr CInt -> IO CInt
+
+foreign import ccall unsafe "ls_hs_internal_write_refcount"
+  pokeRefCount :: Ptr CInt -> CInt -> IO CInt
+
+foreign import ccall unsafe "ls_hs_internal_inc_refcount"
+  incRefCount :: Ptr CInt -> IO CInt
+
+-- foreign import ccall unsafe "ls_hs_internal_dec_refcount"
+--   decRefCount :: Ptr CInt -> IO CInt
+
+basisIncRefCount :: Ptr Cbasis -> IO CInt
+basisIncRefCount p = incRefCount (p `plusPtr` #{offset ls_hs_basis, refcount})
+{-# INLINE basisIncRefCount #-}
+
+basisPeekParticleType :: Ptr Cbasis -> IO Cparticle_type
+basisPeekParticleType p = #{peek ls_hs_basis, particle_type} p
+{-# INLINE basisPeekParticleType #-}
+
+basisPeekPayload :: Ptr Cbasis -> IO (StablePtr a)
+basisPeekPayload p = #{peek ls_hs_basis, haskell_payload} p
+{-# INLINE basisPeekPayload #-}
+
+basisPokePayload :: Ptr Cbasis -> StablePtr a -> IO ()
+basisPokePayload p x = #{poke ls_hs_basis, haskell_payload} p x
+{-# INLINE basisPokePayload #-}
+
+instance Storable Cbasis where
+  sizeOf _ = #{size ls_hs_basis}
+  {-# INLINE sizeOf #-}
+  alignment _ = #{alignment ls_hs_basis}
+  {-# INLINE alignment #-}
+  peek p =
+    Cbasis
+      <$> peekRefCount (p `plusPtr` #{offset ls_hs_basis, refcount})
+      <*> #{peek ls_hs_basis, number_sites} p
+      <*> #{peek ls_hs_basis, number_particles} p
+      <*> #{peek ls_hs_basis, number_up} p
+      <*> #{peek ls_hs_basis, particle_type} p
+      <*> #{peek ls_hs_basis, state_index_is_identity} p
+      <*> #{peek ls_hs_basis, requires_projection} p
+      <*> #{peek ls_hs_basis, kernels} p
+      <*> #{peek ls_hs_basis, haskell_payload} p
+  {-# INLINE peek #-}
+  poke p x = do
+    _ <- pokeRefCount (p `plusPtr` #{offset ls_hs_basis, refcount}) (cbasis_refcount x)
+    #{poke ls_hs_basis, number_sites}            p (cbasis_number_sites x)
+    #{poke ls_hs_basis, number_particles}        p (cbasis_number_particles x)
+    #{poke ls_hs_basis, number_up}               p (cbasis_number_up x)
+    #{poke ls_hs_basis, particle_type}           p (cbasis_particle_type x)
+    #{poke ls_hs_basis, state_index_is_identity} p (cbasis_state_index_is_identity x)
+    #{poke ls_hs_basis, requires_projection}     p (cbasis_requires_projection x)
+    #{poke ls_hs_basis, kernels}                 p (cbasis_kernels x)
+    #{poke ls_hs_basis, haskell_payload}         p (cbasis_haskell_payload x)
+  {-# INLINE poke #-}
+
+data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_operator" #-} Cnonbranching_terms =
+  Cnonbranching_terms
+    { cnonbranching_terms_number_terms :: {-# UNPACK #-} !CInt,
+      cnonbranching_terms_number_bits :: {-# UNPACK #-} !CInt,
+      cnonbranching_terms_v :: {-# UNPACK #-} !(Ptr Cscalar),
+      cnonbranching_terms_m :: {-# UNPACK #-} !(Ptr Word64),
+      cnonbranching_terms_l :: {-# UNPACK #-} !(Ptr Word64),
+      cnonbranching_terms_r :: {-# UNPACK #-} !(Ptr Word64),
+      cnonbranching_terms_x :: {-# UNPACK #-} !(Ptr Word64),
+      cnonbranching_terms_s :: {-# UNPACK #-} !(Ptr Word64)
+    }
+  deriving stock (Show)
+
+instance Storable Cnonbranching_terms where
+  sizeOf _ = #{size ls_hs_nonbranching_terms}
+  {-# INLINE sizeOf #-}
+  alignment _ = #{alignment ls_hs_nonbranching_terms}
+  {-# INLINE alignment #-}
+  peek p =
+    Cnonbranching_terms
+      <$> #{peek ls_hs_nonbranching_terms, number_terms} p
+      <*> #{peek ls_hs_nonbranching_terms, number_bits} p
+      <*> #{peek ls_hs_nonbranching_terms, v} p
+      <*> #{peek ls_hs_nonbranching_terms, m} p
+      <*> #{peek ls_hs_nonbranching_terms, l} p
+      <*> #{peek ls_hs_nonbranching_terms, r} p
+      <*> #{peek ls_hs_nonbranching_terms, x} p
+      <*> #{peek ls_hs_nonbranching_terms, s} p
+  {-# INLINE peek #-}
+  poke p x = do
+    #{poke ls_hs_nonbranching_terms, number_terms} p (cnonbranching_terms_number_terms x)
+    #{poke ls_hs_nonbranching_terms, number_bits} p (cnonbranching_terms_number_bits x)
+    #{poke ls_hs_nonbranching_terms, v} p (cnonbranching_terms_v x)
+    #{poke ls_hs_nonbranching_terms, m} p (cnonbranching_terms_m x)
+    #{poke ls_hs_nonbranching_terms, l} p (cnonbranching_terms_l x)
+    #{poke ls_hs_nonbranching_terms, r} p (cnonbranching_terms_r x)
+    #{poke ls_hs_nonbranching_terms, x} p (cnonbranching_terms_x x)
+    #{poke ls_hs_nonbranching_terms, s} p (cnonbranching_terms_s x)
+  {-# INLINE poke #-}
+
+data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_operator" #-} Coperator = Coperator
+  { coperator_refcount :: {-# UNPACK #-} !CInt,
+    coperator_basis :: {-# UNPACK #-} !(Ptr Cbasis),
+    coperator_off_diag_terms :: {-# UNPACK #-} !(Ptr Cnonbranching_terms),
+    coperator_diag_terms :: {-# UNPACK #-} !(Ptr Cnonbranching_terms),
+    coperator_haskell_payload :: {-# UNPACK #-} !(Ptr ())
+  }
+
+operatorIncRefCount :: Ptr Coperator -> IO CInt
+operatorIncRefCount p = incRefCount (p `plusPtr` #{offset ls_hs_operator, refcount})
+{-# INLINE operatorIncRefCount #-}
+
+operatorPeekParticleType :: Ptr Coperator -> IO Cparticle_type
+operatorPeekParticleType p = #{peek ls_hs_operator, basis} p >>= basisPeekParticleType
+{-# INLINE operatorPeekParticleType #-}
+
+operatorPeekPayload :: Ptr Coperator -> IO (StablePtr a)
+operatorPeekPayload p = #{peek ls_hs_operator, haskell_payload} p
+{-# INLINE operatorPeekPayload #-}
+
+operatorPokePayload :: Ptr Coperator -> StablePtr a -> IO ()
+operatorPokePayload p x = #{poke ls_hs_operator, haskell_payload} p x
+{-# INLINE operatorPokePayload #-}
+
+operatorPeekNumberOffDiagTerms :: Ptr Coperator -> IO Int
+operatorPeekNumberOffDiagTerms p = do
+  termsPtr <- #{peek ls_hs_operator, off_diag_terms} p
+  if termsPtr == nullPtr
+    then pure 0
+    else #{peek ls_hs_nonbranching_terms, number_terms} termsPtr
+{-# INLINE operatorPeekNumberOffDiagTerms #-}
+
+instance Storable Coperator where
+  sizeOf _ = #{size ls_hs_operator}
+  {-# INLINE sizeOf #-}
+  alignment _ = #{alignment ls_hs_operator}
+  {-# INLINE alignment #-}
+  peek p =
+    Coperator
+      <$> peekRefCount (p `plusPtr` #{offset ls_hs_operator, refcount})
+      <*> #{peek ls_hs_operator, basis} p
+      <*> #{peek ls_hs_operator, off_diag_terms} p
+      <*> #{peek ls_hs_operator, diag_terms} p
+      <*> #{peek ls_hs_operator, haskell_payload} p
+  {-# INLINE peek #-}
+  poke p x = do
+    _ <- pokeRefCount (p `plusPtr` #{offset ls_hs_operator, refcount}) (coperator_refcount x)
+    #{poke ls_hs_operator, basis}           p (coperator_basis x)
+    #{poke ls_hs_operator, off_diag_terms}  p (coperator_off_diag_terms x)
+    #{poke ls_hs_operator, diag_terms}      p (coperator_diag_terms x)
+    #{poke ls_hs_operator, haskell_payload} p (coperator_haskell_payload x)
+  {-# INLINE poke #-}

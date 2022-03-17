@@ -82,6 +82,7 @@ library
                        LatticeSymmetries.NonbranchingTerm
                        LatticeSymmetries.Operator
                        LatticeSymmetries.Utils
+                       LatticeSymmetries.FFI
   -- c-sources:           cbits/helpers.c
   --                      cbits/csr.c
   --                      cbits/reference.c

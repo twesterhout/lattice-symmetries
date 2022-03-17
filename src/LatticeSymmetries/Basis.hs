@@ -5,7 +5,10 @@
 {-# LANGUAGE RankNTypes #-}
 
 module LatticeSymmetries.Basis
-  ( BasisState (..),
+  ( mkSpinBasis,
+    mkSpinlessFermionicBasis,
+    mkSpinfulFermionicBasis,
+    BasisState (..),
     Basis (..),
     BasisHeader (..),
     Factor,
@@ -52,6 +55,7 @@ import Foreign.Storable
 import GHC.ForeignPtr
 import LatticeSymmetries.Algebra (Algebra (..))
 import LatticeSymmetries.BitString
+import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
 import LatticeSymmetries.NonbranchingTerm
 import System.IO (hPutStrLn, stderr)
@@ -98,12 +102,67 @@ deriving stock instance Eq (BasisHeader t)
 data Basis t = Basis {basisHeader :: !(BasisHeader t), basisContents :: !(ForeignPtr Cbasis)}
   deriving (Show, Eq)
 
-mkSpinBasis :: HasCallStack => Int -> Maybe Int -> Basis 'SpinTy
+type family IndexType (t :: ParticleTy) where
+  IndexType 'SpinTy = Int
+  IndexType 'SpinfulFermionTy = (SpinIndex, Int)
+  IndexType 'SpinlessFermionTy = Int
+
+type family GeneratorType (t :: ParticleTy) where
+  GeneratorType 'SpinTy = SpinGeneratorType
+  GeneratorType 'SpinfulFermionTy = FermionGeneratorType
+  GeneratorType 'SpinlessFermionTy = FermionGeneratorType
+
+type Factor t = Generator (IndexType t) (GeneratorType t)
+
+data SpinfulOccupation
+  = SpinfulNoOccupation
+  | SpinfulTotalParticles !Int
+  | -- | @SpinfulPerSector numberDown numberUp@
+    SpinfulPerSector !Int !Int
+  deriving stock (Show, Eq)
+
+mkSpinBasis ::
+  HasCallStack =>
+  -- | Number of sites
+  Int ->
+  -- | Hamming weight
+  Maybe Int ->
+  Basis 'SpinTy
 mkSpinBasis n _
-  | n <= 0 = error $ "invalid number spins: " <> show n
+  | n <= 0 = error $ "invalid number of spins: " <> show n
 mkSpinBasis n (Just h)
   | h < 0 || h > n = error $ "invalid Hamming weight: " <> show h
 mkSpinBasis n h = basisFromHeader $ SpinHeader n h
+
+mkSpinfulFermionicBasis ::
+  HasCallStack =>
+  -- | Number of sites
+  Int ->
+  -- | Number of particles
+  SpinfulOccupation ->
+  Basis 'SpinfulFermionTy
+mkSpinfulFermionicBasis n _
+  | n <= 0 = error $ "invalid number of sites: " <> show n
+mkSpinfulFermionicBasis n (SpinfulTotalParticles p)
+  | p < 0 || p > n = error $ "invalid number of particles: " <> show p
+mkSpinfulFermionicBasis n (SpinfulPerSector u d)
+  | u < 0 || u > n || d < 0 || d > n =
+    error $
+      "invalid number of particles: " <> show u <> " up, " <> show d <> " down"
+mkSpinfulFermionicBasis n occupation = basisFromHeader $ SpinfulFermionHeader n occupation
+
+mkSpinlessFermionicBasis ::
+  HasCallStack =>
+  -- | Number of sites
+  Int ->
+  -- | Number of particles
+  Maybe Int ->
+  Basis 'SpinlessFermionTy
+mkSpinlessFermionicBasis n _
+  | n <= 0 = error $ "invalid number of sites: " <> show n
+mkSpinlessFermionicBasis n (Just h)
+  | h < 0 || h > n = error $ "invalid number of particles: " <> show h
+mkSpinlessFermionicBasis n h = basisFromHeader $ SpinlessFermionHeader n h
 
 ls_hs_create_basis :: HasCallStack => Cparticle_type -> CInt -> CInt -> CInt -> IO (Ptr Cbasis)
 ls_hs_create_basis particleType numberSites numberParticles numberUp
@@ -111,6 +170,18 @@ ls_hs_create_basis particleType numberSites numberParticles numberUp
     let h = if numberUp == -1 then Nothing else Just (fromIntegral numberUp)
         basis = mkSpinBasis (fromIntegral numberSites) h
      in borrowCbasis basis
+  | particleType == c_LS_HS_SPINFUL_FERMION =
+    let p
+          | numberParticles == -1 = SpinfulNoOccupation
+          | numberUp == -1 = SpinfulTotalParticles (fromIntegral numberParticles)
+          | otherwise = SpinfulPerSector (fromIntegral numberUp) (fromIntegral (numberParticles - numberUp))
+        basis = mkSpinfulFermionicBasis (fromIntegral numberSites) p
+     in borrowCbasis basis
+  | particleType == c_LS_HS_SPINLESS_FERMION =
+    let p = if numberParticles == -1 then Nothing else Just (fromIntegral numberParticles)
+        basis = mkSpinlessFermionicBasis (fromIntegral numberSites) p
+     in borrowCbasis basis
+  | otherwise = error $ "invalid particle type: " <> show particleType
 
 -- typedef struct {
 --   void* elts;
@@ -143,108 +214,6 @@ data Representatives = Representatives {rStates :: !ChapelArray, rRanges :: !Cha
 
 buildRepresentatives :: Basis t -> Representatives
 buildRepresentatives = undefined
-
-type family IndexType (t :: ParticleTy) where
-  IndexType 'SpinTy = Int
-  IndexType 'SpinfulFermionTy = (SpinIndex, Int)
-  IndexType 'SpinlessFermionTy = Int
-
-type family GeneratorType (t :: ParticleTy) where
-  GeneratorType 'SpinTy = SpinGeneratorType
-  GeneratorType 'SpinfulFermionTy = FermionGeneratorType
-  GeneratorType 'SpinlessFermionTy = FermionGeneratorType
-
-type Factor t = Generator (IndexType t) (GeneratorType t)
-
-data SpinfulOccupation
-  = SpinfulNoOccupation
-  | SpinfulTotalParticles !Int
-  | -- | @SpinfulPerSector numberDown numberUp@
-    SpinfulPerSector !Int !Int
-  deriving stock (Show, Eq)
-
-newtype {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_particle_type" #-} Cparticle_type = Cparticle_type CInt
-  deriving stock (Show, Eq)
-  deriving newtype (Storable)
-
-c_LS_HS_SPIN :: Cparticle_type
-c_LS_HS_SPIN = Cparticle_type 0
-
-c_LS_HS_SPINFUL_FERMION :: Cparticle_type
-c_LS_HS_SPINFUL_FERMION = Cparticle_type 1
-
-c_LS_HS_SPINLESS_FERMION :: Cparticle_type
-c_LS_HS_SPINLESS_FERMION = Cparticle_type 2
-
-type Cindex_kernel = CPtrdiff -> Ptr Word64 -> CPtrdiff -> Ptr CPtrdiff -> CPtrdiff -> Ptr () -> IO ()
-
-foreign import ccall "dynamic"
-  mkCindex_kernel :: FunPtr Cindex_kernel -> Cindex_kernel
-
-data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_basis_kernels" #-} Cbasis_kernels = Cbasis_kernels
-  { cbasis_state_index_kernel :: {-# UNPACK #-} !(FunPtr Cindex_kernel),
-    cbasis_state_index_data :: {-# UNPACK #-} !(Ptr ())
-  }
-
-instance Storable Cbasis_kernels where
-  sizeOf _ = 16
-  alignment _ = 8
-  peek p =
-    Cbasis_kernels
-      <$> peekByteOff p 0
-      <*> peekByteOff p 8
-  poke p (Cbasis_kernels index_kernel index_data) = do
-    pokeByteOff p 0 index_kernel
-    pokeByteOff p 8 index_data
-
-data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_basis" #-} Cbasis = Cbasis
-  { cbasis_refcount :: {-# UNPACK #-} !CInt,
-    cbasis_number_sites :: {-# UNPACK #-} !CInt,
-    cbasis_number_particles :: {-# UNPACK #-} !CInt,
-    cbasis_number_up :: {-# UNPACK #-} !CInt,
-    cbasis_particle_type :: {-# UNPACK #-} !Cparticle_type,
-    cbasis_state_index_is_identity :: {-# UNPACK #-} !CBool,
-    cbasis_requires_projection :: {-# UNPACK #-} !CBool,
-    cbasis_kernels :: {-# UNPACK #-} !(Ptr Cbasis_kernels),
-    cbasis_haskell_payload :: {-# UNPACK #-} !(Ptr ())
-  }
-
-foreign import ccall unsafe "ls_hs_internal_basis_read_refcount"
-  peekRefCount :: Ptr Cbasis -> IO CInt
-
-foreign import ccall unsafe "ls_hs_internal_basis_write_refcount"
-  pokeRefCount :: Ptr Cbasis -> CInt -> IO CInt
-
-foreign import ccall unsafe "ls_hs_internal_basis_inc_refcount"
-  incRefCount :: Ptr Cbasis -> IO CInt
-
-foreign import ccall unsafe "ls_hs_internal_basis_dec_refcount"
-  decRefCount :: Ptr Cbasis -> IO CInt
-
-instance Storable Cbasis where
-  sizeOf _ = 40
-  alignment _ = 8
-  peek p =
-    Cbasis
-      <$> peekRefCount p
-      <*> peekByteOff p 4
-      <*> peekByteOff p 8
-      <*> peekByteOff p 12
-      <*> peekByteOff p 16
-      <*> peekByteOff p 20
-      <*> peekByteOff p 21
-      <*> peekByteOff p 24
-      <*> peekByteOff p 32
-  poke p x = do
-    pokeRefCount p (cbasis_refcount x)
-    pokeByteOff p 4 (cbasis_number_sites x)
-    pokeByteOff p 8 (cbasis_number_particles x)
-    pokeByteOff p 12 (cbasis_number_up x)
-    pokeByteOff p 16 (cbasis_particle_type x)
-    pokeByteOff p 20 (cbasis_state_index_is_identity x)
-    pokeByteOff p 21 (cbasis_requires_projection x)
-    pokeByteOff p 24 (cbasis_kernels x)
-    pokeByteOff p 32 (cbasis_haskell_payload x)
 
 stateIndex :: Basis t -> BasisState -> Maybe Int
 stateIndex basis (BasisState _ (BitString α))
@@ -416,6 +385,30 @@ hasFixedHammingWeight x = case x of
   _ -> False
 {-# INLINE hasFixedHammingWeight #-}
 
+maxStateEstimate :: BasisHeader t -> BasisState
+maxStateEstimate x = case x of
+  SpinHeader n (Just h) -> BasisState n . BitString $ (bit (h + 1) - 1) `shiftL` (n - h)
+  SpinHeader n Nothing -> BasisState n . BitString $ bit (n + 1) - 1
+  SpinfulFermionHeader n SpinfulNoOccupation -> maxStateEstimate (SpinlessFermionHeader (2 * n) Nothing)
+  SpinfulFermionHeader n (SpinfulTotalParticles p) -> maxStateEstimate (SpinlessFermionHeader (2 * n) (Just p))
+  SpinfulFermionHeader n (SpinfulPerSector down up) ->
+    let (BasisState _ minDown) = maxStateEstimate (SpinlessFermionHeader n (Just down))
+        (BasisState _ minUp) = maxStateEstimate (SpinlessFermionHeader n (Just up))
+     in BasisState (2 * n) $ (minUp `shiftL` n) .|. minDown
+  SpinlessFermionHeader n p -> maxStateEstimate (SpinHeader n p)
+
+minStateEstimate :: BasisHeader t -> BasisState
+minStateEstimate x = case x of
+  SpinHeader n (Just h) -> BasisState n . BitString $ bit (h + 1) - 1
+  SpinHeader n Nothing -> BasisState n . BitString $ zeroBits
+  SpinfulFermionHeader n SpinfulNoOccupation -> minStateEstimate (SpinlessFermionHeader (2 * n) Nothing)
+  SpinfulFermionHeader n (SpinfulTotalParticles p) -> minStateEstimate (SpinlessFermionHeader (2 * n) (Just p))
+  SpinfulFermionHeader n (SpinfulPerSector down up) ->
+    let (BasisState _ minDown) = minStateEstimate (SpinlessFermionHeader n (Just down))
+        (BasisState _ minUp) = minStateEstimate (SpinlessFermionHeader n (Just up))
+     in BasisState (2 * n) $ (minUp `shiftL` n) .|. minDown
+  SpinlessFermionHeader n p -> minStateEstimate (SpinHeader n p)
+
 optionalNatural :: Maybe Int -> CInt
 optionalNatural x = case x of
   (Just n) -> fromIntegral n
@@ -424,8 +417,6 @@ optionalNatural x = case x of
 
 basisFromHeader :: BasisHeader t -> Basis t
 basisFromHeader x = unsafePerformIO $ do
-  -- p <- castStablePtrToPtr <$> newStablePtr basis
-  putStrLn "basisFromHeader ..."
   fp <- mallocForeignPtr
   kernels <- createCbasis_kernels x
   addForeignPtrConcFinalizer fp (destroyCbasis_kernels kernels)
@@ -442,28 +433,14 @@ basisFromHeader x = unsafePerformIO $ do
           cbasis_kernels = kernels,
           cbasis_haskell_payload = nullPtr
         }
-  let !basis = Basis x fp
-  -- payload <- castStablePtrToPtr <$> newStablePtr basis
-  -- withForeignPtr fp $ \ptr ->
-  --   pokeByteOff ptr 32 payload
-  pure basis
+  pure $ Basis x fp
 {-# NOINLINE basisFromHeader #-}
-
-foreign import ccall unsafe "ls_hs_internal_basis_set_payload"
-  pokePayload :: Ptr Cbasis -> Ptr () -> IO ()
-
-foreign import ccall unsafe "ls_hs_internal_basis_get_payload"
-  peekPayload :: Ptr Cbasis -> IO (Ptr ())
 
 borrowCbasis :: Basis t -> IO (Ptr Cbasis)
 borrowCbasis basis = do
-  putStrLn "borrowCbasis ..."
-  payload <- castStablePtrToPtr <$> newStablePtr basis
   withForeignPtr (basisContents basis) $ \ptr -> do
-    print =<< incRefCount ptr
-    pokePayload ptr payload
-    putStrLn $ "Storing " <> show payload
-    print =<< peekPayload ptr
+    _ <- basisIncRefCount ptr
+    basisPokePayload ptr =<< newStablePtr basis
   pure $ unsafeForeignPtrToPtr (basisContents basis)
 
 withCbasis :: Basis t -> (Ptr Cbasis -> IO a) -> IO a
@@ -495,12 +472,12 @@ withParticleType t action
 
 withReconstructedBasis :: forall a. Ptr Cbasis -> (forall (t :: ParticleTy). IsBasis t => Basis t -> IO a) -> IO a
 withReconstructedBasis p action = do
-  basis <- peek p
   let run :: forall (t :: ParticleTy). IsBasis t => Proxy t -> IO a
       run _ = do
-        (x :: Basis t) <- deRefStablePtr $ castPtrToStablePtr (cbasis_haskell_payload basis)
+        (x :: Basis t) <- deRefStablePtr =<< basisPeekPayload p
         action x
-  withParticleType (cbasis_particle_type basis) run
+  tp <- basisPeekParticleType p
+  withParticleType tp run
 
 -- destroyCbasis :: Ptr Cbasis -> IO ()
 -- destroyCbasis p
@@ -548,30 +525,6 @@ destroyCbasis_kernels p
           | otherwise = error "failed to automatically deallocate state_index kernel"
     destroy =<< peek p
     free p
-
-maxStateEstimate :: BasisHeader t -> BasisState
-maxStateEstimate x = case x of
-  SpinHeader n (Just h) -> BasisState n . BitString $ (bit (h + 1) - 1) `shiftL` (n - h)
-  SpinHeader n Nothing -> BasisState n . BitString $ bit (n + 1) - 1
-  SpinfulFermionHeader n SpinfulNoOccupation -> maxStateEstimate (SpinlessFermionHeader (2 * n) Nothing)
-  SpinfulFermionHeader n (SpinfulTotalParticles p) -> maxStateEstimate (SpinlessFermionHeader (2 * n) (Just p))
-  SpinfulFermionHeader n (SpinfulPerSector down up) ->
-    let (BasisState _ minDown) = maxStateEstimate (SpinlessFermionHeader n (Just down))
-        (BasisState _ minUp) = maxStateEstimate (SpinlessFermionHeader n (Just up))
-     in BasisState (2 * n) $ (minUp `shiftL` n) .|. minDown
-  SpinlessFermionHeader n p -> maxStateEstimate (SpinHeader n p)
-
-minStateEstimate :: BasisHeader t -> BasisState
-minStateEstimate x = case x of
-  SpinHeader n (Just h) -> BasisState n . BitString $ bit (h + 1) - 1
-  SpinHeader n Nothing -> BasisState n . BitString $ zeroBits
-  SpinfulFermionHeader n SpinfulNoOccupation -> minStateEstimate (SpinlessFermionHeader (2 * n) Nothing)
-  SpinfulFermionHeader n (SpinfulTotalParticles p) -> minStateEstimate (SpinlessFermionHeader (2 * n) (Just p))
-  SpinfulFermionHeader n (SpinfulPerSector down up) ->
-    let (BasisState _ minDown) = minStateEstimate (SpinlessFermionHeader n (Just down))
-        (BasisState _ minUp) = minStateEstimate (SpinlessFermionHeader n (Just up))
-     in BasisState (2 * n) $ (minUp `shiftL` n) .|. minDown
-  SpinlessFermionHeader n p -> minStateEstimate (SpinHeader n p)
 
 -- instance IsBasis SpinBasis where
 --   type IndexType SpinBasis = Int
