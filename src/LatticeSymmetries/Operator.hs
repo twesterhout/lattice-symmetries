@@ -54,6 +54,9 @@ instance IsBasis t => Num (OperatorHeader t) where
   (+) a b
     | opBasis a == opBasis b = OperatorHeader (opBasis a) (simplify $ opTerms a + opTerms b)
 
+instance IsBasis t => Num (Operator t) where
+  (+) a b = operatorFromHeader $ opHeader a + opHeader b
+
 -- getNumberTerms :: Operator c basis -> Int
 -- getNumberTerms operator = let (Sum v) = opTerms operator in G.length v
 
@@ -203,6 +206,12 @@ foreign import ccall unsafe "ls_hs_internal_operator_inc_refcount"
 foreign import ccall unsafe "ls_hs_internal_operator_dec_refcount"
   decRefCount :: Ptr Coperator -> IO CInt
 
+foreign import ccall unsafe "ls_hs_internal_operator_set_payload"
+  pokePayload :: Ptr Coperator -> Ptr () -> IO ()
+
+foreign import ccall unsafe "ls_hs_internal_operator_get_payload"
+  peekPayload :: Ptr Coperator -> IO (Ptr ())
+
 instance Storable Coperator where
   sizeOf _ = 40
   alignment _ = 8
@@ -250,6 +259,15 @@ operatorFromHeader x = unsafePerformIO $ do
         }
   pure (Operator x fp)
 {-# NOINLINE operatorFromHeader #-}
+
+borrowCoperator :: Operator t -> IO (Ptr Coperator)
+borrowCoperator operator = do
+  putStrLn "borrowCoperator ..."
+  payload <- castStablePtrToPtr <$> newStablePtr operator
+  withForeignPtr (opContents operator) $ \ptr -> do
+    _ <- incRefCount ptr
+    pokePayload ptr payload
+  pure $ unsafeForeignPtrToPtr (opContents operator)
 
 --
 -- createCoperator ::

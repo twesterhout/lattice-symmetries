@@ -77,6 +77,18 @@ void ls_hs_destroy_basis_v2(ls_hs_basis *basis) {
   }
 }
 
+void ls_hs_destroy_operator_v2(ls_hs_operator *op) {
+  fprintf(stdout, "ls_hs_destroy_basis_v2 ...\n");
+  if (ls_hs_internal_operator_dec_refcount(op) == 1) {
+    if (ls_hs_internal_free_stable_ptr == NULL) {
+      fprintf(stderr, "ls_hs_internal_free_stable_ptr not set :(\n");
+      abort();
+    }
+    fprintf(stdout, "Calling hs_free_stable_ptr ...\n");
+    (*ls_hs_internal_free_stable_ptr)(op->haskell_payload);
+  }
+}
+
 #if 0
 typedef struct ls_hs_nonbranching_term {
   ls_hs_scalar v;

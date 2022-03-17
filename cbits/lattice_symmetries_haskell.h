@@ -160,6 +160,7 @@ typedef struct ls_hs_operator {
   ls_hs_basis const *basis;
   ls_hs_nonbranching_terms const *off_diag_terms;
   ls_hs_nonbranching_terms const *diag_terms;
+  void *haskell_payload;
 } ls_hs_operator;
 
 ls_hs_operator *ls_hs_create_operator(ls_hs_basis const *, char const *, int,

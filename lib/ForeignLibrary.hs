@@ -13,12 +13,12 @@ import Foreign.Marshal.Utils (fromBool)
 import Foreign.Ptr (FunPtr, Ptr)
 import Foreign.StablePtr
 import LatticeSymmetries
--- import LatticeSymmetries.Algebra
+import LatticeSymmetries.Algebra
 import LatticeSymmetries.Basis
--- import LatticeSymmetries.ComplexRational
--- import LatticeSymmetries.Generator
--- import LatticeSymmetries.Operator
--- import LatticeSymmetries.Parser
+import LatticeSymmetries.ComplexRational
+import LatticeSymmetries.Generator
+import LatticeSymmetries.Operator
+import LatticeSymmetries.Parser
 import qualified LatticeSymmetries.Types as Types
 import System.Mem
 import Text.PrettyPrint.ANSI.Leijen (hardline, pretty, putDoc)
@@ -97,37 +97,37 @@ ls_hs_basis_has_fixed_hamming_weight basis =
 foreign export ccall "ls_hs_basis_has_fixed_hamming_weight"
   ls_hs_basis_has_fixed_hamming_weight :: Ptr Cbasis -> IO CBool
 
--- ls_hs_create_operator :: Ptr Cbasis -> CString -> CInt -> CInt -> Ptr CInt -> IO (Ptr Coperator)
--- ls_hs_create_operator basisPtr cStr numberTuples tupleSize tuplesPtr =
---   withReconstructedBasis basisPtr $ \basis -> do
---     indices <-
---       chunksOf (fromIntegral tupleSize)
---         <$> fmap fromIntegral
---         <$> peekArray (fromIntegral (numberTuples * tupleSize)) tuplesPtr
---     s <- peekCString cStr
---     let operator = operatorFromString basis (T.pack s) indices
---     -- putDoc (pretty (opTerms operator) <> hardline)
---     createCoperator operator
---
--- foreign export ccall "ls_hs_create_operator"
---   ls_hs_create_operator :: Ptr Cbasis -> CString -> CInt -> CInt -> Ptr CInt -> IO (Ptr Coperator)
+ls_hs_create_operator :: Ptr Cbasis -> CString -> CInt -> CInt -> Ptr CInt -> IO (Ptr Coperator)
+ls_hs_create_operator basisPtr cStr numberTuples tupleSize tuplesPtr =
+  withReconstructedBasis basisPtr $ \basis -> do
+    indices <-
+      chunksOf (fromIntegral tupleSize)
+        <$> fmap fromIntegral
+        <$> peekArray (fromIntegral (numberTuples * tupleSize)) tuplesPtr
+    s <- peekCString cStr
+    let operator = operatorFromString basis (T.pack s) indices
+    -- putDoc (pretty (opTerms operator) <> hardline)
+    borrowCoperator operator
 
--- ls_hs_operator_plus :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
--- ls_hs_operator_plus aPtr bPtr =
---   withReconstructedOperator aPtr $ \a ->
---     withSameTypeAs a (withReconstructedOperator bPtr) $ \b ->
---       createCoperator (a + b)
---
--- foreign export ccall "ls_hs_operator_plus"
---   ls_hs_operator_plus :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
+foreign export ccall "ls_hs_create_operator"
+  ls_hs_create_operator :: Ptr Cbasis -> CString -> CInt -> CInt -> Ptr CInt -> IO (Ptr Coperator)
 
--- ls_hs_print_terms :: Ptr Coperator -> IO ()
--- ls_hs_print_terms p =
---   withReconstructedOperator p $ \operator ->
---     putDoc (pretty (opTerms operator) <> hardline)
---
--- foreign export ccall "ls_hs_print_terms"
---   ls_hs_print_terms :: Ptr Coperator -> IO ()
---
+ls_hs_operator_plus :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
+ls_hs_operator_plus aPtr bPtr =
+  withReconstructedOperator aPtr $ \a ->
+    withSameTypeAs a (withReconstructedOperator bPtr) $ \b ->
+      borrowCoperator (a + b)
+
+foreign export ccall "ls_hs_operator_plus"
+  ls_hs_operator_plus :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
+
+ls_hs_print_terms :: Ptr Coperator -> IO ()
+ls_hs_print_terms p =
+  withReconstructedOperator p $ \operator ->
+    putDoc (pretty (opTerms (opHeader operator)) <> hardline)
+
+foreign export ccall "ls_hs_print_terms"
+  ls_hs_print_terms :: Ptr Coperator -> IO ()
+
 -- foreign export ccall "ls_hs_destroy_operator_v2"
 --   destroyCoperator :: Ptr Coperator -> IO ()
