@@ -17,57 +17,25 @@ void ls_hs_internal_set_free_stable_ptr(free_stable_ptr_type f) {
   ls_hs_internal_free_stable_ptr = f;
 }
 
-int ls_hs_internal_basis_read_refcount(ls_hs_basis const *basis) {
-  return atomic_load(&basis->refcount);
+int ls_hs_internal_read_refcount(_Atomic int const *refcount) {
+  return atomic_load(refcount);
 }
 
-void ls_hs_internal_basis_write_refcount(ls_hs_basis *basis, int value) {
-  atomic_store(&basis->refcount, value);
+void ls_hs_internal_write_refcount(_Atomic int *refcount, int value) {
+  atomic_store(refcount, value);
 }
 
-int ls_hs_internal_basis_inc_refcount(ls_hs_basis *basis) {
-  return atomic_fetch_add(&basis->refcount, 1);
+int ls_hs_internal_inc_refcount(_Atomic int *refcount) {
+  return atomic_fetch_add(refcount, 1);
 }
 
-int ls_hs_internal_basis_dec_refcount(ls_hs_basis *basis) {
-  return atomic_fetch_sub(&basis->refcount, 1);
-}
-
-void ls_hs_internal_basis_set_payload(ls_hs_basis *basis, void *payload) {
-  basis->haskell_payload = payload;
-}
-
-void *ls_hs_internal_basis_get_payload(ls_hs_basis *basis) {
-  return basis->haskell_payload;
-}
-
-int ls_hs_internal_operator_read_refcount(ls_hs_operator const *op) {
-  return atomic_load(&op->refcount);
-}
-
-void ls_hs_internal_operator_write_refcount(ls_hs_operator *op, int value) {
-  atomic_store(&op->refcount, value);
-}
-
-int ls_hs_internal_operator_inc_refcount(ls_hs_operator *op) {
-  return atomic_fetch_add(&op->refcount, 1);
-}
-
-int ls_hs_internal_operator_dec_refcount(ls_hs_operator *op) {
-  return atomic_fetch_sub(&op->refcount, 1);
-}
-
-void ls_hs_internal_operator_set_payload(ls_hs_operator *op, void *payload) {
-  op->haskell_payload = payload;
-}
-
-void *ls_hs_internal_operator_get_payload(ls_hs_operator *op) {
-  return op->haskell_payload;
+int ls_hs_internal_dec_refcount(_Atomic int *refcount) {
+  return atomic_fetch_sub(refcount, 1);
 }
 
 void ls_hs_destroy_basis_v2(ls_hs_basis *basis) {
   fprintf(stdout, "ls_hs_destroy_basis_v2 ...\n");
-  if (ls_hs_internal_basis_dec_refcount(basis) == 1) {
+  if (ls_hs_internal_dec_refcount(&basis->refcount) == 1) {
     if (ls_hs_internal_free_stable_ptr == NULL) {
       fprintf(stderr, "ls_hs_internal_free_stable_ptr not set :(\n");
       abort();
@@ -79,7 +47,7 @@ void ls_hs_destroy_basis_v2(ls_hs_basis *basis) {
 
 void ls_hs_destroy_operator_v2(ls_hs_operator *op) {
   fprintf(stdout, "ls_hs_destroy_basis_v2 ...\n");
-  if (ls_hs_internal_operator_dec_refcount(op) == 1) {
+  if (ls_hs_internal_dec_refcount(&op->refcount) == 1) {
     if (ls_hs_internal_free_stable_ptr == NULL) {
       fprintf(stderr, "ls_hs_internal_free_stable_ptr not set :(\n");
       abort();
@@ -349,6 +317,7 @@ void ls_hs_state_index_identity_kernel(ptrdiff_t const batch_size,
                                        ptrdiff_t *const restrict indices,
                                        ptrdiff_t const indices_stride,
                                        void const *private_kernel_data) {
+  (void)private_kernel_data;
   for (ptrdiff_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
     indices[batch_idx * indices_stride] =
         (ptrdiff_t)spins[batch_idx * spins_stride];

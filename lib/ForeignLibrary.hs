@@ -66,29 +66,14 @@ foreign export ccall "ls_hs_destroy_spin_basis"
 foreign export ccall "ls_hs_destroy_operator"
   ls_hs_destroy_operator :: Ptr Types.OperatorWrapper -> IO ()
 
--- ls_hs_create_spin_basis :: CInt -> CInt -> IO (Ptr Cbasis)
--- ls_hs_create_spin_basis numberSites hammingWeight = do
---   putStrLn "Creating SpinBasis ..."
---   createCbasis $ SpinBasis numberSites' hammingWeight'
---   where
---     numberSites' = fromIntegral numberSites
---     hammingWeight'
---       | hammingWeight == -1 = Nothing
---       | otherwise = Just (fromIntegral hammingWeight)
---
--- ls_hs_create_spinful_fermionic_basis :: CInt -> CInt -> CInt -> IO (Ptr Cbasis)
--- ls_hs_create_spinful_fermionic_basis numberSites numberUp numberDown = do
---   putStrLn "Creating SpinfulFermionicBasis ..."
---   createCbasis $ SpinfulFermionicBasis numberSites' occupation
---   where
---     numberSites' = fromIntegral numberSites
---     occupation
---       | numberUp == -1 && numberDown == -1 = SpinfulNoOccupation
---       | numberUp >= 0 && numberDown == -1 = SpinfulTotalParticles (fromIntegral numberUp)
---       | otherwise = SpinfulPerSector (fromIntegral numberUp) (fromIntegral numberDown)
-
 foreign export ccall "ls_hs_create_basis"
   ls_hs_create_basis :: Cparticle_type -> CInt -> CInt -> CInt -> IO (Ptr Cbasis)
+
+foreign export ccall "ls_hs_min_state_estimate"
+  ls_hs_min_state_estimate :: Ptr Cbasis -> IO Word64
+
+foreign export ccall "ls_hs_max_state_estimate"
+  ls_hs_max_state_estimate :: Ptr Cbasis -> IO Word64
 
 ls_hs_basis_has_fixed_hamming_weight :: Ptr Cbasis -> IO CBool
 ls_hs_basis_has_fixed_hamming_weight basis =
@@ -128,6 +113,3 @@ ls_hs_print_terms p =
 
 foreign export ccall "ls_hs_print_terms"
   ls_hs_print_terms :: Ptr Coperator -> IO ()
-
--- foreign export ccall "ls_hs_destroy_operator_v2"
---   destroyCoperator :: Ptr Coperator -> IO ()

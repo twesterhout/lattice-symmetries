@@ -37,6 +37,8 @@ module LatticeSymmetries.Basis
     withParticleType,
     withReconstructedBasis,
     ls_hs_create_basis,
+    ls_hs_min_state_estimate,
+    ls_hs_max_state_estimate,
   )
 where
 
@@ -182,6 +184,22 @@ ls_hs_create_basis particleType numberSites numberParticles numberUp
         basis = mkSpinlessFermionicBasis (fromIntegral numberSites) p
      in borrowCbasis basis
   | otherwise = error $ "invalid particle type: " <> show particleType
+
+ls_hs_max_state_estimate :: HasCallStack => Ptr Cbasis -> IO Word64
+ls_hs_max_state_estimate p =
+  withReconstructedBasis p $ \basis ->
+    let (BasisState n (BitString x)) = maxStateEstimate (basisHeader basis)
+     in if n > 64
+          then error "maximal state is not representable as a 64-bit integer"
+          else pure $ fromIntegral x
+
+ls_hs_min_state_estimate :: HasCallStack => Ptr Cbasis -> IO Word64
+ls_hs_min_state_estimate p =
+  withReconstructedBasis p $ \basis ->
+    let (BasisState n (BitString x)) = minStateEstimate (basisHeader basis)
+     in if n > 64
+          then error "minimal state is not representable as a 64-bit integer"
+          else pure $ fromIntegral x
 
 -- typedef struct {
 --   void* elts;
@@ -387,8 +405,8 @@ hasFixedHammingWeight x = case x of
 
 maxStateEstimate :: BasisHeader t -> BasisState
 maxStateEstimate x = case x of
-  SpinHeader n (Just h) -> BasisState n . BitString $ (bit (h + 1) - 1) `shiftL` (n - h)
-  SpinHeader n Nothing -> BasisState n . BitString $ bit (n + 1) - 1
+  SpinHeader n (Just h) -> BasisState n . BitString $ (bit h - 1) `shiftL` (n - h)
+  SpinHeader n Nothing -> BasisState n . BitString $ bit n - 1
   SpinfulFermionHeader n SpinfulNoOccupation -> maxStateEstimate (SpinlessFermionHeader (2 * n) Nothing)
   SpinfulFermionHeader n (SpinfulTotalParticles p) -> maxStateEstimate (SpinlessFermionHeader (2 * n) (Just p))
   SpinfulFermionHeader n (SpinfulPerSector down up) ->
@@ -399,7 +417,7 @@ maxStateEstimate x = case x of
 
 minStateEstimate :: BasisHeader t -> BasisState
 minStateEstimate x = case x of
-  SpinHeader n (Just h) -> BasisState n . BitString $ bit (h + 1) - 1
+  SpinHeader n (Just h) -> BasisState n . BitString $ bit h - 1
   SpinHeader n Nothing -> BasisState n . BitString $ zeroBits
   SpinfulFermionHeader n SpinfulNoOccupation -> minStateEstimate (SpinlessFermionHeader (2 * n) Nothing)
   SpinfulFermionHeader n (SpinfulTotalParticles p) -> minStateEstimate (SpinlessFermionHeader (2 * n) (Just p))
