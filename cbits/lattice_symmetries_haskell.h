@@ -184,20 +184,19 @@ void ls_hs_operator_apply_off_diag_kernel(
     ls_hs_scalar *coeffs);
 
 // {{{ Binomials
-typedef struct ls_hs_binomials {
+typedef struct {
   int dimension;
+  bool is_per_sector;
   uint64_t *coefficients; // array of shape [dimension, dimension]
                           // stored in row-major order
   // coefficients[n, k] corresponds to binomial(n, k)
-} ls_hs_binomials;
+} ls_hs_combinadics_kernel_data;
 
-ls_hs_binomials *ls_hs_internal_malloc_binomials(int number_bits);
-void ls_hs_internal_free_binomials(ls_hs_binomials *p);
-void ls_hs_internal_compute_binomials(ls_hs_binomials *p);
-uint64_t ls_hs_internal_binomial(int n, int k, ls_hs_binomials const *cache);
-
-ptrdiff_t ls_hs_internal_rank_via_combinadics(uint64_t alpha,
-                                              ls_hs_binomials const *cache);
+ls_hs_combinadics_kernel_data *
+ls_hs_internal_create_combinadics_kernel_data(int number_bits,
+                                              bool is_per_sector);
+void ls_hs_internal_destroy_combinadics_kernel_data(
+    ls_hs_combinadics_kernel_data *p);
 
 void ls_hs_state_index_combinadics_kernel(ptrdiff_t batch_size,
                                           uint64_t const *spins,

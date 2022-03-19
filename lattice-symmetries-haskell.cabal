@@ -191,4 +191,4 @@ test-suite lattice-symmetries-haskell-test
   ghc-options:         -threaded
                        -rtsopts
                        -with-rtsopts=-N
-  buildable: False
+  buildable: True

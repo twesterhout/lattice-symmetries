@@ -9,6 +9,7 @@ module LatticeSymmetries.FFI
     Cbasis (..),
     basisIncRefCount,
     basisPeekParticleType,
+    basisPeekStateIndexKernel,
     basisPeekPayload,
     basisPokePayload,
     Cnonbranching_terms (..),
@@ -18,7 +19,8 @@ module LatticeSymmetries.FFI
     operatorPeekParticleType,
     operatorPeekNumberOffDiagTerms,
     operatorPeekPayload,
-    operatorPokePayload
+    operatorPokePayload,
+    Cexternal_array (..)
   ) where
 
 import Foreign
@@ -96,6 +98,14 @@ basisIncRefCount p = incRefCount (p `plusPtr` #{offset ls_hs_basis, refcount})
 basisPeekParticleType :: Ptr Cbasis -> IO Cparticle_type
 basisPeekParticleType p = #{peek ls_hs_basis, particle_type} p
 {-# INLINE basisPeekParticleType #-}
+
+basisPeekStateIndexKernel :: Ptr Cbasis -> IO (FunPtr Cindex_kernel, Ptr ())
+basisPeekStateIndexKernel p = do
+  kernels <- #{peek ls_hs_basis, kernels} p
+  f <- #{peek ls_hs_basis_kernels, state_index_kernel} kernels
+  env <- #{peek ls_hs_basis_kernels, state_index_data} kernels
+  pure (f, env)
+{-# INLINE basisPeekStateIndexKernel #-}
 
 basisPeekPayload :: Ptr Cbasis -> IO (StablePtr a)
 basisPeekPayload p = #{peek ls_hs_basis, haskell_payload} p
@@ -225,4 +235,27 @@ instance Storable Coperator where
     #{poke ls_hs_operator, off_diag_terms}  p (coperator_off_diag_terms x)
     #{poke ls_hs_operator, diag_terms}      p (coperator_diag_terms x)
     #{poke ls_hs_operator, haskell_payload} p (coperator_haskell_payload x)
+  {-# INLINE poke #-}
+
+data {-# CTYPE "lattice_symmetries_haskell.h" "chpl_external_array" #-} Cexternal_array = Cexternal_array
+  { external_array_elts :: !(Ptr ()),
+    external_array_num_elts :: !Word64,
+    external_array_freer :: !(Ptr ())
+  }
+
+instance Storable Cexternal_array where
+  sizeOf _ = #{size chpl_external_array}
+  {-# INLINE sizeOf #-}
+  alignment _ = #{alignment chpl_external_array}
+  {-# INLINE alignment #-}
+  peek p =
+    Cexternal_array
+      <$> #{peek chpl_external_array, elts} p
+      <*> #{peek chpl_external_array, num_elts} p
+      <*> #{peek chpl_external_array, freer} p
+  {-# INLINE peek #-}
+  poke p x = do
+    #{poke chpl_external_array, elts} p (external_array_elts x)
+    #{poke chpl_external_array, num_elts} p (external_array_num_elts x)
+    #{poke chpl_external_array, freer} p (external_array_freer x)
   {-# INLINE poke #-}

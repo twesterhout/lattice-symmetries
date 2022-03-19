@@ -230,35 +230,7 @@ void ls_hs_operator_apply_off_diag_kernel(
   free(temp);
 }
 
-ls_hs_binomials *ls_hs_internal_malloc_binomials(int const number_bits) {
-  ls_hs_binomials *p = malloc(sizeof(ls_hs_binomials));
-  if (p == NULL) {
-    goto fail_1;
-  }
-  p->dimension = number_bits + 1; // NOTE: +1 because we could have n and k
-                                  // running from 0 to number_bits inclusive
-  p->coefficients = malloc(p->dimension * p->dimension * sizeof(uint64_t));
-  if (p->coefficients == NULL) {
-    goto fail_2;
-  }
-  return p;
-
-fail_2:
-  free(p);
-fail_1:
-  return NULL;
-}
-
-void ls_hs_internal_free_binomials(ls_hs_binomials *p) {
-  if (p != NULL) {
-    free(p->coefficients);
-  }
-  free(p);
-}
-
-void ls_hs_internal_compute_binomials(ls_hs_binomials *p) {
-  int const dim = p->dimension;
-  uint64_t *const coeff = p->coefficients;
+static void compute_binomials(int dim, uint64_t *coeff) {
   int n = 0;
   int k = 0;
   coeff[n * dim + k] = 1;
@@ -277,8 +249,40 @@ void ls_hs_internal_compute_binomials(ls_hs_binomials *p) {
   }
 }
 
-uint64_t ls_hs_internal_binomial(int const n, int const k,
-                                 ls_hs_binomials const *cache) {
+ls_hs_combinadics_kernel_data *
+ls_hs_internal_create_combinadics_kernel_data(int number_bits,
+                                              bool is_per_sector) {
+  ls_hs_combinadics_kernel_data *p =
+      malloc(sizeof(ls_hs_combinadics_kernel_data));
+  if (p == NULL) {
+    goto fail_1;
+  }
+  p->dimension = number_bits + 1; // NOTE: +1 because we could have n and k
+                                  // running from 0 to number_bits inclusive
+  p->is_per_sector = is_per_sector;
+  p->coefficients = malloc(p->dimension * p->dimension * sizeof(uint64_t));
+  if (p->coefficients == NULL) {
+    goto fail_2;
+  }
+  compute_binomials(p->dimension, p->coefficients);
+  return p;
+
+fail_2:
+  free(p);
+fail_1:
+  return NULL;
+}
+
+void ls_hs_internal_destroy_combinadics_kernel_data(
+    ls_hs_combinadics_kernel_data *p) {
+  if (p != NULL) {
+    free(p->coefficients);
+  }
+  free(p);
+}
+
+static inline uint64_t binomial(int const n, int const k,
+                                ls_hs_combinadics_kernel_data const *cache) {
   if (k > n) {
     return 0;
   }
@@ -287,13 +291,14 @@ uint64_t ls_hs_internal_binomial(int const n, int const k,
   return cache->coefficients[n * cache->dimension + k];
 }
 
-ptrdiff_t ls_hs_internal_rank_via_combinadics(uint64_t alpha,
-                                              ls_hs_binomials const *cache) {
+static inline ptrdiff_t
+rank_via_combinadics(uint64_t alpha,
+                     ls_hs_combinadics_kernel_data const *cache) {
   ptrdiff_t i = 0;
   for (int k = 1; alpha != 0; ++k) {
     int c = __builtin_ctzl(alpha);
     alpha &= alpha - 1;
-    i += ls_hs_internal_binomial(c, k, cache);
+    i += binomial(c, k, cache);
   }
   return i;
 }
@@ -304,10 +309,31 @@ void ls_hs_state_index_combinadics_kernel(ptrdiff_t const batch_size,
                                           ptrdiff_t *const restrict indices,
                                           ptrdiff_t const indices_stride,
                                           void const *private_kernel_data) {
-  ls_hs_binomials const *cache = private_kernel_data;
+  if (batch_size == 0) {
+    return;
+  }
+  ls_hs_combinadics_kernel_data const *cache = private_kernel_data;
+
+  int const number_bits = cache->dimension - 1;
+  // The following are only needed for fermionic systems when number of
+  // particles per spin sector is fixed
+  uint64_t const mask =
+      number_bits >= 64 ? ~(uint64_t)0 : ((uint64_t)1 << number_bits) - 1;
+  int const hamming_weight_low = __builtin_popcountl(spins[0] & mask);
+  ptrdiff_t const number_low = binomial(number_bits, hamming_weight_low, cache);
+
   for (ptrdiff_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
-    indices[batch_idx * indices_stride] = ls_hs_internal_rank_via_combinadics(
-        spins[batch_idx * spins_stride], cache);
+    uint64_t alpha = spins[batch_idx * spins_stride];
+    ptrdiff_t index;
+    if (cache->is_per_sector) {
+      uint64_t const low = alpha & mask;
+      uint64_t const high = alpha >> number_bits;
+      index = rank_via_combinadics(high, cache) * number_low +
+              rank_via_combinadics(low, cache);
+    } else {
+      index = rank_via_combinadics(alpha, cache);
+    }
+    indices[batch_idx * indices_stride] = index;
   }
 }
 
