@@ -62,7 +62,7 @@ jobs:
         export LD_LIBRARY_PATH=$PWD/c/build:$LD_LIBRARY_PATH
         export DYLD_LIBRARY_PATH=$PWD/c/build:$DYLD_LIBRARY_PATH
         cabal v2-update
-        cabal v2-build --disable-tests --extra-lib-dirs=$PWD/c/build
+        cabal v2-build --disable-tests -v --extra-lib-dirs=$PWD/c/build
         # - name: Test
         #   run: |
         #     cabal v2-test --enable-tests --test-show-details=direct
