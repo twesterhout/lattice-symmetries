@@ -7,6 +7,13 @@ CFLAGS = -fPIC -O3 -march=native -W -Wall -Wextra -pedantic
 UNAME = $(shell uname)
 BIN_DIR = build
 
+
+ifeq ($(UNAME), Darwin)
+SHARED_FLAG = -dynamiclib
+else
+SHARED_FLAG = -shared
+endif
+
 ifeq ($(OS), Windows_NT)
     $(error Windows is not supported)
 else
@@ -25,7 +32,7 @@ $(BIN_DIR)/reference.o: reference.c ../cbits/lattice_symmetries_haskell.h
 
 $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT): $(BIN_DIR)/reference.o
 	@mkdir -p $(@D)
-	$(CXX) -shared -o $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) $^
+	$(CXX) $(SHARED_FLAG) -o $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) $^
 
 clean:
 	rm -fr $(BIN_DIR)

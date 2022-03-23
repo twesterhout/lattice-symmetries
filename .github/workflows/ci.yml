@@ -61,8 +61,11 @@ jobs:
         cd ..
         export LD_LIBRARY_PATH=$PWD/c/build:$LD_LIBRARY_PATH
         export DYLD_LIBRARY_PATH=$PWD/c/build:$DYLD_LIBRARY_PATH
+        cc -Icbits `pkg-config --cflags lattice_symmetries` main.c `pkg-config --libs lattice_symmetries` -L$PWD/c/build -llattice_symmetries_core
+        ./a.out
+
         cabal v2-update
-        cabal v2-build --disable-tests -v --extra-lib-dirs=$PWD/c/build
+        cabal v2-build --disable-tests --extra-lib-dirs=$PWD/c/build
         # - name: Test
         #   run: |
         #     cabal v2-test --enable-tests --test-show-details=direct
