@@ -53,6 +53,11 @@ jobs:
         cmake --build build -j4
         cmake --build build --target install
         cd ..
+    - name: Start SSH session
+      uses: luchihoratiu/debug-via-ssh@main
+      with:
+        NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+        SSH_PASS: ${{ secrets.SSH_PASS }}
     - name: Build
       run: |
         export PKG_CONFIG_PATH=$GITHUB_WORKSPACE/lattice-symmetries/lib/pkgconfig
