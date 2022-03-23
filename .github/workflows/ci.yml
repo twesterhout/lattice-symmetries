@@ -60,7 +60,7 @@ jobs:
         make
         cd ..
         cabal v2-update
-        cabal v2-build --disable-tests
+        cabal v2-build --disable-tests --extra-lib-dirs=$PWD/c/build
         # - name: Test
         #   run: |
         #     cabal v2-test --enable-tests --test-show-details=direct
