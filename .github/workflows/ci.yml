@@ -56,6 +56,9 @@ jobs:
     - name: Build
       run: |
         export PKG_CONFIG_PATH=$GITHUB_WORKSPACE/lattice-symmetries/lib/pkgconfig
+        cd c
+        make
+        cd ..
         cabal v2-update
         cabal v2-build --disable-tests
         # - name: Test
