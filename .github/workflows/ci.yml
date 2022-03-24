@@ -54,6 +54,7 @@ jobs:
         cmake --build build --target install
         cd ..
     - name: Start SSH session
+      if: matrix.os == 'macos-latest'
       uses: luchihoratiu/debug-via-ssh@main
       with:
         NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
