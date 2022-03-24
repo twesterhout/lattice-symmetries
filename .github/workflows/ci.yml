@@ -49,16 +49,17 @@ jobs:
         cmake -Bbuild \
               -DCMAKE_BUILD_TYPE=Release \
               -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/lattice-symmetries \
+              -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
               -DLatticeSymmetries_ENABLE_UNIT_TESTING=OFF
         cmake --build build -j4
         cmake --build build --target install
         cd ..
-    - name: Start SSH session
-      if: matrix.os == 'macos-latest'
-      uses: luchihoratiu/debug-via-ssh@main
-      with:
-        NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
-        SSH_PASS: ${{ secrets.SSH_PASS }}
+        # - name: Start SSH session
+        #   if: matrix.os == 'macos-latest'
+        #   uses: luchihoratiu/debug-via-ssh@main
+        #   with:
+        #     NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+        #     SSH_PASS: ${{ secrets.SSH_PASS }}
     - name: Build
       run: |
         export PKG_CONFIG_PATH=$GITHUB_WORKSPACE/lattice-symmetries/lib/pkgconfig
@@ -67,11 +68,9 @@ jobs:
         cd ..
         export LD_LIBRARY_PATH=$PWD/c/build:$LD_LIBRARY_PATH
         export DYLD_LIBRARY_PATH=$PWD/c/build:$DYLD_LIBRARY_PATH
-        cc -Icbits `pkg-config --cflags lattice_symmetries` main.c `pkg-config --libs lattice_symmetries` -L$PWD/c/build -llattice_symmetries_core
-        ./a.out
 
         cabal v2-update
-        cabal v2-build --disable-tests --extra-lib-dirs=$PWD/c/build || true
+        cabal v2-build --disable-tests --extra-lib-dirs=$PWD/c/build
         # - name: Test
         #   run: |
         #     cabal v2-test --enable-tests --test-show-details=direct

@@ -32,7 +32,10 @@ $(BIN_DIR)/reference.o: reference.c ../cbits/lattice_symmetries_haskell.h
 
 $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT): $(BIN_DIR)/reference.o
 	@mkdir -p $(@D)
-	$(CXX) $(SHARED_FLAG) -o $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) $^
+	$(CC) $(SHARED_FLAG) -o $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) $^
+ifeq ($(UNAME), Darwin)
+	install_name_tool -id $(CURDIR)/$(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT)
+endif
 
 clean:
 	rm -fr $(BIN_DIR)
