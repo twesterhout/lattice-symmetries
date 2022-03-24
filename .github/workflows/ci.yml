@@ -72,7 +72,6 @@ jobs:
 
         cabal v2-update
         cabal v2-build --disable-tests --extra-lib-dirs=$PWD/c/build || true
-        cat /Users/runner/work/lattice-symmetries-haskell/lattice-symmetries-haskell/dist-newstyle/build/x86_64-osx/ghc-8.10.7/lattice-symmetries-haskell-0.1.0.0/build/LatticeSymmetries/FFI_hsc_make
         # - name: Test
         #   run: |
         #     cabal v2-test --enable-tests --test-show-details=direct
