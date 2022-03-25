@@ -48,6 +48,7 @@ jobs:
         cd lattice-symmetries
         cmake -Bbuild \
               -DCMAKE_BUILD_TYPE=Release \
+              -DBUILD_SHARED_LIBS=ON \
               -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/lattice-symmetries \
               -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
               -DLatticeSymmetries_ENABLE_UNIT_TESTING=OFF
@@ -71,6 +72,27 @@ jobs:
 
         cabal v2-update
         cabal v2-build --disable-tests --extra-lib-dirs=$PWD/c/build
+    - name: Package
+      if: matrix.os == 'macos-latest'
+      run: |
+        mkdir release
+        mkdir release/include
+        mkdir release/lib
+        cp $GITHUB_WORKSPACE/lattice-symmetries/lib/liblattice_symmetries.dylib release/lib/
+        cp -r $GITHUB_WORKSPACE/lattice-symmetries/include/lattice_symmetries release/include/
+        cp cbits/lattice_symmetries_haskell.h release/include/
+        export GHC_VERSION=$(ghc --numeric-version)
+        export PACKAGE_VERSION=0.1.0.0
+        cp dist-newstyle/build/x86_64-osx/ghc-$GHC_VERSION/lattice-symmetries-haskell-$PACKAGE_VERSION/f/lattice_symmetries_haskell/build/lattice_symmetries_haskell/liblattice_symmetries_haskell.dylib release/lib/
+        tar -cf release.tar release/
+        bzip2 release.tar
+
+    - uses: actions/upload-artifact@v3
+      if: matrix.os == 'macos-latest'
+      with:
+        name: chapel-dependencies
+        path: release.tar.bz2
+
         # - name: Test
         #   run: |
         #     cabal v2-test --enable-tests --test-show-details=direct
