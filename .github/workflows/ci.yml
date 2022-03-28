@@ -71,7 +71,7 @@ jobs:
         export DYLD_LIBRARY_PATH=$PWD/c/build:$DYLD_LIBRARY_PATH
 
         cabal v2-update
-        cabal v2-build --disable-tests --extra-lib-dirs=$PWD/c/build
+        cabal v2-build --disable-tests --extra-lib-dirs=$PWD/c/build --hsc2hs-options=--cross-compile
     - name: Package
       if: matrix.os == 'macos-latest'
       run: |
