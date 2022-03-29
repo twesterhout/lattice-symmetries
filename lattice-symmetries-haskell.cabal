@@ -81,6 +81,8 @@ library
                        LatticeSymmetries.BitString
                        LatticeSymmetries.NonbranchingTerm
                        LatticeSymmetries.Operator
+                       LatticeSymmetries.Group
+                       LatticeSymmetries.Benes
                        LatticeSymmetries.Utils
                        LatticeSymmetries.FFI
   -- c-sources:           cbits/helpers.c
@@ -88,6 +90,7 @@ library
   --                      cbits/reference.c
   -- cc-options:          -Wall -Wextra -Wpedantic
   include-dirs:        cbits
+  build-tool-depends:  hsc2hs:hsc2hs
   build-depends:       vector
                      -- , binary
                      -- , vector-binary-instances
@@ -124,6 +127,7 @@ library
                      -- , vector-binary-instances
                      , hdf5-hs
                      , ansi-wl-pprint
+                     , HaskellForMaths
   extra-libraries:     lattice_symmetries_core
   pkgconfig-depends:   lattice_symmetries
 
