@@ -2,6 +2,7 @@ module LatticeSymmetries.BitString
   ( BitString (..),
     readBitString,
     writeBitString,
+    writeManyBitStrings,
     wordsFromBitString,
   )
 where
@@ -27,6 +28,12 @@ writeBitString numberWords p (BitString x₀) = do
           go (i + 1) (x `shiftR` 64)
         | otherwise = pure ()
   go 0 x₀
+
+writeManyBitStrings :: PrimMonad m => Int -> Ptr Word64 -> [BitString] -> m ()
+writeManyBitStrings numberWords p xs = go p xs
+  where
+    go !ptr (y : ys) = writeBitString numberWords ptr y >> go (P.advancePtr ptr numberWords) ys
+    go _ [] = pure ()
 
 readBitString :: PrimMonad m => Int -> Ptr Word64 -> m BitString
 readBitString numberWords p = do

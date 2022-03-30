@@ -95,6 +95,17 @@ typedef struct ls_hs_basis_kernels {
   void *state_index_data;
 } ls_hs_basis_kernels;
 
+typedef struct ls_hs_permutation_group {
+  _Atomic int refcount;
+  int number_bits;
+  int number_shifts;
+  int number_masks;
+  uint64_t *masks;
+  uint64_t *shifts;
+  double *eigvals_re;
+  double *eigvals_im;
+} ls_hs_permutation_group;
+
 typedef struct ls_hs_basis {
   _Atomic int refcount;
   int number_sites;

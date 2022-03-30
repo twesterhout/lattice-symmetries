@@ -9,22 +9,29 @@ module LatticeSymmetries.Benes
     toBenesNetwork,
     permuteBits,
     permuteBits',
+    BatchedBenesNetwork (..),
+    mkBatchedBenesNetwork,
   )
 where
 
-import Control.Monad.Primitive
 import Control.Monad.ST
 import Data.Bits
 import qualified Data.List as L
-import qualified Data.Set as S
+import qualified Data.Primitive.Ptr as P
+import qualified Data.Set as Set
 import qualified Data.Vector as B
 import Data.Vector.Generic ((!))
 import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Generic.Mutable as GM
+import qualified Data.Vector.Storable as S
+import qualified Data.Vector.Storable.Mutable as SM
 import qualified Data.Vector.Unboxed as U
-import qualified Data.Vector.Unboxed.Mutable as U
 import LatticeSymmetries.BitString
+import LatticeSymmetries.Dense
+import LatticeSymmetries.Utils
+import System.IO.Unsafe (unsafePerformIO)
 import System.Random
+import Prelude hiding (cycle)
 
 -- auto const n = _info.source.size();
 -- _info.inverse_source.resize(n);
@@ -53,7 +60,7 @@ identityPermutation size
 
 mkPermutation :: HasCallStack => U.Vector Int -> Permutation
 mkPermutation p
-  | S.toAscList (S.fromList (G.toList p)) == [0 .. G.length p - 1] = Permutation p
+  | Set.toAscList (Set.fromList (G.toList p)) == [0 .. G.length p - 1] = Permutation p
   | otherwise = error $ "invalid permutation: " <> show p
 
 instance Semigroup Permutation where
@@ -104,10 +111,10 @@ data Edge = Edge !Focus !Point !Point
 -- data InvertiblePermutation s = InvertiblePermutation {ipPermutation :: !(U.MVector s Int), ipInverse :: !(U.MVector s Int)}
 data InvertiblePermutation = InvertiblePermutation {ipPermutation :: !(U.Vector Int), ipInverse :: !(U.Vector Int)}
 
-ipValue :: HasCallStack => InvertiblePermutation -> Index -> Value
+ipValue :: InvertiblePermutation -> Index -> Value
 ipValue p (Index i) = Value (ipPermutation p ! i)
 
-ipIndex :: HasCallStack => InvertiblePermutation -> Value -> Index
+ipIndex :: InvertiblePermutation -> Value -> Index
 ipIndex p (Value i) = Index (ipInverse p ! i)
 
 mkInvertiblePermutation :: Permutation -> InvertiblePermutation
@@ -176,7 +183,7 @@ getMask swaps = go zeroBits swaps
     go !acc [] = acc
     go !acc ((Swap _ (Index i) (Index j)) : others) = go (setBit acc (min i j)) others
 
-applySwaps :: HasCallStack => InvertiblePermutation -> [Swap] -> InvertiblePermutation
+applySwaps :: InvertiblePermutation -> [Swap] -> InvertiblePermutation
 applySwaps perm swaps = runST $ do
   p' <- G.thaw $ ipPermutation perm
   inverse' <- G.thaw $ ipInverse perm
@@ -211,13 +218,13 @@ initialEdges s = mkEdge <$> go 0
        in Edge Source pᵢ pⱼ
 
 stageCycles :: SolverState -> [[Edge]]
-stageCycles s = cycles S.empty (initialEdges s)
+stageCycles s = cycles Set.empty (initialEdges s)
   where
     cycles _ [] = []
     cycles !visited (!e : es)
-      | S.notMember e visited =
+      | Set.notMember e visited =
         let cycle = getCycle (ssDelta s) (ssSource s) (ssTarget s) e
-         in cycle : cycles (visited `S.union` S.fromList cycle) es
+         in cycle : cycles (visited `Set.union` Set.fromList cycle) es
       | otherwise = cycles visited es
 
 solveStage :: SolverState -> (Integer, Integer, SolverState)
@@ -295,3 +302,32 @@ permuteBits' (Permutation p) x = go 0 zeroBits
         let y' = if testBit x (p ! i) then setBit y i else y
          in go (i + 1) y'
       | otherwise = y
+
+data BatchedBenesNetwork = BatchedBenesNetwork
+  { bbnMasks :: {-# UNPACK #-} !(DenseMatrix S.Vector Word64),
+    bbnShifts :: {-# UNPACK #-} !(S.Vector Word64)
+  }
+  deriving stock (Show)
+
+mkBatchedBenesNetwork :: B.Vector BenesNetwork -> BatchedBenesNetwork
+mkBatchedBenesNetwork networks
+  | G.null networks = BatchedBenesNetwork (DenseMatrix 0 0 G.empty) G.empty
+  | sameShifts = unsafePerformIO $ do
+    masks <- GM.new (numberShifts * numberMasks * numberWords)
+    SM.unsafeWith masks $ \masksPtr ->
+      loopM 0 (< numberShifts) (+ 1) $ \i ->
+        writeManyBitStrings
+          numberWords
+          (P.advancePtr masksPtr (i * numberMasks * numberWords))
+          (getBitStrings i)
+    masks' <- DenseMatrix numberShifts numberMasks <$> G.unsafeFreeze masks
+    pure $ BatchedBenesNetwork masks' (G.convert (G.map fromIntegral shifts))
+  | otherwise = error "networks have different shifts"
+  where
+    getBitStrings i = G.toList $ G.map (\n -> BitString ((bnMasks n) ! i)) networks
+    sameShifts = G.all ((== shifts) . bnShifts) networks
+    shifts = bnShifts (G.head networks)
+    numberShifts = G.length shifts
+    numberBits = 2 * G.maximum shifts
+    numberWords = (numberBits + 63) `div` 64
+    numberMasks = G.length networks

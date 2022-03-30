@@ -20,7 +20,8 @@ module LatticeSymmetries.FFI
     operatorPeekNumberOffDiagTerms,
     operatorPeekPayload,
     operatorPokePayload,
-    Cexternal_array (..)
+    Cexternal_array (..),
+    Cpermutation_group (..)
   ) where
 
 import Foreign
@@ -258,4 +259,42 @@ instance Storable Cexternal_array where
     #{poke chpl_external_array, elts} p (external_array_elts x)
     #{poke chpl_external_array, num_elts} p (external_array_num_elts x)
     #{poke chpl_external_array, freer} p (external_array_freer x)
+  {-# INLINE poke #-}
+
+data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_permutation_group" #-} Cpermutation_group = Cpermutation_group
+  { cpermutation_group_refcount :: {-# UNPACK #-} !CInt,
+    cpermutation_group_number_bits :: {-# UNPACK #-} !CInt,
+    cpermutation_group_number_shifts :: {-# UNPACK #-} !CInt,
+    cpermutation_group_number_masks :: {-# UNPACK #-} !CInt,
+    cpermutation_group_masks :: {-# UNPACK #-} !(Ptr Word64),
+    cpermutation_group_shifts :: {-# UNPACK #-} !(Ptr Word64),
+    cpermutation_group_eigvals_re :: {-# UNPACK #-} !(Ptr CDouble),
+    cpermutation_group_eigvals_im :: {-# UNPACK #-} !(Ptr CDouble)
+  }
+
+instance Storable Cpermutation_group where
+  sizeOf _ = #{size ls_hs_permutation_group}
+  {-# INLINE sizeOf #-}
+  alignment _ = #{alignment ls_hs_permutation_group}
+  {-# INLINE alignment #-}
+  peek p =
+    Cpermutation_group
+      <$> peekRefCount (p `plusPtr` #{offset ls_hs_permutation_group, refcount})
+      <*> #{peek ls_hs_permutation_group, number_bits} p
+      <*> #{peek ls_hs_permutation_group, number_shifts} p
+      <*> #{peek ls_hs_permutation_group, number_masks} p
+      <*> #{peek ls_hs_permutation_group, masks} p
+      <*> #{peek ls_hs_permutation_group, shifts} p
+      <*> #{peek ls_hs_permutation_group, eigvals_re} p
+      <*> #{peek ls_hs_permutation_group, eigvals_im} p
+  {-# INLINE peek #-}
+  poke p x = do
+    _ <- pokeRefCount (p `plusPtr` #{offset ls_hs_permutation_group, refcount}) (cpermutation_group_refcount x)
+    #{poke ls_hs_permutation_group, number_bits}   p (cpermutation_group_number_bits x)
+    #{poke ls_hs_permutation_group, number_shifts} p (cpermutation_group_number_shifts x)
+    #{poke ls_hs_permutation_group, number_masks}  p (cpermutation_group_number_masks x)
+    #{poke ls_hs_permutation_group, masks}         p (cpermutation_group_masks x)
+    #{poke ls_hs_permutation_group, shifts}        p (cpermutation_group_shifts x)
+    #{poke ls_hs_permutation_group, eigvals_re}    p (cpermutation_group_eigvals_re x)
+    #{poke ls_hs_permutation_group, eigvals_im}    p (cpermutation_group_eigvals_im x)
   {-# INLINE poke #-}
