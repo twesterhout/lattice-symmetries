@@ -16,6 +16,7 @@ import GHC.Exts (IsList (..))
 import LatticeSymmetries
 import LatticeSymmetries.Algebra
 import LatticeSymmetries.Basis
+import LatticeSymmetries.Benes
 import qualified LatticeSymmetries.CSR as CSR
 import LatticeSymmetries.ComplexRational
 import qualified LatticeSymmetries.Dense as Dense
@@ -485,6 +486,17 @@ main = hspec $ do
       stateIndex (mkSpinBasis 10 (Just 2)) "|0000000101⟩" `shouldBe` Just 1
       stateIndex (mkSpinfulFermionicBasis 3 (SpinfulPerSector 2 1)) "|001101⟩" `shouldBe` Just 1
       stateIndex (mkSpinfulFermionicBasis 3 (SpinfulPerSector 2 1)) "|100101⟩" `shouldBe` Just 7
+  describe "BenesNetwork" $ do
+    it "should permute bits" $ do
+      let p₁ = toBenesNetwork (mkPermutation [0, 1, 2])
+      permuteBits p₁ 0b100 `shouldBe` 0b100
+      let p₂ = toBenesNetwork (mkPermutation [1, 2, 0])
+      permuteBits p₂ 0b100 `shouldBe` 0b010
+      permuteBits p₂ 0b101 `shouldBe` 0b110
+      let v₃ = mkPermutation [1, 2, 3, 0, 5, 6, 7, 4, 9, 10, 11, 8]
+          p₃ = toBenesNetwork v₃
+      permuteBits p₃ 0b100111010010 `shouldBe` 0b110011100001
+      permuteBits p₃ 0b100111010010 `shouldBe` permuteBits' v₃ 0b100111010010
 
 -- describe "applyOperator" $ do
 --   it ".." $ do

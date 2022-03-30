@@ -24,8 +24,9 @@ pgLength (PermutationGroup gs) = G.length gs
 
 fromGenerators :: [Permutation] -> PermutationGroup
 fromGenerators [] = PermutationGroup G.empty
-fromGenerators gs@((Permutation v) : _) = go S.empty (S.singleton (identityPermutation (G.length v)))
+fromGenerators gs@(p : _) = go S.empty (S.singleton (identityPermutation (G.length v)))
   where
+    v = unPermutation p
     go !interior !boundary
       | S.null boundary = PermutationGroup . G.fromList . S.toAscList $ interior
       | otherwise = go interior' boundary'

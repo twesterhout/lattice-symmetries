@@ -1,4 +1,16 @@
-module LatticeSymmetries.Benes where
+module LatticeSymmetries.Benes
+  ( Permutation,
+    unPermutation,
+    mkPermutation,
+    permuteVector,
+    identityPermutation,
+    randomPermutation,
+    BenesNetwork (..),
+    toBenesNetwork,
+    permuteBits,
+    permuteBits',
+  )
+where
 
 import Control.Monad.Primitive
 import Control.Monad.ST
@@ -12,6 +24,7 @@ import qualified Data.Vector.Generic.Mutable as GM
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector.Unboxed.Mutable as U
 import LatticeSymmetries.BitString
+import System.Random
 
 -- auto const n = _info.source.size();
 -- _info.inverse_source.resize(n);
@@ -45,6 +58,29 @@ mkPermutation p
 
 instance Semigroup Permutation where
   (<>) x (Permutation ys) = Permutation $ permuteVector x ys
+
+randomShuffle :: (RandomGen g, G.Vector v a) => v a -> g -> (v a, g)
+randomShuffle xs g₀ = runST $ do
+  v <- G.thaw xs
+  let n = G.length xs
+  buffer <- GM.new n
+  let go !i !g
+        | i < n = do
+          let (j, g') = uniformR (i, n - 1) g
+          vᵢ <- GM.read v i
+          vⱼ <- GM.read v j
+          GM.write v j vᵢ
+          GM.write buffer i vⱼ
+          go (i + 1) g'
+        | otherwise = pure g
+  g' <- go 0 g₀
+  xs' <- G.unsafeFreeze buffer
+  pure (xs', g')
+
+randomPermutation :: RandomGen g => Int -> g -> (Permutation, g)
+randomPermutation n g = (mkPermutation p, g')
+  where
+    (p, g') = randomShuffle (G.enumFromN 0 n) g
 
 newtype Index = Index Int
   deriving stock (Show, Eq, Ord)
@@ -224,7 +260,7 @@ mkBenesNetwork srcMasks tgtMasks δs
 extendToPowerOfTwo :: Permutation -> Permutation
 extendToPowerOfTwo (Permutation p) = mkPermutation (G.generate n f)
   where
-    !n = (2 ^) $ ceiling $ logBase 2 (fromIntegral (G.length p) :: Double)
+    !n = ((2 :: Int) ^) $ (ceiling :: Double -> Int) $ logBase 2 (fromIntegral (G.length p))
     f !i
       | i < G.length p = p G.! i
       | otherwise = i
@@ -250,3 +286,12 @@ permuteBits (BenesNetwork masks δs) = go 0
     go !i !x
       | i < n = go (i + 1) (bitPermuteStep x (G.unsafeIndex masks i) (G.unsafeIndex δs i))
       | otherwise = x
+
+permuteBits' :: Permutation -> Integer -> Integer
+permuteBits' (Permutation p) x = go 0 zeroBits
+  where
+    go !i !y
+      | i < G.length p =
+        let y' = if testBit x (p ! i) then setBit y i else y
+         in go (i + 1) y'
+      | otherwise = y
