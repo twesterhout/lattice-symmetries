@@ -115,7 +115,7 @@ library
                      , primitive
                      , ghc-prim
                      -- , mtl
-                     -- , random >= 1.2.0
+                     , random >= 1.2.0
                      -- , mwc-random
                      -- , text
                      -- , ghc-dump-core
