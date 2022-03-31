@@ -10,6 +10,7 @@ module LatticeSymmetries.Benes
     permuteBits,
     permuteBits',
     BatchedBenesNetwork (..),
+    emptyBatchedBenesNetwork,
     mkBatchedBenesNetwork,
   )
 where
@@ -309,6 +310,9 @@ data BatchedBenesNetwork = BatchedBenesNetwork
   }
   deriving stock (Show)
 
+emptyBatchedBenesNetwork :: BatchedBenesNetwork
+emptyBatchedBenesNetwork = mkBatchedBenesNetwork G.empty
+
 mkBatchedBenesNetwork :: B.Vector BenesNetwork -> BatchedBenesNetwork
 mkBatchedBenesNetwork networks
   | G.null networks = BatchedBenesNetwork (DenseMatrix 0 0 G.empty) G.empty
@@ -320,7 +324,7 @@ mkBatchedBenesNetwork networks
           numberWords
           (P.advancePtr masksPtr (i * numberMasks * numberWords))
           (getBitStrings i)
-    masks' <- DenseMatrix numberShifts numberMasks <$> G.unsafeFreeze masks
+    masks' <- DenseMatrix numberShifts (numberMasks * numberWords) <$> G.unsafeFreeze masks
     pure $ BatchedBenesNetwork masks' (G.convert (G.map fromIntegral shifts))
   | otherwise = error "networks have different shifts"
   where

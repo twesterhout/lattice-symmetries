@@ -10,44 +10,45 @@ import Data.Type.Equality
 import qualified Data.Vector as V
 import qualified Data.Vector.Storable as S
 import qualified Data.Vector.Unboxed as U
-import Data.Yaml.Aeson
+-- import Data.Yaml.Aeson
 import Foreign.Storable
 import GHC.Exts (IsList (..))
-import LatticeSymmetries
+-- import LatticeSymmetries
 import LatticeSymmetries.Algebra
 import LatticeSymmetries.Basis
 import LatticeSymmetries.Benes
-import qualified LatticeSymmetries.CSR as CSR
+-- import qualified LatticeSymmetries.CSR as CSR
 import LatticeSymmetries.ComplexRational
 import qualified LatticeSymmetries.Dense as Dense
 import LatticeSymmetries.Generator
+import LatticeSymmetries.Group
 import LatticeSymmetries.IO
 import LatticeSymmetries.NonbranchingTerm
 import LatticeSymmetries.Operator
 import LatticeSymmetries.Parser
 import LatticeSymmetries.Sparse
-import LatticeSymmetries.Types
+-- import LatticeSymmetries.Types
 import Test.Hspec
 import Text.Parsec (parse)
 import Text.PrettyPrint.ANSI.Leijen (hPutDoc, hardline, pretty, putDoc)
 import Prelude hiding (Product, Sum, toList)
 
-anySpinEDException :: Selector SpinEDException
-anySpinEDException = const True
+-- anySpinEDException :: Selector SpinEDException
+-- anySpinEDException = const True
 
-anyLatticeSymmetriesException :: Selector LatticeSymmetriesException
-anyLatticeSymmetriesException = const True
+-- anyLatticeSymmetriesException :: Selector LatticeSymmetriesException
+-- anyLatticeSymmetriesException = const True
 
-parseLines :: FromJSON a => [Text] -> Either ParseException a
-parseLines xs = decodeEither' . encodeUtf8 . unlines $ xs
+-- parseLines :: FromJSON a => [Text] -> Either ParseException a
+-- parseLines xs = decodeEither' . encodeUtf8 . unlines $ xs
 
-checkRight s y = case s of
-  Left _ -> s `shouldSatisfy` isRight
-  Right x -> x `shouldBe` y
+-- checkRight s y = case s of
+--   Left _ -> s `shouldSatisfy` isRight
+--   Right x -> x `shouldBe` y
 
-checkJust s y = case s of
-  Just x -> x `shouldBe` y
-  Nothing -> s `shouldSatisfy` isJust
+-- checkJust s y = case s of
+--   Just x -> x `shouldBe` y
+--   Nothing -> s `shouldSatisfy` isJust
 
 type SpinPolynomial =
   Sum (Scaled ComplexRational (Product (Generator Int SpinGeneratorType)))
@@ -497,6 +498,14 @@ main = hspec $ do
           p₃ = toBenesNetwork v₃
       permuteBits p₃ 0b100111010010 `shouldBe` 0b110011100001
       permuteBits p₃ 0b100111010010 `shouldBe` permuteBits' v₃ 0b100111010010
+  describe "mkSymmetries" $ do
+    it "should build symmetry groups" $ do
+      print $
+        mkSymmetries
+          [ mkSymmetry (mkPermutation [1, 2, 3, 0]) 0,
+            mkSymmetry (mkPermutation [3, 2, 1, 0]) 1
+          ]
+      True `shouldBe` True
 
 -- describe "applyOperator" $ do
 --   it ".." $ do

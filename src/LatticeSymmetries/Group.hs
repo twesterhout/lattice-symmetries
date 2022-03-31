@@ -5,31 +5,152 @@ module LatticeSymmetries.Group
     identityPermutation,
     fromGenerators,
     pgLength,
+    Symmetry,
+    mkSymmetry,
+    SymmetriesHeader (..),
+    mkSymmetries,
+    symmetriesFromHeader,
   )
 where
 
 import Control.Monad.ST
-import qualified Data.Set as S
+import qualified Data.Map as Map
+import Data.Ratio
+import qualified Data.Set as Set
 import qualified Data.Vector as B
 import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Generic.Mutable as GM
+import qualified Data.Vector.Storable as S
+import qualified Data.Vector.Storable.Mutable as SM
 import qualified Data.Vector.Unboxed as U
+import Foreign.C.Types (CDouble)
+import Foreign.ForeignPtr
+import Foreign.Ptr
+import Foreign.Storable
 import LatticeSymmetries.Benes
+import LatticeSymmetries.Dense
+import LatticeSymmetries.FFI
+import System.IO.Unsafe (unsafePerformIO)
+import Prelude hiding (identity)
 
 newtype PermutationGroup = PermutationGroup (B.Vector Permutation)
   deriving stock (Show, Eq)
 
+getPeriodicity :: Permutation -> Int
+getPeriodicity p₀ = go 1 p₀
+  where
+    identity = identityPermutation (G.length (unPermutation p₀))
+    go !n !p
+      | p == identity = n
+      | otherwise = go (n + 1) (p₀ <> p)
+
+data Symmetry = Symmetry
+  { symmetryPermutation :: !Permutation,
+    symmetryPhase :: !(Ratio Int)
+  }
+  deriving stock (Show, Eq, Ord)
+
+mkSymmetry :: Permutation -> Int -> Symmetry
+mkSymmetry p sector
+  | sector < 0 || sector >= periodicity =
+    error $
+      "invalid sector: " <> show sector <> "; permutation has periodicity " <> show periodicity
+  | otherwise = Symmetry p (sector % periodicity)
+  where
+    periodicity = getPeriodicity p
+
+symmetryNumberSites :: Symmetry -> Int
+symmetryNumberSites (Symmetry p _) = G.length (unPermutation p)
+
+modOne :: Integral a => Ratio a -> Ratio a
+modOne x
+  | x >= 1 = x - fromIntegral (numerator x `div` denominator x)
+  | otherwise = x
+
+instance Semigroup Symmetry where
+  (<>) (Symmetry pa λa) (Symmetry pb λb) = Symmetry (pa <> pb) (modOne (λa + λb))
+
+data SymmetriesHeader = SymmetriesHeader
+  { symmHeaderGroup :: !PermutationGroup,
+    symmHeaderNetwork :: !BatchedBenesNetwork,
+    symmHeaderCharactersReal :: !(S.Vector Double),
+    symmHeaderCharactersImag :: !(S.Vector Double)
+  }
+  deriving stock (Show)
+
+getNumberBits :: SymmetriesHeader -> Int
+getNumberBits (SymmetriesHeader (PermutationGroup gs) _ _ _)
+  | G.null gs = 0
+  | otherwise = G.length . unPermutation . G.head $ gs
+
+emptySymmetriesHeader :: SymmetriesHeader
+emptySymmetriesHeader = SymmetriesHeader (PermutationGroup G.empty) emptyBatchedBenesNetwork G.empty G.empty
+
+data Symmetries = Symmetries {symmetriesHeader :: !SymmetriesHeader, symmetriesContents :: !(ForeignPtr Cpermutation_group)}
+  deriving stock (Show)
+
 pgLength :: PermutationGroup -> Int
 pgLength (PermutationGroup gs) = G.length gs
 
-fromGenerators :: [Permutation] -> PermutationGroup
-fromGenerators [] = PermutationGroup G.empty
-fromGenerators gs@(p : _) = go S.empty (S.singleton (identityPermutation (G.length v)))
+fromGenerators :: (Semigroup a, Ord a) => a -> [a] -> [a]
+fromGenerators _ [] = []
+fromGenerators identity gs@(p : _) = go Set.empty (Set.singleton identity)
   where
-    v = unPermutation p
     go !interior !boundary
-      | S.null boundary = PermutationGroup . G.fromList . S.toAscList $ interior
+      | Set.null boundary = Set.toAscList $ interior
       | otherwise = go interior' boundary'
       where
-        interior' = interior `S.union` boundary
-        boundary' = S.fromList [h <> g | h <- S.toList boundary, g <- gs] S.\\ interior'
+        interior' = interior `Set.union` boundary
+        boundary' = Set.fromList [h <> g | h <- Set.toList boundary, g <- gs] Set.\\ interior'
+
+mkSymmetries :: [Symmetry] -> Maybe SymmetriesHeader
+mkSymmetries [] = Just emptySymmetriesHeader
+mkSymmetries gs@(g : _)
+  | all ((== n) . symmetryNumberSites) gs = case isConsistent of
+    True ->
+      let permutations = G.fromList $ symmetryPermutation <$> symmetries
+          permGroup = PermutationGroup permutations
+          benesNetwork = mkBatchedBenesNetwork $ G.map toBenesNetwork permutations
+          charactersReal = G.fromList $ (\φ -> cos (-2 * pi * realToFrac φ)) <$> symmetryPhase <$> symmetries
+          charactersImag = G.fromList $ (\φ -> sin (-2 * pi * realToFrac φ)) <$> symmetryPhase <$> symmetries
+       in Just $ SymmetriesHeader permGroup benesNetwork charactersReal charactersImag
+    False -> Nothing
+  | otherwise = error "symmetries have different number of sites"
+  where
+    n = symmetryNumberSites g
+    identity = mkSymmetry (identityPermutation n) 0
+    symmetries = fromGenerators identity gs
+    isConsistent = all id $ do
+      s₁ <- symmetries
+      s₂ <- symmetries
+      let s₃@(Symmetry p₃ λ₃) = s₁ <> s₂
+      pure $
+        Set.member s₃ set
+          && denominator (λ₃ * fromIntegral (getPeriodicity p₃)) == 1
+      where
+        set = Set.fromList symmetries
+
+symmetriesFromHeader :: SymmetriesHeader -> Symmetries
+symmetriesFromHeader x = unsafePerformIO $ do
+  fp <- mallocForeignPtr
+  let (DenseMatrix numberShifts numberMasks masks) = bbnMasks $ symmHeaderNetwork x
+      shifts = bbnShifts $ symmHeaderNetwork x
+      numberBits = getNumberBits x
+  withForeignPtr fp $ \ptr ->
+    S.unsafeWith masks $ \masksPtr ->
+      S.unsafeWith shifts $ \shiftsPtr ->
+        S.unsafeWith (symmHeaderCharactersReal x) $ \eigvalsRealPtr ->
+          S.unsafeWith (symmHeaderCharactersImag x) $ \eigvalsImagPtr ->
+            poke ptr $
+              Cpermutation_group
+                { cpermutation_group_refcount = 0,
+                  cpermutation_group_number_bits = fromIntegral numberBits,
+                  cpermutation_group_number_shifts = fromIntegral numberShifts,
+                  cpermutation_group_number_masks = fromIntegral numberMasks,
+                  cpermutation_group_masks = masksPtr,
+                  cpermutation_group_shifts = shiftsPtr,
+                  cpermutation_group_eigvals_re = (castPtr :: Ptr Double -> Ptr CDouble) eigvalsRealPtr,
+                  cpermutation_group_eigvals_im = (castPtr :: Ptr Double -> Ptr CDouble) eigvalsImagPtr
+                }
+  pure $ Symmetries x fp
+{-# NOINLINE symmetriesFromHeader #-}
