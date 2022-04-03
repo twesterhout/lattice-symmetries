@@ -37,8 +37,7 @@ void ls_hs_destroy_basis_v2(ls_hs_basis *basis) {
   fprintf(stdout, "ls_hs_destroy_basis_v2 ...\n");
   if (ls_hs_internal_dec_refcount(&basis->refcount) == 1) {
     if (ls_hs_internal_free_stable_ptr == NULL) {
-      fprintf(stderr, "ls_hs_internal_free_stable_ptr not set :(\n");
-      abort();
+      LS_FATAL_ERROR("ls_hs_internal_free_stable_ptr not set");
     }
     fprintf(stdout, "Calling hs_free_stable_ptr ...\n");
     (*ls_hs_internal_free_stable_ptr)(basis->haskell_payload);
@@ -391,6 +390,17 @@ void ls_hs_evaluate_wavefunction_via_statevector(
   }
 
   free(indices);
+}
+
+void ls_hs_is_representative(ls_hs_basis const *basis, ptrdiff_t batch_size,
+                             uint64_t const *alphas, ptrdiff_t alphas_stride,
+                             uint8_t *are_representatives, double *norms) {
+  LS_CHECK(basis->kernels->is_representative_kernel != NULL,
+           "is_representative_kernel is NULL, perhaps this basis requires no "
+           "projection?");
+  (*basis->kernels->is_representative_kernel)(
+      batch_size, alphas, alphas_stride, are_representatives, norms,
+      basis->kernels->is_representative_data);
 }
 
 // TODO: currently not thread-safe, fix it

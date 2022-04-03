@@ -3,6 +3,7 @@ MAKEFLAGS += --no-builtin-rules
 .SUFFIXES:
 
 CC     = cc
+CXX    = c++
 CFLAGS = -fPIC -O3 -march=native -W -Wall -Wextra -pedantic
 UNAME = $(shell uname)
 BIN_DIR = build
@@ -30,7 +31,7 @@ $(BIN_DIR)/reference.o: reference.c ../cbits/lattice_symmetries_haskell.h
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -I../cbits `pkg-config --cflags lattice_symmetries` -o $@ -c $<
 
-$(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT): $(BIN_DIR)/reference.o
+$(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT): $(BIN_DIR)/reference.o $(PWD)/../kernels/build/kernels.o
 	@mkdir -p $(@D)
 	$(CC) $(SHARED_FLAG) -o $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) $^
 ifeq ($(UNAME), Darwin)

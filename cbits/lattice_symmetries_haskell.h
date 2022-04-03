@@ -29,9 +29,23 @@ typedef struct {
 extern "C" {
 #endif
 
+#if defined(__cplusplus)
+using ls_hs_scalar = std::complex<double>;
+#else
+typedef _Complex double ls_hs_scalar;
+#endif
+
 void ls_hs_init(void);
 void ls_hs_exit(void);
 void ls_hs_internal_set_free_stable_ptr(void (*f)(void *));
+
+__attribute__((noreturn)) void ls_hs_fatal_error(char const *func,
+                                                 char const *message);
+
+#define LS_FATAL_ERROR(msg) ls_hs_fatal_error(__func__, msg)
+
+#define LS_CHECK(cond, msg)                                                    \
+  ((cond) ? ((void)0) : ls_hs_fatal_error(__func__, msg))
 
 typedef struct ls_hs_spin_basis_v1 {
   ls_spin_basis const *const payload;
@@ -90,7 +104,20 @@ typedef void (*ls_hs_internal_state_index_kernel_type)(
     ptrdiff_t batch_size, uint64_t const *alphas, ptrdiff_t alphas_stride,
     ptrdiff_t *indices, ptrdiff_t indices_stride, void const *private_data);
 
+typedef void (*ls_hs_internal_is_representative_kernel_type)(
+    ptrdiff_t batch_size, uint64_t const *alphas, ptrdiff_t alphas_stride,
+    uint8_t *are_representatives, double *norms, void const *private_data);
+
+typedef void (*ls_hs_internal_state_info_kernel_type)(
+    ptrdiff_t batch_size, uint64_t const *alphas, ptrdiff_t alphas_stride,
+    ptrdiff_t *betas, ptrdiff_t betas_stride, ls_hs_scalar *characters,
+    double *norms, void const *private_data);
+
 typedef struct ls_hs_basis_kernels {
+  ls_hs_internal_state_info_kernel_type state_info_kernel;
+  void *state_info_data;
+  ls_hs_internal_is_representative_kernel_type is_representative_kernel;
+  void *is_representative_data;
   ls_hs_internal_state_index_kernel_type state_index_kernel;
   void *state_index_data;
 } ls_hs_basis_kernels;
@@ -149,11 +176,6 @@ void ls_hs_free_stable_ptr(void *);
 //   { cbasis_state_index_kernel :: {-# UNPACK #-} !(FunPtr Cindex_kernel),
 //     cbasis_state_index_data :: {-# UNPACK #-} !(Ptr ())
 //   }
-#if defined(__cplusplus)
-using ls_hs_scalar = std::complex<double>;
-#else
-typedef _Complex double ls_hs_scalar;
-#endif
 
 typedef struct ls_hs_nonbranching_terms {
   int number_terms;
@@ -244,6 +266,29 @@ void ls_hs_state_index_binary_search_kernel(ptrdiff_t batch_size,
 
 // }}}
 
+typedef struct ls_internal_halide_kernel_data ls_internal_halide_kernel_data;
+
+ls_internal_halide_kernel_data *
+ls_internal_create_halide_kernel_data(ls_hs_permutation_group const *g,
+                                      int spin_inversion);
+
+void ls_internal_destroy_halide_kernel_data(ls_internal_halide_kernel_data *p);
+
+void ls_hs_is_representative_halide_kernel(
+    ptrdiff_t batch_size, uint64_t const *alphas, ptrdiff_t alphas_stride,
+    uint8_t *are_representatives, double *norms, void const *private_data);
+
+void ls_hs_state_info_halide_kernel(ptrdiff_t batch_size,
+                                    uint64_t const *alphas,
+                                    ptrdiff_t alphas_stride, ptrdiff_t *betas,
+                                    ptrdiff_t betas_stride,
+                                    ls_hs_scalar *characters, double *norms,
+                                    void const *private_data);
+
+void ls_hs_is_representative(ls_hs_basis const *basis, ptrdiff_t batch_size,
+                             uint64_t const *alphas, ptrdiff_t alphas_stride,
+                             uint8_t *are_representatives, double *norms);
+
 void ls_hs_evaluate_wavefunction_via_statevector(
     ls_hs_basis_kernels const *kernels, ptrdiff_t batch_size,
     uint64_t const *alphas, ptrdiff_t alphas_stride, void const *state_vector,
@@ -256,6 +301,10 @@ typedef struct ls_chpl_kernels {
 
 ls_chpl_kernels const *ls_hs_internal_get_chpl_kernels();
 void ls_hs_internal_set_chpl_kernels(ls_chpl_kernels const *kernels);
+
+// Examples
+
+ls_hs_basis *ls_hs_spin_chain_10_basis();
 
 #if 0
 typedef struct ls_sparse_operator ls_sparse_operator;

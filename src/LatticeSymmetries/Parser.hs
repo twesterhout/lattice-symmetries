@@ -153,7 +153,7 @@ pOperatorString pPrimitive =
 
 getPrimitiveParser :: Stream s m Char => Basis t -> ParsecT s u m (Sum (Scaled ComplexRational (Factor t)))
 getPrimitiveParser b = case basisHeader b of
-  SpinHeader _ _ -> pSpinOperator
+  SpinHeader _ _ _ _ -> pSpinOperator
   SpinfulFermionHeader _ _ -> pFermionicOperator
   SpinlessFermionHeader _ _ -> pFermionicOperator
 

@@ -27,7 +27,7 @@ instance FromJSON BasisSpec where
       <$> v .: "number_spins"
       <*> v .:? "hamming_weight"
       <*> v .:? "spin_inversion"
-      <*> v .: "symmetries"
+      <*> v .:! "symmetries" .!= []
 
 instance ToJSON BasisSpec where
   toJSON (BasisSpec numberSpins hammingWeight spinInversion symmetries) =

@@ -6,6 +6,8 @@ module LatticeSymmetries.FFI
     Cbasis_kernels (..),
     Cindex_kernel,
     mkCindex_kernel,
+    Cstate_info_kernel,
+    Cis_representative_kernel,
     Cbasis (..),
     basisIncRefCount,
     basisPeekParticleType,
@@ -48,8 +50,28 @@ type Cindex_kernel = CPtrdiff -> Ptr Word64 -> CPtrdiff -> Ptr CPtrdiff -> CPtrd
 foreign import ccall "dynamic"
   mkCindex_kernel :: FunPtr Cindex_kernel -> Cindex_kernel
 
+type Cstate_info_kernel = CPtrdiff -> Ptr Word64 -> CPtrdiff ->
+                                      Ptr Word64 -> CPtrdiff ->
+                                      Ptr Cscalar -> Ptr CDouble ->
+                                      Ptr () -> IO ()
+
+foreign import ccall "dynamic"
+  mkCstate_info_kernel :: FunPtr Cstate_info_kernel -> Cstate_info_kernel
+
+type Cis_representative_kernel = CPtrdiff -> Ptr Word64 -> CPtrdiff ->
+                                             Ptr Word8 ->
+                                             Ptr CDouble ->
+                                             Ptr () -> IO ()
+
+foreign import ccall "dynamic"
+  mkCis_representative_kernel :: FunPtr Cis_representative_kernel -> Cis_representative_kernel
+
 data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_basis_kernels" #-} Cbasis_kernels = Cbasis_kernels
-  { cbasis_state_index_kernel :: {-# UNPACK #-} !(FunPtr Cindex_kernel),
+  { cbasis_state_info_kernel :: {-# UNPACK #-} !(FunPtr Cstate_info_kernel),
+    cbasis_state_info_data :: {-# UNPACK #-} !(Ptr ()),
+    cbasis_is_representative_kernel :: {-# UNPACK #-} !(FunPtr Cis_representative_kernel),
+    cbasis_is_representative_data :: {-# UNPACK #-} !(Ptr ()),
+    cbasis_state_index_kernel :: {-# UNPACK #-} !(FunPtr Cindex_kernel),
     cbasis_state_index_data :: {-# UNPACK #-} !(Ptr ())
   }
 
@@ -60,10 +82,18 @@ instance Storable Cbasis_kernels where
   {-# INLINE alignment #-}
   peek p =
     Cbasis_kernels
-      <$> #{peek ls_hs_basis_kernels, state_index_kernel} p
+      <$> #{peek ls_hs_basis_kernels, state_info_kernel} p
+      <*> #{peek ls_hs_basis_kernels, state_info_data} p
+      <*> #{peek ls_hs_basis_kernels, is_representative_kernel} p
+      <*> #{peek ls_hs_basis_kernels, is_representative_data} p
+      <*> #{peek ls_hs_basis_kernels, state_index_kernel} p
       <*> #{peek ls_hs_basis_kernels, state_index_data} p
   {-# INLINE peek #-}
   poke p x = do
+    #{poke ls_hs_basis_kernels, state_info_kernel} p (cbasis_state_info_kernel x)
+    #{poke ls_hs_basis_kernels, state_info_data} p (cbasis_state_info_data x)
+    #{poke ls_hs_basis_kernels, is_representative_kernel} p (cbasis_is_representative_kernel x)
+    #{poke ls_hs_basis_kernels, is_representative_data} p (cbasis_is_representative_data x)
     #{poke ls_hs_basis_kernels, state_index_kernel} p (cbasis_state_index_kernel x)
     #{poke ls_hs_basis_kernels, state_index_data} p (cbasis_state_index_data x)
   {-# INLINE poke #-}

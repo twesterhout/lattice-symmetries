@@ -308,7 +308,7 @@ data BatchedBenesNetwork = BatchedBenesNetwork
   { bbnMasks :: {-# UNPACK #-} !(DenseMatrix S.Vector Word64),
     bbnShifts :: {-# UNPACK #-} !(S.Vector Word64)
   }
-  deriving stock (Show)
+  deriving stock (Show, Eq)
 
 emptyBatchedBenesNetwork :: BatchedBenesNetwork
 emptyBatchedBenesNetwork = mkBatchedBenesNetwork G.empty

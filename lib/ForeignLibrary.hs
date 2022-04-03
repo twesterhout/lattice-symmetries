@@ -21,6 +21,7 @@ import LatticeSymmetries.Generator
 import LatticeSymmetries.Operator
 import LatticeSymmetries.Parser
 import qualified LatticeSymmetries.Types as Types
+import LatticeSymmetries.Utils
 import System.Mem
 import Text.PrettyPrint.ANSI.Leijen (hardline, pretty, putDoc)
 
@@ -69,6 +70,9 @@ foreign export ccall "ls_hs_destroy_operator"
 foreign export ccall "ls_hs_create_basis"
   ls_hs_create_basis :: Cparticle_type -> CInt -> CInt -> CInt -> IO (Ptr Cbasis)
 
+foreign export ccall "ls_hs_spin_chain_10_basis"
+  ls_hs_spin_chain_10_basis :: IO (Ptr Cbasis)
+
 foreign export ccall "ls_hs_min_state_estimate"
   ls_hs_min_state_estimate :: Ptr Cbasis -> IO Word64
 
@@ -113,3 +117,6 @@ ls_hs_print_terms p =
 
 foreign export ccall "ls_hs_print_terms"
   ls_hs_print_terms :: Ptr Coperator -> IO ()
+
+foreign export ccall "ls_hs_fatal_error"
+  ls_hs_fatal_error :: CString -> CString -> IO ()

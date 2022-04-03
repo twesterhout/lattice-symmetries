@@ -107,7 +107,7 @@ library
                      , aeson
                      , scientific
                      , yaml
-                     -- , co-log
+                     , co-log
                      -- , co-log-core
                      -- , vector-algorithms
                      -- , deepseq

@@ -10,6 +10,11 @@ module LatticeSymmetries.Group
     SymmetriesHeader (..),
     mkSymmetries,
     symmetriesFromHeader,
+    Symmetries (..),
+    nullSymmetries,
+    emptySymmetries,
+    symmetriesGetNumberBits,
+    symmetriesFromSpec,
   )
 where
 
@@ -30,6 +35,8 @@ import Foreign.Storable
 import LatticeSymmetries.Benes
 import LatticeSymmetries.Dense
 import LatticeSymmetries.FFI
+import LatticeSymmetries.IO
+import LatticeSymmetries.Utils
 import System.IO.Unsafe (unsafePerformIO)
 import Prelude hiding (identity)
 
@@ -43,6 +50,9 @@ getPeriodicity p₀ = go 1 p₀
     go !n !p
       | p == identity = n
       | otherwise = go (n + 1) (p₀ <> p)
+
+nullPermutationGroup :: PermutationGroup -> Bool
+nullPermutationGroup (PermutationGroup gs) = G.null gs
 
 data Symmetry = Symmetry
   { symmetryPermutation :: !Permutation,
@@ -76,7 +86,7 @@ data SymmetriesHeader = SymmetriesHeader
     symmHeaderCharactersReal :: !(S.Vector Double),
     symmHeaderCharactersImag :: !(S.Vector Double)
   }
-  deriving stock (Show)
+  deriving stock (Show, Eq)
 
 getNumberBits :: SymmetriesHeader -> Int
 getNumberBits (SymmetriesHeader (PermutationGroup gs) _ _ _)
@@ -88,6 +98,9 @@ emptySymmetriesHeader = SymmetriesHeader (PermutationGroup G.empty) emptyBatched
 
 data Symmetries = Symmetries {symmetriesHeader :: !SymmetriesHeader, symmetriesContents :: !(ForeignPtr Cpermutation_group)}
   deriving stock (Show)
+
+instance Eq Symmetries where
+  (==) a b = symmetriesHeader a == symmetriesHeader b
 
 pgLength :: PermutationGroup -> Int
 pgLength (PermutationGroup gs) = G.length gs
@@ -103,9 +116,23 @@ fromGenerators identity gs@(p : _) = go Set.empty (Set.singleton identity)
         interior' = interior `Set.union` boundary
         boundary' = Set.fromList [h <> g | h <- Set.toList boundary, g <- gs] Set.\\ interior'
 
-mkSymmetries :: [Symmetry] -> Maybe SymmetriesHeader
-mkSymmetries [] = Just emptySymmetriesHeader
-mkSymmetries gs@(g : _)
+nullSymmetries :: Symmetries -> Bool
+nullSymmetries = nullPermutationGroup . symmHeaderGroup . symmetriesHeader
+
+emptySymmetries :: Symmetries
+emptySymmetries = symmetriesFromHeader emptySymmetriesHeader
+
+symmetriesGetNumberBits :: Symmetries -> Int
+symmetriesGetNumberBits = getNumberBits . symmetriesHeader
+
+mkSymmetries :: [Symmetry] -> Symmetries
+mkSymmetries gs = case symmetriesFromHeader <$> mkSymmetriesHeader gs of
+  Just s -> s
+  Nothing -> error "incompatible symmetries"
+
+mkSymmetriesHeader :: [Symmetry] -> Maybe SymmetriesHeader
+mkSymmetriesHeader [] = Just emptySymmetriesHeader
+mkSymmetriesHeader gs@(g : _)
   | all ((== n) . symmetryNumberSites) gs = case isConsistent of
     True ->
       let permutations = G.fromList $ symmetryPermutation <$> symmetries
@@ -130,12 +157,13 @@ mkSymmetries gs@(g : _)
       where
         set = Set.fromList symmetries
 
-symmetriesFromHeader :: SymmetriesHeader -> Symmetries
+symmetriesFromHeader :: HasCallStack => SymmetriesHeader -> Symmetries
 symmetriesFromHeader x = unsafePerformIO $ do
   fp <- mallocForeignPtr
   let (DenseMatrix numberShifts numberMasks masks) = bbnMasks $ symmHeaderNetwork x
       shifts = bbnShifts $ symmHeaderNetwork x
       numberBits = getNumberBits x
+  logDebug' "Creating ls_hs_permutation_group ..."
   withForeignPtr fp $ \ptr ->
     S.unsafeWith masks $ \masksPtr ->
       S.unsafeWith shifts $ \shiftsPtr ->
@@ -154,3 +182,10 @@ symmetriesFromHeader x = unsafePerformIO $ do
                 }
   pure $ Symmetries x fp
 {-# NOINLINE symmetriesFromHeader #-}
+
+symmetryFromSpec :: SymmetrySpec -> Symmetry
+symmetryFromSpec (SymmetrySpec p k) =
+  mkSymmetry (mkPermutation (G.fromList (toList p))) k
+
+symmetriesFromSpec :: [SymmetrySpec] -> Symmetries
+symmetriesFromSpec = mkSymmetries . fmap symmetryFromSpec

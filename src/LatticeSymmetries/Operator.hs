@@ -251,7 +251,7 @@ withSameTypeAs a _with _action = _with f
   where
     f :: forall t'. Operator t' -> a
     f b = case (basisHeader . opBasis . opHeader $ a, basisHeader . opBasis . opHeader $ b) of
-      ((SpinHeader _ _), (SpinHeader _ _)) -> _action b
+      ((SpinHeader _ _ _ _), (SpinHeader _ _ _ _)) -> _action b
       ((SpinfulFermionHeader _ _), (SpinfulFermionHeader _ _)) -> _action b
       ((SpinlessFermionHeader _ _), (SpinlessFermionHeader _ _)) -> _action b
       _ -> error "operators have different types"
