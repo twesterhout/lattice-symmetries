@@ -73,6 +73,15 @@ foreign export ccall "ls_hs_create_basis"
 foreign export ccall "ls_hs_spin_chain_10_basis"
   ls_hs_spin_chain_10_basis :: IO (Ptr Cbasis)
 
+foreign export ccall "ls_hs_spin_kagome_12_basis"
+  ls_hs_spin_kagome_12_basis :: IO (Ptr Cbasis)
+
+foreign export ccall "ls_hs_spin_kagome_16_basis"
+  ls_hs_spin_kagome_16_basis :: IO (Ptr Cbasis)
+
+foreign export ccall "ls_hs_spin_square_4x4_basis"
+  ls_hs_spin_square_4x4_basis :: IO (Ptr Cbasis)
+
 foreign export ccall "ls_hs_min_state_estimate"
   ls_hs_min_state_estimate :: Ptr Cbasis -> IO Word64
 
@@ -83,6 +92,12 @@ ls_hs_basis_has_fixed_hamming_weight :: Ptr Cbasis -> IO CBool
 ls_hs_basis_has_fixed_hamming_weight basis =
   fromBool
     <$> withReconstructedBasis basis (pure . hasFixedHammingWeight . basisHeader)
+
+ls_hs_basis_build :: Ptr Cbasis -> IO ()
+ls_hs_basis_build basis = withReconstructedBasis basis basisBuild
+
+foreign export ccall "ls_hs_basis_build"
+  ls_hs_basis_build :: Ptr Cbasis -> IO ()
 
 foreign export ccall "ls_hs_basis_has_fixed_hamming_weight"
   ls_hs_basis_has_fixed_hamming_weight :: Ptr Cbasis -> IO CBool
@@ -118,5 +133,5 @@ ls_hs_print_terms p =
 foreign export ccall "ls_hs_print_terms"
   ls_hs_print_terms :: Ptr Coperator -> IO ()
 
-foreign export ccall "ls_hs_fatal_error"
-  ls_hs_fatal_error :: CString -> CString -> IO ()
+-- foreign export ccall "ls_hs_fatal_error"
+--   ls_hs_fatal_error :: CString -> CString -> IO ()

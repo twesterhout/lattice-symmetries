@@ -277,7 +277,7 @@ void ls_hs_is_representative_halide_kernel(
 
 void ls_hs_state_info_halide_kernel(ptrdiff_t batch_size,
                                     uint64_t const *alphas,
-                                    ptrdiff_t alphas_stride, ptrdiff_t *betas,
+                                    ptrdiff_t alphas_stride, uint64_t *betas,
                                     ptrdiff_t betas_stride,
                                     ls_hs_scalar *characters, double *norms,
                                     void const *private_data) {

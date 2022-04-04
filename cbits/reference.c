@@ -17,6 +17,20 @@ void ls_hs_internal_set_free_stable_ptr(free_stable_ptr_type f) {
   ls_hs_internal_free_stable_ptr = f;
 }
 
+typedef void (*ls_hs_internal_chpl_free_func)(void *);
+
+void ls_hs_fatal_error(char const *func, char const *message) {
+  fprintf(stderr, "[%s] fatal error: %s\n", func, message);
+  abort();
+}
+// void ls_hs_internal_destroy_external_array(chpl_external_array *p) {
+//   ls_hs_internal_chpl_free_func free_func =
+//       (ls_hs_internal_chpl_free_func)p->freer;
+//   if (free_func != NULL) {
+//     (*free_func)(p->elts);
+//   }
+// }
+
 int ls_hs_internal_read_refcount(_Atomic int const *refcount) {
   return atomic_load(refcount);
 }
@@ -36,9 +50,15 @@ int ls_hs_internal_dec_refcount(_Atomic int *refcount) {
 void ls_hs_destroy_basis_v2(ls_hs_basis *basis) {
   fprintf(stdout, "ls_hs_destroy_basis_v2 ...\n");
   if (ls_hs_internal_dec_refcount(&basis->refcount) == 1) {
-    if (ls_hs_internal_free_stable_ptr == NULL) {
-      LS_FATAL_ERROR("ls_hs_internal_free_stable_ptr not set");
+    // Optionally free representatives
+    if (basis->representatives.freer != NULL) {
+      ls_hs_internal_chpl_free_func free_func =
+          (ls_hs_internal_chpl_free_func)basis->representatives.freer;
+      (*free_func)(basis->representatives.elts);
     }
+    // Free Haskell payload
+    LS_CHECK(ls_hs_internal_free_stable_ptr != NULL,
+             "ls_hs_internal_free_stable_ptr not set");
     fprintf(stdout, "Calling hs_free_stable_ptr ...\n");
     (*ls_hs_internal_free_stable_ptr)(basis->haskell_payload);
   }
@@ -401,6 +421,38 @@ void ls_hs_is_representative(ls_hs_basis const *basis, ptrdiff_t batch_size,
   (*basis->kernels->is_representative_kernel)(
       batch_size, alphas, alphas_stride, are_representatives, norms,
       basis->kernels->is_representative_data);
+}
+
+void ls_hs_state_info(ls_hs_basis const *basis, ptrdiff_t batch_size,
+                      uint64_t const *alphas, ptrdiff_t alphas_stride,
+                      uint64_t *betas, ptrdiff_t betas_stride,
+                      ls_hs_scalar *characters, double *norms) {
+  LS_CHECK(basis->kernels->state_info_kernel != NULL,
+           "state_info_kernel is NULL, perhaps this basis requires no "
+           "projection?");
+  (*basis->kernels->state_info_kernel)(batch_size, alphas, alphas_stride, betas,
+                                       betas_stride, characters, norms,
+                                       basis->kernels->state_info_data);
+}
+
+void ls_hs_build_representatives(ls_hs_basis *basis, uint64_t const lower,
+                                 uint64_t const upper) {
+  ls_chpl_kernels const *kernels = ls_hs_internal_get_chpl_kernels();
+  LS_CHECK(kernels->enumerate_states != NULL,
+           "enumerate_states kernel is NULL, Chapel code was supposed to "
+           "initialize it");
+  if (basis->representatives.num_elts > 0) {
+    // Early exit: representatives have already been built
+    return;
+  }
+  (*kernels->enumerate_states)(basis, lower, upper, &basis->representatives);
+  if (basis->kernels->state_index_kernel == NULL) {
+    basis->kernels->state_index_data =
+        ls_hs_create_state_index_binary_search_kernel_data(
+            &basis->representatives);
+    basis->kernels->state_index_kernel =
+        &ls_hs_state_index_binary_search_kernel;
+  }
 }
 
 // TODO: currently not thread-safe, fix it

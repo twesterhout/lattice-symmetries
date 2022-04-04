@@ -95,7 +95,7 @@ OPS = $(addsuffix /state_info_symmetric.a,$(addprefix $(BIN_DIR)/,$(HL_ALL_TARGE
 
 all: $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT)
 
-$(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT): $(BIN_DIR)/reference.o $(BIN_DIR)/kernels.o $(OPS)
+$(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT): $(BIN_DIR)/reference.o $(BIN_DIR)/indexing.o $(BIN_DIR)/kernels.o $(OPS)
 	@mkdir -p $(@D)
 	$(CC) $(SHARED_FLAG) -o $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) $^
 ifeq ($(UNAME), Darwin)
@@ -103,6 +103,10 @@ ifeq ($(UNAME), Darwin)
 endif
 
 $(BIN_DIR)/reference.o: ../cbits/reference.c ../cbits/lattice_symmetries_haskell.h
+	@mkdir -p $(@D)
+	$(CC) -fPIC $(CFLAGS) -I$(PWD)/../cbits `pkg-config --cflags lattice_symmetries` -o $@ -c $<
+
+$(BIN_DIR)/indexing.o: ../cbits/indexing.c ../cbits/lattice_symmetries_haskell.h
 	@mkdir -p $(@D)
 	$(CC) -fPIC $(CFLAGS) -I$(PWD)/../cbits `pkg-config --cflags lattice_symmetries` -o $@ -c $<
 

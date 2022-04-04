@@ -1,3 +1,4 @@
+{-# LANGUAGE CApiFFI #-}
 module LatticeSymmetries.FFI
   ( Cparticle_type (..),
     c_LS_HS_SPIN,
@@ -23,7 +24,11 @@ module LatticeSymmetries.FFI
     operatorPeekPayload,
     operatorPokePayload,
     Cexternal_array (..),
-    Cpermutation_group (..)
+    emptyExternalArray,
+    -- ls_hs_internal_destroy_external_array,
+    Cpermutation_group (..),
+    Cchpl_kernels (..),
+    -- ls_hs_internal_get_chpl_kernels,
   ) where
 
 import Foreign
@@ -107,6 +112,7 @@ data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_basis" #-} Cbasis = Cbasis
     cbasis_state_index_is_identity :: {-# UNPACK #-} !CBool,
     cbasis_requires_projection :: {-# UNPACK #-} !CBool,
     cbasis_kernels :: {-# UNPACK #-} !(Ptr Cbasis_kernels),
+    cbasis_representatives :: {-# UNPACK #-} !Cexternal_array,
     cbasis_haskell_payload :: {-# UNPACK #-} !(Ptr ())
   }
 
@@ -161,6 +167,7 @@ instance Storable Cbasis where
       <*> #{peek ls_hs_basis, state_index_is_identity} p
       <*> #{peek ls_hs_basis, requires_projection} p
       <*> #{peek ls_hs_basis, kernels} p
+      <*> #{peek ls_hs_basis, representatives} p
       <*> #{peek ls_hs_basis, haskell_payload} p
   {-# INLINE peek #-}
   poke p x = do
@@ -172,6 +179,7 @@ instance Storable Cbasis where
     #{poke ls_hs_basis, state_index_is_identity} p (cbasis_state_index_is_identity x)
     #{poke ls_hs_basis, requires_projection}     p (cbasis_requires_projection x)
     #{poke ls_hs_basis, kernels}                 p (cbasis_kernels x)
+    #{poke ls_hs_basis, representatives}         p (cbasis_representatives x)
     #{poke ls_hs_basis, haskell_payload}         p (cbasis_haskell_payload x)
   {-# INLINE poke #-}
 
@@ -274,6 +282,9 @@ data {-# CTYPE "lattice_symmetries_haskell.h" "chpl_external_array" #-} Cexterna
     external_array_freer :: !(Ptr ())
   }
 
+emptyExternalArray :: Cexternal_array
+emptyExternalArray = Cexternal_array nullPtr 0 nullPtr
+
 instance Storable Cexternal_array where
   sizeOf _ = #{size chpl_external_array}
   {-# INLINE sizeOf #-}
@@ -290,6 +301,9 @@ instance Storable Cexternal_array where
     #{poke chpl_external_array, num_elts} p (external_array_num_elts x)
     #{poke chpl_external_array, freer} p (external_array_freer x)
   {-# INLINE poke #-}
+
+foreign import ccall unsafe "&ls_hs_internal_destroy_external_array"
+  ls_hs_internal_destroy_external_array :: FunPtr (Ptr Cexternal_array -> IO ())
 
 data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_permutation_group" #-} Cpermutation_group = Cpermutation_group
   { cpermutation_group_refcount :: {-# UNPACK #-} !CInt,
@@ -328,3 +342,23 @@ instance Storable Cpermutation_group where
     #{poke ls_hs_permutation_group, eigvals_re}    p (cpermutation_group_eigvals_re x)
     #{poke ls_hs_permutation_group, eigvals_im}    p (cpermutation_group_eigvals_im x)
   {-# INLINE poke #-}
+
+data {-# CTYPE "lattice_symmetries_haskell.h" "ls_chpl_kernels" #-} Cchpl_kernels = Cchpl_kernels
+  { cchpl_kernels_enumerate_states :: FunPtr (Cbasis -> Word64 -> Word64 -> Ptr Cexternal_array -> IO ())
+  }
+
+instance Storable Cchpl_kernels where
+  sizeOf _ = #{size ls_chpl_kernels}
+  {-# INLINE sizeOf #-}
+  alignment _ = #{alignment ls_chpl_kernels}
+  {-# INLINE alignment #-}
+  peek p =
+    Cchpl_kernels
+      <$> #{peek ls_chpl_kernels, enumerate_states} p
+  {-# INLINE peek #-}
+  poke p x = do
+    #{poke ls_chpl_kernels, enumerate_states} p (cchpl_kernels_enumerate_states x)
+  {-# INLINE poke #-}
+
+foreign import ccall unsafe "ls_hs_internal_get_chpl_kernels"
+  ls_hs_internal_get_chpl_kernels :: IO (Ptr Cchpl_kernels)

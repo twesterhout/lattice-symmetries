@@ -23,6 +23,8 @@ typedef struct {
 #endif
 #endif
 
+// void ls_hs_internal_destroy_external_array(chpl_external_array *p);
+
 #include <lattice_symmetries/lattice_symmetries.h>
 
 #if defined(__cplusplus)
@@ -142,6 +144,7 @@ typedef struct ls_hs_basis {
   bool state_index_is_identity;
   bool requires_projection;
   ls_hs_basis_kernels *kernels;
+  chpl_external_array representatives;
   void *haskell_payload;
 } ls_hs_basis;
 
@@ -149,6 +152,8 @@ ls_hs_basis *ls_hs_create_basis(ls_hs_particle_type, int, int, int);
 void ls_hs_destroy_basis_v2(ls_hs_basis *);
 uint64_t ls_hs_max_state_estimate(ls_hs_basis const *);
 uint64_t ls_hs_min_state_estimate(ls_hs_basis const *);
+
+void ls_hs_basis_build(ls_hs_basis *basis);
 
 bool ls_hs_basis_has_fixed_hamming_weight(ls_hs_basis const *);
 
@@ -280,7 +285,7 @@ void ls_hs_is_representative_halide_kernel(
 
 void ls_hs_state_info_halide_kernel(ptrdiff_t batch_size,
                                     uint64_t const *alphas,
-                                    ptrdiff_t alphas_stride, ptrdiff_t *betas,
+                                    ptrdiff_t alphas_stride, uint64_t *betas,
                                     ptrdiff_t betas_stride,
                                     ls_hs_scalar *characters, double *norms,
                                     void const *private_data);
@@ -289,22 +294,50 @@ void ls_hs_is_representative(ls_hs_basis const *basis, ptrdiff_t batch_size,
                              uint64_t const *alphas, ptrdiff_t alphas_stride,
                              uint8_t *are_representatives, double *norms);
 
-void ls_hs_evaluate_wavefunction_via_statevector(
-    ls_hs_basis_kernels const *kernels, ptrdiff_t batch_size,
-    uint64_t const *alphas, ptrdiff_t alphas_stride, void const *state_vector,
-    size_t element_size, void *coeffs);
+void ls_hs_state_info(ls_hs_basis const *basis, ptrdiff_t batch_size,
+                      uint64_t const *alphas, ptrdiff_t alphas_stride,
+                      uint64_t *betas, ptrdiff_t betas_stride,
+                      ls_hs_scalar *characters, double *norms);
+
+// void ls_hs_evaluate_wavefunction_via_statevector(
+//     ls_hs_basis const *basis, ptrdiff_t batch_size, uint64_t const *alphas,
+//     ptrdiff_t alphas_stride, void const *state_vector, size_t element_size,
+//     void *coeffs, );
+
+typedef struct ls_hs_state_index_binary_search_data
+    ls_hs_state_index_binary_search_data;
+
+ls_hs_state_index_binary_search_data *
+ls_hs_create_state_index_binary_search_kernel_data(
+    chpl_external_array const *representatives);
+
+void ls_hs_destroy_state_index_binary_search_kernel_data(
+    ls_hs_state_index_binary_search_data *cache);
+
+void ls_hs_state_index_binary_search_kernel(ptrdiff_t batch_size,
+                                            uint64_t const *spins,
+                                            ptrdiff_t spins_stride,
+                                            ptrdiff_t *indices,
+                                            ptrdiff_t indices_stride,
+                                            void const *private_kernel_data);
 
 typedef struct ls_chpl_kernels {
-  chpl_external_array (*enumerate_states)(ls_hs_basis const *, uint64_t,
-                                          uint64_t);
+  void (*enumerate_states)(ls_hs_basis const *, uint64_t, uint64_t,
+                           chpl_external_array *);
 } ls_chpl_kernels;
 
 ls_chpl_kernels const *ls_hs_internal_get_chpl_kernels();
 void ls_hs_internal_set_chpl_kernels(ls_chpl_kernels const *kernels);
 
+void ls_hs_build_representatives(ls_hs_basis *basis, uint64_t lower,
+                                 uint64_t upper);
+
 // Examples
 
 ls_hs_basis *ls_hs_spin_chain_10_basis();
+ls_hs_basis *ls_hs_spin_kagome_12_basis();
+ls_hs_basis *ls_hs_spin_kagome_16_basis();
+ls_hs_basis *ls_hs_spin_square_4x4_basis();
 
 #if 0
 typedef struct ls_sparse_operator ls_sparse_operator;

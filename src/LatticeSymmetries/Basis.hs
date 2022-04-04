@@ -23,6 +23,7 @@ module LatticeSymmetries.Basis
     Cbasis_kernels (..),
     createCbasis_kernels,
     destroyCbasis_kernels,
+    basisBuild,
     stateIndex,
     flattenIndex,
     getNumberBits,
@@ -37,6 +38,9 @@ module LatticeSymmetries.Basis
     ls_hs_min_state_estimate,
     ls_hs_max_state_estimate,
     ls_hs_spin_chain_10_basis,
+    ls_hs_spin_kagome_12_basis,
+    ls_hs_spin_kagome_16_basis,
+    ls_hs_spin_square_4x4_basis,
   )
 where
 
@@ -60,6 +64,7 @@ import LatticeSymmetries.Generator
 import LatticeSymmetries.Group
 import LatticeSymmetries.IO
 import LatticeSymmetries.NonbranchingTerm
+import LatticeSymmetries.Utils
 import System.IO (hPutStrLn, stderr)
 import System.IO.Unsafe (unsafePerformIO)
 import Text.PrettyPrint.ANSI.Leijen (Pretty (..))
@@ -101,7 +106,10 @@ deriving stock instance Show (BasisHeader t)
 
 deriving stock instance Eq (BasisHeader t)
 
-data Basis t = Basis {basisHeader :: !(BasisHeader t), basisContents :: !(ForeignPtr Cbasis)}
+data Basis t = Basis
+  { basisHeader :: !(BasisHeader t),
+    basisContents :: !(ForeignPtr Cbasis)
+  }
   deriving (Show)
 
 instance Eq (Basis t) where
@@ -183,10 +191,33 @@ ls_hs_spin_chain_10_basis :: IO (Ptr Cbasis)
 ls_hs_spin_chain_10_basis = do
   let symmetries =
         mkSymmetries
-          [ mkSymmetry (mkPermutation [1, 2, 3, 4, 5, 6, 7, 8, 9, 0]) 0,
-            mkSymmetry (mkPermutation [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]) 0
+          [ mkSymmetry (mkPermutation [1, 2, 3, 4, 5, 6, 7, 8, 9, 0]) 5,
+            mkSymmetry (mkPermutation [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]) 1
           ]
-      basis = mkSpinBasis 10 (Just 5) Nothing symmetries
+      basis = mkSpinBasis 10 (Just 5) (Just (-1)) symmetries
+  borrowCbasis basis
+
+ls_hs_spin_kagome_12_basis :: IO (Ptr Cbasis)
+ls_hs_spin_kagome_12_basis = do
+  let basis = mkSpinBasis 12 (Just 6) Nothing emptySymmetries
+  borrowCbasis basis
+
+ls_hs_spin_kagome_16_basis :: IO (Ptr Cbasis)
+ls_hs_spin_kagome_16_basis = do
+  let basis = mkSpinBasis 16 (Just 8) Nothing emptySymmetries
+  borrowCbasis basis
+
+ls_hs_spin_square_4x4_basis :: IO (Ptr Cbasis)
+ls_hs_spin_square_4x4_basis = do
+  let symmetries =
+        mkSymmetries
+          [ mkSymmetry (mkPermutation [1, 2, 3, 0, 5, 6, 7, 4, 9, 10, 11, 8, 13, 14, 15, 12]) 0,
+            mkSymmetry (mkPermutation [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3]) 0,
+            mkSymmetry (mkPermutation [3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12]) 0,
+            mkSymmetry (mkPermutation [12, 13, 14, 15, 8, 9, 10, 11, 4, 5, 6, 7, 0, 1, 2, 3]) 0,
+            mkSymmetry (mkPermutation [3, 7, 11, 15, 2, 6, 10, 14, 1, 5, 9, 13, 0, 4, 8, 12]) 0
+          ]
+      basis = mkSpinBasis 16 (Just 8) (Just 1) symmetries
   borrowCbasis basis
 
 ls_hs_create_basis :: HasCallStack => Cparticle_type -> CInt -> CInt -> CInt -> IO (Ptr Cbasis)
@@ -226,10 +257,23 @@ ls_hs_min_state_estimate p =
 
 newtype ChapelArray = ChapelArray (ForeignPtr Cexternal_array)
 
-data Representatives = Representatives {rStates :: !ChapelArray, rRanges :: !ChapelArray}
+data Representatives = Representatives {rStates :: !ChapelArray}
 
-buildRepresentatives :: Basis t -> Representatives
-buildRepresentatives = undefined
+foreign import capi safe "ls_hs_build_representatives"
+  ls_hs_build_representatives :: Ptr Cbasis -> Word64 -> Word64 -> IO ()
+
+basisBuild :: Basis t -> IO ()
+basisBuild basis
+  | getNumberBits (basisHeader basis) <= 64 =
+    withForeignPtr (basisContents basis) $ \basisPtr -> do
+      let (BasisState _ (BitString lower)) = minStateEstimate (basisHeader basis)
+          (BasisState _ (BitString upper)) = maxStateEstimate (basisHeader basis)
+      logDebug' "Calling ls_hs_build_representatives ..."
+      ls_hs_build_representatives
+        basisPtr
+        (fromIntegral lower)
+        (fromIntegral upper)
+  | otherwise = error "too many bits"
 
 stateIndex :: Basis t -> BasisState -> Maybe Int
 stateIndex basis (BasisState _ (BitString α))
@@ -380,6 +424,7 @@ basisFromHeader x = unsafePerformIO $ do
           cbasis_state_index_is_identity = fromBool (isStateIndexIdentity x),
           cbasis_requires_projection = fromBool (requiresProjection x),
           cbasis_kernels = kernels,
+          cbasis_representatives = emptyExternalArray,
           cbasis_haskell_payload = nullPtr
         }
   pure $ Basis x fp
@@ -413,6 +458,8 @@ withReconstructedBasis p action = do
 
 data Ccombinadics_kernel_data
 
+data Cbinary_search_kernel_data
+
 foreign import capi unsafe "lattice_symmetries_haskell.h ls_hs_internal_create_combinadics_kernel_data"
   ls_hs_internal_create_combinadics_kernel_data :: CInt -> CBool -> IO (Ptr Ccombinadics_kernel_data)
 
@@ -421,6 +468,12 @@ foreign import capi unsafe "lattice_symmetries_haskell.h ls_hs_internal_destroy_
 
 foreign import capi unsafe "lattice_symmetries_haskell.h &ls_hs_state_index_combinadics_kernel"
   ls_hs_state_index_combinadics_kernel :: FunPtr Cindex_kernel
+
+foreign import capi unsafe "lattice_symmetries_haskell.h ls_hs_destroy_state_index_binary_search_kernel_data"
+  ls_hs_destroy_state_index_binary_search_kernel_data :: Ptr Cbinary_search_kernel_data -> IO ()
+
+foreign import capi unsafe "lattice_symmetries_haskell.h &ls_hs_state_index_binary_search_kernel"
+  ls_hs_state_index_binary_search_kernel :: FunPtr Cindex_kernel
 
 foreign import capi unsafe "lattice_symmetries_haskell.h &ls_hs_state_index_identity_kernel"
   ls_hs_state_index_identity_kernel :: FunPtr Cindex_kernel
@@ -463,7 +516,7 @@ setStateInfoKernel x k =
 
 setStateIndexKernel :: BasisHeader t -> Cbasis_kernels -> IO Cbasis_kernels
 setStateIndexKernel x k
-  | getNumberBits x > 64 =
+  | getNumberBits x > 64 || requiresProjection x =
     pure $
       k
         { cbasis_state_index_kernel = nullFunPtr,
@@ -475,7 +528,7 @@ setStateIndexKernel x k
         { cbasis_state_index_kernel = ls_hs_state_index_identity_kernel,
           cbasis_state_index_data = nullPtr
         }
-  | hasFixedHammingWeight x = do
+  | hasFixedHammingWeight x && not (requiresProjection x) = do
     kernelData <-
       ls_hs_internal_create_combinadics_kernel_data
         (fromIntegral (getNumberBits x))
@@ -513,6 +566,7 @@ createCbasis_kernels x =
 destroyCindex_kernel :: HasCallStack => Cbasis_kernels -> IO ()
 destroyCindex_kernel p
   | kernel == ls_hs_state_index_combinadics_kernel = ls_hs_internal_destroy_combinadics_kernel_data (castPtr env)
+  | kernel == ls_hs_state_index_binary_search_kernel = ls_hs_destroy_state_index_binary_search_kernel_data (castPtr env)
   | kernel == ls_hs_state_index_identity_kernel && env == nullPtr = pure ()
   | kernel == nullFunPtr && env == nullPtr = pure ()
   | otherwise = error "failed to automatically deallocate state_index kernel"

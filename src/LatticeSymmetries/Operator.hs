@@ -317,15 +317,15 @@ withSameTypeAs a _with _action = _with f
 --                                       uint64_t const *alphas,
 --                                       ptrdiff_t alphas_stride,
 --                                       ls_hs_scalar *coeffs);
-foreign import capi unsafe "lattice_symmetries_haskell.h ls_hs_operator_apply_diag_kernel"
-  ls_hs_operator_apply_diag_kernel :: Ptr Coperator -> CPtrdiff -> Ptr Word64 -> CPtrdiff -> Ptr Cscalar -> IO ()
+-- foreign import capi unsafe "lattice_symmetries_haskell.h ls_hs_operator_apply_diag_kernel"
+--   ls_hs_operator_apply_diag_kernel :: Ptr Coperator -> CPtrdiff -> Ptr Word64 -> CPtrdiff -> Ptr Cscalar -> IO ()
 
 -- void ls_hs_operator_apply_off_diag_kernel(
 --     ls_hs_operator const *op, ptrdiff_t batch_size, uint64_t const *alphas,
 --     ptrdiff_t alphas_stride, uint64_t *betas, ptrdiff_t betas_stride,
 --     ls_hs_scalar *coeffs);
-foreign import capi unsafe "lattice_symmetries_haskell.h ls_hs_operator_apply_off_diag_kernel"
-  ls_hs_operator_apply_off_diag_kernel :: Ptr Coperator -> CPtrdiff -> Ptr Word64 -> CPtrdiff -> Ptr Word64 -> CPtrdiff -> Ptr Cscalar -> IO ()
+-- foreign import capi unsafe "lattice_symmetries_haskell.h ls_hs_operator_apply_off_diag_kernel"
+--   ls_hs_operator_apply_off_diag_kernel :: Ptr Coperator -> CPtrdiff -> Ptr Word64 -> CPtrdiff -> Ptr Word64 -> CPtrdiff -> Ptr Cscalar -> IO ()
 
-foreign import capi unsafe "lattice_symmetries_haskell.h ls_hs_evaluate_wavefunction_via_statevector"
-  ls_hs_evaluate_wavefunction_via_statevector :: Ptr Cbasis_kernels -> CPtrdiff -> Ptr Word64 -> CPtrdiff -> Ptr () -> CSize -> Ptr () -> IO ()
+-- foreign import capi unsafe "lattice_symmetries_haskell.h ls_hs_evaluate_wavefunction_via_statevector"
+--   ls_hs_evaluate_wavefunction_via_statevector :: Ptr Cbasis_kernels -> CPtrdiff -> Ptr Word64 -> CPtrdiff -> Ptr () -> CSize -> Ptr () -> IO ()
