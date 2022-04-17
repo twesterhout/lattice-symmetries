@@ -19,6 +19,9 @@ module LatticeSymmetries.Group
 where
 
 import Control.Monad.ST
+import Data.Aeson (FromJSON (..), ToJSON (..), object, withObject, (.:), (.=))
+import Data.Complex
+import qualified Data.List
 import qualified Data.Map as Map
 import Data.Ratio
 import qualified Data.Set as Set
@@ -32,13 +35,14 @@ import Foreign.C.Types (CDouble)
 import Foreign.ForeignPtr
 import Foreign.Ptr
 import Foreign.Storable
+import GHC.Exts (IsList (..))
 import LatticeSymmetries.Benes
 import LatticeSymmetries.Dense
 import LatticeSymmetries.FFI
 import LatticeSymmetries.IO
 import LatticeSymmetries.Utils
 import System.IO.Unsafe (unsafePerformIO)
-import Prelude hiding (identity)
+import Prelude hiding (identity, toList)
 
 newtype PermutationGroup = PermutationGroup (B.Vector Permutation)
   deriving stock (Show, Eq)
@@ -59,6 +63,20 @@ data Symmetry = Symmetry
     symmetryPhase :: !(Ratio Int)
   }
   deriving stock (Show, Eq, Ord)
+
+symmetrySector :: Symmetry -> Int
+symmetrySector s
+  | denominator sector == 1 = numerator sector
+  | otherwise = error $ "this should not have happened: invalid symmetry: " <> show s
+  where
+    sector = symmetryPhase s * fromIntegral (getPeriodicity (symmetryPermutation s))
+
+instance FromJSON Symmetry where
+  parseJSON = withObject "Symmetry" $ \v -> do
+    mkSymmetry <$> v .: "permutation" <*> v .: "sector"
+
+instance ToJSON Symmetry where
+  toJSON s = object ["permutation" .= symmetryPermutation s, "sector" .= symmetrySector s]
 
 mkSymmetry :: Permutation -> Int -> Symmetry
 mkSymmetry p sector
@@ -101,6 +119,28 @@ data Symmetries = Symmetries {symmetriesHeader :: !SymmetriesHeader, symmetriesC
 
 instance Eq Symmetries where
   (==) a b = symmetriesHeader a == symmetriesHeader b
+
+instance FromJSON Symmetries where
+  parseJSON xs = mkSymmetries <$> parseJSON xs
+
+instance ToJSON Symmetries where
+  toJSON symmetries = toJSON (toSymmetryList symmetries)
+
+toSymmetryList :: Symmetries -> [Symmetry]
+toSymmetryList (Symmetries (SymmetriesHeader (PermutationGroup gs) _ λsRe λsIm) _) =
+  Data.List.zipWith3 _toSymmetry (G.toList gs) (G.toList λsRe) (G.toList λsIm)
+  where
+    _toSymmetry :: Permutation -> Double -> Double -> Symmetry
+    _toSymmetry g λRe λIm
+      | r ≈ 1 && s' ≈ fromIntegral (round s' :: Int) = mkSymmetry g (round s')
+      | otherwise = error $ "failed to reconstruct Symmetry from " <> show (toList g) <> " and λ = " <> show λRe <> " + " <> show λIm <> "j"
+      where
+        -- φ = sector / periodicity, but care needs to be taken because φ is approximate
+        s' = φ * fromIntegral n
+        n = getPeriodicity g
+        -- polar returns the phase in (-π, π], we add 2π to get a positive value
+        (r, _φ) = polar (λRe :+ λIm)
+        φ = _φ / (2 * pi) + (if _φ < 0 then 1 else 0)
 
 pgLength :: PermutationGroup -> Int
 pgLength (PermutationGroup gs) = G.length gs

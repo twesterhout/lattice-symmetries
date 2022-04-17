@@ -35,6 +35,7 @@ module LatticeSymmetries.Basis
     withParticleType,
     withReconstructedBasis,
     ls_hs_create_basis,
+    ls_hs_clone_basis,
     ls_hs_min_state_estimate,
     ls_hs_max_state_estimate,
     ls_hs_spin_chain_10_basis,
@@ -45,6 +46,8 @@ module LatticeSymmetries.Basis
 where
 
 import Control.Exception.Safe (bracket)
+import Data.Aeson
+import Data.Aeson.Types (Parser)
 import Data.Bits
 import Data.Some
 import qualified Data.Text as Text
@@ -62,7 +65,7 @@ import LatticeSymmetries.BitString
 import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
 import LatticeSymmetries.Group
-import LatticeSymmetries.IO
+-- import LatticeSymmetries.IO
 import LatticeSymmetries.NonbranchingTerm
 import LatticeSymmetries.Utils
 import System.IO (hPutStrLn, stderr)
@@ -106,11 +109,51 @@ deriving stock instance Show (BasisHeader t)
 
 deriving stock instance Eq (BasisHeader t)
 
+particleTyDispatch :: Text -> (forall (t :: ParticleTy). Proxy t -> a) -> a
+particleTyDispatch t f
+  | t == "spin" || t == "spin-1/2" = f (Proxy @SpinTy)
+  | t == "spinless" || t == "spinless-fermion" || t == "spinless fermion" = f (Proxy @SpinlessFermionTy)
+  | t == "spinful" || t == "spinful-fermion" || t == "spinful fermion" = f (Proxy @SpinfulFermionTy)
+  | otherwise = error "invalid particle type"
+
+instance FromJSON (BasisHeader 'SpinTy) where
+  parseJSON = withObject "Basis" $ \v ->
+    SpinHeader
+      <$> v .: "number_spins"
+      <*> v .:? "hamming_weight"
+      <*> v .:? "spin_inversion"
+      <*> v .:! "symmetries" .!= emptySymmetries
+
+instance FromJSON (BasisHeader 'SpinlessFermionTy) where
+  parseJSON = withObject "Basis" $ \v ->
+    SpinlessFermionHeader
+      <$> v .: "number_sites"
+      <*> v .:? "number_particles"
+
+parseSpinfulOccupation :: Object -> Parser SpinfulOccupation
+parseSpinfulOccupation v = do
+  (r :: Maybe Value) <- v .:? "number_particles"
+  case r of
+    Nothing -> pure SpinfulNoOccupation
+    Just n -> case n of
+      Number _ -> fmap SpinfulTotalParticles $ parseJSON n
+      Array _ -> fmap (\(up, down) -> SpinfulPerSector up down) $ parseJSON n
+      _ -> mzero
+
+instance FromJSON (BasisHeader 'SpinfulFermionTy) where
+  parseJSON = withObject "Basis" $ \v ->
+    SpinfulFermionHeader
+      <$> v .: "number_sites"
+      <*> parseSpinfulOccupation v
+
 data Basis t = Basis
   { basisHeader :: !(BasisHeader t),
     basisContents :: !(ForeignPtr Cbasis)
   }
   deriving (Show)
+
+-- instance FromJSON (Basis t) where
+--   parseJSON = fmap basisFromHeader . parseJSON
 
 instance Eq (Basis t) where
   (==) a b = basisHeader a == basisHeader b
@@ -238,6 +281,11 @@ ls_hs_create_basis particleType numberSites numberParticles numberUp
         basis = mkSpinlessFermionicBasis (fromIntegral numberSites) p
      in borrowCbasis basis
   | otherwise = error $ "invalid particle type: " <> show particleType
+
+ls_hs_clone_basis :: HasCallStack => Ptr Cbasis -> IO (Ptr Cbasis)
+ls_hs_clone_basis ptr = do
+  _ <- basisIncRefCount ptr
+  pure ptr
 
 ls_hs_max_state_estimate :: HasCallStack => Ptr Cbasis -> IO Word64
 ls_hs_max_state_estimate p =
@@ -595,5 +643,25 @@ destroyCbasis_kernels p = do
   destroyCindex_kernel kernels
   destroyCstate_info_kernel kernels
 
-basisFromSpec :: BasisSpec -> Basis 'SpinTy
-basisFromSpec (BasisSpec n h i gs) = mkSpinBasis n h i (symmetriesFromSpec gs)
+-- data BasisSpec = BasisSpec !Int !(Maybe Int) !(Maybe Int) ![SymmetrySpec]
+--   deriving stock (Read, Show, Eq)
+--
+-- instance FromJSON BasisSpec where
+--   parseJSON = withObject "basis" $ \v ->
+--     BasisSpec
+--       <$> v .: "number_spins"
+--       <*> v .:? "hamming_weight"
+--       <*> v .:? "spin_inversion"
+--       <*> v .:! "symmetries" .!= []
+--
+-- instance ToJSON BasisSpec where
+--   toJSON (BasisSpec numberSpins hammingWeight spinInversion symmetries) =
+--     object
+--       [ "number_spins" .= numberSpins,
+--         "hamming_weight" .= maybe Null toJSON hammingWeight,
+--         "spin_inversion" .= maybe Null toJSON spinInversion,
+--         "symmetries" .= symmetries
+--       ]
+
+-- basisFromSpec :: BasisSpec -> Basis 'SpinTy
+-- basisFromSpec (BasisSpec n h i gs) = mkSpinBasis n h i (symmetriesFromSpec gs)

@@ -67,15 +67,10 @@ library
   import:              common-options
   hs-source-dirs:      src
   exposed-modules:     LatticeSymmetries
-                       LatticeSymmetries.Context
-                       LatticeSymmetries.IO
-                       LatticeSymmetries.Types
-                       LatticeSymmetries.Sparse
                        LatticeSymmetries.ComplexRational
                        LatticeSymmetries.Parser
                        LatticeSymmetries.Algebra
                        LatticeSymmetries.Dense
-                       LatticeSymmetries.CSR
                        LatticeSymmetries.Basis
                        LatticeSymmetries.Generator
                        LatticeSymmetries.BitString
@@ -107,6 +102,7 @@ library
                      , aeson
                      , scientific
                      , yaml
+                     , aeson
                      , co-log
                      -- , co-log-core
                      -- , vector-algorithms
@@ -129,7 +125,7 @@ library
                      , ansi-wl-pprint
                      , HaskellForMaths
   extra-libraries:     lattice_symmetries_core
-  pkgconfig-depends:   lattice_symmetries
+  -- pkgconfig-depends:   lattice_symmetries
 
 foreign-library lattice_symmetries_haskell
   import:              common-options
@@ -188,6 +184,7 @@ test-suite lattice-symmetries-haskell-test
   build-depends:       lattice-symmetries-haskell
                      , hspec
                      , yaml
+                     , aeson
                      , vector
                      , parsec
                      , ansi-wl-pprint

@@ -11,7 +11,7 @@ import qualified Data.HDF5 as H5
 import qualified Data.HDF5.Types as H5
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
-import Data.Yaml.Aeson
+-- import Data.Yaml.Aeson
 import Foreign.C.String (CString, peekCString)
 import Foreign.C.Types (CBool (..), CInt (..), CUInt (..), CUShort (..))
 import Foreign.ForeignPtr
@@ -20,12 +20,13 @@ import Foreign.Marshal.Array (peekArray, pokeArray, withArrayLen)
 import Foreign.Ptr (FunPtr, Ptr, nullPtr)
 import Foreign.StablePtr
 import Foreign.Storable (Storable (..))
-import LatticeSymmetries.IO
-import LatticeSymmetries.Types
+-- import LatticeSymmetries.IO
+-- import LatticeSymmetries.Types
 import qualified System.IO.Unsafe
 
 -- import UnliftIO.Exception (bracket, impureThrow, throwIO)
 
+  {-
 -- | Retrieve textual representation of an error
 getErrorMessage ::
   -- | Error code returned by @lattice_symmetries@ library
@@ -34,7 +35,9 @@ getErrorMessage ::
   IO Text
 getErrorMessage c = bracket (ls_error_to_string (fromIntegral c)) ls_destroy_string $ \s ->
   toText <$> peekCString s
+-}
 
+  {-
 -- | Check the status code returned by @lattice_symmetries@ library. If it
 -- indicates an error, 'LatticeSymmetriesException' is thrown.
 checkStatus :: (MonadIO m, Integral a) => a -> m ()
@@ -45,6 +48,7 @@ checkStatus c
     liftIO $ throwIO . LatticeSymmetriesException c' =<< getErrorMessage c'
   where
     c' = fromIntegral c
+-}
 
 -- loadRawBasis :: MonadIO m => Text -> m (Ptr Cspin_basis)
 -- loadRawBasis path = do
@@ -257,6 +261,7 @@ ls_hs_hdf5_get_dataset_shape _fileName _datasetName sizePtr = do
 --   H5.withFile filename H5.AppendMode $ \file ->
 --     H5.open
 
+{-
 loadBasisAndHamiltonianFromYAML :: Text -> IO (SpinBasis, Operator)
 loadBasisAndHamiltonianFromYAML path = do
   r <- decodeFileWithWarnings (toString path)
@@ -266,7 +271,9 @@ loadBasisAndHamiltonianFromYAML path = do
       mapM_ print warnings
       let basis = mkBasis basisSpec
       return (basis, mkOperator basis operatorSpec)
+-}
 
+{-
 ls_hs_basis_and_hamiltonian_from_yaml :: CString -> Ptr SpinBasisWrapper -> Ptr OperatorWrapper -> IO ()
 ls_hs_basis_and_hamiltonian_from_yaml path basisPtr operatorPtr = do
   (basis, hamiltonian) <- loadBasisAndHamiltonianFromYAML . toText =<< peekCString path
@@ -276,6 +283,7 @@ ls_hs_basis_and_hamiltonian_from_yaml path basisPtr operatorPtr = do
   case hamiltonian of
     Operator fp -> withForeignPtr fp $ \rawPtr ->
       poke operatorPtr =<< OperatorWrapper rawPtr <$> newStablePtr hamiltonian
+-}
 
 -- void ls_hs_basis_and_hamiltonian_from_yaml(char const *path,
 --                                            ls_hs_spin_basis_v1 *basis,
@@ -283,24 +291,29 @@ ls_hs_basis_and_hamiltonian_from_yaml path basisPtr operatorPtr = do
 -- foreign export ccall "ls_hs_basis_and_hamiltonian_from_yaml"
 --   ls_hs_basis_and_hamiltonian_from_yaml :: CString -> Ptr SpinBasisWrapper -> Ptr OperatorWrapper -> IO ()
 
+{-
 ls_hs_destroy_spin_basis :: Ptr SpinBasisWrapper -> IO ()
 ls_hs_destroy_spin_basis ptr = do
   peek ptr >>= \(SpinBasisWrapper _ stablePtr) -> freeStablePtr stablePtr
   poke ptr $ SpinBasisWrapper nullPtr (castPtrToStablePtr nullPtr)
+-}
 
 -- void ls_hs_destroy_spin_basis(ls_hs_spin_basis_v1 *basis);
 -- foreign export ccall "ls_hs_destroy_spin_basis"
 --   ls_hs_destroy_spin_basis :: Ptr SpinBasisWrapper -> IO ()
 
+{-
 ls_hs_destroy_operator :: Ptr OperatorWrapper -> IO ()
 ls_hs_destroy_operator ptr = do
   peek ptr >>= \(OperatorWrapper _ stablePtr) -> freeStablePtr stablePtr
   poke ptr $ OperatorWrapper nullPtr (castPtrToStablePtr nullPtr)
+-}
 
 -- void ls_hs_destroy_operator(ls_hs_operator_v1 *op);
 -- foreign export ccall "ls_hs_destroy_operator"
 --   ls_hs_destroy_operator :: Ptr OperatorWrapper -> IO ()
 
+{-
 toSymmetry :: SymmetrySpec -> Symmetry
 toSymmetry (SymmetrySpec p s) = mkSymmetry p s
 
@@ -322,7 +335,9 @@ mkSymmetry !permutation !sector
       withArrayLen (fromIntegral <$> toList permutation) $ \n permutationPtr ->
         ls_create_symmetry ptrPtr (fromIntegral n) permutationPtr (fromIntegral sector)
     Symmetry <$> newForeignPtr ls_destroy_symmetry ptr
+-}
 
+{-
 mkSymmetryGroup ::
   -- | Symmetry generators
   [Symmetry] ->
@@ -363,7 +378,9 @@ mkRawBasis !(SymmetryGroup g) !numberSpins !hammingWeight !spinInversion = do
     withForeignPtr g $ \groupPtr ->
       ls_create_spin_basis ptrPtr groupPtr (fromIntegral numberSpins) hammingWeight' spinInversion'
   SpinBasis <$> liftIO (newForeignPtr ls_destroy_spin_basis ptr)
+-}
 
+{-
 mkFlatBasis :: BasisSpec -> FlatSpinBasis
 mkFlatBasis spec = System.IO.Unsafe.unsafePerformIO $ do
   flatBasisPtr <- alloca $ \basisPtrPtr ->
@@ -384,7 +401,9 @@ mkBasis (BasisSpec numberSpins hammingWeight spinInversion symmetries)
     let symmetryGroup = mkSymmetryGroup (toSymmetry <$> symmetries)
      in System.IO.Unsafe.unsafePerformIO $
           mkRawBasis symmetryGroup numberSpins hammingWeight spinInversion
+-}
 
+{-
 mkInteraction :: InteractionSpec -> Interaction
 mkInteraction (InteractionSpec matrix sites) =
   System.IO.Unsafe.unsafePerformIO $
@@ -394,7 +413,9 @@ mkOperator :: SpinBasis -> OperatorSpec -> Operator
 mkOperator basis (OperatorSpec _ interactions) =
   mkRawOperator basis $
     mkInteraction <$> interactions
+-}
 
+{-
 mkRawOperator :: SpinBasis -> NonEmpty Interaction -> Operator
 mkRawOperator (SpinBasis basis) terms = System.IO.Unsafe.unsafePerformIO $ do
   (code, ptr) <- liftIO $
@@ -412,7 +433,9 @@ withInteractions :: [Interaction] -> (Int -> Ptr (Ptr Cinteraction) -> IO a) -> 
 withInteractions xs func = withManyForeignPtr pointers func
   where
     pointers = (\(Interaction p) -> p) <$> xs
+-}
 
+{-
 toMatrix ::
   (Monad m, Show r, Real r) =>
   -- | Expected dimension @n@ of the matrix
@@ -487,7 +510,9 @@ instance MakeInteraction [Int] where
       failure =
         SpinEDException $
           "invalid sites: " <> show rows <> "; expected an array of length-" <> show n <> " tuples"
+-}
 
+{-
 unsafeMkInteraction ::
   (MonadIO m, MonadThrow m) =>
   CreateInteraction ->
@@ -508,7 +533,9 @@ unsafeMkInteraction ffiCreate numberSites matrix sites = do
         else pure (c, nullPtr)
   checkStatus code
   fmap Interaction . liftIO $ newForeignPtr ls_destroy_interaction ptr
+-}
 
+{-
 -- | Extension of 'withForeignPtr' to lists of 'ForeignPtr's.
 withManyForeignPtr :: [ForeignPtr a] -> (Int -> Ptr (Ptr a) -> IO b) -> IO b
 withManyForeignPtr xs func = loop [] xs
@@ -523,7 +550,9 @@ withSymmetries xs func = withManyForeignPtr pointers func
 
 mkObject :: (Ptr (Ptr a) -> IO CInt) -> IO (Ptr a)
 mkObject f = alloca $ \ptrPtr -> f ptrPtr >>= checkStatus >> peek ptrPtr
+-}
 
+  {-
 foreign import ccall unsafe "lattice_symmetries/lattice_symmetries.h ls_error_to_string"
   ls_error_to_string :: CInt -> IO CString
 
@@ -601,3 +630,4 @@ foreign import ccall unsafe "lattice_symmetries/lattice_symmetries.h ls_create_o
 
 foreign import ccall unsafe "lattice_symmetries/lattice_symmetries.h &ls_destroy_operator"
   ls_destroy_operator :: FunPtr (Ptr Coperator -> IO ())
+-}

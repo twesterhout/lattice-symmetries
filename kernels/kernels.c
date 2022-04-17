@@ -8,8 +8,7 @@
 #include <stdlib.h>
 
 // Macro to indicate x86_64
-#if (defined(_M_AMD64) || defined(_M_X64) || defined(__amd64)) &&              \
-    !defined(__x86_64__)
+#if (defined(_M_AMD64) || defined(_M_X64) || defined(__amd64))
 #define LS_X86_64() 1
 #else
 #define LS_X86_64() 0
@@ -101,8 +100,8 @@ typedef struct ls_internal_halide_kernels_list {
 static void init_kernels_list(uint64_t const number_bits,
                               ls_internal_halide_kernels_list *list) {
   assert(number_bits <= 64);
-  char const *arch = getenv("LATTICE_SYMMETRIES_ARCH");
 #if LS_X86_64() == 1
+  char const *arch = getenv("LATTICE_SYMMETRIES_ARCH");
   __builtin_cpu_init();
   if (strcmp(arch, "avx2") == 0) {
     *list = LS_AVX2_KERNELS;
@@ -302,7 +301,7 @@ void ls_hs_state_info_halide_kernel(ptrdiff_t batch_size,
   halide_dimension_t betas_dim =
       (halide_dimension_t){.min = 0,
                            .extent = (int32_t)batch_size,
-                           .stride = (int32_t)alphas_stride,
+                           .stride = (int32_t)betas_stride,
                            .flags = 0};
   halide_buffer_t betas_buf = (halide_buffer_t){
       .device = 0,

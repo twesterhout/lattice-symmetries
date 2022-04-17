@@ -16,6 +16,7 @@ module LatticeSymmetries.Benes
 where
 
 import Control.Monad.ST
+import Data.Aeson (FromJSON (..), ToJSON (..))
 import Data.Bits
 import qualified Data.List as L
 import qualified Data.Primitive.Ptr as P
@@ -27,6 +28,7 @@ import qualified Data.Vector.Generic.Mutable as GM
 import qualified Data.Vector.Storable as S
 import qualified Data.Vector.Storable.Mutable as SM
 import qualified Data.Vector.Unboxed as U
+import GHC.Exts (IsList (..))
 import LatticeSymmetries.BitString
 import LatticeSymmetries.Dense
 import LatticeSymmetries.Utils
@@ -45,6 +47,17 @@ import Prelude hiding (cycle)
 
 newtype Permutation = Permutation {unPermutation :: U.Vector Int}
   deriving stock (Show, Eq, Ord)
+
+instance ToJSON Permutation where
+  toJSON (Permutation p) = toJSON p
+
+instance FromJSON Permutation where
+  parseJSON = fmap mkPermutation . parseJSON
+
+instance IsList Permutation where
+  type Item Permutation = Int
+  toList (Permutation p) = G.toList p
+  fromList p = mkPermutation (G.fromList p)
 
 permuteVector :: (HasCallStack, G.Vector v a) => Permutation -> v a -> v a
 permuteVector (Permutation p) xs

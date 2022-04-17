@@ -3,6 +3,8 @@
 
 module Main (main) where
 
+-- import Data.Yaml.Aeson
+import qualified Data.Aeson as Aeson
 import Data.Bits
 import Data.Complex
 import Data.Ratio ((%))
@@ -10,7 +12,6 @@ import Data.Type.Equality
 import qualified Data.Vector as V
 import qualified Data.Vector.Storable as S
 import qualified Data.Vector.Unboxed as U
--- import Data.Yaml.Aeson
 import Foreign.Storable
 import GHC.Exts (IsList (..))
 -- import LatticeSymmetries
@@ -19,14 +20,14 @@ import LatticeSymmetries.Basis
 import LatticeSymmetries.Benes
 -- import qualified LatticeSymmetries.CSR as CSR
 import LatticeSymmetries.ComplexRational
-import qualified LatticeSymmetries.Dense as Dense
+import LatticeSymmetries.Dense
 import LatticeSymmetries.Generator
 import LatticeSymmetries.Group
-import LatticeSymmetries.IO
+-- import LatticeSymmetries.IO
 import LatticeSymmetries.NonbranchingTerm
 import LatticeSymmetries.Operator
 import LatticeSymmetries.Parser
-import LatticeSymmetries.Sparse
+-- import LatticeSymmetries.Sparse
 -- import LatticeSymmetries.Types
 import Test.Hspec
 import Text.Parsec (parse)
@@ -56,10 +57,37 @@ type SpinPolynomial =
 type FermionicPolynomial =
   Sum (Scaled ComplexRational (Product (Generator Int FermionGeneratorType)))
 
-type Dense r c = DenseMatrix V.Vector r c ComplexRational
-
 main :: IO ()
 main = hspec $ do
+  describe "ToJSON/FromJSON" $ do
+    it "parses Permutation" $ do
+      Aeson.decode "[3, 0, 2, 1]" `shouldBe` Just (mkPermutation [3, 0, 2, 1])
+      Aeson.decode "[3, 0, 2, 1, 4, 5, 6]" `shouldBe` Just (mkPermutation [3, 0, 2, 1, 4, 5, 6])
+      Aeson.decode "[]" `shouldBe` Just (mkPermutation [])
+      Aeson.decode "{ \"oops\": [2, 1, 0] }" `shouldBe` (Nothing :: Maybe Permutation)
+    it "encodes Permutation" $ do
+      Aeson.encode (mkPermutation [0, 1, 2, 3]) `shouldBe` "[0,1,2,3]"
+      Aeson.encode (mkPermutation []) `shouldBe` "[]"
+      Aeson.encode (mkPermutation [3, 5, 0, 1, 2, 4]) `shouldBe` "[3,5,0,1,2,4]"
+    it "parses Symmetry" $ do
+      Aeson.decode "{ \"permutation\": [1, 2, 3, 0], \"sector\": 2 }" `shouldBe` Just (mkSymmetry [1, 2, 3, 0] 2)
+      Aeson.decode "{ \"permutation\": [0, 1], \"sector\": 0 }" `shouldBe` Just (mkSymmetry [0, 1] 0)
+      Aeson.decode "{ \"permutation\": [], \"sector\": 0 }" `shouldBe` Just (mkSymmetry [] 0)
+    it "encodes Symmetry" $ do
+      Aeson.encode (mkSymmetry [0, 1, 2, 3, 4] 0) `shouldBe` "{\"sector\":0,\"permutation\":[0,1,2,3,4]}"
+      Aeson.encode (mkSymmetry [] 0) `shouldBe` "{\"sector\":0,\"permutation\":[]}"
+      Aeson.encode (mkSymmetry [1, 2, 0] 2) `shouldBe` "{\"sector\":2,\"permutation\":[1,2,0]}"
+    it "parses Symmetries" $ do
+      Aeson.decode "[{\"permutation\": [1, 2, 0], \"sector\": 1}]" `shouldBe` Just (mkSymmetries [mkSymmetry [1, 2, 0] 1])
+      Aeson.decode
+        "[{\"permutation\": [1, 2, 3, 0], \"sector\": 0}, \
+        \ {\"permutation\": [3, 2, 1, 0], \"sector\": 0}]"
+        `shouldBe` Just (mkSymmetries [mkSymmetry [1, 2, 3, 0] 0, mkSymmetry [3, 2, 1, 0] 0])
+    it "encodes Symmetries" $ do
+      Aeson.encode (mkSymmetries [mkSymmetry [1, 2, 0] 1])
+        `shouldBe` "[{\"sector\":0,\"permutation\":[0,1,2]},{\"sector\":2,\"permutation\":[1,2,0]},{\"sector\":1,\"permutation\":[2,0,1]}]"
+  --   (mkdecode "[{\"permutation\": [1, 2, 0], \"sector\": 1}]" `shouldBe` Just
+  --   `shouldBe` Just (mkSymmetries [mkSymmetry [1, 2, 3, 0] 0, mkSymmetry [3, 2, 1, 0] 0])
   -- describe "SymmetrySpec" $ do
   --   it "parses JSON specifications" $ do
   --     let s₁ =
@@ -90,20 +118,20 @@ main = hspec $ do
   --       Right x -> x `shouldBe` SymmetrySpec (fromList [1, 1, 2, 4]) (-5)
   --     s₃ `shouldSatisfy` isLeft
   --     s₄ `shouldSatisfy` isLeft
-  describe "denseMatrixFromList" $ do
-    it "handles empty lists" $ do
-      denseMatrixFromList []
-        `shouldBe` Right (DenseMatrix S.empty :: DenseMatrix S.Vector 0 0 Double)
-      denseMatrixFromList [[], []]
-        `shouldBe` Right (DenseMatrix S.empty :: DenseMatrix S.Vector 2 0 Double)
-    it "handles square matrices" $ do
-      denseMatrixFromList [[1, 2], [3, 4]]
-        `shouldBe` Right (DenseMatrix (fromList [1, 2, 3, 4]) :: DenseMatrix S.Vector 2 2 Double)
-    it "handles rectangular matrices" $ do
-      denseMatrixFromList [[1, 2, 3], [4, 5, 6]]
-        `shouldBe` Right (DenseMatrix (fromList [1, 2, 3, 4, 5, 6]) :: DenseMatrix S.Vector 2 3 Double)
-      denseMatrixFromList [[1, 2], [3, 4], [5, 6]]
-        `shouldBe` Right (DenseMatrix (fromList [1, 2, 3, 4, 5, 6]) :: DenseMatrix S.Vector 3 2 Double)
+  -- describe "denseMatrixFromList" $ do
+  --   it "handles empty lists" $ do
+  --     denseMatrixFromList []
+  --       `shouldBe` Right (DenseMatrix S.empty :: DenseMatrix S.Vector Double)
+  --     denseMatrixFromList [[], []]
+  --       `shouldBe` Right (DenseMatrix S.empty :: DenseMatrix S.Vector Double)
+  --   it "handles square matrices" $ do
+  --     denseMatrixFromList [[1, 2], [3, 4]]
+  --       `shouldBe` Right (DenseMatrix (fromList [1, 2, 3, 4]) :: DenseMatrix S.Vector Double)
+  --   it "handles rectangular matrices" $ do
+  --     denseMatrixFromList [[1, 2, 3], [4, 5, 6]]
+  --       `shouldBe` Right (DenseMatrix (fromList [1, 2, 3, 4, 5, 6]) :: DenseMatrix S.Vector Double)
+  --     denseMatrixFromList [[1, 2], [3, 4], [5, 6]]
+  --       `shouldBe` Right (DenseMatrix (fromList [1, 2, 3, 4, 5, 6]) :: DenseMatrix S.Vector 3 2 Double)
   -- describe "DenseMatrixSpec" $ do
   --   it "parses JSON specifications" $ do
   --     parseLines @DenseMatrixSpec
@@ -310,13 +338,13 @@ main = hspec $ do
   --         (c :: CSR S.Vector Int 5 6 Double) = fromList $ [(0, 1, 0.07053036048059469), (0, 0, 0.2638763791388668), (0, 5, 0.16618170200246693), (0, 3, 0.3020542269386639), (0, 2, 0.589325857085161), (1, 3, 0.00015316460327802846), (1, 1, 0.00012244562246515968), (1, 0, 0.0004581077890052858), (2, 5, 0.006779975133623629), (2, 3, 0.008723929275360856), (2, 2, 0.02404364986332557), (4, 5, 0.05258020962776023), (4, 3, 0.06765600478405706), (4, 2, 0.1864638328480788)]
   --     csrMatMul a b `shouldBe` c
 
-  describe "combineNeighbors" $ do
-    it ".." $ do
-      combineNeighbors (==) (+) (S.fromList [1 :: Int, 2, 3]) `shouldBe` (S.fromList [1, 2, 3])
-      combineNeighbors (==) (+) (S.fromList [1 :: Int, 1, 3]) `shouldBe` (S.fromList [2, 3])
-      combineNeighbors (==) (const) (S.fromList [1 :: Int, 1, 2, 1, 1, 1, 3, 3])
-        `shouldBe` (S.fromList [1, 2, 1, 3])
-      combineNeighbors (==) (+) (S.fromList ([] :: [Int])) `shouldBe` (S.fromList [])
+  -- describe "combineNeighbors" $ do
+  --   it ".." $ do
+  --     combineNeighbors (==) (+) (S.fromList [1 :: Int, 2, 3]) `shouldBe` (S.fromList [1, 2, 3])
+  --     combineNeighbors (==) (+) (S.fromList [1 :: Int, 1, 3]) `shouldBe` (S.fromList [2, 3])
+  --     combineNeighbors (==) (const) (S.fromList [1 :: Int, 1, 2, 1, 1, 1, 3, 3])
+  --       `shouldBe` (S.fromList [1, 2, 1, 3])
+  --     combineNeighbors (==) (+) (S.fromList ([] :: [Int])) `shouldBe` (S.fromList [])
   describe "pSpinOperator" $ do
     it "parses simple operators" $ do
       parse pSpinOperator "" ("σᶻ₁₀" :: Text)
@@ -481,10 +509,10 @@ main = hspec $ do
   --     binomialCoefficient 4 1 `shouldBe` 4
   describe "stateIndex" $ do
     it "computes indices of representatives" $ do
-      isStateIndexIdentity (basisHeader (mkSpinBasis 10 Nothing)) `shouldBe` True
-      isStateIndexIdentity (basisHeader (mkSpinBasis 10 (Just 8))) `shouldBe` False
-      stateIndex (mkSpinBasis 10 Nothing) "|0000000101⟩" `shouldBe` Just 5
-      stateIndex (mkSpinBasis 10 (Just 2)) "|0000000101⟩" `shouldBe` Just 1
+      -- isStateIndexIdentity (basisHeader (mkSpinBasis 10 Nothing)) `shouldBe` True
+      -- isStateIndexIdentity (basisHeader (mkSpinBasis 10 (Just 8))) `shouldBe` False
+      -- stateIndex (mkSpinBasis 10 Nothing) "|0000000101⟩" `shouldBe` Just 5
+      -- stateIndex (mkSpinBasis 10 (Just 2)) "|0000000101⟩" `shouldBe` Just 1
       stateIndex (mkSpinfulFermionicBasis 3 (SpinfulPerSector 2 1)) "|001101⟩" `shouldBe` Just 1
       stateIndex (mkSpinfulFermionicBasis 3 (SpinfulPerSector 2 1)) "|100101⟩" `shouldBe` Just 7
   describe "BenesNetwork" $ do

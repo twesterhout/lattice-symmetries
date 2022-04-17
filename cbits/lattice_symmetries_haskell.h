@@ -6,6 +6,7 @@
 #include <cstdint>
 #else
 #include <stdatomic.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #endif
@@ -25,7 +26,7 @@ typedef struct {
 
 // void ls_hs_internal_destroy_external_array(chpl_external_array *p);
 
-#include <lattice_symmetries/lattice_symmetries.h>
+// #include <lattice_symmetries/lattice_symmetries.h>
 
 #if defined(__cplusplus)
 extern "C" {
@@ -49,26 +50,27 @@ __attribute__((noreturn)) void ls_hs_fatal_error(char const *func,
 #define LS_CHECK(cond, msg)                                                    \
   ((cond) ? ((void)0) : ls_hs_fatal_error(__func__, msg))
 
-typedef struct ls_hs_spin_basis_v1 {
-  ls_spin_basis const *const payload;
-  void *const context;
-} ls_hs_spin_basis_v1;
+// typedef struct ls_hs_spin_basis_v1 {
+//   ls_spin_basis const *const payload;
+//   void *const context;
+// } ls_hs_spin_basis_v1;
 
-typedef struct ls_hs_operator_v1 {
-  ls_operator const *const payload;
-  void *const context;
-} ls_hs_operator_v1;
+// typedef struct ls_hs_operator_v1 {
+//   ls_operator const *const payload;
+//   void *const context;
+// } ls_hs_operator_v1;
 
-void ls_hs_basis_and_hamiltonian_from_yaml(char const *path,
-                                           ls_hs_spin_basis_v1 *basis,
-                                           ls_hs_operator_v1 *hamiltonian);
-void ls_hs_destroy_spin_basis(ls_hs_spin_basis_v1 *basis);
-void ls_hs_destroy_operator(ls_hs_operator_v1 *op);
+// void ls_hs_basis_and_hamiltonian_from_yaml(char const *path,
+//                                            ls_hs_spin_basis_v1 *basis,
+//                                            ls_hs_operator_v1 *hamiltonian);
+// void ls_hs_destroy_spin_basis(ls_hs_spin_basis_v1 *basis);
+// void ls_hs_destroy_operator(ls_hs_operator_v1 *op);
 
-ls_error_code ls_hs_operator_apply(ls_hs_operator_v1 const *op, uint64_t count,
-                                   uint64_t const *spins, uint64_t *offsets,
-                                   uint64_t *out_spins,
-                                   _Complex double *out_coeffs);
+// ls_error_code ls_hs_operator_apply(ls_hs_operator_v1 const *op, uint64_t
+// count,
+//                                    uint64_t const *spins, uint64_t *offsets,
+//                                    uint64_t *out_spins,
+//                                    _Complex double *out_coeffs);
 
 unsigned ls_hs_hdf5_get_dataset_rank(char const *filename, char const *dataset);
 void ls_hs_hdf5_get_dataset_shape(char const *filename, char const *dataset,
@@ -112,7 +114,7 @@ typedef void (*ls_hs_internal_is_representative_kernel_type)(
 
 typedef void (*ls_hs_internal_state_info_kernel_type)(
     ptrdiff_t batch_size, uint64_t const *alphas, ptrdiff_t alphas_stride,
-    ptrdiff_t *betas, ptrdiff_t betas_stride, ls_hs_scalar *characters,
+    uint64_t *betas, ptrdiff_t betas_stride, ls_hs_scalar *characters,
     double *norms, void const *private_data);
 
 typedef struct ls_hs_basis_kernels {
@@ -149,6 +151,7 @@ typedef struct ls_hs_basis {
 } ls_hs_basis;
 
 ls_hs_basis *ls_hs_create_basis(ls_hs_particle_type, int, int, int);
+ls_hs_basis *ls_hs_clone_basis(ls_hs_basis const *);
 void ls_hs_destroy_basis_v2(ls_hs_basis *);
 uint64_t ls_hs_max_state_estimate(ls_hs_basis const *);
 uint64_t ls_hs_min_state_estimate(ls_hs_basis const *);

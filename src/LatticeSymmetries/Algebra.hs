@@ -29,6 +29,12 @@ import qualified Data.List as List
 import qualified Data.Text as Text
 import Data.Vector (Vector)
 import qualified Data.Vector.Algorithms.Intro
+import Data.Vector.Fusion.Bundle (Bundle)
+import qualified Data.Vector.Fusion.Bundle as Bundle (inplace)
+import qualified Data.Vector.Fusion.Bundle.Monadic as Bundle
+import Data.Vector.Fusion.Bundle.Size (Size (..), toMax)
+import Data.Vector.Fusion.Stream.Monadic (Step (..), Stream (..))
+import qualified Data.Vector.Fusion.Util (unId)
 import Data.Vector.Generic ((!))
 import qualified Data.Vector.Generic as G
 import GHC.Exts (IsList (..))
@@ -39,11 +45,41 @@ import LatticeSymmetries.ComplexRational
 import LatticeSymmetries.Dense
 import LatticeSymmetries.Generator
 import LatticeSymmetries.NonbranchingTerm
-import LatticeSymmetries.Sparse (combineNeighbors)
 -- import Numeric.Natural
 import Text.PrettyPrint.ANSI.Leijen (Pretty (..))
 import qualified Text.PrettyPrint.ANSI.Leijen as Pretty
 import Prelude hiding (Product, Sum, identity, toList)
+
+data CombineNeighborsHelper a
+  = CombineNeighborsFirst
+  | CombineNeighborsPrevious !a
+  | CombineNeighborsDone
+
+combineNeighborsImpl :: Monad m => (a -> a -> Bool) -> (a -> a -> a) -> Stream m a -> Stream m a
+{-# INLINE combineNeighborsImpl #-}
+combineNeighborsImpl equal combine (Stream step s₀) = Stream step' (CombineNeighborsFirst, s₀)
+  where
+    {-# INLINE step' #-}
+    step' (CombineNeighborsFirst, s) = do
+      r <- step s
+      case r of
+        Yield a s' -> pure $ Skip (CombineNeighborsPrevious a, s')
+        Skip s' -> pure $ Skip (CombineNeighborsFirst, s')
+        Done -> pure $ Done
+    step' (CombineNeighborsPrevious a, s) = do
+      r <- step s
+      case r of
+        Yield b s' ->
+          if equal a b
+            then pure $ Skip (CombineNeighborsPrevious (combine a b), s')
+            else pure $ Yield a (CombineNeighborsPrevious b, s')
+        Skip s' -> pure $ Skip (CombineNeighborsPrevious a, s')
+        Done -> pure $ Yield a (CombineNeighborsDone, s)
+    step' (CombineNeighborsDone, _) = pure $ Done
+
+combineNeighbors :: G.Vector v a => (a -> a -> Bool) -> (a -> a -> a) -> v a -> v a
+combineNeighbors equal combine =
+  G.unstream . Bundle.inplace (combineNeighborsImpl equal combine) toMax . G.stream
 
 data Scaled c g = Scaled !c !g
   deriving stock (Eq, Ord, Show, Generic)

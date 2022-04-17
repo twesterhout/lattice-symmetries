@@ -20,7 +20,7 @@ import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
 import LatticeSymmetries.Operator
 import LatticeSymmetries.Parser
-import qualified LatticeSymmetries.Types as Types
+-- import qualified LatticeSymmetries.Types as Types
 import LatticeSymmetries.Utils
 import System.Mem
 import Text.PrettyPrint.ANSI.Leijen (hardline, pretty, putDoc)
@@ -58,17 +58,20 @@ foreign export ccall "ls_hs_hdf5_get_dataset_rank"
 foreign export ccall "ls_hs_hdf5_get_dataset_shape"
   ls_hs_hdf5_get_dataset_shape :: CString -> CString -> Ptr Word64 -> IO ()
 
-foreign export ccall "ls_hs_basis_and_hamiltonian_from_yaml"
-  ls_hs_basis_and_hamiltonian_from_yaml :: CString -> Ptr Types.SpinBasisWrapper -> Ptr Types.OperatorWrapper -> IO ()
+-- foreign export ccall "ls_hs_basis_and_hamiltonian_from_yaml"
+--   ls_hs_basis_and_hamiltonian_from_yaml :: CString -> Ptr Types.SpinBasisWrapper -> Ptr Types.OperatorWrapper -> IO ()
 
-foreign export ccall "ls_hs_destroy_spin_basis"
-  ls_hs_destroy_spin_basis :: Ptr Types.SpinBasisWrapper -> IO ()
+-- foreign export ccall "ls_hs_destroy_spin_basis"
+--   ls_hs_destroy_spin_basis :: Ptr Types.SpinBasisWrapper -> IO ()
 
-foreign export ccall "ls_hs_destroy_operator"
-  ls_hs_destroy_operator :: Ptr Types.OperatorWrapper -> IO ()
+-- foreign export ccall "ls_hs_destroy_operator"
+--   ls_hs_destroy_operator :: Ptr Types.OperatorWrapper -> IO ()
 
 foreign export ccall "ls_hs_create_basis"
   ls_hs_create_basis :: Cparticle_type -> CInt -> CInt -> CInt -> IO (Ptr Cbasis)
+
+foreign export ccall "ls_hs_clone_basis"
+  ls_hs_clone_basis :: Ptr Cbasis -> IO (Ptr Cbasis)
 
 foreign export ccall "ls_hs_spin_chain_10_basis"
   ls_hs_spin_chain_10_basis :: IO (Ptr Cbasis)

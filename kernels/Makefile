@@ -34,6 +34,7 @@ else #-------------------------------
 endif #------------------------------
 HL_ALL_TARGETS += $(HL_BASE_TARGET)
 
+CC ?= cc
 CXX ?= c++
 LDFLAGS ?=
 SHELL = bash
@@ -42,7 +43,7 @@ SANITIZER_FLAGS ?=
 GENERATOR_OUTPUTS ?= static_library,c_header,stmt_html,assembly
 
 LDFLAGS += -ldl -lpthread -lz
-CFLAGS += -I $(HALIDE_DISTRIB_PATH)/include/ -I $(HALIDE_DISTRIB_PATH)/share/Halide/tools/
+CFLAGS += -I ../cbits -isystem $(HALIDE_DISTRIB_PATH)/include/ -isystem $(HALIDE_DISTRIB_PATH)/share/Halide/tools/ -Wall -Wextra -Wpedantic -Wconversion -Wdouble-promotion -Wformat=2 -Wformat-overflow=2 -Winit-self -Wimplicit-fallthrough -Wunused -Wuninitialized -Wstrict-overflow=4 -Wstring-compare -Wduplicated-branches -Wfloat-equal -Wshadow -Wundef -Wunused-macros -Wmissing-field-initializers
 CXXFLAGS += -std=c++17 -I $(HALIDE_DISTRIB_PATH)/include/ -I $(HALIDE_DISTRIB_PATH)/share/Halide/tools/ $(SANITIZER_FLAGS) -Wall -Werror -Wno-unused-function -Wcast-qual -Wignored-qualifiers -Wno-comment -Wsign-compare -Wno-unknown-warning-option -Wno-psabi
 
 ifeq ($(UNAME), Darwin)
@@ -95,24 +96,24 @@ OPS = $(addsuffix /state_info_symmetric.a,$(addprefix $(BIN_DIR)/,$(HL_ALL_TARGE
 
 all: $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT)
 
-$(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT): $(BIN_DIR)/reference.o $(BIN_DIR)/indexing.o $(BIN_DIR)/kernels.o $(OPS)
+$(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT): $(BIN_DIR)/reference.o $(BIN_DIR)/indexing.o $(BIN_DIR)/kernels.o $(OPS) $(BIN_DIR)/runtime.a 
 	@mkdir -p $(@D)
-	$(CC) $(SHARED_FLAG) -o $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) $^
+	$(CC) $(SHARED_FLAG) -o $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) $^ -ldl -lpthread
 ifeq ($(UNAME), Darwin)
 	install_name_tool -id $(CURDIR)/$(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT)
 endif
 
-$(BIN_DIR)/reference.o: ../cbits/reference.c ../cbits/lattice_symmetries_haskell.h
+$(BIN_DIR)/reference.o: reference.c ../cbits/lattice_symmetries_haskell.h
 	@mkdir -p $(@D)
-	$(CC) -fPIC $(CFLAGS) -I$(PWD)/../cbits `pkg-config --cflags lattice_symmetries` -o $@ -c $<
+	$(CC) -fPIC $(CFLAGS) -I$(PWD)/../cbits -o $@ -c $<
 
-$(BIN_DIR)/indexing.o: ../cbits/indexing.c ../cbits/lattice_symmetries_haskell.h
+$(BIN_DIR)/indexing.o: indexing.c ../cbits/lattice_symmetries_haskell.h
 	@mkdir -p $(@D)
-	$(CC) -fPIC $(CFLAGS) -I$(PWD)/../cbits `pkg-config --cflags lattice_symmetries` -o $@ -c $<
+	$(CC) -fPIC $(CFLAGS) -I$(PWD)/../cbits -o $@ -c $<
 
-$(BIN_DIR)/kernels.o: kernels.c $(BIN_DIR)/kernels.h
+$(BIN_DIR)/kernels.o: kernels.c $(BIN_DIR)/kernels.h ../cbits/lattice_symmetries_haskell.h
 	@mkdir -p $(@D)
-	$(CC) -fPIC $(CFLAGS) -I$(PWD)/../cbits `pkg-config --cflags lattice_symmetries` -I$(BIN_DIR) -o $@ -c $< 
+	$(CC) -fPIC $(CFLAGS) -I$(PWD)/../cbits -I$(BIN_DIR) -o $@ -c $< 
 
 $(BIN_DIR)/kernels.h: $(OPS)
 	@mkdir -p $(@D)
@@ -181,3 +182,7 @@ $(BIN_DIR)/generator: generator.cpp $(GENERATOR_DEPS_STATIC)
 	@echo Building Generator ...
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LIBHALIDE_LDFLAGS_STATIC)
+
+.PHONY: clean
+clean:
+	rm -rf $(BIN_DIR)

@@ -7,6 +7,7 @@ module LatticeSymmetries.Utils
     logInfo',
     logError',
     ls_hs_fatal_error,
+    ApproxEq (..),
   )
 where
 
@@ -57,3 +58,13 @@ ls_hs_fatal_error c_func c_msg = withFrozenCallStack $ do
   msg <- fromString <$> peekCString c_msg
   logError' $ "[" <> func <> "] " <> msg
   exitFailure
+
+infix 4 ≈
+
+class ApproxEq a where
+  (≈) :: a -> a -> Bool
+  approx :: Double -> Double -> a -> a -> Bool
+
+instance ApproxEq Double where
+  approx rtol atol a b = abs (a - b) <= max atol (rtol * max (abs a) (abs b))
+  a ≈ b = approx 1.4901161193847656e-8 8.881784197001252e-16 a b

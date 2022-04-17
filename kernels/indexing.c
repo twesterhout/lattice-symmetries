@@ -49,6 +49,7 @@ ls_hs_create_state_index_binary_search_kernel_data(
   cache->number_bits = 0;
   cache->number_offsets = 0;
   cache->offsets = NULL;
+  return cache;
 }
 
 void ls_hs_destroy_state_index_binary_search_kernel_data(
