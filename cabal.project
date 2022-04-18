@@ -11,7 +11,7 @@ package lattice-symmetries-haskell
   -- true
   -- split-sections: true
   ghc-options: -fPIC -fno-prof-auto -ffun-to-thunk -fno-full-laziness -fexpose-all-unfoldings -fspecialise-aggressively
-  flags: +use-standalone
+  -- flags: +use-standalone
 
 package hdf5
   optimization: 2

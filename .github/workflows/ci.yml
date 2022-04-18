@@ -16,9 +16,9 @@ jobs:
           - os: ubuntu-latest
             cabal: latest
             ghc: "8.10.7"
-          - os: macos-latest
-            cabal: latest
-            ghc: "8.10.7"
+              # - os: macos-latest
+              #   cabal: latest
+              #   ghc: "8.10.7"
     steps:
     - uses: actions/checkout@v2
     - uses: haskell/actions/setup@v1
@@ -61,17 +61,26 @@ jobs:
         #   with:
         #     NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
         #     SSH_PASS: ${{ secrets.SSH_PASS }}
+    - name: Build Haskell dependencies
+      run: |
+        cabal v2-update
+        cabal v2-build --only-dependencies --enable-tests --hsc2hs-options=--cross-compile
     - name: Build
       run: |
         # export PKG_CONFIG_PATH=$GITHUB_WORKSPACE/lattice-symmetries/lib/pkgconfig
         cd kernels
+        make Halide
         make
         cd ..
-        export LD_LIBRARY_PATH=$PWD/c/build:$LD_LIBRARY_PATH
-        export DYLD_LIBRARY_PATH=$PWD/c/build:$DYLD_LIBRARY_PATH
 
-        cabal v2-update
-        cabal v2-build --disable-tests --extra-lib-dirs=$PWD/c/build --hsc2hs-options=--cross-compile
+        cabal v2-build --extra-lib-dirs=$PWD/kernels/build --hsc2hs-options=--cross-compile
+        # --flags="-use-standalone"
+    - name: Test
+      run: |
+        export LD_LIBRARY_PATH=$PWD/kernels/build:$LD_LIBRARY_PATH
+        export DYLD_LIBRARY_PATH=$PWD/kernels/build:$DYLD_LIBRARY_PATH
+        cabal v2-test --extra-lib-dirs=$PWD/kernels/build --hsc2hs-options=--cross-compile
+        # --flags="-use-standalone"
     - name: Package
       if: matrix.os == 'macos-latest'
       run: |
