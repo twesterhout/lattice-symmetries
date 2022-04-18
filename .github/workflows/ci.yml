@@ -86,29 +86,33 @@ jobs:
       run: |
         export LD_LIBRARY_PATH=$PWD/kernels/build:$LD_LIBRARY_PATH
         export DYLD_LIBRARY_PATH=$PWD/kernels/build:$DYLD_LIBRARY_PATH
-        cabal v2-test --extra-lib-dirs=$PWD/kernels/build --hsc2hs-options=--cross-compile
+        cabal v2-test --extra-lib-dirs=$PWD/kernels/build --hsc2hs-options=--cross-compile --test-show-details=direct
         # --flags="-use-standalone"
     - name: Package
-      if: matrix.os == 'macos-latest'
+      # if: matrix.os == 'macos-latest'
       run: |
         mkdir release
         mkdir release/include
         mkdir release/lib
-        cp $GITHUB_WORKSPACE/lattice-symmetries/lib/liblattice_symmetries.dylib release/lib/
-        cp -r $GITHUB_WORKSPACE/lattice-symmetries/include/lattice_symmetries release/include/
+        # cp $GITHUB_WORKSPACE/lattice-symmetries/lib/liblattice_symmetries.$SHARED_LIB_EXTENSION release/lib/
+        # cp -r $GITHUB_WORKSPACE/lattice-symmetries/include/lattice_symmetries release/include/
         cp cbits/lattice_symmetries_haskell.h release/include/
         export GHC_VERSION=$(ghc --numeric-version)
         export PACKAGE_VERSION=0.1.0.0
-        cp dist-newstyle/build/x86_64-osx/ghc-$GHC_VERSION/lattice-symmetries-haskell-$PACKAGE_VERSION/f/lattice_symmetries_haskell/build/lattice_symmetries_haskell/liblattice_symmetries_haskell.dylib release/lib/
+        if [[ ${{ matrix.os }} == "macos-latest" ]]; then
+          export SHARED_LIB_EXTENSION=dylib
+          export CABAL_OS_NAME=osx
+        else
+          export SHARED_LIB_EXTENSION=so
+          export CABAL_OS_NAME=linux
+        fi
+        cp kernels/build/liblattice_symmetries_core.$SHARED_LIB_EXTENSION release/lib/
+        cp dist-newstyle/build/x86_64-$CABAL_OS_NAME/ghc-$GHC_VERSION/lattice-symmetries-haskell-$PACKAGE_VERSION/f/lattice_symmetries_haskell/build/lattice_symmetries_haskell/liblattice_symmetries_haskell.$SHARED_LIB_EXTENSION release/lib/
         tar -cf release.tar release/
         bzip2 release.tar
 
     - uses: actions/upload-artifact@v3
-      if: matrix.os == 'macos-latest'
+      # if: matrix.os == 'macos-latest'
       with:
-        name: chapel-dependencies
+        name: chapel-dependencies-${{ matrix.os }}
         path: release.tar.bz2
-
-        # - name: Test
-        #   run: |
-        #     cabal v2-test --enable-tests --test-show-details=direct
