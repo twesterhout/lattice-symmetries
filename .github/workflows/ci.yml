@@ -76,9 +76,11 @@ jobs:
         export DYLD_LIBRARY_PATH=$PWD/c/build:$DYLD_LIBRARY_PATH
 
         cabal v2-build --extra-lib-dirs=$PWD/kernels/build --hsc2hs-options=--cross-compile
+        # --flags="-use-standalone"
     - name: Test
       run: |
         cabal v2-test --extra-lib-dirs=$PWD/kernels/build --hsc2hs-options=--cross-compile
+        # --flags="-use-standalone"
     - name: Package
       if: matrix.os == 'macos-latest'
       run: |
