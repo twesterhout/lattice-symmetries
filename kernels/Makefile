@@ -7,18 +7,27 @@ HL_BITS ?= 64
 UNAME = $(shell uname)
 ifeq ($(UNAME), Linux)
 HL_OS = linux
+HL_ARCHIVE = tar.gz
 else
 ifeq ($(UNAME), Darwin)
 HL_OS = osx
+HL_ARCHIVE = tar.gz
 else # This will probably never happen :P
 HL_OS = windows
+HL_ARCHIVE = zip
 endif
 endif
 
-HALIDE_DISTRIB_PATH ?= $(realpath ../third_party/Halide-13.0.4-$(HL_ARCH)-$(HL_BITS)-$(HL_OS))
-ifeq (,$(HALIDE_DISTRIB_PATH))
-$(error Could not find a Halide distribution. Before building, set HALIDE_DISTRIB_PATH to the root of an existing Halide distribution)
-endif
+HL_VERSION = 14.0.0
+HL_HASH = 6b9ed2afd1d6d0badf04986602c943e287d44e46
+
+
+
+HALIDE_DISTRIB_PATH ?= $(PWD)/../third_party/Halide-$(HL_VERSION)-$(HL_ARCH)-$(HL_BITS)-$(HL_OS)
+# $(realpath ../third_party/Halide-13.0.4-$(HL_ARCH)-$(HL_BITS)-$(HL_OS))
+# ifeq (,$(HALIDE_DISTRIB_PATH))
+# $(error Could not find a Halide distribution. Before building, set HALIDE_DISTRIB_PATH to the root of an existing Halide distribution)
+# endif
 
 # HL_TARGET_SUFFIX ?= -no_asserts-no_bounds_query-no_runtime
 HL_TARGET_SUFFIX ?= -no_runtime
@@ -177,11 +186,20 @@ $(BIN_DIR)/runtime.a: $(BIN_DIR)/generator
 	@mkdir -p $(@D)
 	$^ -r runtime -o $(@D) target=$(HL_BASE_TARGET)
 
+Halide: $(PWD)/../third_party/Halide-$(HL_VERSION)-$(HL_ARCH)-$(HL_BITS)-$(HL_OS)
+
 # Build the Halide generator for our kernels
 $(BIN_DIR)/generator: generator.cpp $(GENERATOR_DEPS_STATIC)
 	@echo Building Generator ...
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LIBHALIDE_LDFLAGS_STATIC)
+
+$(PWD)/../third_party/Halide-$(HL_VERSION)-$(HL_ARCH)-$(HL_BITS)-$(HL_OS)-$(HL_HASH).$(HL_ARCHIVE):
+	@mkdir -p $(@D)
+	cd ../third_party && wget https://github.com/halide/Halide/releases/download/v$(HL_VERSION)/Halide-$(HL_VERSION)-$(HL_ARCH)-$(HL_BITS)-$(HL_OS)-$(HL_HASH).$(HL_ARCHIVE)
+
+$(PWD)/../third_party/Halide-$(HL_VERSION)-$(HL_ARCH)-$(HL_BITS)-$(HL_OS): $(PWD)/../third_party/Halide-$(HL_VERSION)-$(HL_ARCH)-$(HL_BITS)-$(HL_OS)-$(HL_HASH).$(HL_ARCHIVE)
+	cd ../third_party && tar -xf Halide-$(HL_VERSION)-$(HL_ARCH)-$(HL_BITS)-$(HL_OS)-$(HL_HASH).$(HL_ARCHIVE)
 
 .PHONY: clean
 clean:

@@ -150,7 +150,7 @@ typedef struct ls_hs_basis {
   void *haskell_payload;
 } ls_hs_basis;
 
-ls_hs_basis *ls_hs_create_basis(ls_hs_particle_type, int, int, int);
+// ls_hs_basis *ls_hs_create_basis(ls_hs_particle_type, int, int, int);
 ls_hs_basis *ls_hs_clone_basis(ls_hs_basis const *);
 void ls_hs_destroy_basis_v2(ls_hs_basis *);
 uint64_t ls_hs_max_state_estimate(ls_hs_basis const *);

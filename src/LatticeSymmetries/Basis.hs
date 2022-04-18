@@ -34,17 +34,17 @@ module LatticeSymmetries.Basis
     maxStateEstimate,
     withParticleType,
     withReconstructedBasis,
-    ls_hs_create_basis,
+    -- ls_hs_create_basis,
     ls_hs_clone_basis,
     ls_hs_create_spin_basis_from_json,
     ls_hs_create_spinful_fermion_basis_from_json,
     ls_hs_create_spinless_fermion_basis_from_json,
     ls_hs_min_state_estimate,
     ls_hs_max_state_estimate,
-    ls_hs_spin_chain_10_basis,
-    ls_hs_spin_kagome_12_basis,
-    ls_hs_spin_kagome_16_basis,
-    ls_hs_spin_square_4x4_basis,
+    -- ls_hs_spin_chain_10_basis,
+    -- ls_hs_spin_kagome_12_basis,
+    -- ls_hs_spin_kagome_16_basis,
+    -- ls_hs_spin_square_4x4_basis,
   )
 where
 
@@ -299,57 +299,24 @@ ls_hs_create_spinless_fermion_basis_from_json cStr = do
   (basis :: Basis 'SpinlessFermionTy) <- decodeCString cStr
   borrowCbasis basis
 
-ls_hs_spin_chain_10_basis :: IO (Ptr Cbasis)
-ls_hs_spin_chain_10_basis = do
-  let symmetries =
-        mkSymmetries
-          [ mkSymmetry (mkPermutation [1, 2, 3, 4, 5, 6, 7, 8, 9, 0]) 5,
-            mkSymmetry (mkPermutation [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]) 1
-          ]
-      basis = mkSpinBasis 10 (Just 5) (Just (-1)) symmetries
-  borrowCbasis basis
-
-ls_hs_spin_kagome_12_basis :: IO (Ptr Cbasis)
-ls_hs_spin_kagome_12_basis = do
-  let basis = mkSpinBasis 12 (Just 6) Nothing emptySymmetries
-  borrowCbasis basis
-
-ls_hs_spin_kagome_16_basis :: IO (Ptr Cbasis)
-ls_hs_spin_kagome_16_basis = do
-  let basis = mkSpinBasis 16 (Just 8) Nothing emptySymmetries
-  borrowCbasis basis
-
-ls_hs_spin_square_4x4_basis :: IO (Ptr Cbasis)
-ls_hs_spin_square_4x4_basis = do
-  let symmetries =
-        mkSymmetries
-          [ mkSymmetry (mkPermutation [1, 2, 3, 0, 5, 6, 7, 4, 9, 10, 11, 8, 13, 14, 15, 12]) 0,
-            mkSymmetry (mkPermutation [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3]) 0,
-            mkSymmetry (mkPermutation [3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12]) 0,
-            mkSymmetry (mkPermutation [12, 13, 14, 15, 8, 9, 10, 11, 4, 5, 6, 7, 0, 1, 2, 3]) 0,
-            mkSymmetry (mkPermutation [3, 7, 11, 15, 2, 6, 10, 14, 1, 5, 9, 13, 0, 4, 8, 12]) 0
-          ]
-      basis = mkSpinBasis 16 (Just 8) (Just 1) symmetries
-  borrowCbasis basis
-
-ls_hs_create_basis :: HasCallStack => Cparticle_type -> CInt -> CInt -> CInt -> IO (Ptr Cbasis)
-ls_hs_create_basis particleType numberSites numberParticles numberUp
-  | particleType == c_LS_HS_SPIN =
-    let h = if numberUp == -1 then Nothing else Just (fromIntegral numberUp)
-        basis = mkSpinBasis (fromIntegral numberSites) h Nothing emptySymmetries
-     in borrowCbasis basis
-  | particleType == c_LS_HS_SPINFUL_FERMION =
-    let p
-          | numberParticles == -1 = SpinfulNoOccupation
-          | numberUp == -1 = SpinfulTotalParticles (fromIntegral numberParticles)
-          | otherwise = SpinfulPerSector (fromIntegral numberUp) (fromIntegral (numberParticles - numberUp))
-        basis = mkSpinfulFermionicBasis (fromIntegral numberSites) p
-     in borrowCbasis basis
-  | particleType == c_LS_HS_SPINLESS_FERMION =
-    let p = if numberParticles == -1 then Nothing else Just (fromIntegral numberParticles)
-        basis = mkSpinlessFermionicBasis (fromIntegral numberSites) p
-     in borrowCbasis basis
-  | otherwise = error $ "invalid particle type: " <> show particleType
+-- ls_hs_create_basis :: HasCallStack => Cparticle_type -> CInt -> CInt -> CInt -> IO (Ptr Cbasis)
+-- ls_hs_create_basis particleType numberSites numberParticles numberUp
+--   | particleType == c_LS_HS_SPIN =
+--     let h = if numberUp == -1 then Nothing else Just (fromIntegral numberUp)
+--         basis = mkSpinBasis (fromIntegral numberSites) h Nothing emptySymmetries
+--      in borrowCbasis basis
+--   | particleType == c_LS_HS_SPINFUL_FERMION =
+--     let p
+--           | numberParticles == -1 = SpinfulNoOccupation
+--           | numberUp == -1 = SpinfulTotalParticles (fromIntegral numberParticles)
+--           | otherwise = SpinfulPerSector (fromIntegral numberUp) (fromIntegral (numberParticles - numberUp))
+--         basis = mkSpinfulFermionicBasis (fromIntegral numberSites) p
+--      in borrowCbasis basis
+--   | particleType == c_LS_HS_SPINLESS_FERMION =
+--     let p = if numberParticles == -1 then Nothing else Just (fromIntegral numberParticles)
+--         basis = mkSpinlessFermionicBasis (fromIntegral numberSites) p
+--      in borrowCbasis basis
+--   | otherwise = error $ "invalid particle type: " <> show particleType
 
 ls_hs_clone_basis :: HasCallStack => Ptr Cbasis -> IO (Ptr Cbasis)
 ls_hs_clone_basis ptr = do

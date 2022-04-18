@@ -67,8 +67,8 @@ foreign export ccall "ls_hs_hdf5_get_dataset_shape"
 -- foreign export ccall "ls_hs_destroy_operator"
 --   ls_hs_destroy_operator :: Ptr Types.OperatorWrapper -> IO ()
 
-foreign export ccall "ls_hs_create_basis"
-  ls_hs_create_basis :: Cparticle_type -> CInt -> CInt -> CInt -> IO (Ptr Cbasis)
+-- foreign export ccall "ls_hs_create_basis"
+--   ls_hs_create_basis :: Cparticle_type -> CInt -> CInt -> CInt -> IO (Ptr Cbasis)
 
 foreign export ccall "ls_hs_clone_basis"
   ls_hs_clone_basis :: Ptr Cbasis -> IO (Ptr Cbasis)
@@ -82,17 +82,17 @@ foreign export ccall "ls_hs_create_spinless_fermion_basis_from_json"
 foreign export ccall "ls_hs_create_spinful_fermion_basis_from_json"
   ls_hs_create_spinful_fermion_basis_from_json :: CString -> IO (Ptr Cbasis)
 
-foreign export ccall "ls_hs_spin_chain_10_basis"
-  ls_hs_spin_chain_10_basis :: IO (Ptr Cbasis)
+-- foreign export ccall "ls_hs_spin_chain_10_basis"
+--   ls_hs_spin_chain_10_basis :: IO (Ptr Cbasis)
 
-foreign export ccall "ls_hs_spin_kagome_12_basis"
-  ls_hs_spin_kagome_12_basis :: IO (Ptr Cbasis)
+-- foreign export ccall "ls_hs_spin_kagome_12_basis"
+--   ls_hs_spin_kagome_12_basis :: IO (Ptr Cbasis)
 
-foreign export ccall "ls_hs_spin_kagome_16_basis"
-  ls_hs_spin_kagome_16_basis :: IO (Ptr Cbasis)
+-- foreign export ccall "ls_hs_spin_kagome_16_basis"
+--   ls_hs_spin_kagome_16_basis :: IO (Ptr Cbasis)
 
-foreign export ccall "ls_hs_spin_square_4x4_basis"
-  ls_hs_spin_square_4x4_basis :: IO (Ptr Cbasis)
+-- foreign export ccall "ls_hs_spin_square_4x4_basis"
+--   ls_hs_spin_square_4x4_basis :: IO (Ptr Cbasis)
 
 foreign export ccall "ls_hs_min_state_estimate"
   ls_hs_min_state_estimate :: Ptr Cbasis -> IO Word64

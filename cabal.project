@@ -1,19 +1,23 @@
 packages: .
 
 package *
-  -- optimization: 2
-  -- split-sections: true
-  ghc-options: -fPIC
-  -- -fexpose-all-unfoldings -fspecialise-aggressively
-
--- package hdf5-hs
---   flags: +use-pkgconfig
+  optimization: 2
+  profiling: false
+  ghc-options: -fPIC -fexpose-all-unfoldings -fspecialise-aggressively
 
 package lattice-symmetries-haskell
-  -- optimization: 0
+  optimization: 2
+  profiling: false
+  -- true
   -- split-sections: true
-  ghc-options: -fPIC
-  -- -fexpose-all-unfoldings -fspecialise-aggressively
+  ghc-options: -fPIC -fno-prof-auto -ffun-to-thunk -fno-full-laziness -fexpose-all-unfoldings -fspecialise-aggressively
+  flags: +use-standalone
+
+package hdf5
+  optimization: 2
+  profiling: false
+  -- split-sections: true
+  ghc-options: -fPIC -fno-prof-auto -ffun-to-thunk -fno-full-laziness -fexpose-all-unfoldings -fspecialise-aggressively
 
 -- package primitive
 --   optimization: 2
