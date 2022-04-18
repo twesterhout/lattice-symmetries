@@ -14,10 +14,10 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            cabal: "3.4.0.0"
+            cabal: latest
             ghc: "8.10.7"
           - os: macos-latest
-            cabal: "3.4.0.0"
+            cabal: latest
             ghc: "8.10.7"
     steps:
     - uses: actions/checkout@v2
