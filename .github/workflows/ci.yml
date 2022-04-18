@@ -107,7 +107,9 @@ jobs:
           export CABAL_OS_NAME=linux
         fi
         cp kernels/build/liblattice_symmetries_core.$SHARED_LIB_EXTENSION release/lib/
-        cp dist-newstyle/build/x86_64-$CABAL_OS_NAME/ghc-$GHC_VERSION/lattice-symmetries-haskell-$PACKAGE_VERSION/f/lattice_symmetries_haskell/build/lattice_symmetries_haskell/liblattice_symmetries_haskell.$SHARED_LIB_EXTENSION release/lib/
+        find dist-newstyle -name "liblattice_symmetries_haskell.$SHARED_LIB_EXTENSION" \
+                           -exec cp {} release/lib/ \;
+        # cp dist-newstyle/build/x86_64-$CABAL_OS_NAME/ghc-$GHC_VERSION/lattice-symmetries-haskell-$PACKAGE_VERSION/f/lattice_symmetries_haskell/opt/build/lattice_symmetries_haskell/liblattice_symmetries_haskell.$SHARED_LIB_EXTENSION release/lib/
         tar -cf release.tar release/
         bzip2 release.tar
 
