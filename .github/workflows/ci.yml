@@ -26,11 +26,17 @@ jobs:
       with:
         ghc-version: ${{ matrix.ghc }}
         cabal-version: ${{ matrix.cabal }}
-    - uses: actions/cache@v1
-      name: Cache ~/.cabal/store
-      with:
-        path: ~/.cabal/store
-        key: ${{ runner.os }}-${{ matrix.ghc }}-cabal
+    - name: Setup Haskell (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        ghcup install ghc \
+          --url https://github.com/twesterhout/ghc-fpic-bindist/releases/download/v0.0.1/ghc-${{ matrix.ghc }}-x86_64-linux-ubuntu-18.04-c826a40e.tar.xz \
+          ${{ matrix.ghc }}
+    # - uses: actions/cache@v3
+    #   name: Cache ~/.cabal/store
+    #   with:
+    #     path: ~/.cabal/store
+    #     key: ${{ runner.os }}-${{ matrix.ghc }}-cabal
     - name: Install system dependencies
       if: matrix.os == 'ubuntu-latest'
       run: |
