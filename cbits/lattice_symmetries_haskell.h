@@ -156,6 +156,14 @@ void ls_hs_destroy_basis_v2(ls_hs_basis *);
 uint64_t ls_hs_max_state_estimate(ls_hs_basis const *);
 uint64_t ls_hs_min_state_estimate(ls_hs_basis const *);
 
+ls_hs_basis *ls_hs_create_spin_basis_from_json(char const *json_string);
+
+ls_hs_basis *
+ls_hs_create_spinless_fermion_basis_from_json(char const *json_string);
+
+ls_hs_basis *
+ls_hs_create_spinful_fermion_basis_from_json(char const *json_string);
+
 void ls_hs_basis_build(ls_hs_basis *basis);
 
 bool ls_hs_basis_has_fixed_hamming_weight(ls_hs_basis const *);

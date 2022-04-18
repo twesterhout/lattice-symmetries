@@ -99,10 +99,10 @@ library
                      , vector
                      , vector-algorithms
                      , text
-                     , aeson
                      , scientific
                      , yaml
                      , aeson
+                     , bytestring
                      , co-log
                      -- , co-log-core
                      -- , vector-algorithms

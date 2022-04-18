@@ -86,6 +86,32 @@ main = hspec $ do
     it "encodes Symmetries" $ do
       Aeson.encode (mkSymmetries [mkSymmetry [1, 2, 0] 1])
         `shouldBe` "[{\"sector\":0,\"permutation\":[0,1,2]},{\"sector\":2,\"permutation\":[1,2,0]},{\"sector\":1,\"permutation\":[2,0,1]}]"
+    it "parses/encodes ParticleTy" $ do
+      forM_ ([SpinTy, SpinlessFermionTy, SpinfulFermionTy] :: [ParticleTy]) $ \tp ->
+        Aeson.decode (Aeson.encode tp) `shouldBe` Just tp
+      Aeson.decode "\"spin\"" `shouldBe` Just SpinTy
+      Aeson.decode "\"spinless-fermion\"" `shouldBe` Just SpinlessFermionTy
+      Aeson.decode "\"spinful-fermion\"" `shouldBe` Just SpinfulFermionTy
+    it "parses/encodes Basis 'SpinTy" $ do
+      let s₁ = mkSpinBasis 10 (Just 5) Nothing emptySymmetries
+          s₂ = mkSpinBasis 4 (Just 2) (Just 1) (mkSymmetries [mkSymmetry [1, 2, 3, 0] 0])
+      print $ Aeson.encode s₂
+      forM_ ([s₁, s₂] :: [Basis 'SpinTy]) $ \s ->
+        Aeson.decode (Aeson.encode s) `shouldBe` Just s
+    it "parses/encodes Basis 'SpinfulFermionTy" $ do
+      let s₁ = mkSpinfulFermionicBasis 5 (SpinfulTotalParticles 4)
+          s₂ = mkSpinfulFermionicBasis 3 (SpinfulPerSector 2 1)
+          s₃ = mkSpinfulFermionicBasis 30 SpinfulNoOccupation
+      forM_ ([s₁, s₂, s₃] :: [Basis 'SpinfulFermionTy]) $ \s -> do
+        print $ Aeson.encode s
+        Aeson.decode (Aeson.encode s) `shouldBe` Just s
+    it "parses/encodes Basis 'SpinlessFermionTy" $ do
+      let s₁ = mkSpinlessFermionicBasis 5 Nothing
+          s₂ = mkSpinlessFermionicBasis 10 (Just 5)
+      forM_ ([s₁, s₂] :: [Basis 'SpinlessFermionTy]) $ \s -> do
+        print $ Aeson.encode s
+        Aeson.decode (Aeson.encode s) `shouldBe` Just s
+
   --   (mkdecode "[{\"permutation\": [1, 2, 0], \"sector\": 1}]" `shouldBe` Just
   --   `shouldBe` Just (mkSymmetries [mkSymmetry [1, 2, 3, 0] 0, mkSymmetry [3, 2, 1, 0] 0])
   -- describe "SymmetrySpec" $ do

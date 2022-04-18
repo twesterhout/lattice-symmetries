@@ -102,6 +102,10 @@ static void init_kernels_list(uint64_t const number_bits,
   assert(number_bits <= 64);
 #if LS_X86_64() == 1
   char const *arch = getenv("LATTICE_SYMMETRIES_ARCH");
+  if (arch == NULL) { // strcmp will invoke undefined behavior if we pass it a
+                      // NULL pointer
+    arch = "";
+  }
   __builtin_cpu_init();
   if (strcmp(arch, "avx2") == 0) {
     *list = LS_AVX2_KERNELS;
@@ -144,12 +148,15 @@ typedef struct ls_internal_halide_kernel_data {
 ls_internal_halide_kernel_data *
 ls_internal_create_halide_kernel_data(ls_hs_permutation_group const *g,
                                       int const spin_inversion) {
+  fprintf(stderr, "Calling malloc...\n");
   ls_internal_halide_kernel_data *self =
       malloc(sizeof(ls_internal_halide_kernel_data));
   if (self == NULL) {
+    fprintf(stderr, "Ooops!\n");
     return NULL;
   }
 
+  fprintf(stderr, "Setting masks...\n");
   self->masks = (struct halide_buffer_t){.device = 0,
                                          .device_interface = NULL,
                                          .host = (uint8_t *)g->masks,
@@ -158,6 +165,7 @@ ls_internal_create_halide_kernel_data(ls_hs_permutation_group const *g,
                                          .dimensions = 2,
                                          .dim = &(self->masks_dims[0]),
                                          .padding = NULL};
+  fprintf(stderr, "Setting eigvals_re...\n");
   self->eigvals_re =
       (struct halide_buffer_t){.device = 0,
                                .device_interface = NULL,
@@ -167,6 +175,7 @@ ls_internal_create_halide_kernel_data(ls_hs_permutation_group const *g,
                                .dimensions = 1,
                                .dim = &(self->masks_dims[1]),
                                .padding = NULL};
+  fprintf(stderr, "Setting eigvals_im...\n");
   self->eigvals_im =
       (struct halide_buffer_t){.device = 0,
                                .device_interface = NULL,
@@ -176,6 +185,7 @@ ls_internal_create_halide_kernel_data(ls_hs_permutation_group const *g,
                                .dimensions = 1,
                                .dim = &(self->masks_dims[1]),
                                .padding = NULL};
+  fprintf(stderr, "Setting shifts...\n");
   self->shifts = (struct halide_buffer_t){
       .device = 0,
       .device_interface = NULL,
@@ -186,20 +196,25 @@ ls_internal_create_halide_kernel_data(ls_hs_permutation_group const *g,
       .dim = &(self->shifts_dim),
       .padding = NULL,
   };
+  fprintf(stderr, "Setting masks_dims[0]...\n");
   self->masks_dims[0] =
       (struct halide_dimension_t){.min = 0,
                                   .extent = (int32_t)g->number_shifts,
                                   .stride = (int32_t)g->number_masks,
                                   .flags = 0};
+  fprintf(stderr, "Setting masks_dims[1]...\n");
   self->masks_dims[1] = (struct halide_dimension_t){
       .min = 0, .extent = (int32_t)g->number_masks, .stride = 1, .flags = 0};
+  fprintf(stderr, "Setting shifts_dim...\n");
   self->shifts_dim =
       (struct halide_dimension_t){.min = 0,
                                   .extent = (int32_t)g->number_shifts,
                                   .stride = 1,
                                   .flags = 0},
+  fprintf(stderr, "Setting flip_mask...\n");
   self->flip_mask = get_flip_mask_64(g->number_bits);
 
+  fprintf(stderr, "Initializing kernel list...\n");
   ls_internal_halide_kernels_list list;
   init_kernels_list(g->number_bits, &list);
   if (spin_inversion == 0) {
@@ -216,6 +231,7 @@ ls_internal_create_halide_kernel_data(ls_hs_permutation_group const *g,
             spin_inversion);
     abort();
   }
+  fprintf(stderr, "Done! :)\n");
   return self;
 }
 

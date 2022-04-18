@@ -36,6 +36,9 @@ module LatticeSymmetries.Basis
     withReconstructedBasis,
     ls_hs_create_basis,
     ls_hs_clone_basis,
+    ls_hs_create_spin_basis_from_json,
+    ls_hs_create_spinful_fermion_basis_from_json,
+    ls_hs_create_spinless_fermion_basis_from_json,
     ls_hs_min_state_estimate,
     ls_hs_max_state_estimate,
     ls_hs_spin_chain_10_basis,
@@ -49,9 +52,11 @@ import Control.Exception.Safe (bracket)
 import Data.Aeson
 import Data.Aeson.Types (Parser)
 import Data.Bits
+import Data.ByteString (packCString)
 import Data.Some
 import qualified Data.Text as Text
 import qualified Data.Vector.Storable as S
+import Foreign.C.String (CString)
 import Foreign.C.Types
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc (alloca, free)
@@ -72,12 +77,30 @@ import System.IO (hPutStrLn, stderr)
 import System.IO.Unsafe (unsafePerformIO)
 import Text.PrettyPrint.ANSI.Leijen (Pretty (..))
 import qualified Text.PrettyPrint.ANSI.Leijen as Pretty
+import Type.Reflection
 
 data BasisState = BasisState {-# UNPACK #-} !Int !BitString
   deriving stock (Show, Eq, Ord)
 
 data ParticleTy = SpinTy | SpinfulFermionTy | SpinlessFermionTy
-  deriving stock (Show, Eq)
+  deriving stock (Show, Eq, Typeable)
+
+instance Pretty ParticleTy where
+  pretty SpinTy = "spin-1/2"
+  pretty SpinfulFermionTy = "spinful-fermion"
+  pretty SpinlessFermionTy = "spinless-fermion"
+
+instance FromJSON ParticleTy where
+  parseJSON = withText "ParticleTy" f
+    where
+      f t
+        | t == "spin" || t == "spin-1/2" = pure SpinTy
+        | t == "spinless" || t == "spinless-fermion" || t == "spinless fermion" = pure SpinlessFermionTy
+        | t == "spinful" || t == "spinful-fermion" || t == "spinful fermion" = pure SpinfulFermionTy
+        | otherwise = fail "invalid particle type"
+
+instance ToJSON ParticleTy where
+  toJSON x = String . fromString $ Pretty.displayS (Pretty.renderCompact (pretty x)) ""
 
 class
   ( Enum (GeneratorType t),
@@ -109,26 +132,18 @@ deriving stock instance Show (BasisHeader t)
 
 deriving stock instance Eq (BasisHeader t)
 
-particleTyDispatch :: Text -> (forall (t :: ParticleTy). Proxy t -> a) -> a
-particleTyDispatch t f
-  | t == "spin" || t == "spin-1/2" = f (Proxy @SpinTy)
-  | t == "spinless" || t == "spinless-fermion" || t == "spinless fermion" = f (Proxy @SpinlessFermionTy)
-  | t == "spinful" || t == "spinful-fermion" || t == "spinful fermion" = f (Proxy @SpinfulFermionTy)
-  | otherwise = error "invalid particle type"
+-- particleTyDispatch :: Text -> (forall (t :: ParticleTy). Proxy t -> a) -> a
+-- particleTyDispatch t f
+--   | t == "spin" || t == "spin-1/2" = f (Proxy @SpinTy)
+--   | t == "spinless" || t == "spinless-fermion" || t == "spinless fermion" = f (Proxy @SpinlessFermionTy)
+--   | t == "spinful" || t == "spinful-fermion" || t == "spinful fermion" = f (Proxy @SpinfulFermionTy)
+--   | otherwise = error "invalid particle type"
 
-instance FromJSON (BasisHeader 'SpinTy) where
-  parseJSON = withObject "Basis" $ \v ->
-    SpinHeader
-      <$> v .: "number_spins"
-      <*> v .:? "hamming_weight"
-      <*> v .:? "spin_inversion"
-      <*> v .:! "symmetries" .!= emptySymmetries
+instance Typeable t => FromJSON (BasisHeader t) where
+  parseJSON = basisHeaderFromJSON
 
-instance FromJSON (BasisHeader 'SpinlessFermionTy) where
-  parseJSON = withObject "Basis" $ \v ->
-    SpinlessFermionHeader
-      <$> v .: "number_sites"
-      <*> v .:? "number_particles"
+instance ToJSON (BasisHeader t) where
+  toJSON = basisHeaderToJSON
 
 parseSpinfulOccupation :: Object -> Parser SpinfulOccupation
 parseSpinfulOccupation v = do
@@ -140,11 +155,40 @@ parseSpinfulOccupation v = do
       Array _ -> fmap (\(up, down) -> SpinfulPerSector up down) $ parseJSON n
       _ -> mzero
 
-instance FromJSON (BasisHeader 'SpinfulFermionTy) where
-  parseJSON = withObject "Basis" $ \v ->
+encodeSpinfulOccupation :: SpinfulOccupation -> [(Text, Value)]
+encodeSpinfulOccupation SpinfulNoOccupation = []
+encodeSpinfulOccupation (SpinfulTotalParticles n) = [("number_particles", toJSON n)]
+encodeSpinfulOccupation (SpinfulPerSector up down) = [("number_particles", toJSON ([up, down] :: [Int]))]
+
+basisHeaderToJSON :: BasisHeader t -> Value
+basisHeaderToJSON x
+  | (SpinHeader n h i g) <- x =
+    object
+      ["particle" .= SpinTy, "number_spins" .= n, "hamming_weight" .= h, "spin_inversion" .= i, "symmetries" .= g]
+  | (SpinfulFermionHeader n o) <- x =
+    object $
+      ["particle" .= SpinfulFermionTy, "number_sites" .= n] <> encodeSpinfulOccupation o
+  | (SpinlessFermionHeader n o) <- x =
+    object $
+      ["particle" .= SpinlessFermionTy, "number_sites" .= n, "number_particles" .= o]
+
+basisHeaderFromJSON :: forall (t :: ParticleTy). Typeable t => Value -> Parser (BasisHeader t)
+basisHeaderFromJSON
+  | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinTy) = withObject "Basis" $ \v ->
+    SpinHeader
+      <$> v .: "number_spins"
+      <*> v .:? "hamming_weight"
+      <*> v .:? "spin_inversion"
+      <*> v .:! "symmetries" .!= emptySymmetries
+  | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinlessFermionTy) = withObject "Basis" $ \v ->
+    SpinlessFermionHeader
+      <$> v .: "number_sites"
+      <*> v .:? "number_particles"
+  | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinfulFermionTy) = withObject "Basis" $ \v ->
     SpinfulFermionHeader
       <$> v .: "number_sites"
       <*> parseSpinfulOccupation v
+  | otherwise = error "this should never happen by construction"
 
 data Basis t = Basis
   { basisHeader :: !(BasisHeader t),
@@ -152,8 +196,11 @@ data Basis t = Basis
   }
   deriving (Show)
 
--- instance FromJSON (Basis t) where
---   parseJSON = fmap basisFromHeader . parseJSON
+instance Typeable t => FromJSON (Basis t) where
+  parseJSON = fmap basisFromHeader . parseJSON
+
+instance ToJSON (Basis t) where
+  toJSON = toJSON . basisHeader
 
 instance Eq (Basis t) where
   (==) a b = basisHeader a == basisHeader b
@@ -229,6 +276,28 @@ mkSpinlessFermionicBasis n _
 mkSpinlessFermionicBasis n (Just h)
   | h < 0 || h > n = error $ "invalid number of particles: " <> show h
 mkSpinlessFermionicBasis n h = basisFromHeader $ SpinlessFermionHeader n h
+
+decodeCString :: FromJSON a => CString -> IO a
+decodeCString cStr = do
+  s <- packCString cStr
+  case eitherDecode (fromStrict s) of
+    Right x -> pure x
+    Left msg -> error (toText msg)
+
+ls_hs_create_spin_basis_from_json :: CString -> IO (Ptr Cbasis)
+ls_hs_create_spin_basis_from_json cStr = do
+  (basis :: Basis 'SpinTy) <- decodeCString cStr
+  borrowCbasis basis
+
+ls_hs_create_spinful_fermion_basis_from_json :: CString -> IO (Ptr Cbasis)
+ls_hs_create_spinful_fermion_basis_from_json cStr = do
+  (basis :: Basis 'SpinfulFermionTy) <- decodeCString cStr
+  borrowCbasis basis
+
+ls_hs_create_spinless_fermion_basis_from_json :: CString -> IO (Ptr Cbasis)
+ls_hs_create_spinless_fermion_basis_from_json cStr = do
+  (basis :: Basis 'SpinlessFermionTy) <- decodeCString cStr
+  borrowCbasis basis
 
 ls_hs_spin_chain_10_basis :: IO (Ptr Cbasis)
 ls_hs_spin_chain_10_basis = do
@@ -458,9 +527,13 @@ optionalNatural x = case x of
 
 basisFromHeader :: BasisHeader t -> Basis t
 basisFromHeader x = unsafePerformIO $ do
+  logDebug' "Constructing basis from Header ..."
   fp <- mallocForeignPtr
+  logDebug' "Constructing kernels ..."
   kernels <- createCbasis_kernels x
+  logDebug' "Adding finalizers ..."
   addForeignPtrConcFinalizer fp (destroyCbasis_kernels kernels)
+  logDebug' "Setting everything else ..."
   withForeignPtr fp $ \ptr ->
     poke ptr $
       Cbasis
@@ -475,6 +548,7 @@ basisFromHeader x = unsafePerformIO $ do
           cbasis_representatives = emptyExternalArray,
           cbasis_haskell_payload = nullPtr
         }
+  logDebug' "Done!"
   pure $ Basis x fp
 {-# NOINLINE basisFromHeader #-}
 
@@ -543,9 +617,11 @@ foreign import capi unsafe "lattice_symmetries_haskell.h &ls_hs_state_info_halid
 setStateInfoKernel :: BasisHeader t -> Cbasis_kernels -> IO Cbasis_kernels
 setStateInfoKernel (SpinHeader n h i g) k
   | n <= 64 = do
+    logDebug' "1)"
     kernelData <-
       withForeignPtr (symmetriesContents g) $ \gPtr ->
         ls_internal_create_halide_kernel_data gPtr (maybe 0 fromIntegral i)
+    logDebug' "1')"
     pure $
       k
         { cbasis_state_info_kernel = ls_hs_state_info_halide_kernel,
@@ -553,7 +629,8 @@ setStateInfoKernel (SpinHeader n h i g) k
           cbasis_is_representative_kernel = ls_hs_is_representative_halide_kernel,
           cbasis_is_representative_data = castPtr kernelData
         }
-setStateInfoKernel x k =
+setStateInfoKernel x k = do
+  logDebug' "2)"
   pure $
     k
       { cbasis_state_info_kernel = nullFunPtr,
@@ -564,23 +641,27 @@ setStateInfoKernel x k =
 
 setStateIndexKernel :: BasisHeader t -> Cbasis_kernels -> IO Cbasis_kernels
 setStateIndexKernel x k
-  | getNumberBits x > 64 || requiresProjection x =
+  | getNumberBits x > 64 || requiresProjection x = do
+    logDebug' "a)"
     pure $
       k
         { cbasis_state_index_kernel = nullFunPtr,
           cbasis_state_index_data = nullPtr
         }
-  | isStateIndexIdentity x =
+  | isStateIndexIdentity x = do
+    logDebug' "b)"
     pure $
       k
         { cbasis_state_index_kernel = ls_hs_state_index_identity_kernel,
           cbasis_state_index_data = nullPtr
         }
   | hasFixedHammingWeight x && not (requiresProjection x) = do
+    logDebug' "c)"
     kernelData <-
       ls_hs_internal_create_combinadics_kernel_data
         (fromIntegral (getNumberBits x))
         (fromBool False)
+    logDebug' "c')"
     pure $
       k
         { cbasis_state_index_kernel = ls_hs_state_index_combinadics_kernel,
