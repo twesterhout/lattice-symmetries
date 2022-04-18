@@ -196,7 +196,7 @@ $(BIN_DIR)/generator: generator.cpp $(GENERATOR_DEPS_STATIC)
 
 $(PWD)/../third_party/Halide-$(HL_VERSION)-$(HL_ARCH)-$(HL_BITS)-$(HL_OS)-$(HL_HASH).$(HL_ARCHIVE):
 	@mkdir -p $(@D)
-	cd ../third_party && wget https://github.com/halide/Halide/releases/download/v$(HL_VERSION)/Halide-$(HL_VERSION)-$(HL_ARCH)-$(HL_BITS)-$(HL_OS)-$(HL_HASH).$(HL_ARCHIVE)
+	cd ../third_party && wget -q https://github.com/halide/Halide/releases/download/v$(HL_VERSION)/Halide-$(HL_VERSION)-$(HL_ARCH)-$(HL_BITS)-$(HL_OS)-$(HL_HASH).$(HL_ARCHIVE)
 
 $(PWD)/../third_party/Halide-$(HL_VERSION)-$(HL_ARCH)-$(HL_BITS)-$(HL_OS): $(PWD)/../third_party/Halide-$(HL_VERSION)-$(HL_ARCH)-$(HL_BITS)-$(HL_OS)-$(HL_HASH).$(HL_ARCHIVE)
 	cd ../third_party && tar -xf Halide-$(HL_VERSION)-$(HL_ARCH)-$(HL_BITS)-$(HL_OS)-$(HL_HASH).$(HL_ARCHIVE)

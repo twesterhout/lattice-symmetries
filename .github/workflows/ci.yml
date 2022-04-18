@@ -61,6 +61,10 @@ jobs:
         #   with:
         #     NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
         #     SSH_PASS: ${{ secrets.SSH_PASS }}
+    - name: Build Haskell dependencies
+      run: |
+        cabal v2-update
+        cabal v2-build --only-dependencies --enable-tests --hsc2hs-options=--cross-compile
     - name: Build
       run: |
         # export PKG_CONFIG_PATH=$GITHUB_WORKSPACE/lattice-symmetries/lib/pkgconfig
@@ -71,8 +75,10 @@ jobs:
         export LD_LIBRARY_PATH=$PWD/c/build:$LD_LIBRARY_PATH
         export DYLD_LIBRARY_PATH=$PWD/c/build:$DYLD_LIBRARY_PATH
 
-        cabal v2-update
-        cabal v2-build --disable-tests --extra-lib-dirs=$PWD/c/build --hsc2hs-options=--cross-compile
+        cabal v2-build --extra-lib-dirs=$PWD/kernels/build --hsc2hs-options=--cross-compile
+    - name: Test
+      run: |
+        cabal v2-test --extra-lib-dirs=$PWD/kernels/build --hsc2hs-options=--cross-compile
     - name: Package
       if: matrix.os == 'macos-latest'
       run: |
