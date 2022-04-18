@@ -31,6 +31,7 @@ jobs:
       run: |
         ghcup install ghc \
           --url https://github.com/twesterhout/ghc-fpic-bindist/releases/download/v0.0.1/ghc-${{ matrix.ghc }}-x86_64-linux-ubuntu-18.04-c826a40e.tar.xz \
+          --force \
           ${{ matrix.ghc }}
     # - uses: actions/cache@v3
     #   name: Cache ~/.cabal/store
