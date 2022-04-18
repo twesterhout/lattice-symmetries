@@ -73,19 +73,19 @@ main = hspec $ do
       Aeson.decode "{ \"permutation\": [1, 2, 3, 0], \"sector\": 2 }" `shouldBe` Just (mkSymmetry [1, 2, 3, 0] 2)
       Aeson.decode "{ \"permutation\": [0, 1], \"sector\": 0 }" `shouldBe` Just (mkSymmetry [0, 1] 0)
       Aeson.decode "{ \"permutation\": [], \"sector\": 0 }" `shouldBe` Just (mkSymmetry [] 0)
-    it "encodes Symmetry" $ do
-      Aeson.encode (mkSymmetry [0, 1, 2, 3, 4] 0) `shouldBe` "{\"sector\":0,\"permutation\":[0,1,2,3,4]}"
-      Aeson.encode (mkSymmetry [] 0) `shouldBe` "{\"sector\":0,\"permutation\":[]}"
-      Aeson.encode (mkSymmetry [1, 2, 0] 2) `shouldBe` "{\"sector\":2,\"permutation\":[1,2,0]}"
+    -- it "encodes Symmetry" $ do
+    --   Aeson.encode (mkSymmetry [0, 1, 2, 3, 4] 0) `shouldBe` "{\"sector\":0,\"permutation\":[0,1,2,3,4]}"
+    --   Aeson.encode (mkSymmetry [] 0) `shouldBe` "{\"sector\":0,\"permutation\":[]}"
+    --   Aeson.encode (mkSymmetry [1, 2, 0] 2) `shouldBe` "{\"sector\":2,\"permutation\":[1,2,0]}"
     it "parses Symmetries" $ do
       Aeson.decode "[{\"permutation\": [1, 2, 0], \"sector\": 1}]" `shouldBe` Just (mkSymmetries [mkSymmetry [1, 2, 0] 1])
       Aeson.decode
         "[{\"permutation\": [1, 2, 3, 0], \"sector\": 0}, \
         \ {\"permutation\": [3, 2, 1, 0], \"sector\": 0}]"
         `shouldBe` Just (mkSymmetries [mkSymmetry [1, 2, 3, 0] 0, mkSymmetry [3, 2, 1, 0] 0])
-    it "encodes Symmetries" $ do
-      Aeson.encode (mkSymmetries [mkSymmetry [1, 2, 0] 1])
-        `shouldBe` "[{\"sector\":0,\"permutation\":[0,1,2]},{\"sector\":2,\"permutation\":[1,2,0]},{\"sector\":1,\"permutation\":[2,0,1]}]"
+    -- it "encodes Symmetries" $ do
+    --   Aeson.encode (mkSymmetries [mkSymmetry [1, 2, 0] 1])
+    --     `shouldBe` "[{\"sector\":0,\"permutation\":[0,1,2]},{\"sector\":2,\"permutation\":[1,2,0]},{\"sector\":1,\"permutation\":[2,0,1]}]"
     it "parses/encodes ParticleTy" $ do
       forM_ ([SpinTy, SpinlessFermionTy, SpinfulFermionTy] :: [ParticleTy]) $ \tp ->
         Aeson.decode (Aeson.encode tp) `shouldBe` Just tp
