@@ -9,14 +9,13 @@ module LatticeSymmetries.ComplexRational
   )
 where
 
-import Data.Coerce
 import Data.Complex (Complex (..))
-import Foreign.C.Types (CDouble (..), CFloat (..))
+import Foreign.C.Types (CDouble (..))
 import Text.PrettyPrint.ANSI.Leijen (Pretty (..))
 import qualified Text.PrettyPrint.ANSI.Leijen as Pretty
 
 data ComplexRational = ComplexRational {-# UNPACK #-} !Rational {-# UNPACK #-} !Rational
-  deriving (Eq, Show)
+  deriving stock (Eq, Show)
 
 prettyRational :: Rational -> Pretty.Doc
 prettyRational x

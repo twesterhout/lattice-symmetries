@@ -4,18 +4,11 @@
 
 module LatticeSymmetries.Operator where
 
-import Control.Exception.Safe (bracket)
-import Data.Bits
-import Data.Complex
 import qualified Data.Primitive.Ptr as P
 import Data.Vector (Vector)
 import qualified Data.Vector.Generic as G
-import qualified Data.Vector.Storable as S
-import qualified Data.Vector.Storable.Mutable as SM
-import Foreign.C.Types
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc
-import Foreign.Marshal.Utils (fromBool, new)
 import Foreign.Ptr
 import Foreign.StablePtr
 import Foreign.Storable
@@ -28,9 +21,7 @@ import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
 import LatticeSymmetries.NonbranchingTerm
 import LatticeSymmetries.Utils (loopM)
-import System.IO (hPutStrLn)
 import System.IO.Unsafe (unsafePerformIO)
-import Text.Printf
 import Prelude hiding (Sum)
 
 data OperatorHeader (t :: ParticleTy) = OperatorHeader
@@ -38,14 +29,14 @@ data OperatorHeader (t :: ParticleTy) = OperatorHeader
     opTerms :: !(Polynomial ComplexRational (Generator (IndexType t) (GeneratorType t)))
   }
 
-deriving instance (Show (Basis t), Show (IndexType t), Show (GeneratorType t)) => Show (OperatorHeader t)
+deriving stock instance (Show (Basis t), Show (IndexType t), Show (GeneratorType t)) => Show (OperatorHeader t)
 
 data Operator (t :: ParticleTy) = Operator
   { opHeader :: !(OperatorHeader t),
     opContents :: !(ForeignPtr Coperator)
   }
 
-deriving instance (Show (OperatorHeader t)) => Show (Operator t)
+deriving stock instance (Show (OperatorHeader t)) => Show (Operator t)
 
 opTermsFlat :: OperatorHeader t -> Polynomial ComplexRational (Generator Int (GeneratorType t))
 opTermsFlat (OperatorHeader basis terms) =

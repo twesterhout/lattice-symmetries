@@ -24,28 +24,19 @@ where
 
 import Control.Exception (assert)
 import Control.Monad.ST
-import Data.Bits
 import qualified Data.List as List
-import qualified Data.Text as Text
 import Data.Vector (Vector)
 import qualified Data.Vector.Algorithms.Intro
-import Data.Vector.Fusion.Bundle (Bundle)
 import qualified Data.Vector.Fusion.Bundle as Bundle (inplace)
-import qualified Data.Vector.Fusion.Bundle.Monadic as Bundle
-import Data.Vector.Fusion.Bundle.Size (Size (..), toMax)
+import Data.Vector.Fusion.Bundle.Size (toMax)
 import Data.Vector.Fusion.Stream.Monadic (Step (..), Stream (..))
-import qualified Data.Vector.Fusion.Util (unId)
 import Data.Vector.Generic ((!))
 import qualified Data.Vector.Generic as G
 import GHC.Exts (IsList (..))
--- import LatticeSymmetries.CSR
-
-import LatticeSymmetries.BitString
 import LatticeSymmetries.ComplexRational
 import LatticeSymmetries.Dense
 import LatticeSymmetries.Generator
 import LatticeSymmetries.NonbranchingTerm
--- import Numeric.Natural
 import Text.PrettyPrint.ANSI.Leijen (Pretty (..))
 import qualified Text.PrettyPrint.ANSI.Leijen as Pretty
 import Prelude hiding (Product, Sum, identity, toList)
@@ -432,7 +423,7 @@ dropIdentities' (Product v)
 
 simplifyProduct ::
   forall c g i.
-  (HasCallStack, Enum g, Bounded g, HasMatrixRepresentation g, Fractional c, Eq c, Eq i) =>
+  (Enum g, Bounded g, HasMatrixRepresentation g, Fractional c, Eq c, Eq i) =>
   Product (Generator i g) ->
   Sum (Scaled c (Product (Generator i g)))
 simplifyProduct =
@@ -445,7 +436,7 @@ simplifyProduct =
   where
     unpack (Generator _ g) = g
     pack i (Scaled c g) = Scaled c (Generator i g)
-    simplifyOneSite :: HasCallStack => Product (Generator i g) -> Sum (Scaled c (Generator i g))
+    simplifyOneSite :: Product (Generator i g) -> Sum (Scaled c (Generator i g))
     simplifyOneSite p@(Product !v)
       | G.null v = assert False []
       | otherwise =
@@ -465,7 +456,7 @@ combineFactors' (Sum v) =
 
 simplify ::
   forall c g i.
-  (HasCallStack, Fractional c, Eq c, Enum g, Bounded g, HasMatrixRepresentation g, Algebra g, Ord i) =>
+  (Fractional c, Eq c, Enum g, Bounded g, HasMatrixRepresentation g, Algebra g, Ord i) =>
   Sum (Scaled c (Product (Generator i g))) ->
   Sum (Scaled c (Product (Generator i g)))
 simplify =

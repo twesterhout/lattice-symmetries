@@ -18,19 +18,14 @@ module LatticeSymmetries.Group
   )
 where
 
-import Control.Monad.ST
 import Data.Aeson (FromJSON (..), ToJSON (..), object, withObject, (.:), (.=))
 import Data.Complex
 import qualified Data.List
-import qualified Data.Map as Map
 import Data.Ratio
 import qualified Data.Set as Set
 import qualified Data.Vector as B
 import qualified Data.Vector.Generic as G
-import qualified Data.Vector.Generic.Mutable as GM
 import qualified Data.Vector.Storable as S
-import qualified Data.Vector.Storable.Mutable as SM
-import qualified Data.Vector.Unboxed as U
 import Foreign.C.Types (CDouble)
 import Foreign.ForeignPtr
 import Foreign.Ptr
@@ -42,7 +37,7 @@ import LatticeSymmetries.FFI
 import LatticeSymmetries.IO
 import LatticeSymmetries.Utils
 import System.IO.Unsafe (unsafePerformIO)
-import Prelude hiding (identity, toList)
+import Prelude hiding (identity, permutations, toList)
 
 newtype PermutationGroup = PermutationGroup (B.Vector Permutation)
   deriving stock (Show, Eq)
@@ -147,7 +142,7 @@ pgLength (PermutationGroup gs) = G.length gs
 
 fromGenerators :: (Semigroup a, Ord a) => a -> [a] -> [a]
 fromGenerators _ [] = []
-fromGenerators identity gs@(p : _) = go Set.empty (Set.singleton identity)
+fromGenerators identity gs = go Set.empty (Set.singleton identity)
   where
     go !interior !boundary
       | Set.null boundary = Set.toAscList $ interior

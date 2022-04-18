@@ -3,28 +3,37 @@
 -- {-# LANGUAGE QuasiQuotes #-}
 -- {-# LANGUAGE TemplateHaskell #-}
 
-module LatticeSymmetries where
+module LatticeSymmetries
+  ( ls_hs_hdf5_create_dataset_u64,
+    ls_hs_hdf5_create_dataset_f32,
+    ls_hs_hdf5_create_dataset_f64,
+    ls_hs_hdf5_create_dataset_c64,
+    ls_hs_hdf5_create_dataset_c128,
+    ls_hs_hdf5_write_chunk_u64,
+    ls_hs_hdf5_write_chunk_f32,
+    ls_hs_hdf5_write_chunk_f64,
+    ls_hs_hdf5_write_chunk_c64,
+    ls_hs_hdf5_write_chunk_c128,
+    ls_hs_hdf5_read_chunk_u64,
+    ls_hs_hdf5_read_chunk_f32,
+    ls_hs_hdf5_read_chunk_f64,
+    ls_hs_hdf5_read_chunk_c64,
+    ls_hs_hdf5_read_chunk_c128,
+    ls_hs_hdf5_get_dataset_rank,
+    ls_hs_hdf5_get_dataset_shape,
+  )
+  where
 
-import Control.Exception.Safe (MonadThrow, bracket, impureThrow, throwIO)
 import Data.Complex
 import qualified Data.HDF5 as H5
 import qualified Data.HDF5.Types as H5
-import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
--- import Data.Yaml.Aeson
 import Foreign.C.String (CString, peekCString)
-import Foreign.C.Types (CBool (..), CInt (..), CUInt (..), CUShort (..))
+import Foreign.C.Types (CUInt (..))
 import Foreign.ForeignPtr
-import Foreign.Marshal.Alloc (alloca)
-import Foreign.Marshal.Array (peekArray, pokeArray, withArrayLen)
-import Foreign.Ptr (FunPtr, Ptr, nullPtr)
-import Foreign.StablePtr
+import Foreign.Marshal.Array (peekArray, pokeArray)
+import Foreign.Ptr (Ptr)
 import Foreign.Storable (Storable (..))
--- import LatticeSymmetries.IO
--- import LatticeSymmetries.Types
-import qualified System.IO.Unsafe
-
--- import UnliftIO.Exception (bracket, impureThrow, throwIO)
 
   {-
 -- | Retrieve textual representation of an error

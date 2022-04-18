@@ -52,7 +52,7 @@ isNonbranchingTermDiagonal :: NonbranchingTerm -> Bool
 isNonbranchingTermDiagonal t = nbtX t == zeroBits
 
 applyNonbranchingTerm :: NonbranchingTerm -> BitString -> (ComplexRational, BitString)
-applyNonbranchingTerm (NonbranchingTerm v m l r x s) α = (c, β)
+applyNonbranchingTerm (NonbranchingTerm v m _ r x s) α = (c, β)
   where
     δ = fromEnum $ (α .&. m) == r
     sign = 1 - 2 * (popCount (α .&. s) `mod` 2)

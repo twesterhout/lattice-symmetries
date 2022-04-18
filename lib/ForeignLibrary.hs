@@ -1,28 +1,17 @@
 module ForeignLibrary () where
 
-import Control.Concurrent
-import Data.Complex
 import Data.List.Split (chunksOf)
 import qualified Data.Text as T
-import qualified Data.Vector.Generic as G
 import Foreign.C.String (CString, peekCString)
-import Foreign.C.Types (CBool (..), CInt (..), CPtrdiff (..), CSize (..), CUInt (..), CUShort (..))
-import Foreign.ForeignPtr
+import Foreign.C.Types (CBool (..), CInt (..), CUInt (..))
 import Foreign.Marshal.Array (peekArray)
 import Foreign.Marshal.Utils (fromBool)
-import Foreign.Ptr (FunPtr, Ptr)
-import Foreign.StablePtr
+import Foreign.Ptr (Ptr)
 import LatticeSymmetries
-import LatticeSymmetries.Algebra
 import LatticeSymmetries.Basis
-import LatticeSymmetries.ComplexRational
 import LatticeSymmetries.FFI
-import LatticeSymmetries.Generator
 import LatticeSymmetries.Operator
 import LatticeSymmetries.Parser
--- import qualified LatticeSymmetries.Types as Types
-import LatticeSymmetries.Utils
-import System.Mem
 import Text.PrettyPrint.ANSI.Leijen (hardline, pretty, putDoc)
 
 foreign export ccall "ls_hs_hdf5_create_dataset_u64"

@@ -60,16 +60,16 @@ type Cstate_info_kernel = CPtrdiff -> Ptr Word64 -> CPtrdiff ->
                                       Ptr Cscalar -> Ptr CDouble ->
                                       Ptr () -> IO ()
 
-foreign import ccall "dynamic"
-  mkCstate_info_kernel :: FunPtr Cstate_info_kernel -> Cstate_info_kernel
+-- foreign import ccall "dynamic"
+--   mkCstate_info_kernel :: FunPtr Cstate_info_kernel -> Cstate_info_kernel
 
 type Cis_representative_kernel = CPtrdiff -> Ptr Word64 -> CPtrdiff ->
                                              Ptr Word8 ->
                                              Ptr CDouble ->
                                              Ptr () -> IO ()
 
-foreign import ccall "dynamic"
-  mkCis_representative_kernel :: FunPtr Cis_representative_kernel -> Cis_representative_kernel
+-- foreign import ccall "dynamic"
+--   mkCis_representative_kernel :: FunPtr Cis_representative_kernel -> Cis_representative_kernel
 
 data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_basis_kernels" #-} Cbasis_kernels = Cbasis_kernels
   { cbasis_state_info_kernel :: {-# UNPACK #-} !(FunPtr Cstate_info_kernel),
@@ -302,8 +302,8 @@ instance Storable Cexternal_array where
     #{poke chpl_external_array, freer} p (external_array_freer x)
   {-# INLINE poke #-}
 
-foreign import ccall unsafe "&ls_hs_internal_destroy_external_array"
-  ls_hs_internal_destroy_external_array :: FunPtr (Ptr Cexternal_array -> IO ())
+-- foreign import ccall unsafe "&ls_hs_internal_destroy_external_array"
+--   ls_hs_internal_destroy_external_array :: FunPtr (Ptr Cexternal_array -> IO ())
 
 data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_permutation_group" #-} Cpermutation_group = Cpermutation_group
   { cpermutation_group_refcount :: {-# UNPACK #-} !CInt,
@@ -360,5 +360,5 @@ instance Storable Cchpl_kernels where
     #{poke ls_chpl_kernels, enumerate_states} p (cchpl_kernels_enumerate_states x)
   {-# INLINE poke #-}
 
-foreign import ccall unsafe "ls_hs_internal_get_chpl_kernels"
-  ls_hs_internal_get_chpl_kernels :: IO (Ptr Cchpl_kernels)
+-- foreign import ccall unsafe "ls_hs_internal_get_chpl_kernels"
+--   ls_hs_internal_get_chpl_kernels :: IO (Ptr Cchpl_kernels)

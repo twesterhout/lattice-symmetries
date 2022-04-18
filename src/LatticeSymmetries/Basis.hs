@@ -13,11 +13,11 @@ module LatticeSymmetries.Basis
     BasisHeader (..),
     Factor,
     ParticleTy (..),
-    IndexType (..),
-    GeneratorType (..),
+    IndexType,
+    GeneratorType,
     SpinfulOccupation (..),
     Cbasis (..),
-    IsBasis (..),
+    IsBasis,
     borrowCbasis,
     Cparticle_type (..),
     Cbasis_kernels (..),
@@ -48,18 +48,14 @@ module LatticeSymmetries.Basis
   )
 where
 
-import Control.Exception.Safe (bracket)
 import Data.Aeson
 import Data.Aeson.Types (Pair, Parser)
 import Data.Bits
 import Data.ByteString (packCString)
-import Data.Some
-import qualified Data.Text as Text
-import qualified Data.Vector.Storable as S
 import Foreign.C.String (CString)
 import Foreign.C.Types
 import Foreign.ForeignPtr
-import Foreign.Marshal.Alloc (alloca, free)
+import Foreign.Marshal.Alloc (alloca)
 import Foreign.Marshal.Utils (fromBool, new, with)
 import Foreign.Ptr
 import Foreign.StablePtr
@@ -73,7 +69,6 @@ import LatticeSymmetries.Group
 -- import LatticeSymmetries.IO
 import LatticeSymmetries.NonbranchingTerm
 import LatticeSymmetries.Utils
-import System.IO (hPutStrLn, stderr)
 import System.IO.Unsafe (unsafePerformIO)
 import Text.PrettyPrint.ANSI.Leijen (Pretty (..))
 import qualified Text.PrettyPrint.ANSI.Leijen as Pretty
@@ -194,7 +189,7 @@ data Basis t = Basis
   { basisHeader :: !(BasisHeader t),
     basisContents :: !(ForeignPtr Cbasis)
   }
-  deriving (Show)
+  deriving stock (Show)
 
 instance Typeable t => FromJSON (Basis t) where
   parseJSON = fmap basisFromHeader . parseJSON
@@ -318,7 +313,7 @@ ls_hs_create_spinless_fermion_basis_from_json cStr = do
 --      in borrowCbasis basis
 --   | otherwise = error $ "invalid particle type: " <> show particleType
 
-ls_hs_clone_basis :: HasCallStack => Ptr Cbasis -> IO (Ptr Cbasis)
+ls_hs_clone_basis :: Ptr Cbasis -> IO (Ptr Cbasis)
 ls_hs_clone_basis ptr = do
   _ <- basisIncRefCount ptr
   pure ptr
@@ -339,9 +334,9 @@ ls_hs_min_state_estimate p =
           then error "minimal state is not representable as a 64-bit integer"
           else pure $ fromIntegral x
 
-newtype ChapelArray = ChapelArray (ForeignPtr Cexternal_array)
+-- newtype ChapelArray = ChapelArray (ForeignPtr Cexternal_array)
 
-data Representatives = Representatives {rStates :: !ChapelArray}
+-- data Representatives = Representatives {rStates :: !ChapelArray}
 
 foreign import capi safe "ls_hs_build_representatives"
   ls_hs_build_representatives :: Ptr Cbasis -> Word64 -> Word64 -> IO ()
@@ -582,13 +577,11 @@ foreign import capi unsafe "lattice_symmetries_haskell.h &ls_hs_state_info_halid
   ls_hs_state_info_halide_kernel :: FunPtr Cstate_info_kernel
 
 setStateInfoKernel :: BasisHeader t -> Cbasis_kernels -> IO Cbasis_kernels
-setStateInfoKernel (SpinHeader n h i g) k
+setStateInfoKernel (SpinHeader n _ i g) k
   | n <= 64 = do
-    logDebug' "1)"
     kernelData <-
       withForeignPtr (symmetriesContents g) $ \gPtr ->
         ls_internal_create_halide_kernel_data gPtr (maybe 0 fromIntegral i)
-    logDebug' "1')"
     pure $
       k
         { cbasis_state_info_kernel = ls_hs_state_info_halide_kernel,
@@ -596,8 +589,7 @@ setStateInfoKernel (SpinHeader n h i g) k
           cbasis_is_representative_kernel = ls_hs_is_representative_halide_kernel,
           cbasis_is_representative_data = castPtr kernelData
         }
-setStateInfoKernel x k = do
-  logDebug' "2)"
+setStateInfoKernel _ k =
   pure $
     k
       { cbasis_state_info_kernel = nullFunPtr,
@@ -647,7 +639,7 @@ setStateIndexKernel x k
           }
     _ -> error "not implemented"
 
-createCbasis_kernels :: HasCallStack => BasisHeader t -> IO (Ptr Cbasis_kernels)
+createCbasis_kernels :: BasisHeader t -> IO (Ptr Cbasis_kernels)
 createCbasis_kernels x =
   new <=< setStateInfoKernel x <=< setStateIndexKernel x $
     Cbasis_kernels

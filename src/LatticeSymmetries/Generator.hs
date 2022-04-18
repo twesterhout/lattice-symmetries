@@ -10,10 +10,8 @@ where
 
 import Data.Bits
 import qualified Data.Text as Text
-import Data.Vector (Vector)
 import qualified Data.Vector.Generic as G
 import LatticeSymmetries.BitString
-import LatticeSymmetries.ComplexRational
 import LatticeSymmetries.Dense
 import LatticeSymmetries.NonbranchingTerm
 import Text.PrettyPrint.ANSI.Leijen (Pretty (..))
