@@ -72,13 +72,13 @@ jobs:
         make Halide
         make
         cd ..
-        export LD_LIBRARY_PATH=$PWD/c/build:$LD_LIBRARY_PATH
-        export DYLD_LIBRARY_PATH=$PWD/c/build:$DYLD_LIBRARY_PATH
 
         cabal v2-build --extra-lib-dirs=$PWD/kernels/build --hsc2hs-options=--cross-compile
         # --flags="-use-standalone"
     - name: Test
       run: |
+        export LD_LIBRARY_PATH=$PWD/kernels/build:$LD_LIBRARY_PATH
+        export DYLD_LIBRARY_PATH=$PWD/kernels/build:$DYLD_LIBRARY_PATH
         cabal v2-test --extra-lib-dirs=$PWD/kernels/build --hsc2hs-options=--cross-compile
         # --flags="-use-standalone"
     - name: Package
