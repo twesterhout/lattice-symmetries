@@ -40,21 +40,21 @@ jobs:
       if: matrix.os == 'macos-latest'
       run: |
         brew install libomp hdf5 
-    - name: Build lattice-symmetries
-      run: |
-        mkdir -p third_party
-        cd third_party
-        git clone --recursive https://github.com/twesterhout/lattice-symmetries.git
-        cd lattice-symmetries
-        cmake -Bbuild \
-              -DCMAKE_BUILD_TYPE=Release \
-              -DBUILD_SHARED_LIBS=ON \
-              -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/lattice-symmetries \
-              -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
-              -DLatticeSymmetries_ENABLE_UNIT_TESTING=OFF
-        cmake --build build -j4
-        cmake --build build --target install
-        cd ..
+        # - name: Build lattice-symmetries
+        #   run: |
+        #     mkdir -p third_party
+        #     cd third_party
+        #     git clone --recursive https://github.com/twesterhout/lattice-symmetries.git
+        #     cd lattice-symmetries
+        #     cmake -Bbuild \
+        #           -DCMAKE_BUILD_TYPE=Release \
+        #           -DBUILD_SHARED_LIBS=ON \
+        #           -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/lattice-symmetries \
+        #           -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+        #           -DLatticeSymmetries_ENABLE_UNIT_TESTING=OFF
+        #     cmake --build build -j4
+        #     cmake --build build --target install
+        #     cd ..
         # - name: Start SSH session
         #   if: matrix.os == 'macos-latest'
         #   uses: luchihoratiu/debug-via-ssh@main
@@ -63,8 +63,8 @@ jobs:
         #     SSH_PASS: ${{ secrets.SSH_PASS }}
     - name: Build
       run: |
-        export PKG_CONFIG_PATH=$GITHUB_WORKSPACE/lattice-symmetries/lib/pkgconfig
-        cd c
+        # export PKG_CONFIG_PATH=$GITHUB_WORKSPACE/lattice-symmetries/lib/pkgconfig
+        cd kernels
         make
         cd ..
         export LD_LIBRARY_PATH=$PWD/c/build:$LD_LIBRARY_PATH
