@@ -50,7 +50,7 @@ where
 
 import Control.Exception.Safe (bracket)
 import Data.Aeson
-import Data.Aeson.Types (Parser)
+import Data.Aeson.Types (Pair, Parser)
 import Data.Bits
 import Data.ByteString (packCString)
 import Data.Some
@@ -155,7 +155,7 @@ parseSpinfulOccupation v = do
       Array _ -> fmap (\(up, down) -> SpinfulPerSector up down) $ parseJSON n
       _ -> mzero
 
-encodeSpinfulOccupation :: SpinfulOccupation -> [(Text, Value)]
+encodeSpinfulOccupation :: SpinfulOccupation -> [Pair]
 encodeSpinfulOccupation SpinfulNoOccupation = []
 encodeSpinfulOccupation (SpinfulTotalParticles n) = [("number_particles", toJSON n)]
 encodeSpinfulOccupation (SpinfulPerSector up down) = [("number_particles", toJSON ([up, down] :: [Int]))]
