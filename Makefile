@@ -35,7 +35,7 @@ $(PREFIX): third_party/hdf5-1.12.1-src
 	CC=$(CC) CFLAGS="$(CFLAGS)" ./configure --prefix="$(PREFIX)" \
 	    --disable-java --disable-fortran --disable-cxx \
 	    --disable-tests --disable-tools \
-	    --disable-static && \
+	    --disable-shared && \
 	make -j $(NPROC) install
 
 $(PREFIX)/lib/pkgconfig/hdf5.pc:
