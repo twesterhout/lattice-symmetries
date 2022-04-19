@@ -132,10 +132,13 @@ foreign-library lattice_symmetries_haskell
   type:                native-shared
   if os(Windows) || os(darwin) || os(osx)
     options: standalone
+  -- For some reason libffi is not linked properly
   if os(darwin) || os(osx)
     extra-libraries:   ffi
   if os(linux) && flag(use-standalone)
     options: standalone
+    -- For some reason libnuma is not linked
+    extra-libraries:   numa
   --   mod-def-file: MyForeignLib.def
   hs-source-dirs:      lib
   other-modules:       ForeignLibrary
