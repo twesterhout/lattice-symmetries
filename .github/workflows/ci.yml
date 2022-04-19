@@ -34,6 +34,7 @@ jobs:
           --force \
           ${{ matrix.ghc }}
     - uses: actions/cache@v3
+      if: matrix.os == 'macos-latest'
       name: Cache ~/.cabal/store
       with:
         path: ~/.cabal/store
@@ -91,7 +92,9 @@ jobs:
         ls -l $PWD/third_party/hdf5/lib
         ls -l $PWD/third_party/hdf5/include
 
-        cabal v2-build --hsc2hs-options=--cross-compile --extra-include-dirs=$PWD/third_party/hdf5/include --extra-lib-dirs=$PWD/third_party/hdf5/lib --extra-lib-dirs=$PWD/kernels/build --flags="+use-standalone" -v3
+        cabal v2-clean
+        cabal v2-build --extra-lib-dirs=$PWD/kernels/build --extra-lib-dirs=$PWD/third_party/hdf5/lib --extra-include-dirs=$PWD/third_party/hdf5/include --hsc2hs-options=--cross-compile --flags="+use-standalone"
+        # cabal v2-build --hsc2hs-options=--cross-compile --extra-include-dirs=$PWD/third_party/hdf5/include --extra-lib-dirs=$PWD/third_party/hdf5/lib --extra-lib-dirs=$PWD/kernels/build --flags="+use-standalone"
     - name: Test
       run: |
         export LD_LIBRARY_PATH=$PWD/kernels/build:$LD_LIBRARY_PATH
