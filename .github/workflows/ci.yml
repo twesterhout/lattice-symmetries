@@ -39,6 +39,10 @@ jobs:
       with:
         path: ~/.cabal/store
         key: ${{ runner.os }}-${{ matrix.ghc }}-cabal
+    - name: Clean cache (Linux) # REMOVE ME
+      if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
+      run: |
+        rm -rf ~/.cabal/store
     - name: Install system dependencies (Linux)
       if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
       run: |
@@ -74,19 +78,25 @@ jobs:
         # --extra-include-dirs=$PWD/third_party/hdf5/include --extra-lib-dirs=$PWD/kernels/build
     - name: Package
       run: |
-        mkdir release
-        mkdir release/include
-        mkdir release/lib
-        cp cbits/lattice_symmetries_haskell.h release/include/
+        mkdir third_party
+        mkdir third_party/include
+        mkdir third_party/lib
+        cp cbits/lattice_symmetries_haskell.h third_party/include/
         if [[ ${{ matrix.os }} == "macos-latest" ]]; then
           export SHARED_LIB_EXTENSION=dylib
         else
           export SHARED_LIB_EXTENSION=so
         fi
-        cp kernels/build/liblattice_symmetries_core.$SHARED_LIB_EXTENSION release/lib/
+        cp kernels/build/liblattice_symmetries_core.$SHARED_LIB_EXTENSION third_party/lib/
         find dist-newstyle -name "liblattice_symmetries_haskell.$SHARED_LIB_EXTENSION" \
-                           -exec cp {} release/lib/ \;
-        tar -cf chapel-dependencies-${{ matrix.os }}.tar release/
+                           -exec cp {} third_party/lib/ \;
+        # On Linux, bundle libffi
+        if [[ ${{ matrix.os }} != "macos-latest" ]]; then
+          LIBFFI=$(ldd third_party/lib/liblattice_symmetries_haskell.so | grep libffi | sed -E 's:.*=>\s+(.*/libffi.so.[6-8]).*:\1:')
+          cp ${LIBFFI}* third_party/lib/
+        fi
+
+        tar -cf chapel-dependencies-${{ matrix.os }}.tar third_party/
         bzip2 chapel-dependencies-${{ matrix.os }}.tar
 
     - uses: actions/upload-artifact@v3
