@@ -17,7 +17,8 @@ else
 endif
 
 all:
-hdf5: $(PREFIX)
+hdf5: $(PREFIX) pkgconfig
+pkgconfig: $(PREFIX)/lib/pkgconfig/hdf5.pc
 
 third_party/hdf5-$(HDF5_VERSION).tar.bz2:
 	@mkdir -p $(@D)
@@ -36,6 +37,21 @@ $(PREFIX): third_party/hdf5-1.12.1-src
 	    --disable-tests --disable-tools \
 	    --disable-static && \
 	make -j $(NPROC) install
+
+$(PREFIX)/lib/pkgconfig/hdf5.pc:
+	@mkdir -p $(@D)
+	cd third_party/hdf5/lib/pkgconfig && \
+	echo "# Package Information for pkg-config" >>hdf5.pc && \
+	echo "" >>hdf5.pc && \
+	echo "prefix=$(PWD)/third_party/hdf5" >>hdf5.pc && \
+	echo "libdir=\$${prefix}/lib" >>hdf5.pc && \
+	echo "includedir=\$${prefix}/include" >>hdf5.pc && \
+	echo "" >>hdf5.pc && \
+	echo "Name: HDF5" >>hdf5.pc && \
+	echo "Description: HDF5" >>hdf5.pc && \
+	echo "Version: $(HDF5_MAJOR).$(HDF5_MINOR).$(HDF5_PATCH)" >>hdf5.pc && \
+	echo "Libs: -L\$${libdir} -lhdf5_hl -lhdf5 -lz" >>hdf5.pc && \
+	echo "Cflags: -I\$${includedir}" >>hdf5.pc
 
 .PHONY: clean
 clean:

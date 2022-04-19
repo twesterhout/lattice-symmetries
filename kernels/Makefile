@@ -43,9 +43,8 @@ else #-------------------------------
 endif #------------------------------
 HL_ALL_TARGETS += $(HL_BASE_TARGET)
 
-CC ?= cc
-CXX ?= c++
-LDFLAGS ?=
+CC = cc
+CXX = c++
 SHELL = bash
 BIN_DIR ?= build
 SANITIZER_FLAGS ?=
@@ -103,7 +102,13 @@ OPS = $(addsuffix /state_info_symmetric.a,$(addprefix $(BIN_DIR)/,$(HL_ALL_TARGE
 # all: $(BIN_DIR)/kernels.o
 # $(OPS) $(BIN_DIR)/runtime.a $(BIN_DIR)/kernels.h
 
-all: $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT)
+all: $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) ../cabal.project.local
+
+../cabal.project.local:
+	cd .. && \
+	echo "-- DO NOT MODIFY (Generated automatically by kernels/Makefile)" >>cabal.project.local && \
+	echo "package lattice-symmetries-haskell" >>cabal.project.local && \
+  	echo "  extra-lib-dirs: $(realpath $(BIN_DIR))" >>cabal.project.local
 
 $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT): $(BIN_DIR)/reference.o $(BIN_DIR)/indexing.o $(BIN_DIR)/kernels.o $(OPS) $(BIN_DIR)/runtime.a 
 	@mkdir -p $(@D)

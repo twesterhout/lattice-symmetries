@@ -13,12 +13,12 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-18.04
             cabal: latest
             ghc: "8.10.7"
-          - os: macos-latest
-            cabal: latest
-            ghc: "8.10.7"
+              # - os: macos-latest
+              #   cabal: latest
+              #   ghc: "8.10.7"
     steps:
     - uses: actions/checkout@v2
     - uses: haskell/actions/setup@v1
@@ -72,34 +72,28 @@ jobs:
         #   with:
         #     NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
         #     SSH_PASS: ${{ secrets.SSH_PASS }}
-        # - name: Build HDF5
-        #   run: |
-        #     make hdf5
-        #     # - name: Build Haskell dependencies
-        #     #   run: |
-        #     #     cabal v2-update
-        #     #     cabal v2-build -v3 --only-dependencies --enable-tests --hsc2hs-options=--cross-compile \
-        #     #                    --extra-lib-dirs=$PWD/third_party/hdf5/lib \
-        #     #                    --extra-include-dirs=$PWD/third_party/hdf5/include
+    - name: Build HDF5
+      run: |
+        make hdf5 pkgconfig
     - name: Build
       run: |
-        # export PKG_CONFIG_PATH=$GITHUB_WORKSPACE/lattice-symmetries/lib/pkgconfig
         cd kernels
         make Halide
         make
         cd ..
 
-        # ls -l $PWD/third_party/hdf5/lib
-        # ls -l $PWD/third_party/hdf5/include
-
+        export PKG_CONFIG_PATH=$PWD/third_party/hdf5/lib/pkgconfig
         cabal v2-clean
-        cabal v2-build --extra-lib-dirs=$PWD/kernels/build --hsc2hs-options=--cross-compile --flags="+use-standalone"
+        cabal v2-build
+        # --extra-lib-dirs=$PWD/kernels/build --hsc2hs-options=--cross-compile --flags="+use-standalone"
         # --extra-lib-dirs=$PWD/third_party/hdf5/lib --extra-include-dirs=$PWD/third_party/hdf5/include 
     - name: Test
       run: |
         export LD_LIBRARY_PATH=$PWD/kernels/build:$LD_LIBRARY_PATH
         export DYLD_LIBRARY_PATH=$PWD/kernels/build:$DYLD_LIBRARY_PATH
-        cabal v2-test --hsc2hs-options=--cross-compile --test-show-details=direct --extra-lib-dirs=$PWD/third_party/hdf5/lib --extra-include-dirs=$PWD/third_party/hdf5/include --extra-lib-dirs=$PWD/kernels/build --flags="+use-standalone"
+        cabal v2-test --test-show-details=direct
+        # --extra-lib-dirs=$PWD/third_party/hdf5/lib --hsc2hs-options=--cross-compile --flags="+use-standalone"
+        # --extra-include-dirs=$PWD/third_party/hdf5/include --extra-lib-dirs=$PWD/kernels/build
     - name: Package
       # if: matrix.os == 'macos-latest'
       run: |
