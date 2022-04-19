@@ -78,28 +78,30 @@ jobs:
         # --extra-include-dirs=$PWD/third_party/hdf5/include --extra-lib-dirs=$PWD/kernels/build
     - name: Package
       run: |
-        mkdir third_party
-        mkdir third_party/include
-        mkdir third_party/lib
-        cp cbits/lattice_symmetries_haskell.h third_party/include/
+        COMMIT=$(git rev-parse --short HEAD)
+        PREFIX=lattice-symmetries-haskell-$COMMIT
+        mkdir $PREFIX
+        mkdir $PREFIX/include
+        mkdir $PREFIX/lib
+        cp cbits/lattice_symmetries_haskell.h $PREFIX/include/
         if [[ ${{ matrix.os }} == "macos-latest" ]]; then
           export SHARED_LIB_EXTENSION=dylib
         else
           export SHARED_LIB_EXTENSION=so
         fi
-        cp kernels/build/liblattice_symmetries_core.$SHARED_LIB_EXTENSION third_party/lib/
+        cp kernels/build/liblattice_symmetries_core.$SHARED_LIB_EXTENSION $PREFIX/lib/
         find dist-newstyle -name "liblattice_symmetries_haskell.$SHARED_LIB_EXTENSION" \
-                           -exec cp {} third_party/lib/ \;
+                           -exec cp {} $PREFIX/lib/ \;
         # On Linux, bundle libffi
         if [[ ${{ matrix.os }} != "macos-latest" ]]; then
-          LIBFFI=$(ldd third_party/lib/liblattice_symmetries_haskell.so | grep libffi | sed -E 's:.*=>\s+(.*/libffi.so.[6-8]).*:\1:')
-          cp ${LIBFFI}* third_party/lib/
+          LIBFFI=$(ldd $PREFIX/lib/liblattice_symmetries_haskell.so | grep libffi | sed -E 's:.*=>\s+(.*/libffi.so.[6-8]).*:\1:')
+          cp ${LIBFFI}* $PREFIX/lib/
         fi
 
-        tar -cf chapel-dependencies-${{ matrix.os }}.tar third_party/
-        bzip2 chapel-dependencies-${{ matrix.os }}.tar
+        tar -cf ${PREFIX}-${{ matrix.os }}.tar $PREFIX/
+        bzip2 ${PREFIX}-${{ matrix.os }}.tar
 
     - uses: actions/upload-artifact@v3
       with:
-        name: chapel-dependencies-${{ matrix.os }}
-        path: chapel-dependencies-${{ matrix.os }}.tar.bz2
+        name: lattice-symmetries-haskell-${{ matrix.os }}
+        path: lattice-symmetries-haskell-*-${{ matrix.os }}.tar.bz2
