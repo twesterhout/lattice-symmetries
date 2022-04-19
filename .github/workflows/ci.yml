@@ -74,12 +74,12 @@ jobs:
     - name: Build HDF5
       run: |
         make hdf5
-    - name: Build Haskell dependencies
-      run: |
-        cabal v2-update
-        cabal v2-build -v3 --only-dependencies --enable-tests --hsc2hs-options=--cross-compile \
-                       --extra-lib-dirs=$PWD/third_party/hdf5/lib \
-                       --extra-include-dirs=$PWD/third_party/hdf5/include
+        # - name: Build Haskell dependencies
+        #   run: |
+        #     cabal v2-update
+        #     cabal v2-build -v3 --only-dependencies --enable-tests --hsc2hs-options=--cross-compile \
+        #                    --extra-lib-dirs=$PWD/third_party/hdf5/lib \
+        #                    --extra-include-dirs=$PWD/third_party/hdf5/include
     - name: Build
       run: |
         # export PKG_CONFIG_PATH=$GITHUB_WORKSPACE/lattice-symmetries/lib/pkgconfig
@@ -88,11 +88,14 @@ jobs:
         make
         cd ..
 
+        ls -l $PWD/third_party/hdf5/lib
+        ls -l $PWD/third_party/hdf5/include
+
         cabal v2-build --hsc2hs-options=--cross-compile \
-          --extra-lib-dirs=$PWD/third_party/hdf5/lib \
           --extra-include-dirs=$PWD/third_party/hdf5/include \
-          --extra-lib-dirs=$PWD/kernels/build
-        # --flags="-use-standalone"
+          --extra-lib-dirs=$PWD/third_party/hdf5/lib \
+          --extra-lib-dirs=$PWD/kernels/build \
+          --flags="+use-standalone"
     - name: Test
       run: |
         export LD_LIBRARY_PATH=$PWD/kernels/build:$LD_LIBRARY_PATH
@@ -100,8 +103,8 @@ jobs:
         cabal v2-test --hsc2hs-options=--cross-compile --test-show-details=direct \
           --extra-lib-dirs=$PWD/third_party/hdf5/lib \
           --extra-include-dirs=$PWD/third_party/hdf5/include \
-          --extra-lib-dirs=$PWD/kernels/build
-        # --flags="-use-standalone"
+          --extra-lib-dirs=$PWD/kernels/build \
+          --flags="+use-standalone"
     - name: Package
       # if: matrix.os == 'macos-latest'
       run: |
