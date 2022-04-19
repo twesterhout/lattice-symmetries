@@ -30,7 +30,7 @@ jobs:
       if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
       run: |
         ghcup install ghc \
-          --url https://github.com/twesterhout/ghc-fpic-bindist/releases/download/v0.0.1/ghc-${{ matrix.ghc }}-x86_64-linux-ubuntu-18.04-c826a40e.tar.xz \
+          --url https://github.com/twesterhout/ghc-fpic-bindist/releases/download/v0.0.2/ghc-${{ matrix.ghc }}-x86_64-linux-ubuntu-18.04-b6241f3a.tar.xz \
           --force \
           ${{ matrix.ghc }}
     - uses: actions/cache@v3
@@ -45,43 +45,21 @@ jobs:
         # sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
         sudo apt-get update
         sudo apt-get install -y --no-install-recommends libnuma-dev libgmp-dev
-        # build-essential tar bzip2 zlib1g-dev make gcc-11 g++-11
     - name: Install system dependencies (MacOS)
       if: matrix.os == 'macos-latest'
       run: |
-        brew install libomp hdf5
-        # hdf5
-        # - name: Build lattice-symmetries
-        #   run: |
-        #     mkdir -p third_party
-        #     cd third_party
-        #     git clone --recursive https://github.com/twesterhout/lattice-symmetries.git
-        #     cd lattice-symmetries
-        #     cmake -Bbuild \
-        #           -DCMAKE_BUILD_TYPE=Release \
-        #           -DBUILD_SHARED_LIBS=ON \
-        #           -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/lattice-symmetries \
-        #           -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
-        #           -DLatticeSymmetries_ENABLE_UNIT_TESTING=OFF
-        #     cmake --build build -j4
-        #     cmake --build build --target install
-        #     cd ..
-        # - name: Start SSH session
-        #   if: matrix.os == 'macos-latest'
-        #   uses: luchihoratiu/debug-via-ssh@main
-        #   with:
-        #     NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
-        #     SSH_PASS: ${{ secrets.SSH_PASS }}
+        brew install libomp
     - name: Build HDF5
       run: |
         make hdf5 pkgconfig
-    - name: Build
+    - name: Build C code
       run: |
         cd kernels
         make Halide
         make
         cd ..
-
+    - name: Build Haskell code
+      run: |
         export PKG_CONFIG_PATH=$PWD/third_party/hdf5/lib/pkgconfig
         cabal v2-clean
         cabal v2-build
@@ -95,33 +73,23 @@ jobs:
         # --extra-lib-dirs=$PWD/third_party/hdf5/lib --hsc2hs-options=--cross-compile --flags="+use-standalone"
         # --extra-include-dirs=$PWD/third_party/hdf5/include --extra-lib-dirs=$PWD/kernels/build
     - name: Package
-      # if: matrix.os == 'macos-latest'
       run: |
         mkdir release
         mkdir release/include
         mkdir release/lib
-        # cp $GITHUB_WORKSPACE/lattice-symmetries/lib/liblattice_symmetries.$SHARED_LIB_EXTENSION release/lib/
-        # cp -r $GITHUB_WORKSPACE/lattice-symmetries/include/lattice_symmetries release/include/
         cp cbits/lattice_symmetries_haskell.h release/include/
-        export GHC_VERSION=$(ghc --numeric-version)
-        export PACKAGE_VERSION=0.1.0.0
         if [[ ${{ matrix.os }} == "macos-latest" ]]; then
           export SHARED_LIB_EXTENSION=dylib
-          export CABAL_OS_NAME=osx
         else
           export SHARED_LIB_EXTENSION=so
-          export CABAL_OS_NAME=linux
         fi
         cp kernels/build/liblattice_symmetries_core.$SHARED_LIB_EXTENSION release/lib/
         find dist-newstyle -name "liblattice_symmetries_haskell.$SHARED_LIB_EXTENSION" \
                            -exec cp {} release/lib/ \;
-        # cp dist-newstyle/build/x86_64-$CABAL_OS_NAME/ghc-$GHC_VERSION/lattice-symmetries-haskell-$PACKAGE_VERSION/f/lattice_symmetries_haskell/opt/build/lattice_symmetries_haskell/liblattice_symmetries_haskell.$SHARED_LIB_EXTENSION release/lib/
-        # tar -cf release.tar release/
-        # bzip2 release.tar
-        mv release chapel-dependencies-${{ matrix.os }}
+        tar -cf chapel-dependencies-${{ matrix.os }}.tar release/
+        bzip2 chapel-dependencies-${{ matrix.os }}.tar
 
     - uses: actions/upload-artifact@v3
-      # if: matrix.os == 'macos-latest'
       with:
         name: chapel-dependencies-${{ matrix.os }}
-        path: chapel-dependencies-${{ matrix.os }}
+        path: chapel-dependencies-${{ matrix.os }}.tar.bz2
