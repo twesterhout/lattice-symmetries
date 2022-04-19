@@ -1,70 +1,43 @@
 .POSIX:
 .SUFFIXES:
 
-PREFIX = $(PWD)/prefix
-PROJECT_NAME = lattice-symmetries-haskell
-LIBRARY_NAME = $(subst -,_,$(PROJECT_NAME))
+CC = cc
+CFLAGS = -fPIC
+HDF5_MAJOR = 1
+HDF5_MINOR = 12
+HDF5_PATCH = 1
+HDF5_VERSION = $(HDF5_MAJOR).$(HDF5_MINOR).$(HDF5_PATCH)
+PREFIX = $(PWD)/third_party/hdf5
 
-GHC_VERSION ?= $(shell ghc --numeric-version)
-CABAL_BUILD_DIR = $(shell dirname $$(find dist-newstyle/build -name 'libHS$(PROJECT_NAME)*.a' | xargs ls -t | head -n 1))
-CABAL_AUTOGEN_DIR = $(CABAL_BUILD_DIR)/global-autogen
+UNAME = $(shell uname)
+ifeq ($(UNAME), Darwin)
+  NPROCS = $(shell sysctl -n hw.ncpu)
+else
+  NPROCS = $(shell nproc --all)
+endif
 
-HS_LDFLAGS = $(shell cat "$(CABAL_AUTOGEN_DIR)/HS_LIBRARY_PATHS_LIST" | sed 's/^/-L"/;s/$$/"/' | tr '\n' ' ')
-HS_LDFLAGS += $(shell cat "$(CABAL_AUTOGEN_DIR)/HS_LIBRARIES_LIST" | sed 's/^/-l/' | tr '\n' ' ')
-C_LDFLAGS = $(shell cat "$(CABAL_AUTOGEN_DIR)/EXTRA_LIBRARIES_LIST" | sed 's/^/-l/' | tr '\n' ' ')
+all:
+hdf5: $(PREFIX)
 
-$(shell mkdir -p build)
+third_party/hdf5-$(HDF5_VERSION).tar.bz2:
+	@mkdir -p $(@D)
+	cd third_party && \
+	wget -q https://support.hdfgroup.org/ftp/HDF5/releases/hdf5-$(HDF5_MAJOR).$(HDF5_MINOR)/hdf5-$(HDF5_VERSION)/src/hdf5-$(HDF5_VERSION).tar.bz2
 
-all: shared static main
+third_party/hdf5-$(HDF5_VERSION)-src: third_party/hdf5-$(HDF5_VERSION).tar.bz2
+	cd third_party && \
+	tar -xf hdf5-$(HDF5_VERSION).tar.bz2 && \
+	mv hdf5-$(HDF5_VERSION) hdf5-$(HDF5_VERSION)-src
 
-shared: build/lib$(LIBRARY_NAME).so
-static: build/lib$(LIBRARY_NAME).a
+$(PREFIX): third_party/hdf5-1.12.1-src
+	cd third_party/hdf5-1.12.1-src && \
+	CC=$(CC) CFLAGS="$(CFLAGS)" ./configure --prefix="$(PREFIX)" \
+	    --disable-java --disable-fortran --disable-cxx \
+	    --disable-tests --disable-tools \
+	    --disable-shared && \
+	make -j $(NPROC) install
 
-$(CABAL_BUILD_DIR)/cbits/init.o:
-	cabal v2-build
-
-build/api.txt: cbits/init.c
-	cat $< \
-		| tr '\n' ' ' \
-		| sed -E 's/.*ls_hs_symbol_table\s*\[\]\s*=\s*\{([^}]*)\};.*/\1/' \
-		| tr -d '& ' \
-		| tr ',' '\n' \
-		> $@
-
-build/lib$(LIBRARY_NAME).so: cbits/init.c $(CABAL_BUILD_DIR)/libHS$(PROJECT_NAME)* build/api.txt $(CABAL_AUTOGEN_DIR)/HS_LIBRARY_PATHS_LIST $(CABAL_AUTOGEN_DIR)/HS_LIBRARIES_LIST $(CABAL_AUTOGEN_DIR)/EXTRA_LIBRARIES_LIST
-	ghc --make -no-hs-main -shared -threaded \
-		-optc-fPIC -fPIC -O2 -optc-O -fexpose-all-unfoldings -fspecialise-aggressively \
-		-pgmc $(CC) -pgml $(CC) \
-		-optl -Wl,--retain-symbols-file=build/api.txt \
-		`pkg-config --cflags lattice_symmetries` \
-		$< -o $@ \
-		-L"$(CABAL_BUILD_DIR)" \
-		`pkg-config --libs lattice_symmetries` \
-		-optl -Wl,--as-needed \
-		$(HS_LDFLAGS) $(C_LDFLAGS)
-
-build/lib$(LIBRARY_NAME).a: cbits/init.o $(CABAL_AUTOGEN_DIR)/HS_LIBRARY_PATHS_LIST $(CABAL_AUTOGEN_DIR)/HS_LIBRARIES_LIST $(CABAL_AUTOGEN_DIR)/EXTRA_LIBRARIES_LIST
-	$(LD) $< -o $@ --relocatable --whole-archive \
-		-L"$(CABAL_BUILD_DIR)" \
-		$(HS_LDFLAGS) \
-		`pkg-config --libs hdf5` -lhdf5_hl
-
-main: main.c
-	gcc -o $@ \
-		-Icbits `pkg-config --cflags lattice_symmetries` \
-		$< \
-		-L build -l$(LIBRARY_NAME) \
-		`pkg-config --libs lattice_symmetries` \
-		`pkg-config --libs hdf5` \
-		$(C_LDFLAGS)
-
-benchmark: benchmark.c
-	gcc -O3 -o $@ \
-		-Icbits `pkg-config --cflags lattice_symmetries` \
-		$< \
-		-L build -l$(LIBRARY_NAME) \
-		`pkg-config --libs lattice_symmetries` \
-		$(C_LDFLAGS)
-
+.PHONY: clean
 clean:
-	rm -rf main build/
+	rm -rf $(PREFIX) \
+	       third_party/hdf5-$(HDF5_VERSION)-src
