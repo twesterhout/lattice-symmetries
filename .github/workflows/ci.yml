@@ -77,9 +77,9 @@ jobs:
     - name: Build Haskell dependencies
       run: |
         cabal v2-update
-        cabal v2-build --only-dependencies --enable-tests --hsc2hs-options=--cross-compile \
-                       --extra-lib-dirs=$PWD/third_party/hdf5/lib
-                       --extra-include-dirs=$PWD/third_party/hdf5/include -v3
+        cabal v2-build -v3 --only-dependencies --enable-tests --hsc2hs-options=--cross-compile \
+                       --extra-lib-dirs=$PWD/third_party/hdf5/lib \
+                       --extra-include-dirs=$PWD/third_party/hdf5/include
     - name: Build
       run: |
         # export PKG_CONFIG_PATH=$GITHUB_WORKSPACE/lattice-symmetries/lib/pkgconfig
