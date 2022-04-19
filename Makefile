@@ -11,9 +11,9 @@ PREFIX = $(PWD)/third_party/hdf5
 
 UNAME = $(shell uname)
 ifeq ($(UNAME), Darwin)
-  NPROCS = $(shell sysctl -n hw.ncpu)
+  NPROC = $(shell sysctl -n hw.ncpu)
 else
-  NPROCS = $(shell nproc --all)
+  NPROC = $(shell nproc --all)
 endif
 
 all:
