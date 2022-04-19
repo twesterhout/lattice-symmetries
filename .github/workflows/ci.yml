@@ -34,7 +34,7 @@ jobs:
           --force \
           ${{ matrix.ghc }}
     - uses: actions/cache@v3
-      if: matrix.os == 'macos-latest'
+      # if: matrix.os == 'macos-latest'
       name: Cache ~/.cabal/store
       with:
         path: ~/.cabal/store

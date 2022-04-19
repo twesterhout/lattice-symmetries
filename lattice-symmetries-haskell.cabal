@@ -132,6 +132,8 @@ foreign-library lattice_symmetries_haskell
   type:                native-shared
   if os(Windows) || os(darwin) || os(osx)
     options: standalone
+  if os(darwin) || os(osx)
+    extra-libraries:   ffi
   if os(linux) && flag(use-standalone)
     options: standalone
   --   mod-def-file: MyForeignLib.def
