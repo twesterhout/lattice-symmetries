@@ -12,6 +12,7 @@ import LatticeSymmetries.Basis
 import LatticeSymmetries.FFI
 import LatticeSymmetries.Operator
 import LatticeSymmetries.Parser
+import LatticeSymmetries.Utils
 import Text.PrettyPrint.ANSI.Leijen (hardline, pretty, putDoc)
 
 foreign export ccall "ls_hs_hdf5_create_dataset_u64"
@@ -111,7 +112,8 @@ ls_hs_create_operator basisPtr cStr numberTuples tupleSize tuplesPtr =
         <$> fmap fromIntegral
         <$> peekArray (fromIntegral (numberTuples * tupleSize)) tuplesPtr
     s <- peekCString cStr
-    let !operator = operatorFromString basis (T.pack s) indices
+    logDebug' $ "Creating operator from " <> show s <> "; Text representation: " <> show (toText s)
+    let !operator = operatorFromString basis (toText s) indices
     borrowCoperator operator
 
 foreign export ccall "ls_hs_create_operator"
