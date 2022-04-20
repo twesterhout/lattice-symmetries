@@ -157,6 +157,7 @@ uint64_t ls_hs_max_state_estimate(ls_hs_basis const *);
 uint64_t ls_hs_min_state_estimate(ls_hs_basis const *);
 
 ls_hs_basis *ls_hs_create_spin_basis_from_json(char const *json_string);
+ls_hs_basis *ls_hs_create_spin_basis_from_yaml(char const *yaml_filename);
 
 ls_hs_basis *
 ls_hs_create_spinless_fermion_basis_from_json(char const *json_string);

@@ -39,6 +39,7 @@ module LatticeSymmetries.Basis
     ls_hs_create_spin_basis_from_json,
     ls_hs_create_spinful_fermion_basis_from_json,
     ls_hs_create_spinless_fermion_basis_from_json,
+    ls_hs_create_spin_basis_from_yaml,
     ls_hs_min_state_estimate,
     ls_hs_max_state_estimate,
     -- ls_hs_spin_chain_10_basis,
@@ -52,7 +53,8 @@ import Data.Aeson
 import Data.Aeson.Types (Pair, Parser)
 import Data.Bits
 import Data.ByteString (packCString)
-import Foreign.C.String (CString)
+import Data.Yaml.Aeson
+import Foreign.C.String (CString, peekCString)
 import Foreign.C.Types
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc (alloca)
@@ -284,6 +286,34 @@ ls_hs_create_spin_basis_from_json cStr = do
   (basis :: Basis 'SpinTy) <- decodeCString cStr
   borrowCbasis basis
 
+newtype BasisOnlyConfig t = BasisOnlyConfig (Basis t)
+
+instance Typeable t => FromJSON (BasisOnlyConfig t) where
+  parseJSON = withObject "Basis" $ \v ->
+    BasisOnlyConfig <$> v .: "basis"
+
+ls_hs_create_spin_basis_from_yaml :: HasCallStack => CString -> IO (Ptr Cbasis)
+ls_hs_create_spin_basis_from_yaml cFilename = do
+  filename <- peekCString cFilename
+  logDebug' $ "Loading Basis from " <> show filename <> " ..."
+  r <- decodeFileWithWarnings filename
+  case r of
+    Left e -> do
+      logError' $ toText $ prettyPrintParseException e
+      pure nullPtr
+    Right (warnings, (BasisOnlyConfig (basis :: Basis 'SpinTy))) -> do
+      mapM_ (logWarning' . show) warnings
+      borrowCbasis basis
+
+-- loadRawBasis :: MonadIO m => Text -> m (Ptr Cspin_basis)
+-- loadRawBasis path = do
+--   r <- liftIO $ decodeFileWithWarnings (toString path)
+--   case r of
+--     Left e -> throwIO e
+--     Right (warnings, (WrappedBasisSpec basisSpec)) -> do
+--       mapM_ print warnings
+--       toRawBasis basisSpec
+
 ls_hs_create_spinful_fermion_basis_from_json :: CString -> IO (Ptr Cbasis)
 ls_hs_create_spinful_fermion_basis_from_json cStr = do
   (basis :: Basis 'SpinfulFermionTy) <- decodeCString cStr
@@ -348,10 +378,12 @@ basisBuild basis
       let (BasisState _ (BitString lower)) = minStateEstimate (basisHeader basis)
           (BasisState _ (BitString upper)) = maxStateEstimate (basisHeader basis)
       logDebug' "Calling ls_hs_build_representatives ..."
-      ls_hs_build_representatives
-        basisPtr
-        (fromIntegral lower)
-        (fromIntegral upper)
+      !_ <-
+        ls_hs_build_representatives
+          basisPtr
+          (fromIntegral lower)
+          (fromIntegral upper)
+      logDebug' "Done!"
   | otherwise = error "too many bits"
 
 stateIndex :: Basis t -> BasisState -> Maybe Int

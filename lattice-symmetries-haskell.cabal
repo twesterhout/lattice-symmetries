@@ -100,7 +100,7 @@ library
                      , vector-algorithms
                      , text
                      , scientific
-                     -- , yaml
+                     , yaml
                      , aeson >= 2
                      , bytestring
                      , co-log

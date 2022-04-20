@@ -5,6 +5,7 @@ module LatticeSymmetries.Utils
     iFoldM,
     logDebug',
     logInfo',
+    logWarning',
     logError',
     ls_hs_fatal_error,
     ApproxEq (..),
@@ -48,6 +49,9 @@ logDebug' t = withFrozenCallStack $ withDefaultLogger (logDebug t)
 
 logInfo' :: HasCallStack => Text -> IO ()
 logInfo' t = withFrozenCallStack $ withDefaultLogger (logInfo t)
+
+logWarning' :: HasCallStack => Text -> IO ()
+logWarning' t = withFrozenCallStack $ withDefaultLogger (logWarning t)
 
 logError' :: HasCallStack => Text -> IO ()
 logError' t = withFrozenCallStack $ withDefaultLogger (logError t)

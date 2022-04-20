@@ -262,7 +262,7 @@ static void compute_binomials(int dim, uint64_t *coeff) {
       coeff[n * dim + k] =
           coeff[(n - 1) * dim + (k - 1)] + coeff[(n - 1) * dim + k];
     }
-    for (; k < n; ++k) {
+    for (; k < dim; ++k) {
       coeff[n * dim + k] = 0;
     }
   }
@@ -284,6 +284,12 @@ ls_hs_internal_create_combinadics_kernel_data(int number_bits,
     goto fail_2;
   }
   compute_binomials(p->dimension, p->coefficients);
+  // for (int i = 0; i < p->dimension; ++i) {
+  //   for (int j = 0; j < p->dimension; ++j) {
+  //     fprintf(stderr, "p->coefficients[%i, %i] = %zu\n", i, j,
+  //             p->coefficients[i * p->dimension + j]);
+  //   }
+  // }
   return p;
 
 fail_2:
@@ -313,12 +319,15 @@ static inline uint64_t binomial(int const n, int const k,
 static inline ptrdiff_t
 rank_via_combinadics(uint64_t alpha,
                      ls_hs_combinadics_kernel_data const *cache) {
+  // fprintf(stderr, "rank_via_combinadics(%zu) = ", alpha);
   ptrdiff_t i = 0;
   for (int k = 1; alpha != 0; ++k) {
     int c = __builtin_ctzl(alpha);
     alpha &= alpha - 1;
+    // fprintf(stderr, "binomial(%i, %i) = %zi\n", c, k, binomial(c, k, cache));
     i += binomial(c, k, cache);
   }
+  // fprintf(stderr, "%zi\n", i);
   return i;
 }
 
@@ -379,6 +388,7 @@ void ls_hs_state_index(ls_hs_basis const *const basis,
     fprintf(stderr, "state_index_kernel is NULL\n");
     abort();
   }
+  fprintf(stderr, "calling kernels->state_index_kernel ...\n");
   (*basis->kernels->state_index_kernel)(batch_size, spins, spins_stride,
                                         indices, indices_stride,
                                         basis->kernels->state_index_data);
@@ -445,6 +455,7 @@ void ls_hs_build_representatives(ls_hs_basis *basis, uint64_t const lower,
     // Early exit: representatives have already been built
     return;
   }
+  fprintf(stderr, "calling kernels->enumerate_states ...\n");
   (*kernels->enumerate_states)(basis, lower, upper, &basis->representatives);
   if (basis->kernels->state_index_kernel == NULL) {
     basis->kernels->state_index_data =
