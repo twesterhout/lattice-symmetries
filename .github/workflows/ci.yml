@@ -38,7 +38,7 @@ jobs:
       name: Cache ~/.cabal/store
       with:
         path: ~/.cabal/store
-        key: ${{ runner.os }}-${{ matrix.ghc }}-cabal
+        key: ${{ runner.os }}-${{ matrix.ghc }}-new-cabal
     # - name: Clean cache (Linux) # REMOVE ME
     #   if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
     #   run: |
@@ -53,6 +53,11 @@ jobs:
       if: matrix.os == 'macos-latest'
       run: |
         brew install libomp
+    - uses: actions/cache@v3
+      name: Cache third_party/hdf5
+      with:
+        path: third_party/hdf5
+        key: ${{ runner.os }}-${{ matrix.ghc }}-hdf5
     - name: Build HDF5
       run: |
         make hdf5 pkgconfig
