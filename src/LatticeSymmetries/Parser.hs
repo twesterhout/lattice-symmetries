@@ -164,7 +164,7 @@ operatorFromString ::
   [[Int]] ->
   Operator t
 operatorFromString basis s indices = case parse (pOperatorString (getPrimitiveParser basis)) "" s of
-  Left e -> error (show e)
+  Left e -> error $ "failed to parse " <> show s <> ": " <> show e
   Right x ->
     let terms = simplify $ forSiteIndices x indices
      in operatorFromHeader $ OperatorHeader basis terms

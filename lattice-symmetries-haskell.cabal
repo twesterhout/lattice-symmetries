@@ -100,8 +100,8 @@ library
                      , vector-algorithms
                      , text
                      , scientific
-                     , yaml
-                     , aeson
+                     -- , yaml
+                     , aeson >= 2
                      , bytestring
                      , co-log
                      -- , co-log-core
@@ -117,13 +117,13 @@ library
                      -- , ghc-dump-core
                      -- , ghc-dump-util
                      , containers
-                     , template-haskell
-                     , inline-c
+                     -- , template-haskell
+                     -- , inline-c
                      -- , binary
                      -- , vector-binary-instances
                      , hdf5-hs
                      , ansi-wl-pprint
-                     , HaskellForMaths
+                     -- , HaskellForMaths
   extra-libraries:     lattice_symmetries_core
   -- pkgconfig-depends:   lattice_symmetries
 

@@ -39,10 +39,10 @@ jobs:
       with:
         path: ~/.cabal/store
         key: ${{ runner.os }}-${{ matrix.ghc }}-cabal
-    - name: Clean cache (Linux) # REMOVE ME
-      if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
-      run: |
-        rm -rf ~/.cabal/store
+    # - name: Clean cache (Linux) # REMOVE ME
+    #   if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
+    #   run: |
+    #     rm -rf ~/.cabal/store
     - name: Install system dependencies (Linux)
       if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
       run: |
