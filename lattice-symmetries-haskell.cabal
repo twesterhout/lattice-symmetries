@@ -151,6 +151,7 @@ foreign-library lattice_symmetries_haskell
   include-dirs:        cbits
   build-depends:       lattice-symmetries-haskell
                      , text
+                     , bytestring
                      , ansi-wl-pprint
                      , vector
                      , split

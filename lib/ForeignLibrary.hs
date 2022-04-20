@@ -1,5 +1,6 @@
 module ForeignLibrary () where
 
+import Data.ByteString (packCString)
 import Data.List.Split (chunksOf)
 import qualified Data.Text as T
 import Foreign.C.String (CString, peekCString)
@@ -114,9 +115,9 @@ ls_hs_create_operator basisPtr cStr numberTuples tupleSize tuplesPtr =
       chunksOf (fromIntegral tupleSize)
         <$> fmap fromIntegral
         <$> peekArray (fromIntegral (numberTuples * tupleSize)) tuplesPtr
-    s <- peekCString cStr
-    logDebug' $ "Creating operator from " <> show s <> "; Text representation: " <> show (toText s)
-    let !operator = operatorFromString basis (toText s) indices
+    s <- packCString cStr
+    logDebug' $ "Creating operator from " <> show s <> "; Text representation: " <> show (decodeUtf8 s :: Text)
+    let !operator = operatorFromString basis (decodeUtf8 s) indices
     borrowCoperator operator
 
 foreign export ccall "ls_hs_create_operator"
