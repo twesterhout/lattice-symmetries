@@ -1,4 +1,5 @@
 {-# LANGUAGE CApiFFI #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -37,6 +38,19 @@ data Operator (t :: ParticleTy) = Operator
   }
 
 deriving stock instance (Show (OperatorHeader t)) => Show (Operator t)
+
+data SomeOperator where
+  SomeOperator :: IsBasis t => Operator t -> SomeOperator
+
+withSomeOperator :: SomeOperator -> (forall t. IsBasis t => Operator t -> a) -> a
+withSomeOperator x f = case x of
+  SomeOperator operator -> f operator
+{-# INLINE withSomeOperator #-}
+
+foldSomeOperator :: (forall t. IsBasis t => Operator t -> a) -> SomeOperator -> a
+foldSomeOperator f x = case x of
+  SomeOperator operator -> f operator
+{-# INLINE foldSomeOperator #-}
 
 opTermsFlat :: OperatorHeader t -> Polynomial ComplexRational (Generator Int (GeneratorType t))
 opTermsFlat (OperatorHeader basis terms) =
@@ -320,3 +334,15 @@ withSameTypeAs a _with _action = _with f
 
 -- foreign import capi unsafe "lattice_symmetries_haskell.h ls_hs_evaluate_wavefunction_via_statevector"
 --   ls_hs_evaluate_wavefunction_via_statevector :: Ptr Cbasis_kernels -> CPtrdiff -> Ptr Word64 -> CPtrdiff -> Ptr () -> CSize -> Ptr () -> IO ()
+-- ls_hs_create_spin_basis_from_yaml :: HasCallStack => CString -> IO (Ptr Cbasis)
+-- ls_hs_create_spin_basis_from_yaml cFilename = do
+--   filename <- peekCString cFilename
+--   logDebug' $ "Loading Basis from " <> show filename <> " ..."
+--   r <- decodeFileWithWarnings filename
+--   case r of
+--     Left e -> do
+--       logError' $ toText $ prettyPrintParseException e
+--       pure nullPtr
+--     Right (warnings, (BasisOnlyConfig (basis :: Basis 'SpinTy))) -> do
+--       mapM_ (logWarning' . show) warnings
+--       borrowCbasis basis

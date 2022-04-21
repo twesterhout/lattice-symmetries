@@ -3,14 +3,21 @@
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators #-}
 
 module LatticeSymmetries.Basis
   ( mkSpinBasis,
     mkSpinlessFermionicBasis,
     mkSpinfulFermionicBasis,
+    basisFromYAML,
+    objectFromYAML,
     BasisState (..),
     Basis (..),
     BasisHeader (..),
+    SomeBasis (..),
+    withSomeBasis,
+    foldSomeBasis,
     Factor,
     ParticleTy (..),
     IndexType,
@@ -46,6 +53,7 @@ module LatticeSymmetries.Basis
     -- ls_hs_spin_kagome_12_basis,
     -- ls_hs_spin_kagome_16_basis,
     -- ls_hs_spin_square_4x4_basis,
+    -- withIsBasis,
   )
 where
 
@@ -53,6 +61,7 @@ import Data.Aeson
 import Data.Aeson.Types (Pair, Parser)
 import Data.Bits
 import Data.ByteString (packCString)
+import Data.Some
 import Data.Yaml.Aeson
 import Foreign.C.String (CString, peekCString)
 import Foreign.C.Types
@@ -110,7 +119,8 @@ class
     Pretty (IndexType t),
     Pretty (GeneratorType t),
     Pretty (Generator (IndexType t) (GeneratorType t)),
-    HasSiteIndex (IndexType t)
+    HasSiteIndex (IndexType t),
+    Typeable t
   ) =>
   IsBasis t
 
@@ -193,8 +203,31 @@ data Basis t = Basis
   }
   deriving stock (Show)
 
-instance Typeable t => FromJSON (Basis t) where
-  parseJSON = fmap basisFromHeader . parseJSON
+data SomeBasis where
+  SomeBasis :: IsBasis t => Basis t -> SomeBasis
+
+deriving stock instance Show SomeBasis
+
+withSomeBasis :: SomeBasis -> (forall t. IsBasis t => Basis t -> a) -> a
+withSomeBasis x f = case x of
+  SomeBasis basis -> f basis
+{-# INLINE withSomeBasis #-}
+
+foldSomeBasis :: (forall t. IsBasis t => Basis t -> a) -> SomeBasis -> a
+foldSomeBasis f x = case x of
+  SomeBasis basis -> f basis
+{-# INLINE foldSomeBasis #-}
+
+instance IsBasis t => FromJSON (Basis t) where
+  parseJSON x = fmap basisFromHeader (parseJSON x)
+
+instance FromJSON (SomeBasis) where
+  parseJSON x = do
+    tp <- withObject "Basis" (\v -> v .:! "particle" .!= SpinTy) x
+    case tp of
+      SpinTy -> SomeBasis <$> (parseJSON x :: Parser (Basis 'SpinTy))
+      SpinfulFermionTy -> SomeBasis <$> (parseJSON x :: Parser (Basis 'SpinfulFermionTy))
+      SpinlessFermionTy -> SomeBasis <$> (parseJSON x :: Parser (Basis 'SpinlessFermionTy))
 
 instance ToJSON (Basis t) where
   toJSON = toJSON . basisHeader
@@ -281,29 +314,35 @@ decodeCString cStr = do
     Right x -> pure x
     Left msg -> error (toText msg)
 
+ls_hs_basis_from_json :: CString -> IO (Ptr Cbasis)
+ls_hs_basis_from_json cStr = do
+  (basis :: SomeBasis) <- decodeCString cStr
+  foldSomeBasis borrowCbasis basis
+
 ls_hs_create_spin_basis_from_json :: CString -> IO (Ptr Cbasis)
 ls_hs_create_spin_basis_from_json cStr = do
   (basis :: Basis 'SpinTy) <- decodeCString cStr
   borrowCbasis basis
 
-newtype BasisOnlyConfig t = BasisOnlyConfig (Basis t)
+newtype BasisOnlyConfig = BasisOnlyConfig SomeBasis
 
-instance Typeable t => FromJSON (BasisOnlyConfig t) where
-  parseJSON = withObject "Basis" $ \v ->
-    BasisOnlyConfig <$> v .: "basis"
+instance FromJSON BasisOnlyConfig where
+  parseJSON = withObject "Basis" $ \v -> BasisOnlyConfig <$> v .: "basis"
 
-ls_hs_create_spin_basis_from_yaml :: HasCallStack => CString -> IO (Ptr Cbasis)
-ls_hs_create_spin_basis_from_yaml cFilename = do
-  filename <- peekCString cFilename
-  logDebug' $ "Loading Basis from " <> show filename <> " ..."
-  r <- decodeFileWithWarnings filename
+objectFromYAML :: (HasCallStack, FromJSON a) => Text -> Text -> IO a
+objectFromYAML name filename = do
+  logDebug' $ "Loading " <> name <> " from " <> show filename <> " ..."
+  r <- decodeFileWithWarnings (toString filename)
   case r of
-    Left e -> do
-      logError' $ toText $ prettyPrintParseException e
-      pure nullPtr
-    Right (warnings, (BasisOnlyConfig (basis :: Basis 'SpinTy))) -> do
-      mapM_ (logWarning' . show) warnings
-      borrowCbasis basis
+    Left e -> error $ toText $ prettyPrintParseException e
+    Right (warnings, x) -> mapM_ (logWarning' . show) warnings >> pure x
+
+basisFromYAML :: HasCallStack => Text -> IO SomeBasis
+basisFromYAML path = (\(BasisOnlyConfig x) -> x) <$> objectFromYAML "Basis" path
+
+ls_hs_create_spin_basis_from_yaml :: CString -> IO (Ptr Cbasis)
+ls_hs_create_spin_basis_from_yaml cFilename =
+  foldSomeBasis borrowCbasis =<< basisFromYAML =<< peekUtf8 cFilename
 
 -- loadRawBasis :: MonadIO m => Text -> m (Ptr Cspin_basis)
 -- loadRawBasis path = do

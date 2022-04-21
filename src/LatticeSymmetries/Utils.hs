@@ -9,10 +9,12 @@ module LatticeSymmetries.Utils
     logError',
     ls_hs_fatal_error,
     ApproxEq (..),
+    peekUtf8,
   )
 where
 
 import Colog
+import Data.ByteString (packCString)
 import Foreign.C.String
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -58,8 +60,8 @@ logError' t = withFrozenCallStack $ withDefaultLogger (logError t)
 
 ls_hs_fatal_error :: HasCallStack => CString -> CString -> IO ()
 ls_hs_fatal_error c_func c_msg = withFrozenCallStack $ do
-  func <- fromString <$> peekCString c_func
-  msg <- fromString <$> peekCString c_msg
+  func <- peekUtf8 c_func
+  msg <- peekUtf8 c_msg
   logError' $ "[" <> func <> "] " <> msg
   exitFailure
 
@@ -72,3 +74,6 @@ class ApproxEq a where
 instance ApproxEq Double where
   approx rtol atol a b = abs (a - b) <= max atol (rtol * max (abs a) (abs b))
   a ≈ b = approx 1.4901161193847656e-8 8.881784197001252e-16 a b
+
+peekUtf8 :: CString -> IO Text
+peekUtf8 c_str = decodeUtf8 <$> packCString c_str

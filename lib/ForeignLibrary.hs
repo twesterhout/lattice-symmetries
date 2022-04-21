@@ -1,9 +1,7 @@
 module ForeignLibrary () where
 
-import Data.ByteString (packCString)
 import Data.List.Split (chunksOf)
-import qualified Data.Text as T
-import Foreign.C.String (CString, peekCString)
+import Foreign.C.String (CString)
 import Foreign.C.Types (CBool (..), CInt (..), CUInt (..))
 import Foreign.Marshal.Array (peekArray)
 import Foreign.Marshal.Utils (fromBool)
@@ -115,13 +113,16 @@ ls_hs_create_operator basisPtr cStr numberTuples tupleSize tuplesPtr =
       chunksOf (fromIntegral tupleSize)
         <$> fmap fromIntegral
         <$> peekArray (fromIntegral (numberTuples * tupleSize)) tuplesPtr
-    s <- packCString cStr
-    logDebug' $ "Creating operator from " <> show s <> "; Text representation: " <> show (decodeUtf8 s :: Text)
-    let !operator = operatorFromString basis (decodeUtf8 s) indices
+    s <- peekUtf8 cStr
+    logDebug' $ "Creating operator from " <> show s <> " ..."
+    let !operator = operatorFromString basis s indices
     borrowCoperator operator
 
 foreign export ccall "ls_hs_create_operator"
   ls_hs_create_operator :: Ptr Cbasis -> CString -> CInt -> CInt -> Ptr CInt -> IO (Ptr Coperator)
+
+foreign export ccall "ls_hs_load_hamiltonian_from_yaml"
+  ls_hs_load_hamiltonian_from_yaml :: CString -> IO (Ptr Coperator)
 
 ls_hs_operator_plus :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
 ls_hs_operator_plus aPtr bPtr =

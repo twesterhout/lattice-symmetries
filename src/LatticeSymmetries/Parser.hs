@@ -8,12 +8,20 @@ module LatticeSymmetries.Parser
     SpinIndex (..),
     -- mkSpinOperator,
     operatorFromString,
+    hamiltonianFromYAML,
+    ls_hs_load_hamiltonian_from_yaml,
   )
 where
 
+import Data.Aeson (FromJSON (..), withObject, (.:))
+import qualified Data.Aeson.Key
+import qualified Data.Aeson.KeyMap
+import Data.Aeson.Types (Parser, Value)
 import Data.Bits
 -- import qualified Data.List.NonEmpty as NonEmpty
 import Data.Ratio
+import Foreign.C.String (CString)
+import Foreign.Ptr (Ptr)
 -- import Data.String (IsString (..))
 -- import qualified Data.Vector.Generic as G
 
@@ -21,8 +29,10 @@ import LatticeSymmetries.Algebra
 import LatticeSymmetries.Basis
 import LatticeSymmetries.BitString
 import LatticeSymmetries.ComplexRational
+import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
 import LatticeSymmetries.Operator
+import LatticeSymmetries.Utils
 import Text.Parsec
 -- import qualified Text.Read (read)
 import Prelude hiding (Product, Sum, (<|>))
@@ -256,3 +266,32 @@ instance IsString BasisState where
 
 -- normalizeIndices :: NonEmpty PrimitiveOperator -> Either Text (NonEmpty PrimitiveOperator)
 -- normalizeIndices = undefined
+
+data OperatorTermSpec = OperatorTermSpec !Text ![[Int]]
+
+instance FromJSON OperatorTermSpec where
+  parseJSON = withObject "Term" $ \v ->
+    OperatorTermSpec <$> v .: "expression" <*> v .: "sites"
+
+operatorFromJSON :: IsBasis t => Basis t -> Value -> Parser (Operator t)
+operatorFromJSON basis = withObject "Operator" $ \v -> do
+  (terms :: NonEmpty OperatorTermSpec) <- v .: "terms"
+  let (o :| os) = fmap (\(OperatorTermSpec expr sites) -> operatorFromString basis expr sites) terms
+  pure $ foldl' (+) o os
+
+newtype BasisAndHamiltonianConfig = BasisAndHamiltonianConfig SomeOperator
+
+instance FromJSON BasisAndHamiltonianConfig where
+  parseJSON = withObject "Config" $ \v -> do
+    basis <- v .: "basis"
+    withSomeBasis basis $ \basis' ->
+      case Data.Aeson.KeyMap.lookup (Data.Aeson.Key.fromString "hamiltonian") v of
+        Just h -> BasisAndHamiltonianConfig . SomeOperator <$> operatorFromJSON basis' h
+        Nothing -> fail "missing 'hamiltonian' key"
+
+hamiltonianFromYAML :: HasCallStack => Text -> IO SomeOperator
+hamiltonianFromYAML path = (\(BasisAndHamiltonianConfig x) -> x) <$> objectFromYAML "Hamiltonian" path
+
+ls_hs_load_hamiltonian_from_yaml :: CString -> IO (Ptr Coperator)
+ls_hs_load_hamiltonian_from_yaml cFilename =
+  foldSomeOperator borrowCoperator =<< hamiltonianFromYAML =<< peekUtf8 cFilename

@@ -222,6 +222,8 @@ ls_hs_operator *ls_hs_operator_plus(ls_hs_operator const *,
 void ls_hs_print_terms(ls_hs_operator const *);
 void ls_hs_destroy_operator_v2(ls_hs_operator *);
 
+ls_hs_operator *ls_hs_load_hamiltonian_from_yaml(char const *);
+
 void ls_hs_operator_apply_diag_kernel(ls_hs_operator const *op,
                                       ptrdiff_t batch_size,
                                       uint64_t const *alphas,

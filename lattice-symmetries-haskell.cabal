@@ -80,6 +80,7 @@ library
                        LatticeSymmetries.Benes
                        LatticeSymmetries.Utils
                        LatticeSymmetries.FFI
+                       LatticeSymmetries.IO
   -- c-sources:           cbits/helpers.c
   --                      cbits/csr.c
   --                      cbits/reference.c
