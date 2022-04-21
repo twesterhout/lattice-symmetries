@@ -28,10 +28,12 @@ DIST = $(PACKAGE)-$(GIT_COMMIT)
 
 .PHONY: release
 release: haskell
-	install -m644 -C -D -t $(DIST)/include cbits/lattice_symmetries_haskell.h
-	install -m644 -C -D -t $(DIST)/lib     kernels/build/liblattice_symmetries_core.$(SHARED_EXT)
+	mkdir -p $(DIST)/include
+	mkdir -p $(DIST)/lib
+	install -m644 -C cbits/lattice_symmetries_haskell.h $(DIST)/include/
+	install -m644 -C kernels/build/liblattice_symmetries_core.$(SHARED_EXT) $(DIST)/lib/
 	find dist-newstyle -name "liblattice_symmetries_haskell.$(SHARED_EXT)" \
-	  -exec install -m644 -C -D -t $(DIST)/lib {} \;
+	  -exec install -m644 -C {} $(DIST)/lib/ \;
 ifeq ($(UNAME), Linux)
 	patchelf --set-rpath '$$ORIGIN' $(DIST)/lib/liblattice_symmetries_haskell.$(SHARED_EXT)
 	LIBFFI=`ldd $(DIST)/lib/liblattice_symmetries_haskell.$(SHARED_EXT) | grep libffi | sed -E 's:.*=>\s+(.*/libffi.$(SHARED_EXT).[6-8]).*:\1:'`; \
@@ -40,7 +42,7 @@ endif
 	tar -cf $(DIST).tar $(DIST)
 	bzip2 $(DIST).tar
 ifneq ($(realpath $(PREFIX)), $(PWD))
-	install -m644 -C -D -t $(PREFIX) $(DIST).tar.bz2
+	install -m644 -C $(DIST).tar.bz2 $(PREFIX)
 endif
 	rm -r $(DIST)
 

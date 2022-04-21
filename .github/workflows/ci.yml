@@ -66,6 +66,11 @@ jobs:
     - name: Build HDF5
       run: |
         make hdf5
+    - name: Save pre-built HDF5
+      if: steps.cache-hdf5.outputs.cache-hit != 'true'
+      run: |
+        mkdir -p third_party
+        cp -r third_party/hdf5 ~/
     - name: Build C code
       run: |
         make kernels
