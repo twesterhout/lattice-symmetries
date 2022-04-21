@@ -54,59 +54,57 @@ jobs:
       run: |
         brew install libomp
     - uses: actions/cache@v3
-      name: Cache third_party/hdf5
-      id: cache-hdf5
+      name: Cache ~/hdf5
       with:
-        path: third_party/hdf5
-        key: ${{ runner.os }}-${{ matrix.ghc }}-hdf5
-    - name: Build HDF5
-      if: steps.cache-hdf5.outputs.cache-hit != 'true'
+        path: ~/hdf5
+        key: ${{ runner.os }}-${{ matrix.ghc }}-hdf5-v1
+    - name: Restore pre-built HDF5
+      if: steps.cache-hdf5.outputs.cache-hit == 'true'
       run: |
-        make hdf5 pkgconfig
+        mkdir -p third_party
+        cp -r ~/hdf5 third_party/
+    - name: Build HDF5
+      run: |
+        make hdf5
     - name: Build C code
       run: |
-        cd kernels
-        make Halide
-        make
-        cd ..
+        make kernels
     - name: Build Haskell code
       run: |
-        export PKG_CONFIG_PATH=$PWD/third_party/hdf5/lib/pkgconfig
-        cabal v2-clean
-        cabal v2-build
-        # --extra-lib-dirs=$PWD/kernels/build --hsc2hs-options=--cross-compile --flags="+use-standalone"
-        # --extra-lib-dirs=$PWD/third_party/hdf5/lib --extra-include-dirs=$PWD/third_party/hdf5/include 
+        make haskell
     - name: Test
       run: |
         export LD_LIBRARY_PATH=$PWD/kernels/build:$LD_LIBRARY_PATH
         export DYLD_LIBRARY_PATH=$PWD/kernels/build:$DYLD_LIBRARY_PATH
         cabal v2-test --test-show-details=direct
-        # --extra-lib-dirs=$PWD/third_party/hdf5/lib --hsc2hs-options=--cross-compile --flags="+use-standalone"
-        # --extra-include-dirs=$PWD/third_party/hdf5/include --extra-lib-dirs=$PWD/kernels/build
     - name: Package
       run: |
-        COMMIT=$(git rev-parse --short HEAD)
-        PREFIX=lattice-symmetries-haskell-$COMMIT
-        mkdir $PREFIX
-        mkdir $PREFIX/include
-        mkdir $PREFIX/lib
-        cp cbits/lattice_symmetries_haskell.h $PREFIX/include/
-        if [[ ${{ matrix.os }} == "macos-latest" ]]; then
-          export SHARED_LIB_EXTENSION=dylib
-        else
-          export SHARED_LIB_EXTENSION=so
-        fi
-        cp kernels/build/liblattice_symmetries_core.$SHARED_LIB_EXTENSION $PREFIX/lib/
-        find dist-newstyle -name "liblattice_symmetries_haskell.$SHARED_LIB_EXTENSION" \
-                           -exec cp {} $PREFIX/lib/ \;
-        # On Linux, bundle libffi
-        if [[ ${{ matrix.os }} != "macos-latest" ]]; then
-          LIBFFI=$(ldd $PREFIX/lib/liblattice_symmetries_haskell.so | grep libffi | sed -E 's:.*=>\s+(.*/libffi.so.[6-8]).*:\1:')
-          cp ${LIBFFI}* $PREFIX/lib/
-        fi
+        make release
+        # COMMIT=$(git rev-parse --short HEAD)
+        # PREFIX=lattice-symmetries-haskell-$COMMIT
+        # mkdir $PREFIX
+        # mkdir $PREFIX/include
+        # mkdir $PREFIX/lib
+        # cp cbits/lattice_symmetries_haskell.h $PREFIX/include/
+        # if [[ ${{ matrix.os }} == "macos-latest" ]]; then
+        #   export SHARED_LIB_EXTENSION=dylib
+        # else
+        #   export SHARED_LIB_EXTENSION=so
+        # fi
+        # cp kernels/build/liblattice_symmetries_core.$SHARED_LIB_EXTENSION $PREFIX/lib/
+        # find dist-newstyle -name "liblattice_symmetries_haskell.$SHARED_LIB_EXTENSION" \
+        #                    -exec cp {} $PREFIX/lib/ \;
+        # # On Linux, bundle libffi
+        # if [[ ${{ matrix.os }} != "macos-latest" ]]; then
+        #   LIBFFI=$(ldd $PREFIX/lib/liblattice_symmetries_haskell.so | grep libffi | sed -E 's:.*=>\s+(.*/libffi.so.[6-8]).*:\1:')
+        #   cp ${LIBFFI}* $PREFIX/lib/
+        # fi
 
-        tar -cf ${PREFIX}-${{ matrix.os }}.tar $PREFIX/
-        bzip2 ${PREFIX}-${{ matrix.os }}.tar
+        COMMIT=$(git rev-parse --short HEAD)
+        PACKAGE=lattice-symmetries-haskell-$COMMIT
+        mv -v $PACKAGE.tar.bz2 $PACKAGE-${{ matrix.os }}.tar.bz2
+        # tar -cf ${PREFIX}-${{ matrix.os }}.tar $PREFIX/
+        # bzip2 ${PREFIX}-${{ matrix.os }}.tar
 
     - uses: actions/upload-artifact@v3
       with:

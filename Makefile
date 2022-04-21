@@ -2,23 +2,61 @@
 .SUFFIXES:
 
 CC = cc
-CFLAGS = -fPIC
+HDF5_CFLAGS = -fPIC
 HDF5_MAJOR = 1
 HDF5_MINOR = 12
 HDF5_PATCH = 1
 HDF5_VERSION = $(HDF5_MAJOR).$(HDF5_MINOR).$(HDF5_PATCH)
-PREFIX = $(PWD)/third_party/hdf5
+HDF5_PREFIX = $(PWD)/third_party/hdf5
 
 UNAME = $(shell uname)
 ifeq ($(UNAME), Darwin)
   NPROC = $(shell sysctl -n hw.ncpu)
+  SHARED_EXT = dylib
 else
   NPROC = $(shell nproc --all)
+  SHARED_EXT = so
 endif
 
-all:
-hdf5: $(PREFIX) pkgconfig
-pkgconfig: $(PREFIX)/lib/pkgconfig/hdf5.pc
+.PHONY: all
+all: haskell
+
+PREFIX = $(PWD)
+PACKAGE = lattice-symmetries-haskell
+GIT_COMMIT = $(shell git rev-parse --short HEAD)
+DIST = $(PACKAGE)-$(GIT_COMMIT)
+
+.PHONY: release
+release: haskell
+	install -m644 -C -D -t $(DIST)/include cbits/lattice_symmetries_haskell.h
+	install -m644 -C -D -t $(DIST)/lib     kernels/build/liblattice_symmetries_core.$(SHARED_EXT)
+	find dist-newstyle -name "liblattice_symmetries_haskell.$(SHARED_EXT)" \
+	  -exec install -m644 -C -D -t $(DIST)/lib {} \;
+ifeq ($(UNAME), Linux)
+	patchelf --set-rpath '$$ORIGIN' $(DIST)/lib/liblattice_symmetries_haskell.$(SHARED_EXT)
+	LIBFFI=`ldd $(DIST)/lib/liblattice_symmetries_haskell.$(SHARED_EXT) | grep libffi | sed -E 's:.*=>\s+(.*/libffi.$(SHARED_EXT).[6-8]).*:\1:'`; \
+	cp -d $$LIBFFI* $(DIST)/lib/
+endif
+	tar -cf $(DIST).tar $(DIST)
+	bzip2 $(DIST).tar
+ifneq ($(realpath $(PREFIX)), $(PWD))
+	install -m644 -C -D -t $(PREFIX) $(DIST).tar.bz2
+endif
+	rm -r $(DIST)
+
+
+.PHONY: haskell
+haskell: hdf5 kernels
+	@PKG_CONFIG_PATH=$(HDF5_PREFIX)/lib/pkgconfig cabal v2-build
+
+.PHONY: kernels
+kernels: kernels/build/liblattice_symmetries_core.$(SHARED_EXT)
+
+kernels/build/liblattice_symmetries_core.$(SHARED_EXT): kernels/*.c cbits/lattice_symmetries_haskell.h
+	cd kernels && $(MAKE)
+
+.PHONY: hdf5
+hdf5: $(HDF5_PREFIX) $(HDF5_PREFIX)/lib/pkgconfig/hdf5.pc
 
 third_party/hdf5-$(HDF5_VERSION).tar.bz2:
 	@mkdir -p $(@D)
@@ -30,20 +68,20 @@ third_party/hdf5-$(HDF5_VERSION)-src: third_party/hdf5-$(HDF5_VERSION).tar.bz2
 	tar -xf hdf5-$(HDF5_VERSION).tar.bz2 && \
 	mv hdf5-$(HDF5_VERSION) hdf5-$(HDF5_VERSION)-src
 
-$(PREFIX): third_party/hdf5-1.12.1-src
+$(HDF5_PREFIX): third_party/hdf5-1.12.1-src
 	cd third_party/hdf5-1.12.1-src && \
-	CC=$(CC) CFLAGS="$(CFLAGS)" ./configure --prefix="$(PREFIX)" \
+	CC=$(CC) CFLAGS="$(HDF5_CFLAGS)" ./configure --prefix="$(HDF5_PREFIX)" \
 	    --disable-java --disable-fortran --disable-cxx \
 	    --disable-tests --disable-tools \
 	    --disable-shared && \
 	make -j $(NPROC) install
 
-$(PREFIX)/lib/pkgconfig/hdf5.pc:
+$(HDF5_PREFIX)/lib/pkgconfig/hdf5.pc:
 	@mkdir -p $(@D)
 	cd third_party/hdf5/lib/pkgconfig && \
 	echo "# Package Information for pkg-config" >>hdf5.pc && \
 	echo "" >>hdf5.pc && \
-	echo "prefix=$(PWD)/third_party/hdf5" >>hdf5.pc && \
+	echo "prefix=$(HDF5_PREFIX)" >>hdf5.pc && \
 	echo "libdir=\$${prefix}/lib" >>hdf5.pc && \
 	echo "includedir=\$${prefix}/include" >>hdf5.pc && \
 	echo "" >>hdf5.pc && \
@@ -55,5 +93,5 @@ $(PREFIX)/lib/pkgconfig/hdf5.pc:
 
 .PHONY: clean
 clean:
-	rm -rf $(PREFIX) \
+	rm -rf $(HDF5_PREFIX) \
 	       third_party/hdf5-$(HDF5_VERSION)-src
