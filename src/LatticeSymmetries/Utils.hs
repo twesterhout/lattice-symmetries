@@ -7,7 +7,6 @@ module LatticeSymmetries.Utils
     logInfo',
     logWarning',
     logError',
-    ls_hs_fatal_error,
     ApproxEq (..),
     peekUtf8,
   )
@@ -16,7 +15,6 @@ where
 import Colog
 import Data.ByteString (packCString)
 import Foreign.C.String
-import GHC.Stack
 import System.IO.Unsafe (unsafePerformIO)
 
 loopM :: Monad m => i -> (i -> Bool) -> (i -> i) -> (i -> m ()) -> m ()
@@ -59,12 +57,12 @@ logWarning' t = withFrozenCallStack $ withDefaultLogger (logWarning t)
 logError' :: HasCallStack => Text -> IO ()
 logError' t = withFrozenCallStack $ withDefaultLogger (logError t)
 
-ls_hs_fatal_error :: HasCallStack => CString -> CString -> IO ()
-ls_hs_fatal_error c_func c_msg = withFrozenCallStack $ do
-  func <- peekUtf8 c_func
-  msg <- peekUtf8 c_msg
-  logError' $ "[" <> func <> "] " <> msg
-  exitFailure
+-- ls_hs_fatal_error :: HasCallStack => CString -> CString -> IO ()
+-- ls_hs_fatal_error c_func c_msg = withFrozenCallStack $ do
+--   func <- peekUtf8 c_func
+--   msg <- peekUtf8 c_msg
+--   logError' $ "[" <> func <> "] " <> msg
+--   exitFailure
 
 infix 4 ≈
 
