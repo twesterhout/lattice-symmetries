@@ -53,6 +53,7 @@ haskell: hdf5 kernels
 kernels: kernels/build/liblattice_symmetries_core.$(SHARED_EXT)
 
 kernels/build/liblattice_symmetries_core.$(SHARED_EXT): kernels/*.c cbits/lattice_symmetries_haskell.h
+	cd kernels && $(MAKE) Halide
 	cd kernels && $(MAKE)
 
 .PHONY: hdf5
