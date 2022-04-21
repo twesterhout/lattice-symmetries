@@ -16,6 +16,7 @@ where
 import Colog
 import Data.ByteString (packCString)
 import Foreign.C.String
+import GHC.Stack
 import System.IO.Unsafe (unsafePerformIO)
 
 loopM :: Monad m => i -> (i -> Bool) -> (i -> i) -> (i -> m ()) -> m ()

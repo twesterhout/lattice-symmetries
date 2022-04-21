@@ -42,13 +42,13 @@ void ls_hs_init(void);
 void ls_hs_exit(void);
 void ls_hs_internal_set_free_stable_ptr(void (*f)(void *));
 
-__attribute__((noreturn)) void ls_hs_fatal_error(char const *func,
+__attribute__((noreturn)) void ls_hs_fatal_error(char const *func, int line,
                                                  char const *message);
 
-#define LS_FATAL_ERROR(msg) ls_hs_fatal_error(__func__, msg)
+#define LS_FATAL_ERROR(msg) ls_hs_fatal_error(__func__, __LINE__, msg)
 
 #define LS_CHECK(cond, msg)                                                    \
-  ((cond) ? ((void)0) : ls_hs_fatal_error(__func__, msg))
+  ((cond) ? ((void)0) : ls_hs_fatal_error(__func__, __LINE__, msg))
 
 // typedef struct ls_hs_spin_basis_v1 {
 //   ls_spin_basis const *const payload;

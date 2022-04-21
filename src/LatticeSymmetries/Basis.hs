@@ -58,12 +58,11 @@ module LatticeSymmetries.Basis
 where
 
 import Data.Aeson
-import Data.Aeson.Types (Pair, Parser)
+import Data.Aeson.Types (Pair)
 import Data.Bits
 import Data.ByteString (packCString)
-import Data.Some
 import Data.Yaml.Aeson
-import Foreign.C.String (CString, peekCString)
+import Foreign.C.String (CString)
 import Foreign.C.Types
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc (alloca)
@@ -416,13 +415,7 @@ basisBuild basis
     withForeignPtr (basisContents basis) $ \basisPtr -> do
       let (BasisState _ (BitString lower)) = minStateEstimate (basisHeader basis)
           (BasisState _ (BitString upper)) = maxStateEstimate (basisHeader basis)
-      logDebug' "Calling ls_hs_build_representatives ..."
-      !_ <-
-        ls_hs_build_representatives
-          basisPtr
-          (fromIntegral lower)
-          (fromIntegral upper)
-      logDebug' "Done!"
+      ls_hs_build_representatives basisPtr (fromIntegral lower) (fromIntegral upper)
   | otherwise = error "too many bits"
 
 stateIndex :: Basis t -> BasisState -> Maybe Int
@@ -560,13 +553,9 @@ optionalNatural x = case x of
 
 basisFromHeader :: BasisHeader t -> Basis t
 basisFromHeader x = unsafePerformIO $ do
-  logDebug' "Constructing basis from Header ..."
   fp <- mallocForeignPtr
-  logDebug' "Constructing kernels ..."
   kernels <- createCbasis_kernels x
-  logDebug' "Adding finalizers ..."
   addForeignPtrConcFinalizer fp (destroyCbasis_kernels kernels)
-  logDebug' "Setting everything else ..."
   withForeignPtr fp $ \ptr ->
     poke ptr $
       Cbasis
@@ -581,7 +570,6 @@ basisFromHeader x = unsafePerformIO $ do
           cbasis_representatives = emptyExternalArray,
           cbasis_haskell_payload = nullPtr
         }
-  logDebug' "Done!"
   pure $ Basis x fp
 {-# NOINLINE basisFromHeader #-}
 
@@ -671,27 +659,23 @@ setStateInfoKernel _ k =
 
 setStateIndexKernel :: BasisHeader t -> Cbasis_kernels -> IO Cbasis_kernels
 setStateIndexKernel x k
-  | getNumberBits x > 64 || requiresProjection x = do
-    logDebug' "a)"
+  | getNumberBits x > 64 || requiresProjection x =
     pure $
       k
         { cbasis_state_index_kernel = nullFunPtr,
           cbasis_state_index_data = nullPtr
         }
-  | isStateIndexIdentity x = do
-    logDebug' "b)"
+  | isStateIndexIdentity x =
     pure $
       k
         { cbasis_state_index_kernel = ls_hs_state_index_identity_kernel,
           cbasis_state_index_data = nullPtr
         }
   | hasFixedHammingWeight x && not (requiresProjection x) = do
-    logDebug' "c)"
     kernelData <-
       ls_hs_internal_create_combinadics_kernel_data
         (fromIntegral (getNumberBits x))
         (fromBool False)
-    logDebug' "c')"
     pure $
       k
         { cbasis_state_index_kernel = ls_hs_state_index_combinadics_kernel,

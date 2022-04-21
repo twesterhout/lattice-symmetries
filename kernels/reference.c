@@ -19,8 +19,9 @@ void ls_hs_internal_set_free_stable_ptr(free_stable_ptr_type f) {
 
 typedef void (*ls_hs_internal_chpl_free_func)(void *);
 
-void ls_hs_fatal_error(char const *func, char const *message) {
-  fprintf(stderr, "[%s] fatal error: %s\n", func, message);
+void ls_hs_fatal_error(char const *func, int const line, char const *message) {
+  fprintf(stderr, "[Error]   [%s#%i] %s\n[Error]   Aborting ...", func, line,
+          message);
   abort();
 }
 // void ls_hs_internal_destroy_external_array(chpl_external_array *p) {
@@ -48,7 +49,6 @@ int ls_hs_internal_dec_refcount(_Atomic int *refcount) {
 }
 
 void ls_hs_destroy_basis_v2(ls_hs_basis *basis) {
-  fprintf(stdout, "ls_hs_destroy_basis_v2 ...\n");
   if (ls_hs_internal_dec_refcount(&basis->refcount) == 1) {
     // Optionally free representatives
     if (basis->representatives.freer != NULL) {
@@ -59,19 +59,15 @@ void ls_hs_destroy_basis_v2(ls_hs_basis *basis) {
     // Free Haskell payload
     LS_CHECK(ls_hs_internal_free_stable_ptr != NULL,
              "ls_hs_internal_free_stable_ptr not set");
-    fprintf(stdout, "Calling hs_free_stable_ptr ...\n");
     (*ls_hs_internal_free_stable_ptr)(basis->haskell_payload);
   }
 }
 
 void ls_hs_destroy_operator_v2(ls_hs_operator *op) {
-  fprintf(stdout, "ls_hs_destroy_basis_v2 ...\n");
   if (ls_hs_internal_dec_refcount(&op->refcount) == 1) {
-    if (ls_hs_internal_free_stable_ptr == NULL) {
-      fprintf(stderr, "ls_hs_internal_free_stable_ptr not set :(\n");
-      abort();
-    }
-    fprintf(stdout, "Calling hs_free_stable_ptr ...\n");
+    // Free Haskell payload
+    LS_CHECK(ls_hs_internal_free_stable_ptr != NULL,
+             "ls_hs_internal_free_stable_ptr not set");
     (*ls_hs_internal_free_stable_ptr)(op->haskell_payload);
   }
 }
@@ -164,7 +160,8 @@ void ls_hs_operator_apply_diag_kernel(ls_hs_operator const *op,
 
   int const number_words = (op->diag_terms->number_bits + 63) / 64;
   // fprintf(stderr, "number_words=%d\n", number_words);
-  uint64_t *restrict const temp = malloc(number_words * sizeof(uint64_t));
+  uint64_t *restrict const temp =
+      malloc((size_t)number_words * sizeof(uint64_t));
   if (temp == NULL) {
     // fprintf(stderr, "%s\n", "failed to allocate memory");
     abort();
@@ -211,7 +208,8 @@ void ls_hs_operator_apply_off_diag_kernel(
   }
 
   int const number_words = (op->off_diag_terms->number_bits + 63) / 64;
-  uint64_t *restrict const temp = malloc(number_words * sizeof(uint64_t));
+  uint64_t *restrict const temp =
+      malloc((size_t)number_words * sizeof(uint64_t));
   if (temp == NULL) {
     // fprintf(stderr, "%s\n", "failed to allocate memory");
     abort();
@@ -250,19 +248,17 @@ void ls_hs_operator_apply_off_diag_kernel(
 }
 
 static void compute_binomials(int dim, uint64_t *coeff) {
-  int n = 0;
-  int k = 0;
-  coeff[n * dim + k] = 1;
+  coeff[0 * dim + 0] = 1;
   for (int k = 1; k < dim; ++k) {
-    coeff[n * dim + k] = 0;
+    coeff[0 * dim + k] = 0;
   }
-  for (n = 1; n < dim; ++n) {
+  for (int n = 1; n < dim; ++n) {
     coeff[n * dim + 0] = 1;
-    for (k = 1; k <= n; ++k) {
+    for (int k = 1; k <= n; ++k) {
       coeff[n * dim + k] =
           coeff[(n - 1) * dim + (k - 1)] + coeff[(n - 1) * dim + k];
     }
-    for (; k < dim; ++k) {
+    for (int k = n + 1; k < dim; ++k) {
       coeff[n * dim + k] = 0;
     }
   }
@@ -279,7 +275,8 @@ ls_hs_internal_create_combinadics_kernel_data(int number_bits,
   p->dimension = number_bits + 1; // NOTE: +1 because we could have n and k
                                   // running from 0 to number_bits inclusive
   p->is_per_sector = is_per_sector;
-  p->coefficients = malloc(p->dimension * p->dimension * sizeof(uint64_t));
+  p->coefficients =
+      malloc((size_t)p->dimension * (size_t)p->dimension * sizeof(uint64_t));
   if (p->coefficients == NULL) {
     goto fail_2;
   }
@@ -316,11 +313,11 @@ static inline uint64_t binomial(int const n, int const k,
   return cache->coefficients[n * cache->dimension + k];
 }
 
-static inline ptrdiff_t
+static inline uint64_t
 rank_via_combinadics(uint64_t alpha,
                      ls_hs_combinadics_kernel_data const *cache) {
   // fprintf(stderr, "rank_via_combinadics(%zu) = ", alpha);
-  ptrdiff_t i = 0;
+  uint64_t i = 0;
   for (int k = 1; alpha != 0; ++k) {
     int c = __builtin_ctzl(alpha);
     alpha &= alpha - 1;
@@ -348,7 +345,8 @@ void ls_hs_state_index_combinadics_kernel(ptrdiff_t const batch_size,
   uint64_t const mask =
       number_bits >= 64 ? ~(uint64_t)0 : ((uint64_t)1 << number_bits) - 1;
   int const hamming_weight_low = __builtin_popcountl(spins[0] & mask);
-  ptrdiff_t const number_low = binomial(number_bits, hamming_weight_low, cache);
+  ptrdiff_t const number_low =
+      (ptrdiff_t)binomial(number_bits, hamming_weight_low, cache);
 
   for (ptrdiff_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
     uint64_t alpha = spins[batch_idx * spins_stride];
@@ -356,10 +354,10 @@ void ls_hs_state_index_combinadics_kernel(ptrdiff_t const batch_size,
     if (cache->is_per_sector) {
       uint64_t const low = alpha & mask;
       uint64_t const high = alpha >> number_bits;
-      index = rank_via_combinadics(high, cache) * number_low +
-              rank_via_combinadics(low, cache);
+      index = (ptrdiff_t)rank_via_combinadics(high, cache) * number_low +
+              (ptrdiff_t)rank_via_combinadics(low, cache);
     } else {
-      index = rank_via_combinadics(alpha, cache);
+      index = (ptrdiff_t)rank_via_combinadics(alpha, cache);
     }
     indices[batch_idx * indices_stride] = index;
   }
@@ -384,11 +382,8 @@ void ls_hs_state_index(ls_hs_basis const *const basis,
                        ptrdiff_t const spins_stride,
                        ptrdiff_t *const restrict indices,
                        ptrdiff_t const indices_stride) {
-  if (basis->kernels->state_index_kernel == NULL) {
-    fprintf(stderr, "state_index_kernel is NULL\n");
-    abort();
-  }
-  fprintf(stderr, "calling kernels->state_index_kernel ...\n");
+  LS_CHECK(basis->kernels->state_index_kernel != NULL,
+           "state_index_kernel is NULL");
   (*basis->kernels->state_index_kernel)(batch_size, spins, spins_stride,
                                         indices, indices_stride,
                                         basis->kernels->state_index_data);
@@ -399,23 +394,16 @@ void ls_hs_evaluate_wavefunction_via_statevector(
     uint64_t const *const restrict alphas, ptrdiff_t const alphas_stride,
     void const *const restrict state_vector, size_t const element_size,
     void *const restrict coeffs) {
-  ptrdiff_t *const indices = malloc(batch_size * sizeof(ptrdiff_t));
-  if (indices == NULL) {
-    fprintf(stderr, "failed to allocate space for indices\n");
-    abort();
-  }
+  LS_CHECK(kernels->state_index_kernel != NULL, "state_index_kernel is NULL");
+  ptrdiff_t *const indices = malloc((size_t)batch_size * sizeof(ptrdiff_t));
+  LS_CHECK(indices != NULL, "failed to allocate space for indices");
 
-  if (kernels->state_index_kernel == NULL) {
-    free(indices);
-    fprintf(stderr, "no kernel to compute indices\n");
-    abort();
-  }
   (*kernels->state_index_kernel)(batch_size, alphas, alphas_stride, indices, 1,
                                  kernels->state_index_data);
   for (ptrdiff_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
-    void const *src =
-        (uint8_t const *)state_vector + indices[batch_idx] * element_size;
-    void *dest = (uint8_t *)coeffs + batch_idx * element_size;
+    void const *src = (uint8_t const *)state_vector +
+                      indices[batch_idx] * (ptrdiff_t)element_size;
+    void *dest = (uint8_t *)coeffs + batch_idx * (ptrdiff_t)element_size;
     memcpy(dest, src, element_size);
   }
 
@@ -455,7 +443,6 @@ void ls_hs_build_representatives(ls_hs_basis *basis, uint64_t const lower,
     // Early exit: representatives have already been built
     return;
   }
-  fprintf(stderr, "calling kernels->enumerate_states ...\n");
   (*kernels->enumerate_states)(basis, lower, upper, &basis->representatives);
   if (basis->kernels->state_index_kernel == NULL) {
     basis->kernels->state_index_data =

@@ -3,7 +3,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -30,8 +29,8 @@ static int compare_uint64(const void *_a, const void *_b) {
 
 static ptrdiff_t binary_search(ptrdiff_t const size, uint64_t const *haystack,
                                uint64_t const needle) {
-  uint64_t const *element_ptr =
-      bsearch(&needle, haystack, size, sizeof(uint64_t), &compare_uint64);
+  uint64_t const *element_ptr = bsearch(&needle, haystack, (size_t)size,
+                                        sizeof(uint64_t), &compare_uint64);
   if (element_ptr == NULL) {
     return -1;
   }
@@ -43,7 +42,7 @@ ls_hs_create_state_index_binary_search_kernel_data(
     chpl_external_array const *representatives) {
   ls_hs_state_index_binary_search_data *cache =
       malloc(sizeof(ls_hs_state_index_binary_search_data));
-  cache->number_states = representatives->num_elts;
+  cache->number_states = (ptrdiff_t)representatives->num_elts;
   cache->representatives = representatives->elts;
   cache->shift = 0;
   cache->number_bits = 0;

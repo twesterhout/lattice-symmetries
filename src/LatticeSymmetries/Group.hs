@@ -192,13 +192,12 @@ mkSymmetriesHeader gs@(g : _)
       where
         set = Set.fromList symmetries
 
-symmetriesFromHeader :: HasCallStack => SymmetriesHeader -> Symmetries
+symmetriesFromHeader :: SymmetriesHeader -> Symmetries
 symmetriesFromHeader x = unsafePerformIO $ do
   fp <- mallocForeignPtr
   let (DenseMatrix numberShifts numberMasks masks) = bbnMasks $ symmHeaderNetwork x
       shifts = bbnShifts $ symmHeaderNetwork x
       numberBits = getNumberBits x
-  logDebug' "Creating ls_hs_permutation_group ..."
   withForeignPtr fp $ \ptr ->
     S.unsafeWith masks $ \masksPtr ->
       S.unsafeWith shifts $ \shiftsPtr ->
