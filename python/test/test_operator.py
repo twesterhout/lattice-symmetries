@@ -59,6 +59,10 @@ def test_non_hermitian_matvec():
     matrix = rng.random((4, 4)) + rng.random((4, 4)) * 1j - (0.5 + 0.5j)
     operator = ls.Operator(basis, [ls.Interaction(matrix, [(0, 1)])])
 
+    # print(operator.to_csr().toarray())
+    # print(matrix[[0, 2, 1, 3], :][:, [0, 2, 1, 3]])
+    assert np.all(operator.to_csr().toarray() == matrix[[0, 2, 1, 3], :][:, [0, 2, 1, 3]])
+
     for (i, spin) in enumerate(basis.states):
         v = np.zeros(basis.number_states, dtype=np.complex128)
         v[i] = 1.0
@@ -66,6 +70,13 @@ def test_non_hermitian_matvec():
         expected = matrix[[0, 2, 1, 3], :][:, [0, 2, 1, 3]] @ v
         # print(predicted, expected)
         assert np.allclose(predicted, expected)
+
+    v = rng.random(4) + rng.random(4) * 1j - (0.5 + 0.5j)
+    predicted = operator(v)
+    expected = matrix[[0, 2, 1, 3], :][:, [0, 2, 1, 3]] @ v
+    # print(predicted)
+    # print(expected)
+    assert np.allclose(predicted, expected)
 
 
 def test_index():
@@ -85,5 +96,5 @@ def test_index():
     print(basis.state_info(states[1]))
 
 
-test_batched_apply()
-# test_non_hermitian_matvec()
+# test_batched_apply()
+test_non_hermitian_matvec()

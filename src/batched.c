@@ -99,7 +99,7 @@ static ls_error_code store_callback(ls_bits512 const* const bits, void const* co
     //     bits->words[6], bits->words[7], creal(*(_Complex double const*)coeff),
     //     cimag(*(_Complex double const*)coeff), cxt->size);
     cxt->spins[cxt->size]  = *bits;
-    cxt->coeffs[cxt->size] = *(_Complex double const*)coeff;
+    cxt->coeffs[cxt->size] = conj(*(_Complex double const*)coeff);
     ++cxt->size;
     return LS_SUCCESS;
 }
