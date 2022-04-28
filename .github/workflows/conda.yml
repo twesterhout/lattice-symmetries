@@ -38,12 +38,15 @@ jobs:
     - name: Info
       run: |
         conda info
-        conda list
         conda env list
 
     - name: Build 
       run: |
-        source /usr/share/miniconda/etc/profile.d/conda.sh
+        if [[ -d /usr/local/miniconda/etc ]]; then
+          source /usr/local/miniconda/etc/profile.d/conda.sh
+        else
+          source /usr/share/miniconda/etc/profile.d/conda.sh
+        fi
         conda activate lattice_symmetries_devel
         cmake -GNinja \
               -Bbuild \
