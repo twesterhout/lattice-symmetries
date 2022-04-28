@@ -24,33 +24,24 @@ jobs:
         submodules: true
     - uses: conda-incubator/setup-miniconda@v2
       with:
-        activate-environment: lattice_symmetries_devel
-        environment-file: etc/example-environment.yml
-        python-version: 3.5
-        condarc-file: etc/example-condarc.yml
+        environment-file: conda-devel.yml
         auto-activate-base: false
       
-    - name: install dependencies
+    - name: Configure
       run: |
-        sudo apt update
-        sudo apt install g++-${{ matrix.gcc-version }} gcc-${{ matrix.gcc-version }}
-
-    - name: configure
-      run: |
-        cmake -Bbuild \
-              -DCMAKE_CXX_COMPILER=g++-${{ matrix.gcc-version }} \
-              -DCMAKE_C_COMPILER=gcc-${{ matrix.gcc-version }} \
+        cmake -GNinja \
+              -Bbuild \
               -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
               -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/$INSTALL_LOCATION
       
-    - name: build
-      run: cmake --build build -j4
+    - name: Build
+      run: cmake --build build
 
-    - name: run tests
+    - name: Run tests
       run: |
         cd build
         ctest -VV
 
-    - name: install project
+    - name: Install
       run: cmake --build build --target install
 
