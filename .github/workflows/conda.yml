@@ -23,8 +23,14 @@ jobs:
       with:
         submodules: true
     - uses: conda-incubator/setup-miniconda@v2
+      if: matrix.os == 'ubuntu-latest'
       with:
-        environment-file: conda-devel.yml
+        environment-file: conda-devel-linux.yml
+        auto-activate-base: false
+    - uses: conda-incubator/setup-miniconda@v2
+      if: matrix.os == 'macos-latest'
+      with:
+        environment-file: conda-devel-osx.yml
         auto-activate-base: false
       
     - name: Configure
