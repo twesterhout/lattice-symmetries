@@ -11,8 +11,59 @@ env:
   INSTALL_LOCATION: .local
 
 jobs:
-  build:
-    name: Conda on ${{ matrix.os }}
+  # build:
+  #   name: Build within Conda on ${{ matrix.os }}
+  #   runs-on: ${{ matrix.os }}
+  #   strategy:
+  #     matrix:
+  #       os: [ubuntu-latest, macos-latest]
+
+  #   steps:
+  #   - uses: actions/checkout@v2
+  #     with:
+  #       submodules: true
+  #   - uses: conda-incubator/setup-miniconda@v2
+  #     if: matrix.os == 'ubuntu-latest'
+  #     with:
+  #       activate-environment: lattice_symmetries_devel
+  #       environment-file: conda-devel-linux.yml
+  #       auto-activate-base: false
+  #   - uses: conda-incubator/setup-miniconda@v2
+  #     if: matrix.os == 'macos-latest'
+  #     with:
+  #       activate-environment: lattice_symmetries_devel
+  #       environment-file: conda-devel-osx.yml
+  #       auto-activate-base: false
+  #   
+  #   - name: Info
+  #     run: |
+  #       conda info
+  #       conda env list
+
+  #   - name: Build 
+  #     run: |
+  #       if [[ -d /usr/local/miniconda/etc ]]; then
+  #         source /usr/local/miniconda/etc/profile.d/conda.sh
+  #       else
+  #         source /usr/share/miniconda/etc/profile.d/conda.sh
+  #       fi
+  #       conda activate lattice_symmetries_devel
+  #       cmake -GNinja \
+  #             -Bbuild \
+  #             -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+  #             -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/$INSTALL_LOCATION
+  #       cmake --build build
+  #     
+  #   - name: Run tests
+  #     run: |
+  #       cd build
+  #       ctest -VV
+
+  #   - name: Install
+  #     run: cmake --build build --target install
+
+  conda_package:
+    name: Build Conda package on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -23,42 +74,15 @@ jobs:
       with:
         submodules: true
     - uses: conda-incubator/setup-miniconda@v2
-      if: matrix.os == 'ubuntu-latest'
       with:
-        activate-environment: lattice_symmetries_devel
-        environment-file: conda-devel-linux.yml
-        auto-activate-base: false
-    - uses: conda-incubator/setup-miniconda@v2
-      if: matrix.os == 'macos-latest'
-      with:
-        activate-environment: lattice_symmetries_devel
-        environment-file: conda-devel-osx.yml
-        auto-activate-base: false
+        auto-activate-base: true
     
     - name: Info
       run: |
         conda info
         conda env list
+        const install anaconda-client conda-build conda-verify
 
     - name: Build 
       run: |
-        if [[ -d /usr/local/miniconda/etc ]]; then
-          source /usr/local/miniconda/etc/profile.d/conda.sh
-        else
-          source /usr/share/miniconda/etc/profile.d/conda.sh
-        fi
-        conda activate lattice_symmetries_devel
-        cmake -GNinja \
-              -Bbuild \
-              -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
-              -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/$INSTALL_LOCATION
-        cmake --build build
-      
-    - name: Run tests
-      run: |
-        cd build
-        ctest -VV
-
-    - name: Install
-      run: cmake --build build --target install
-
+        conda build conda
