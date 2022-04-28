@@ -35,7 +35,9 @@ jobs:
      
     - name: Build 
       run: |
-        source /usr/share/miniconda/envs/lattice_symmetries_devel/etc/profile.d/conda.sh
+        echo $CONDA_PREFIX
+        ls /usr/share/miniconda/etc/
+        source /usr/share/miniconda/etc/profile.d/conda.sh
         conda activate lattice_symmetries_devel
         cmake -GNinja \
               -Bbuild \
