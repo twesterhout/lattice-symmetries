@@ -81,7 +81,7 @@ jobs:
       run: |
         conda info
         conda env list
-        const install anaconda-client conda-build conda-verify
+        conda install anaconda-client conda-build conda-verify
 
     - name: Build 
       run: |
