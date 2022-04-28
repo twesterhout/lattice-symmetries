@@ -35,6 +35,7 @@ jobs:
       
     - name: Configure
       run: |
+        conda activate lattice_symmetries_devel
         cmake -GNinja \
               -Bbuild \
               -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
