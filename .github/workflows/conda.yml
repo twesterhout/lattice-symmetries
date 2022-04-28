@@ -85,4 +85,12 @@ jobs:
 
     - name: Build 
       run: |
-        conda build conda
+        if [[ $(uname) != "Linux" ]]; then
+          wget -q https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX10.10.sdk.tar.xz
+          tar xf MacOSX10.10.sdk.tar.xz -C /opt
+          echo "" >> conda/conda_build_config.yaml
+          echo "CONDA_BUILD_SYSROOT:" >> conda/conda_build_config.yaml
+          echo "  - /opt/MacOSX10.10.sdk        # [osx]" >> conda/conda_build_config.yaml
+        fi
+        mkdir conda_output
+        conda build conda --output-folder=$PWD/conda_output
