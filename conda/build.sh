@@ -16,13 +16,15 @@ cmake -GNinja \
   -DLatticeSymmetries_LINK_STDLIB_STATICALLY=OFF \
   ..
 cmake --build .
-find . -name "*.so*" -maxdepth 1 -type f | while read -r sofile; do
-  # shellcheck disable=SC2016
-  echo "Setting rpath of $sofile to" '$ORIGIN'
-  # shellcheck disable=SC2016
-  patchelf --set-rpath '$ORIGIN' --force-rpath "$sofile"
-  patchelf --print-rpath "$sofile"
-done
+if [[ $(uname) == "Linux" ]]; then
+  find . -name "*.so*" -maxdepth 1 -type f | while read -r sofile; do
+    # shellcheck disable=SC2016
+    echo "Setting rpath of $sofile to" '$ORIGIN'
+    # shellcheck disable=SC2016
+    patchelf --set-rpath '$ORIGIN' --force-rpath "$sofile"
+    patchelf --print-rpath "$sofile"
+  done
+fi
 cmake --build . --target install
 popd
 

@@ -1,0 +1,56 @@
+name: Conda
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  BUILD_TYPE: Debug
+  INSTALL_LOCATION: .local
+
+jobs:
+  build:
+    name: Conda on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: true
+    - uses: conda-incubator/setup-miniconda@v2
+      with:
+        activate-environment: lattice_symmetries_devel
+        environment-file: etc/example-environment.yml
+        python-version: 3.5
+        condarc-file: etc/example-condarc.yml
+        auto-activate-base: false
+      
+    - name: install dependencies
+      run: |
+        sudo apt update
+        sudo apt install g++-${{ matrix.gcc-version }} gcc-${{ matrix.gcc-version }}
+
+    - name: configure
+      run: |
+        cmake -Bbuild \
+              -DCMAKE_CXX_COMPILER=g++-${{ matrix.gcc-version }} \
+              -DCMAKE_C_COMPILER=gcc-${{ matrix.gcc-version }} \
+              -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+              -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/$INSTALL_LOCATION
+      
+    - name: build
+      run: cmake --build build -j4
+
+    - name: run tests
+      run: |
+        cd build
+        ctest -VV
+
+    - name: install project
+      run: cmake --build build --target install
+
