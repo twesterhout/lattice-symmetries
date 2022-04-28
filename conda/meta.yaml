@@ -27,8 +27,10 @@ requirements:
 
   run:
     - python
-    - libstdcxx-ng
-    - libgcc-ng
+    - libstdcxx-ng # [linux]
+    - libgcc-ng # [linux]
+    - libcxxabi # [osx]
     - numpy
     - scipy
-    # - numba
+    - h5py
+    - pyyaml
