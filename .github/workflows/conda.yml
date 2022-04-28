@@ -25,18 +25,24 @@ jobs:
     - uses: conda-incubator/setup-miniconda@v2
       if: matrix.os == 'ubuntu-latest'
       with:
+        activate-environment: lattice_symmetries_devel
         environment-file: conda-devel-linux.yml
         auto-activate-base: false
     - uses: conda-incubator/setup-miniconda@v2
       if: matrix.os == 'macos-latest'
       with:
+        activate-environment: lattice_symmetries_devel
         environment-file: conda-devel-osx.yml
         auto-activate-base: false
-     
+    
+    - name: Info
+      run: |
+        conda info
+        conda list
+        conda env list
+
     - name: Build 
       run: |
-        echo $CONDA_PREFIX
-        ls /usr/share/miniconda/etc/
         source /usr/share/miniconda/etc/profile.d/conda.sh
         conda activate lattice_symmetries_devel
         cmake -GNinja \
