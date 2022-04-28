@@ -87,8 +87,7 @@ jobs:
       run: |
         if [[ $(uname) != "Linux" ]]; then
           wget -q https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX10.10.sdk.tar.xz
-          mkdir -p /opt
-          tar xf MacOSX10.10.sdk.tar.xz -C /opt
+          sudo tar xf MacOSX10.10.sdk.tar.xz -C /opt
           echo "" >> conda/conda_build_config.yaml
           echo "CONDA_BUILD_SYSROOT:" >> conda/conda_build_config.yaml
           echo "  - /opt/MacOSX10.10.sdk        # [osx]" >> conda/conda_build_config.yaml
