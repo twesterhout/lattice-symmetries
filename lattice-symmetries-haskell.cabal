@@ -148,7 +148,8 @@ foreign-library lattice_symmetries_haskell
   -- c-sources:           csrc/MyForeignLibWrapper.c
   c-sources:           cbits/init.c
   cc-options:          -fPIC -Wall -Wextra -Wpedantic
-  -- ghc-options:         -optl -Wl,--retain-symbols-file=api.txt
+  ghc-options:         -threaded
+  -- -optl -Wl,--retain-symbols-file=api.txt
   include-dirs:        cbits
   build-depends:       lattice-symmetries-haskell
                      , text

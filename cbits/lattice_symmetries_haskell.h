@@ -165,6 +165,11 @@ ls_hs_create_spinless_fermion_basis_from_json(char const *json_string);
 ls_hs_basis *
 ls_hs_create_spinful_fermion_basis_from_json(char const *json_string);
 
+ls_hs_basis *ls_hs_basis_from_json(char const *json_string);
+char const *ls_hs_basis_to_json(ls_hs_basis const *);
+
+void ls_hs_destroy_string(char const *);
+
 void ls_hs_basis_build(ls_hs_basis *basis);
 
 bool ls_hs_basis_has_fixed_hamming_weight(ls_hs_basis const *);
@@ -249,6 +254,10 @@ ls_hs_internal_create_combinadics_kernel_data(int number_bits,
                                               bool is_per_sector);
 void ls_hs_internal_destroy_combinadics_kernel_data(
     ls_hs_combinadics_kernel_data *p);
+
+ptrdiff_t ls_hs_fixed_hamming_state_to_index(uint64_t basis_state);
+uint64_t ls_hs_fixed_hamming_index_to_state(ptrdiff_t index,
+                                            int hamming_weight);
 
 void ls_hs_state_index_combinadics_kernel(ptrdiff_t batch_size,
                                           uint64_t const *spins,

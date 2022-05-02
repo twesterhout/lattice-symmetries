@@ -116,13 +116,13 @@ data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_basis" #-} Cbasis = Cbasis
     cbasis_haskell_payload :: {-# UNPACK #-} !(Ptr ())
   }
 
-foreign import ccall unsafe "ls_hs_internal_read_refcount"
+foreign import ccall safe "ls_hs_internal_read_refcount"
   peekRefCount :: Ptr CInt -> IO CInt
 
-foreign import ccall unsafe "ls_hs_internal_write_refcount"
+foreign import ccall safe "ls_hs_internal_write_refcount"
   pokeRefCount :: Ptr CInt -> CInt -> IO CInt
 
-foreign import ccall unsafe "ls_hs_internal_inc_refcount"
+foreign import ccall safe "ls_hs_internal_inc_refcount"
   incRefCount :: Ptr CInt -> IO CInt
 
 -- foreign import ccall unsafe "ls_hs_internal_dec_refcount"

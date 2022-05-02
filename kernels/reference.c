@@ -265,34 +265,21 @@ static void compute_binomials(int dim, uint64_t *coeff) {
 }
 
 ls_hs_combinadics_kernel_data *
-ls_hs_internal_create_combinadics_kernel_data(int number_bits,
-                                              bool is_per_sector) {
+ls_hs_internal_create_combinadics_kernel_data(int const number_bits,
+                                              bool const is_per_sector) {
   ls_hs_combinadics_kernel_data *p =
       malloc(sizeof(ls_hs_combinadics_kernel_data));
-  if (p == NULL) {
-    goto fail_1;
-  }
+  LS_CHECK(p != NULL,
+           "failed to allocate ls_hs_combinadics_kernel_data struct");
   p->dimension = number_bits + 1; // NOTE: +1 because we could have n and k
                                   // running from 0 to number_bits inclusive
   p->is_per_sector = is_per_sector;
   p->coefficients =
       malloc((size_t)p->dimension * (size_t)p->dimension * sizeof(uint64_t));
-  if (p->coefficients == NULL) {
-    goto fail_2;
-  }
+  LS_CHECK(p->coefficients != NULL,
+           "failed to allocate ls_hs_combinadics_kernel_data.coefficients");
   compute_binomials(p->dimension, p->coefficients);
-  // for (int i = 0; i < p->dimension; ++i) {
-  //   for (int j = 0; j < p->dimension; ++j) {
-  //     fprintf(stderr, "p->coefficients[%i, %i] = %zu\n", i, j,
-  //             p->coefficients[i * p->dimension + j]);
-  //   }
-  // }
   return p;
-
-fail_2:
-  free(p);
-fail_1:
-  return NULL;
 }
 
 void ls_hs_internal_destroy_combinadics_kernel_data(
@@ -313,19 +300,64 @@ static inline uint64_t binomial(int const n, int const k,
   return cache->coefficients[n * cache->dimension + k];
 }
 
-static inline uint64_t
-rank_via_combinadics(uint64_t alpha,
-                     ls_hs_combinadics_kernel_data const *cache) {
+ptrdiff_t
+ls_hs_combinadics_state_to_index(uint64_t alpha,
+                                 ls_hs_combinadics_kernel_data const *cache) {
   // fprintf(stderr, "rank_via_combinadics(%zu) = ", alpha);
-  uint64_t i = 0;
+  ptrdiff_t i = 0;
   for (int k = 1; alpha != 0; ++k) {
     int c = __builtin_ctzl(alpha);
     alpha &= alpha - 1;
     // fprintf(stderr, "binomial(%i, %i) = %zi\n", c, k, binomial(c, k, cache));
-    i += binomial(c, k, cache);
+    i += (ptrdiff_t)binomial(c, k, cache);
   }
   // fprintf(stderr, "%zi\n", i);
   return i;
+}
+
+uint64_t
+ls_hs_combinadics_index_to_state(ptrdiff_t index, int const hamming_weight,
+                                 ls_hs_combinadics_kernel_data const *cache) {
+  int const number_bits = cache->dimension - 1;
+  uint64_t state = 0;
+  for (int i = hamming_weight; i > 0; --i) {
+    // We are searching for the largest c such that
+    // binomial(c, i, cache) <= index
+    int c = i - 1;
+    ptrdiff_t contribution = (ptrdiff_t)binomial(c, i, cache);
+    while (c < number_bits) {
+      int const new_c = c + 1;
+      ptrdiff_t const new_contribution = (ptrdiff_t)binomial(new_c, i, cache);
+      if (new_contribution > index) {
+        break;
+      }
+      c = new_c;
+      contribution = new_contribution;
+    }
+
+    state |= ((uint64_t)1) << c;
+    index -= contribution;
+  }
+  return state;
+}
+
+ptrdiff_t ls_hs_fixed_hamming_state_to_index(uint64_t const basis_state) {
+  int const number_bits = 64 - __builtin_clzl(basis_state);
+  ls_hs_combinadics_kernel_data *const cache =
+      ls_hs_internal_create_combinadics_kernel_data(number_bits, false);
+  ptrdiff_t const index = ls_hs_combinadics_state_to_index(basis_state, cache);
+  ls_hs_internal_destroy_combinadics_kernel_data(cache);
+  return index;
+}
+
+uint64_t ls_hs_fixed_hamming_index_to_state(ptrdiff_t const index,
+                                            int const hamming_weight) {
+  ls_hs_combinadics_kernel_data *const cache =
+      ls_hs_internal_create_combinadics_kernel_data(/*number_bits=*/64, false);
+  uint64_t const basis_state =
+      ls_hs_combinadics_index_to_state(index, hamming_weight, cache);
+  ls_hs_internal_destroy_combinadics_kernel_data(cache);
+  return basis_state;
 }
 
 void ls_hs_state_index_combinadics_kernel(ptrdiff_t const batch_size,
@@ -354,10 +386,10 @@ void ls_hs_state_index_combinadics_kernel(ptrdiff_t const batch_size,
     if (cache->is_per_sector) {
       uint64_t const low = alpha & mask;
       uint64_t const high = alpha >> number_bits;
-      index = (ptrdiff_t)rank_via_combinadics(high, cache) * number_low +
-              (ptrdiff_t)rank_via_combinadics(low, cache);
+      index = ls_hs_combinadics_state_to_index(high, cache) * number_low +
+              ls_hs_combinadics_state_to_index(low, cache);
     } else {
-      index = (ptrdiff_t)rank_via_combinadics(alpha, cache);
+      index = ls_hs_combinadics_state_to_index(alpha, cache);
     }
     indices[batch_idx * indices_stride] = index;
   }

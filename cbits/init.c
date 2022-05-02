@@ -1,10 +1,18 @@
 #include "lattice_symmetries_haskell.h"
 #include <HsFFI.h>
+#include <Rts.h>
 #include <stdio.h>
 
 void ls_hs_init(void) {
   // LATTICE_SYMMETRIES_LOG_DEBUG("%s", "Calling hs_init...\n");
-  hs_init(NULL, NULL);
+  // hs_init(NULL, NULL);
+  int argc = 3;
+  char *argv[] = {"+RTS", "-N1", "-RTS", NULL};
+  char **pargv = argv;
+  RtsConfig conf = defaultRtsConfig;
+  conf.rts_opts_enabled = RtsOptsAll;
+  hs_init_ghc(&argc, &pargv, conf);
+  // hs_init(&argc, &pargv);
   ls_hs_internal_set_free_stable_ptr(&hs_free_stable_ptr);
   // ls_hs_internal_set_free_stable_ptr(&ls_hs_free_stable_ptr);
   // LATTICE_SYMMETRIES_LOG_DEBUG("%s", "Initialized RTS!\n");

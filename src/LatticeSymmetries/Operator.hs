@@ -157,7 +157,7 @@ destroyCnonbranching_terms p
 --   bool needs_projection;
 -- } ls_hs_operator;
 
-foreign import ccall unsafe "ls_hs_destroy_basis_v2"
+foreign import ccall safe "ls_hs_destroy_basis_v2"
   ls_hs_destroy_basis :: Ptr Cbasis -> IO ()
 
 operatorFromHeader ::

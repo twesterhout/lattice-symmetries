@@ -43,6 +43,9 @@ module LatticeSymmetries.Basis
     withReconstructedBasis,
     -- ls_hs_create_basis,
     ls_hs_clone_basis,
+    ls_hs_basis_from_json,
+    ls_hs_basis_to_json,
+    ls_hs_destroy_string,
     ls_hs_create_spin_basis_from_json,
     ls_hs_create_spinful_fermion_basis_from_json,
     ls_hs_create_spinless_fermion_basis_from_json,
@@ -61,12 +64,13 @@ import Data.Aeson
 import Data.Aeson.Types (Pair)
 import Data.Bits
 import Data.ByteString (packCString)
+import Data.ByteString.Internal (ByteString (..))
 import Data.Yaml.Aeson
 import Foreign.C.String (CString)
 import Foreign.C.Types
 import Foreign.ForeignPtr
-import Foreign.Marshal.Alloc (alloca)
-import Foreign.Marshal.Utils (fromBool, new, with)
+import Foreign.Marshal.Alloc (alloca, free, mallocBytes)
+import Foreign.Marshal.Utils (copyBytes, fromBool, new, with)
 import Foreign.Ptr
 import Foreign.StablePtr
 import Foreign.Storable
@@ -312,6 +316,22 @@ decodeCString cStr = do
   case eitherDecode (fromStrict s) of
     Right x -> pure x
     Left msg -> error (toText msg)
+
+ls_hs_destroy_string :: Ptr CChar -> IO ()
+ls_hs_destroy_string = free
+
+newCString :: ByteString -> IO CString
+newCString (PS fp _ l) = do
+  (buf :: Ptr CChar) <- mallocBytes (l + 1)
+  withForeignPtr fp $ \(p :: Ptr Word8) -> do
+    copyBytes buf (castPtr p) l
+    pokeByteOff buf l (0 :: CChar)
+  pure buf
+
+ls_hs_basis_to_json :: Ptr Cbasis -> IO CString
+ls_hs_basis_to_json cBasis =
+  withReconstructedBasis cBasis $ \basis ->
+    newCString $ toStrict (Data.Aeson.encode basis)
 
 ls_hs_basis_from_json :: CString -> IO (Ptr Cbasis)
 ls_hs_basis_from_json cStr = do
@@ -588,7 +608,7 @@ withParticleType t action
   | t == c_LS_HS_SPIN = action (Proxy :: Proxy 'SpinTy)
   | t == c_LS_HS_SPINFUL_FERMION = action (Proxy :: Proxy 'SpinfulFermionTy)
   | t == c_LS_HS_SPINLESS_FERMION = action (Proxy :: Proxy 'SpinlessFermionTy)
-  | otherwise = error "invalid particle type"
+  | otherwise = error $ "invalid particle type: " <> show t
 
 withReconstructedBasis :: forall a. Ptr Cbasis -> (forall (t :: ParticleTy). IsBasis t => Basis t -> IO a) -> IO a
 withReconstructedBasis p action = do
@@ -603,36 +623,36 @@ data Ccombinadics_kernel_data
 
 data Cbinary_search_kernel_data
 
-foreign import capi unsafe "lattice_symmetries_haskell.h ls_hs_internal_create_combinadics_kernel_data"
+foreign import capi safe "lattice_symmetries_haskell.h ls_hs_internal_create_combinadics_kernel_data"
   ls_hs_internal_create_combinadics_kernel_data :: CInt -> CBool -> IO (Ptr Ccombinadics_kernel_data)
 
-foreign import capi unsafe "lattice_symmetries_haskell.h ls_hs_internal_destroy_combinadics_kernel_data"
+foreign import capi safe "lattice_symmetries_haskell.h ls_hs_internal_destroy_combinadics_kernel_data"
   ls_hs_internal_destroy_combinadics_kernel_data :: Ptr Ccombinadics_kernel_data -> IO ()
 
-foreign import capi unsafe "lattice_symmetries_haskell.h &ls_hs_state_index_combinadics_kernel"
+foreign import capi safe "lattice_symmetries_haskell.h &ls_hs_state_index_combinadics_kernel"
   ls_hs_state_index_combinadics_kernel :: FunPtr Cindex_kernel
 
-foreign import capi unsafe "lattice_symmetries_haskell.h ls_hs_destroy_state_index_binary_search_kernel_data"
+foreign import capi safe "lattice_symmetries_haskell.h ls_hs_destroy_state_index_binary_search_kernel_data"
   ls_hs_destroy_state_index_binary_search_kernel_data :: Ptr Cbinary_search_kernel_data -> IO ()
 
-foreign import capi unsafe "lattice_symmetries_haskell.h &ls_hs_state_index_binary_search_kernel"
+foreign import capi safe "lattice_symmetries_haskell.h &ls_hs_state_index_binary_search_kernel"
   ls_hs_state_index_binary_search_kernel :: FunPtr Cindex_kernel
 
-foreign import capi unsafe "lattice_symmetries_haskell.h &ls_hs_state_index_identity_kernel"
+foreign import capi safe "lattice_symmetries_haskell.h &ls_hs_state_index_identity_kernel"
   ls_hs_state_index_identity_kernel :: FunPtr Cindex_kernel
 
 data Chalide_kernel_data
 
-foreign import capi unsafe "lattice_symmetries_haskell.h ls_internal_create_halide_kernel_data"
+foreign import capi safe "lattice_symmetries_haskell.h ls_internal_create_halide_kernel_data"
   ls_internal_create_halide_kernel_data :: Ptr Cpermutation_group -> CInt -> IO (Ptr Chalide_kernel_data)
 
-foreign import capi unsafe "lattice_symmetries_haskell.h ls_internal_destroy_halide_kernel_data"
+foreign import capi safe "lattice_symmetries_haskell.h ls_internal_destroy_halide_kernel_data"
   ls_internal_destroy_halide_kernel_data :: Ptr Chalide_kernel_data -> IO ()
 
-foreign import capi unsafe "lattice_symmetries_haskell.h &ls_hs_is_representative_halide_kernel"
+foreign import capi safe "lattice_symmetries_haskell.h &ls_hs_is_representative_halide_kernel"
   ls_hs_is_representative_halide_kernel :: FunPtr Cis_representative_kernel
 
-foreign import capi unsafe "lattice_symmetries_haskell.h &ls_hs_state_info_halide_kernel"
+foreign import capi safe "lattice_symmetries_haskell.h &ls_hs_state_info_halide_kernel"
   ls_hs_state_info_halide_kernel :: FunPtr Cstate_info_kernel
 
 setStateInfoKernel :: BasisHeader t -> Cbasis_kernels -> IO Cbasis_kernels
