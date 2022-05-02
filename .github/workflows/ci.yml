@@ -55,6 +55,7 @@ jobs:
         brew install libomp
     - uses: actions/cache@v3
       name: Cache ~/hdf5
+      id: cache-hdf5
       with:
         path: ~/hdf5
         key: ${{ runner.os }}-${{ matrix.ghc }}-hdf5-v1
