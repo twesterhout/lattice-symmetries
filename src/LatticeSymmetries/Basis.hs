@@ -104,7 +104,8 @@ instance FromJSON ParticleTy where
     where
       f t
         | t == "spin" || t == "spin-1/2" = pure SpinTy
-        | t == "spinless" || t == "spinless-fermion" || t == "spinless fermion" = pure SpinlessFermionTy
+        | t == "spinless" || t == "spinless-fermion" || t == "spinless fermion" =
+          pure SpinlessFermionTy
         | t == "spinful" || t == "spinful-fermion" || t == "spinful fermion" = pure SpinfulFermionTy
         | otherwise = fail "invalid particle type"
 
@@ -168,7 +169,8 @@ parseSpinfulOccupation v = do
 encodeSpinfulOccupation :: SpinfulOccupation -> [Pair]
 encodeSpinfulOccupation SpinfulNoOccupation = []
 encodeSpinfulOccupation (SpinfulTotalParticles n) = [("number_particles", toJSON n)]
-encodeSpinfulOccupation (SpinfulPerSector up down) = [("number_particles", toJSON ([up, down] :: [Int]))]
+encodeSpinfulOccupation (SpinfulPerSector up down) =
+  [("number_particles", toJSON ([up, down] :: [Int]))]
 
 basisHeaderToJSON :: BasisHeader t -> Value
 basisHeaderToJSON x

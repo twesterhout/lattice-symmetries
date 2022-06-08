@@ -355,6 +355,9 @@ void ls_hs_internal_set_chpl_kernels(ls_chpl_kernels const *kernels);
 void ls_hs_build_representatives(ls_hs_basis *basis, uint64_t lower,
                                  uint64_t upper);
 
+void ls_hs_unchecked_set_representatives(ls_hs_basis *basis,
+                                         chpl_external_array const* states);
+
 // Examples
 
 ls_hs_basis *ls_hs_spin_chain_10_basis();

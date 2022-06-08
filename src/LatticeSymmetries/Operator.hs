@@ -30,7 +30,9 @@ data OperatorHeader (t :: ParticleTy) = OperatorHeader
     opTerms :: !(Polynomial ComplexRational (Generator (IndexType t) (GeneratorType t)))
   }
 
-deriving stock instance (Show (Basis t), Show (IndexType t), Show (GeneratorType t)) => Show (OperatorHeader t)
+deriving stock instance
+  (Show (Basis t), Show (IndexType t), Show (GeneratorType t)) =>
+  Show (OperatorHeader t)
 
 data Operator (t :: ParticleTy) = Operator
   { opHeader :: !(OperatorHeader t),

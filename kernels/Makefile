@@ -45,6 +45,7 @@ HL_ALL_TARGETS += $(HL_BASE_TARGET)
 
 CC = cc
 CXX = c++
+CFLAGS = -O3 -DNDEBUG -march=nehalem -mtune=haswell
 SHELL = bash
 BIN_DIR ?= build
 SANITIZER_FLAGS ?=

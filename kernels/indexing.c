@@ -34,6 +34,7 @@ static ptrdiff_t binary_search(ptrdiff_t const size, uint64_t const *haystack,
   if (element_ptr == NULL) {
     return -1;
   }
+  LS_CHECK(*element_ptr == needle, "search failed... :(");
   return element_ptr - haystack;
 }
 

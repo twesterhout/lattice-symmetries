@@ -7,6 +7,7 @@ module LatticeSymmetries.Parser
     pBasisState,
     SpinIndex (..),
     -- mkSpinOperator,
+    termsFromText,
     operatorFromString,
     hamiltonianFromYAML,
     ls_hs_load_hamiltonian_from_yaml,
@@ -34,6 +35,7 @@ import LatticeSymmetries.Generator
 import LatticeSymmetries.Operator
 import LatticeSymmetries.Utils
 import Text.Parsec
+import Type.Reflection
 -- import qualified Text.Read (read)
 import Prelude hiding (Product, Sum, (<|>))
 
@@ -161,23 +163,43 @@ pOperatorString pPrimitive =
 --   Left e -> error (show e)
 --   Right x -> simplify $ forIndices x indices
 
-getPrimitiveParser :: Stream s m Char => Basis t -> ParsecT s u m (Sum (Scaled ComplexRational (Factor t)))
-getPrimitiveParser b = case basisHeader b of
-  SpinHeader _ _ _ _ -> pSpinOperator
-  SpinfulFermionHeader _ _ -> pFermionicOperator
-  SpinlessFermionHeader _ _ -> pFermionicOperator
+-- getPrimitiveParser :: Stream s m Char => Basis t -> ParsecT s u m (Sum (Scaled ComplexRational (Factor t)))
+-- getPrimitiveParser b = case basisHeader b of
+--   SpinHeader _ _ _ _ -> pSpinOperator
+--   SpinfulFermionHeader _ _ -> pFermionicOperator
+--   SpinlessFermionHeader _ _ -> pFermionicOperator
+
+getPrimitiveParser ::
+  forall (t :: ParticleTy) s m proxy u.
+  (Stream s m Char, Typeable t) =>
+  proxy t ->
+  ParsecT s u m (Sum (Scaled ComplexRational (Factor t)))
+getPrimitiveParser _
+  | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinTy) = pSpinOperator
+  | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinlessFermionTy) = pFermionicOperator
+  | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinfulFermionTy) = pFermionicOperator
+  | otherwise = error "this should never happen by construction"
+
+termsFromText ::
+  forall t.
+  IsBasis t =>
+  Text ->
+  [[Int]] ->
+  Polynomial ComplexRational (Factor t)
+termsFromText s indices = case parse (pOperatorString (getPrimitiveParser (Proxy @t))) "" s of
+  Left e -> error $ "failed to parse " <> show s <> ": " <> show e
+  Right x -> simplify $ forSiteIndices x indices
 
 operatorFromString ::
+  forall t.
   IsBasis t =>
   Basis t ->
   Text ->
   [[Int]] ->
   Operator t
-operatorFromString basis s indices = case parse (pOperatorString (getPrimitiveParser basis)) "" s of
-  Left e -> error $ "failed to parse " <> show s <> ": " <> show e
-  Right x ->
-    let terms = simplify $ forSiteIndices x indices
-     in operatorFromHeader $ OperatorHeader basis terms
+operatorFromString basis s indices =
+  operatorFromHeader . OperatorHeader basis $
+    termsFromText @t s indices
 
 pBasisState :: Stream s m Char => ParsecT s u m BasisState
 pBasisState = do
@@ -266,6 +288,12 @@ instance IsString BasisState where
 
 -- normalizeIndices :: NonEmpty PrimitiveOperator -> Either Text (NonEmpty PrimitiveOperator)
 -- normalizeIndices = undefined
+
+termsFromJSON :: forall t. IsBasis t => Value -> Parser (Polynomial ComplexRational (Factor t))
+termsFromJSON = withObject "Term" $ \v -> do
+  expr <- v .: "expression"
+  sites <- v .: "sites"
+  pure $ termsFromText @t expr sites
 
 data OperatorTermSpec = OperatorTermSpec !Text ![[Int]]
 
