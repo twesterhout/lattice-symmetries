@@ -45,6 +45,11 @@ void ls_hs_internal_set_free_stable_ptr(void (*f)(void *));
 __attribute__((noreturn)) void ls_hs_fatal_error(char const *func, int line,
                                                  char const *message);
 
+
+
+void ls_hs_set_exception_handler(void (*handler)(char const* message));
+void ls_hs_error(char const* message);
+
 #define LS_FATAL_ERROR(msg) ls_hs_fatal_error(__func__, __LINE__, msg)
 
 #define LS_CHECK(cond, msg)                                                    \

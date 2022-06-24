@@ -1,4 +1,4 @@
-{-# LANGUAGE CApiFFI #-}
+-- {-# LANGUAGE CApiFFI #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE QuantifiedConstraints #-}
@@ -60,10 +60,11 @@ module LatticeSymmetries.Basis
   )
 where
 
+import Control.Exception.Safe (handleAny)
 import Data.Aeson
 import Data.Aeson.Types (Pair)
 import Data.Bits
-import Data.ByteString (packCString)
+import Data.ByteString (packCString, useAsCString)
 import Data.ByteString.Internal (ByteString (..))
 import Data.Yaml.Aeson
 import Foreign.C.String (CString)
@@ -335,8 +336,16 @@ ls_hs_basis_to_json cBasis =
   withReconstructedBasis cBasis $ \basis ->
     newCString $ toStrict (Data.Aeson.encode basis)
 
+foreign import ccall unsafe "ls_hs_error"
+  ls_hs_error :: CString -> IO ()
+
+propagateErrorToC :: Exception e => a -> e -> IO a
+propagateErrorToC x₀ = \e -> do
+  logDebug' $ "Throwing " <> show e <> " ..."
+  useAsCString (show e) ls_hs_error >> pure x₀
+
 ls_hs_basis_from_json :: CString -> IO (Ptr Cbasis)
-ls_hs_basis_from_json cStr = do
+ls_hs_basis_from_json cStr = handleAny (propagateErrorToC nullPtr) $ do
   (basis :: SomeBasis) <- decodeCString cStr
   foldSomeBasis borrowCbasis basis
 
@@ -428,7 +437,7 @@ ls_hs_min_state_estimate p =
 
 -- data Representatives = Representatives {rStates :: !ChapelArray}
 
-foreign import capi safe "ls_hs_build_representatives"
+foreign import ccall safe "ls_hs_build_representatives"
   ls_hs_build_representatives :: Ptr Cbasis -> Word64 -> Word64 -> IO ()
 
 basisBuild :: Basis t -> IO ()
@@ -625,36 +634,36 @@ data Ccombinadics_kernel_data
 
 data Cbinary_search_kernel_data
 
-foreign import capi safe "lattice_symmetries_haskell.h ls_hs_internal_create_combinadics_kernel_data"
+foreign import ccall safe "lattice_symmetries_haskell.h ls_hs_internal_create_combinadics_kernel_data"
   ls_hs_internal_create_combinadics_kernel_data :: CInt -> CBool -> IO (Ptr Ccombinadics_kernel_data)
 
-foreign import capi safe "lattice_symmetries_haskell.h ls_hs_internal_destroy_combinadics_kernel_data"
+foreign import ccall safe "lattice_symmetries_haskell.h ls_hs_internal_destroy_combinadics_kernel_data"
   ls_hs_internal_destroy_combinadics_kernel_data :: Ptr Ccombinadics_kernel_data -> IO ()
 
-foreign import capi safe "lattice_symmetries_haskell.h &ls_hs_state_index_combinadics_kernel"
+foreign import ccall safe "lattice_symmetries_haskell.h &ls_hs_state_index_combinadics_kernel"
   ls_hs_state_index_combinadics_kernel :: FunPtr Cindex_kernel
 
-foreign import capi safe "lattice_symmetries_haskell.h ls_hs_destroy_state_index_binary_search_kernel_data"
+foreign import ccall safe "lattice_symmetries_haskell.h ls_hs_destroy_state_index_binary_search_kernel_data"
   ls_hs_destroy_state_index_binary_search_kernel_data :: Ptr Cbinary_search_kernel_data -> IO ()
 
-foreign import capi safe "lattice_symmetries_haskell.h &ls_hs_state_index_binary_search_kernel"
+foreign import ccall safe "lattice_symmetries_haskell.h &ls_hs_state_index_binary_search_kernel"
   ls_hs_state_index_binary_search_kernel :: FunPtr Cindex_kernel
 
-foreign import capi safe "lattice_symmetries_haskell.h &ls_hs_state_index_identity_kernel"
+foreign import ccall safe "lattice_symmetries_haskell.h &ls_hs_state_index_identity_kernel"
   ls_hs_state_index_identity_kernel :: FunPtr Cindex_kernel
 
 data Chalide_kernel_data
 
-foreign import capi safe "lattice_symmetries_haskell.h ls_internal_create_halide_kernel_data"
+foreign import ccall safe "lattice_symmetries_haskell.h ls_internal_create_halide_kernel_data"
   ls_internal_create_halide_kernel_data :: Ptr Cpermutation_group -> CInt -> IO (Ptr Chalide_kernel_data)
 
-foreign import capi safe "lattice_symmetries_haskell.h ls_internal_destroy_halide_kernel_data"
+foreign import ccall safe "lattice_symmetries_haskell.h ls_internal_destroy_halide_kernel_data"
   ls_internal_destroy_halide_kernel_data :: Ptr Chalide_kernel_data -> IO ()
 
-foreign import capi safe "lattice_symmetries_haskell.h &ls_hs_is_representative_halide_kernel"
+foreign import ccall safe "lattice_symmetries_haskell.h &ls_hs_is_representative_halide_kernel"
   ls_hs_is_representative_halide_kernel :: FunPtr Cis_representative_kernel
 
-foreign import capi safe "lattice_symmetries_haskell.h &ls_hs_state_info_halide_kernel"
+foreign import ccall safe "lattice_symmetries_haskell.h &ls_hs_state_info_halide_kernel"
   ls_hs_state_info_halide_kernel :: FunPtr Cstate_info_kernel
 
 setStateInfoKernel :: BasisHeader t -> Cbasis_kernels -> IO Cbasis_kernels

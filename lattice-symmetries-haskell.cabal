@@ -47,7 +47,8 @@ common common-options
     ghc-options:       -Wmissing-deriving-strategies
 
   default-language:    Haskell2010
-  default-extensions:  BangPatterns
+  default-extensions:  BinaryLiterals
+                       BangPatterns
                        ScopedTypeVariables
                        OverloadedStrings
                        FlexibleContexts

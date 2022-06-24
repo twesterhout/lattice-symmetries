@@ -24,6 +24,28 @@ void ls_hs_fatal_error(char const *func, int const line, char const *message) {
           message);
   abort();
 }
+
+typedef void (*error_handler_type)(char const *);
+static _Atomic error_handler_type ls_hs_internal_error_handler;
+
+static void default_error_handler(char const *message) {
+  fprintf(stderr, "[Error]   %s\n[Error]   Aborting ...", message);
+  abort();
+}
+
+void ls_hs_set_exception_handler(error_handler_type handler) {
+  if (handler == NULL) {
+    handler = default_error_handler;
+  }
+  atomic_exchange(&ls_hs_internal_error_handler, handler);
+}
+
+void ls_hs_error(char const *message) {
+  error_handler_type handler = atomic_load(&ls_hs_internal_error_handler);
+  LS_CHECK(handler != NULL, "error handler is NULL");
+  (*handler)(message);
+}
+
 // void ls_hs_internal_destroy_external_array(chpl_external_array *p) {
 //   ls_hs_internal_chpl_free_func free_func =
 //       (ls_hs_internal_chpl_free_func)p->freer;
@@ -486,18 +508,17 @@ void ls_hs_build_representatives(ls_hs_basis *basis, uint64_t const lower,
 }
 
 void ls_hs_unchecked_set_representatives(ls_hs_basis *basis,
-                                         chpl_external_array const* states) {
+                                         chpl_external_array const *states) {
   LS_CHECK(basis->representatives.num_elts == 0,
            "representatives have already been set");
   basis->representatives = *states;
   if (basis->kernels->state_index_kernel != NULL) {
-      // TODO: this is leaking memory...
+    // TODO: this is leaking memory...
   }
   basis->kernels->state_index_data =
       ls_hs_create_state_index_binary_search_kernel_data(
           &basis->representatives);
-  basis->kernels->state_index_kernel =
-      &ls_hs_state_index_binary_search_kernel;
+  basis->kernels->state_index_kernel = &ls_hs_state_index_binary_search_kernel;
 }
 
 // TODO: currently not thread-safe, fix it

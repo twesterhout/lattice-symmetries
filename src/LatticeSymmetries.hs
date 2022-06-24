@@ -1,4 +1,4 @@
-{-# LANGUAGE CApiFFI #-}
+-- {-# LANGUAGE CApiFFI #-}
 
 -- {-# LANGUAGE QuasiQuotes #-}
 -- {-# LANGUAGE TemplateHaskell #-}
