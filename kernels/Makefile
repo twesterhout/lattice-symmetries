@@ -111,7 +111,7 @@ all: $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) ../cabal.project.local
 	echo "package lattice-symmetries-haskell" >>cabal.project.local && \
   	echo "  extra-lib-dirs: $(realpath $(BIN_DIR))" >>cabal.project.local
 
-$(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT): $(BIN_DIR)/reference.o $(BIN_DIR)/indexing.o $(BIN_DIR)/kernels.o $(OPS) $(BIN_DIR)/runtime.a 
+$(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT): $(BIN_DIR)/reference.o $(BIN_DIR)/indexing.o $(BIN_DIR)/binary_search.o $(BIN_DIR)/kernels.o $(OPS) $(BIN_DIR)/runtime.a 
 	@mkdir -p $(@D)
 	$(CC) $(SHARED_FLAG) -o $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) $^ -ldl -lpthread
 ifeq ($(UNAME), Darwin)
@@ -123,6 +123,10 @@ $(BIN_DIR)/reference.o: reference.c ../cbits/lattice_symmetries_haskell.h
 	$(CC) -fPIC $(CFLAGS) -I$(PWD)/../cbits -o $@ -c $<
 
 $(BIN_DIR)/indexing.o: indexing.c ../cbits/lattice_symmetries_haskell.h
+	@mkdir -p $(@D)
+	$(CC) -fPIC $(CFLAGS) -I$(PWD)/../cbits -o $@ -c $<
+
+$(BIN_DIR)/binary_search.o: binary_search.c ../cbits/lattice_symmetries_haskell.h
 	@mkdir -p $(@D)
 	$(CC) -fPIC $(CFLAGS) -I$(PWD)/../cbits -o $@ -c $<
 

@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -64,11 +65,47 @@ void ls_hs_state_index_binary_search_kernel(ptrdiff_t const batch_size,
                                             ptrdiff_t const indices_stride,
                                             void const *private_kernel_data) {
   ls_hs_state_index_binary_search_data const *cache = private_kernel_data;
-  for (ptrdiff_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
-    uint64_t const spin = spins[batch_idx * spins_stride];
-    ptrdiff_t const index =
-        binary_search(cache->number_states, cache->representatives, spin);
-    // LS_CHECK(index == -1 || cache->representatives[index] == spin, ":(");
-    indices[batch_idx * indices_stride] = index;
+  LS_CHECK(indices_stride == 1, "expected indices_stride==1");
+  LS_CHECK(spins_stride == 1, "expected spins_stride==1");
+
+  ptrdiff_t const block_size = 16;
+  // ptrdiff_t const number_blocks = batch_size / block_size;
+  // ptrdiff_t const number_rest = batch_size % block_size;
+
+  ptrdiff_t batch_idx = 0;
+  for (; batch_idx + block_size <= batch_size; batch_idx += block_size) {
+    ls_hs_internal_block_binary_search(block_size, cache->representatives,
+                                       cache->number_states, spins + batch_idx,
+                                       indices + batch_idx);
+    for (ptrdiff_t i = 0; i < block_size; ++i) {
+      ptrdiff_t const index = binary_search(
+          cache->number_states, cache->representatives, spins[batch_idx + i]);
+      LS_CHECK(index == indices[batch_idx + i], ":(");
+    }
   }
+  if (batch_idx < batch_size) {
+    ptrdiff_t const remaining_size = batch_size - batch_idx;
+    ls_hs_internal_block_binary_search(remaining_size, cache->representatives,
+                                       cache->number_states, spins + batch_idx,
+                                       indices + batch_idx);
+    for (ptrdiff_t i = 0; i < remaining_size; ++i) {
+      ptrdiff_t const index = binary_search(
+          cache->number_states, cache->representatives, spins[batch_idx + i]);
+      if (index != indices[batch_idx + i]) {
+        fprintf(stderr,
+                "index=%zi vs. indices[batch_idx + i]=%zi; spins[batch_idx + "
+                "i]=%zu\n",
+                index, indices[batch_idx + i], spins[batch_idx + i]);
+      }
+      LS_CHECK(index == indices[batch_idx + i], ":(");
+    }
+  }
+
+  // for (ptrdiff_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+  //   uint64_t const spin = spins[batch_idx * spins_stride];
+  //   ptrdiff_t const index =
+  //       binary_search(cache->number_states, cache->representatives, spin);
+  //   // LS_CHECK(index == -1 || cache->representatives[index] == spin, ":(");
+  //   indices[batch_idx * indices_stride] = index;
+  // }
 }

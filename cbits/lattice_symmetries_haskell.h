@@ -45,10 +45,8 @@ void ls_hs_internal_set_free_stable_ptr(void (*f)(void *));
 __attribute__((noreturn)) void ls_hs_fatal_error(char const *func, int line,
                                                  char const *message);
 
-
-
-void ls_hs_set_exception_handler(void (*handler)(char const* message));
-void ls_hs_error(char const* message);
+void ls_hs_set_exception_handler(void (*handler)(char const *message));
+void ls_hs_error(char const *message);
 
 #define LS_FATAL_ERROR(msg) ls_hs_fatal_error(__func__, __LINE__, msg)
 
@@ -349,6 +347,12 @@ void ls_hs_state_index_binary_search_kernel(ptrdiff_t batch_size,
                                             ptrdiff_t indices_stride,
                                             void const *private_kernel_data);
 
+void ls_hs_internal_block_binary_search(ptrdiff_t const block_size,
+                                        uint64_t const haystack[],
+                                        ptrdiff_t const haystack_size,
+                                        uint64_t const needles[],
+                                        ptrdiff_t indices[]);
+
 typedef struct ls_chpl_kernels {
   void (*enumerate_states)(ls_hs_basis const *, uint64_t, uint64_t,
                            chpl_external_array *);
@@ -361,7 +365,7 @@ void ls_hs_build_representatives(ls_hs_basis *basis, uint64_t lower,
                                  uint64_t upper);
 
 void ls_hs_unchecked_set_representatives(ls_hs_basis *basis,
-                                         chpl_external_array const* states);
+                                         chpl_external_array const *states);
 
 // Examples
 
