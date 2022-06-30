@@ -347,11 +347,16 @@ void ls_hs_state_index_binary_search_kernel(ptrdiff_t batch_size,
                                             ptrdiff_t indices_stride,
                                             void const *private_kernel_data);
 
-void ls_hs_internal_block_binary_search(ptrdiff_t const block_size,
-                                        uint64_t const haystack[],
-                                        ptrdiff_t const haystack_size,
-                                        uint64_t const needles[],
-                                        ptrdiff_t indices[]);
+// void ls_hs_internal_block_binary_search(ptrdiff_t const block_size,
+//                                         uint64_t const haystack[],
+//                                         ptrdiff_t const haystack_size,
+//                                         uint64_t const needles[],
+//                                         ptrdiff_t indices[]);
+
+// void ls_hs_internal_binary_search_x1(uint64_t const haystack[],
+//                                      ptrdiff_t haystack_size,
+//                                      uint64_t needle,
+//                                      ptrdiff_t *index);
 
 typedef struct ls_chpl_kernels {
   void (*enumerate_states)(ls_hs_basis const *, uint64_t, uint64_t,
