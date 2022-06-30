@@ -45,8 +45,7 @@ HL_ALL_TARGETS += $(HL_BASE_TARGET)
 
 CC = cc
 CXX = c++
-CFLAGS = -O3 -DNDEBUG -DLS_CHECK_BINARY_SEARCH=0 -DLS_USE_ASAC=1 -march=native
-# -march=nehalem -mtune=haswell
+CFLAGS = -O3 -DNDEBUG -march=nehalem -mtune=haswell
 SHELL = bash
 BIN_DIR ?= build
 SANITIZER_FLAGS ?=
