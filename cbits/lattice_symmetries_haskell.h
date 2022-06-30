@@ -175,6 +175,8 @@ void ls_hs_destroy_string(char const *);
 
 void ls_hs_basis_build(ls_hs_basis *basis);
 
+int ls_hs_basis_number_bits(ls_hs_basis const *);
+
 bool ls_hs_basis_has_fixed_hamming_weight(ls_hs_basis const *);
 
 void ls_hs_state_index(ls_hs_basis const *basis, ptrdiff_t batch_size,
@@ -335,7 +337,7 @@ typedef struct ls_hs_state_index_binary_search_data
 
 ls_hs_state_index_binary_search_data *
 ls_hs_create_state_index_binary_search_kernel_data(
-    chpl_external_array const *representatives);
+    chpl_external_array const *representatives, int number_bits);
 
 void ls_hs_destroy_state_index_binary_search_kernel_data(
     ls_hs_state_index_binary_search_data *cache);

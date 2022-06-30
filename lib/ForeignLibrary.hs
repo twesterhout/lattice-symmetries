@@ -115,6 +115,14 @@ foreign export ccall "ls_hs_basis_build"
 foreign export ccall "ls_hs_basis_has_fixed_hamming_weight"
   ls_hs_basis_has_fixed_hamming_weight :: Ptr Cbasis -> IO CBool
 
+ls_hs_basis_number_bits :: Ptr Cbasis -> IO CInt
+ls_hs_basis_number_bits basis =
+  fromIntegral
+    <$> withReconstructedBasis basis (pure . getNumberBits . basisHeader)
+
+foreign export ccall "ls_hs_basis_number_bits"
+  ls_hs_basis_number_bits :: Ptr Cbasis -> IO CInt
+
 ls_hs_create_operator :: Ptr Cbasis -> CString -> CInt -> CInt -> Ptr CInt -> IO (Ptr Coperator)
 ls_hs_create_operator basisPtr cStr numberTuples tupleSize tuplesPtr =
   withReconstructedBasis basisPtr $ \basis -> do

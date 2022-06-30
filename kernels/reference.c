@@ -499,9 +499,10 @@ void ls_hs_build_representatives(ls_hs_basis *basis, uint64_t const lower,
   }
   (*kernels->enumerate_states)(basis, lower, upper, &basis->representatives);
   if (basis->kernels->state_index_kernel == NULL) {
+
     basis->kernels->state_index_data =
         ls_hs_create_state_index_binary_search_kernel_data(
-            &basis->representatives);
+            &basis->representatives, ls_hs_basis_number_bits(basis));
     basis->kernels->state_index_kernel =
         &ls_hs_state_index_binary_search_kernel;
   }
@@ -517,7 +518,7 @@ void ls_hs_unchecked_set_representatives(ls_hs_basis *basis,
   }
   basis->kernels->state_index_data =
       ls_hs_create_state_index_binary_search_kernel_data(
-          &basis->representatives);
+          &basis->representatives, ls_hs_basis_number_bits(basis));
   basis->kernels->state_index_kernel = &ls_hs_state_index_binary_search_kernel;
 }
 
