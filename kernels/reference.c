@@ -182,8 +182,9 @@ void ls_hs_operator_apply_diag_kernel(ls_hs_operator const *op,
 
   int const number_words = (op->diag_terms->number_bits + 63) / 64;
   // fprintf(stderr, "number_words=%d\n", number_words);
-  uint64_t *restrict const temp =
-      malloc((size_t)number_words * sizeof(uint64_t));
+  // uint64_t *restrict const temp =
+  //     malloc((size_t)number_words * sizeof(uint64_t));
+  uint64_t temp[1];
   if (temp == NULL) {
     // fprintf(stderr, "%s\n", "failed to allocate memory");
     abort();
@@ -204,19 +205,140 @@ void ls_hs_operator_apply_diag_kernel(ls_hs_operator const *op,
       int const delta = bitstring_equal(number_words, temp, r);
       bitstring_and(number_words, alpha, s, temp);
       int const sign = 1 - 2 * (bitstring_popcount(number_words, temp) % 2);
-      // fprintf(stderr, "α=%zu, s=%zu, temp=%zu, popcount(temp)=%d, %d\n",
-      //         alpha[0], s[0], temp[0], bitstring_popcount(number_words,
-      //         temp),
-      //         __builtin_popcountl(temp[0]));
-      acc += v * (delta * sign);
-      // fprintf(stderr, "acc += (%f + %fi) * (%d * %d)\n", crealf(v),
-      // cimagf(v),
-      //         delta, sign);
+
+      // acc += v * (delta * sign);
+      acc += CMPLX(creal(v) * delta * sign, cimag(v) * delta * sign);
     }
     coeffs[batch_idx] = acc;
   }
-  free(temp);
+  // free(temp);
 }
+
+#define BATCH_BLOCK_SIZE 8
+#define TERM_BLOCK_SIZE 8
+
+#define PRODUCE_DELTA deltas[batch_idxi + term_idxi * BATCH_BLOCK_SIZE] = \
+                        (alphas[batch_idx + batch_idxi] & terms->m[term_idx + term_idxi]) \
+                           == terms->r[term_idx + term_idxi]
+#define CONSUME_DELTA \
+                uint8_t const delta = deltas[batch_idxi + term_idxi * BATCH_BLOCK_SIZE]; \
+                if (delta != 0) { \
+                  int const sign = \
+                      1 - 2 * (__builtin_popcountll(alphas[batch_idx + batch_idxi] \
+                                                    & terms->s[term_idx + term_idxi]) % 2); \
+                  coeffs[(batch_idx + batch_idxi) * number_terms + offsets[batch_idxi]] = \
+                      terms->v[term_idx + term_idxi] * (delta * sign); \
+                  betas[(batch_idx + batch_idxi) * number_terms + offsets[batch_idxi]] = \
+                      alphas[batch_idx + batch_idxi] ^ terms->x[term_idx + term_idxi]; \
+                  ++offsets[batch_idxi]; \
+                } \
+                (void)0
+
+#define min(a, b) (((a) < (b)) ? a : b)
+
+#if 0
+void ls_internal_operator_apply_off_diag_x1_v1(
+    ls_hs_operator const *op, ptrdiff_t batch_size, uint64_t const *alphas,
+    uint64_t *betas, ls_hs_scalar *coeffs) {
+  // nothing to apply
+  if (op->off_diag_terms == NULL || op->off_diag_terms->number_terms == 0) {
+    return;
+  }
+  ls_hs_nonbranching_terms const *restrict terms = op->off_diag_terms;
+  ptrdiff_t const number_terms = terms->number_terms;
+
+  memset(coeffs, 0, batch_size * number_terms * sizeof(ls_hs_scalar));
+
+  ptrdiff_t offsets[BATCH_BLOCK_SIZE];
+  uint8_t deltas[BATCH_BLOCK_SIZE * TERM_BLOCK_SIZE];
+
+  ptrdiff_t batch_idx = 0;
+  while (batch_idx < batch_size) {
+    ptrdiff_t const batch_block_size = min(BATCH_BLOCK_SIZE, batch_size - batch_idx);
+    for (ptrdiff_t batch_idxi = 0; batch_idxi < batch_block_size; ++batch_idxi) {
+        offsets[batch_idxi] = 0;
+    }
+
+    ptrdiff_t term_idx = 0;
+    while (term_idx < number_terms) {
+        ptrdiff_t const term_block_size = min(TERM_BLOCK_SIZE, number_terms - term_idx);
+        for (ptrdiff_t term_idxi = 0; term_idxi < term_block_size; ++term_idxi) {
+            for (ptrdiff_t batch_idxi = 0; batch_idxi < batch_block_size; ++batch_idxi) {
+                PRODUCE_DELTA;
+            }
+        }
+        for (ptrdiff_t term_idxi = 0; term_idxi < term_block_size; ++term_idxi) {
+            for (ptrdiff_t batch_idxi = 0; batch_idxi < batch_block_size; ++batch_idxi) {
+                CONSUME_DELTA;
+            }
+        }
+        term_idx += term_block_size;
+    }
+
+    batch_idx += batch_block_size;
+  }
+}
+#endif
+
+void ls_internal_operator_apply_diag_x1(
+    ls_hs_operator const *const op, ptrdiff_t const batch_size, uint64_t const *restrict const alphas,
+    double *restrict const ys, double const* restrict const xs) {
+  // The diagonal is zero
+  if (op->diag_terms == NULL || op->diag_terms->number_terms == 0) {
+    memset(ys, 0, (size_t)batch_size * sizeof(double));
+    return;
+  }
+
+  ls_hs_nonbranching_terms const *restrict terms = op->diag_terms;
+  ptrdiff_t const number_terms = terms->number_terms;
+  for (ptrdiff_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+    double acc = 0;
+    uint64_t const alpha = alphas[batch_idx];
+    for (ptrdiff_t term_idx = 0; term_idx < number_terms; ++term_idx) {
+        uint8_t const delta = (alpha & terms->m[term_idx]) == terms->r[term_idx];
+        if (delta != 0) {
+          int const sign =
+              1 - 2 * (__builtin_popcountll(alpha & terms->s[term_idx]) % 2);
+          double const factor = (xs != NULL) ? delta * sign * xs[batch_idx] : delta * sign;
+          acc += creal(terms->v[term_idx]) * factor;
+        }
+    }
+    ys[batch_idx] = acc;
+  }
+}
+
+void ls_internal_operator_apply_off_diag_x1(
+    ls_hs_operator const *const op, ptrdiff_t const batch_size, uint64_t const *const alphas,
+    uint64_t *const betas, ls_hs_scalar *const coeffs, ptrdiff_t *const offsets,
+    double const *const xs) {
+  // Nothing to apply
+  if (op->off_diag_terms == NULL || op->off_diag_terms->number_terms == 0) {
+    memset(offsets, 0, (size_t)(batch_size + 1) * sizeof(ptrdiff_t));
+    return;
+  }
+
+  ls_hs_nonbranching_terms const *restrict terms = op->off_diag_terms;
+  ptrdiff_t const number_terms = terms->number_terms;
+
+  offsets[0] = 0;
+  ptrdiff_t offset = 0;
+  for (ptrdiff_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+    for (ptrdiff_t term_idx = 0; term_idx < number_terms; ++term_idx) {
+        uint8_t const delta = (alphas[batch_idx] & terms->m[term_idx]) == terms->r[term_idx];
+        if (delta != 0) {
+          int const sign =
+              1 - 2 * (__builtin_popcountll(alphas[batch_idx] & terms->s[term_idx]) % 2);
+          double const factor = (xs != NULL) ? delta * sign * xs[batch_idx] : delta * sign;
+          coeffs[offset] = CMPLX(creal(terms->v[term_idx]) * factor, cimag(terms->v[term_idx]) * factor);
+          betas[offset] = alphas[batch_idx] ^ terms->x[term_idx];
+          ++offset;
+        }
+    }
+    offsets[batch_idx + 1] = offset;
+  }
+  return;
+}
+
 
 void ls_hs_operator_apply_off_diag_kernel(
     ls_hs_operator const *op, ptrdiff_t batch_size, uint64_t const *alphas,
@@ -229,14 +351,15 @@ void ls_hs_operator_apply_off_diag_kernel(
     return;
   }
 
-  ls_internal_operator_apply_off_diag(batch_size, alphas, alphas_stride, betas,
-                                      betas_stride, coeffs,
-                                      op->apply_off_diag_cxt);
-  return;
+  // ls_internal_operator_apply_off_diag(batch_size, alphas, alphas_stride, betas,
+  //                                     betas_stride, coeffs,
+  //                                     op->apply_off_diag_cxt);
+  // return;
 
   int const number_words = (op->off_diag_terms->number_bits + 63) / 64;
-  uint64_t *restrict const temp =
-      malloc((size_t)number_words * sizeof(uint64_t));
+  uint64_t temp[1];
+  // uint64_t *restrict const temp =
+  //     malloc((size_t)number_words * sizeof(uint64_t));
   if (temp == NULL) {
     // fprintf(stderr, "%s\n", "failed to allocate memory");
     abort();
@@ -260,10 +383,8 @@ void ls_hs_operator_apply_off_diag_kernel(
       bitstring_and(number_words, alpha, m, temp);
       int const delta = bitstring_equal(number_words, temp, r);
       bitstring_and(number_words, alpha, s, temp);
-      // fprintf(stderr, "α=%zu, s=%zu, temp=%zu, popcount(temp)=%d\n",
-      // alpha[0],
-      //         s[0], temp[0], bitstring_popcount(number_words, temp));
       int const sign = 1 - 2 * (bitstring_popcount(number_words, temp) % 2);
+      LS_CHECK(sign == 1, "sign != 1");
       coeffs[batch_idx * number_terms + term_idx] = v * (delta * sign);
       bitstring_xor(number_words, alpha, x, beta);
       // fprintf(stderr, "coeffs[%zi] = (%f + %fi) * (%d * %d)\n",
@@ -271,7 +392,7 @@ void ls_hs_operator_apply_off_diag_kernel(
       //         delta, sign);
     }
   }
-  free(temp);
+  // free(temp);
 }
 
 static void compute_binomials(int dim, uint64_t *coeff) {

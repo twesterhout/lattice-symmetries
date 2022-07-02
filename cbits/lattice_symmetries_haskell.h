@@ -264,6 +264,13 @@ void ls_hs_operator_apply_off_diag_kernel(
     ptrdiff_t alphas_stride, uint64_t *betas, ptrdiff_t betas_stride,
     ls_hs_scalar *coeffs);
 
+void ls_internal_operator_apply_off_diag_x1(
+    ls_hs_operator const *op, ptrdiff_t batch_size, uint64_t const *alphas,
+    uint64_t *betas, ls_hs_scalar *coeffs, ptrdiff_t *offsets, double const *xs);
+void ls_internal_operator_apply_diag_x1(
+    ls_hs_operator const *op, ptrdiff_t batch_size, uint64_t const *alphas,
+    double *ys, double const *xs);
+
 // {{{ Binomials
 typedef struct {
   int dimension;
