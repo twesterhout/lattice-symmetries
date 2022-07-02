@@ -492,6 +492,15 @@ void ls_hs_state_info(ls_hs_basis const *basis, ptrdiff_t batch_size,
                                        basis->kernels->state_info_data);
 }
 
+int get_number_bits(ls_hs_basis const *basis) {
+  switch (basis->particle_type) {
+    case LS_HS_SPIN: return basis->number_sites;
+    case LS_HS_SPINFUL_FERMION: return 2 * basis->number_sites;
+    case LS_HS_SPINLESS_FERMION: return basis->number_sites;
+    default: LS_CHECK(false, "should never happen: invalid particle type");
+  }
+}
+
 void ls_hs_build_representatives(ls_hs_basis *basis, uint64_t const lower,
                                  uint64_t const upper) {
   ls_chpl_kernels const *kernels = ls_hs_internal_get_chpl_kernels();
@@ -504,9 +513,10 @@ void ls_hs_build_representatives(ls_hs_basis *basis, uint64_t const lower,
   }
   (*kernels->enumerate_states)(basis, lower, upper, &basis->representatives);
   if (basis->kernels->state_index_kernel == NULL) {
+
     basis->kernels->state_index_data =
         ls_hs_create_state_index_binary_search_kernel_data(
-            &basis->representatives);
+            &basis->representatives, get_number_bits(basis));
     basis->kernels->state_index_kernel =
         &ls_hs_state_index_binary_search_kernel;
   }
@@ -522,7 +532,7 @@ void ls_hs_unchecked_set_representatives(ls_hs_basis *basis,
   }
   basis->kernels->state_index_data =
       ls_hs_create_state_index_binary_search_kernel_data(
-          &basis->representatives);
+          &basis->representatives, get_number_bits(basis));
   basis->kernels->state_index_kernel = &ls_hs_state_index_binary_search_kernel;
 }
 
