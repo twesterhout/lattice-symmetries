@@ -222,7 +222,7 @@ Halide: $(PWD)/../third_party/Halide-$(HL_VERSION)-$(HL_ARCH)-$(HL_BITS)-$(HL_OS
 $(BIN_DIR)/generator: generator.cpp $(GENERATOR_DEPS_STATIC)
 	@echo Building Generator ...
 	@mkdir -p $(@D)
-	$(CXX) $(CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LIBHALIDE_LDFLAGS)
+	$(CXX) $(CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LIBHALIDE_LDFLAGS_STATIC)
 
 $(PWD)/../third_party/Halide-$(HL_VERSION)-$(HL_ARCH)-$(HL_BITS)-$(HL_OS)-$(HL_HASH).$(HL_ARCHIVE):
 	@mkdir -p $(@D)
