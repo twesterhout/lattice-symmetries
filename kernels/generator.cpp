@@ -286,10 +286,40 @@ public:
   Output<Buffer<uint64_t>> _beta{"beta", 3};
   Output<Buffer<double>> _coeff{"coeff", 3};
 
+  void _set_shapes_and_strides() {
+    auto const number_terms = _v.dim(1).extent();
+    auto const batch_size = _alpha.dim(1).extent();
+    _v.dim(0).set_min(0).set_stride(1).set_extent(2);
+    _v.dim(1).set_min(0).set_stride(2);
+    _m.dim(0).set_min(0).set_stride(1).set_extent(_number_words);
+    _m.dim(1).set_min(0).set_stride(_number_words).set_extent(number_terms);
+    _r.dim(0).set_min(0).set_stride(1).set_extent(_number_words);
+    _r.dim(1).set_min(0).set_stride(_number_words).set_extent(number_terms);
+    _x.dim(0).set_min(0).set_stride(1).set_extent(_number_words);
+    _x.dim(1).set_min(0).set_stride(_number_words).set_extent(number_terms);
+    _s.dim(0).set_min(0).set_stride(1).set_extent(_number_words);
+    _s.dim(1).set_min(0).set_stride(_number_words).set_extent(number_terms);
+    _alpha.dim(0).set_min(0).set_stride(1).set_extent(_number_words);
+    _alpha.dim(1).set_min(0).set_stride(_number_words);
+    _beta.dim(0).set_min(0).set_stride(1).set_extent(_number_words);
+    _beta.dim(1).set_min(0).set_stride(_number_words).set_extent(number_terms);
+    _beta.dim(2)
+        .set_min(0)
+        .set_stride(_number_words * number_terms)
+        .set_extent(batch_size);
+    _coeff.dim(0).set_min(0).set_stride(1).set_extent(2);
+    _coeff.dim(1).set_min(0).set_stride(2).set_extent(number_terms);
+    _coeff.dim(2)
+        .set_min(0)
+        .set_stride(2 * number_terms)
+        .set_extent(batch_size);
+  }
+
   void generate() {
     Var batch_idx{"batch_idx"};
     Var term_idx{"term_idx"};
     Var word_idx{"word_idx"};
+    Var re_im_idx{"re_im_idx"};
     RDom k{0, _number_words, "k"};
 
     Func delta{"delta"};
@@ -316,95 +346,61 @@ public:
     Func sign{"sign"};
     sign(term_idx, batch_idx) = 1 - 2 * (count(term_idx, batch_idx) % 2);
 
-    Var re_im_idx{"re_im_idx"};
     _coeff(re_im_idx, term_idx, batch_idx) = _v(re_im_idx, term_idx) *
                                              delta(term_idx, batch_idx) *
                                              sign(term_idx, batch_idx);
     _beta(word_idx, term_idx, batch_idx) =
         _alpha(word_idx, batch_idx) ^ _x(word_idx, term_idx);
 
+    // Shapes & strides
     _coeff.bound(re_im_idx, 0, 2);
     _beta.bound(word_idx, 0, _number_words);
+    _set_shapes_and_strides();
 
-    // Shapes & strides
-    auto const number_terms = _v.dim(1).extent();
-    auto const batch_size = _alpha.dim(1).extent();
-
-    _v.dim(0).set_min(0).set_stride(1).set_extent(2);
-    _v.dim(1).set_min(0).set_stride(2);
-    _m.dim(0).set_min(0).set_stride(1).set_extent(_number_words);
-    _m.dim(1).set_min(0).set_stride(_number_words).set_extent(number_terms);
-    _r.dim(0).set_min(0).set_stride(1).set_extent(_number_words);
-    _r.dim(1).set_min(0).set_stride(_number_words).set_extent(number_terms);
-    _x.dim(0).set_min(0).set_stride(1).set_extent(_number_words);
-    _x.dim(1).set_min(0).set_stride(_number_words).set_extent(number_terms);
-    _s.dim(0).set_min(0).set_stride(1).set_extent(_number_words);
-    _s.dim(1).set_min(0).set_stride(_number_words).set_extent(number_terms);
-
-    _alpha.dim(0).set_min(0).set_stride(1).set_extent(_number_words);
-    _alpha.dim(1).set_min(0).set_stride(_number_words);
-
-    _beta.dim(0).set_min(0).set_stride(1).set_extent(_number_words);
-    _beta.dim(1).set_min(0).set_stride(_number_words).set_extent(number_terms);
-    _beta.dim(2)
-        .set_min(0)
-        .set_stride(_number_words * number_terms)
-        .set_extent(batch_size);
-
-    _coeff.dim(0).set_min(0).set_stride(1).set_extent(2);
-    _coeff.dim(1).set_min(0).set_stride(2).set_extent(number_terms);
-    _coeff.dim(2)
-        .set_min(0)
-        .set_stride(2 * number_terms)
-        .set_extent(batch_size);
-
+    // Scheduling
     if (!auto_schedule) {
       Var batch_idxi("batch_idxi");
       Var re_im_idxi("re_im_idxi");
       Var term_idxi("term_idxi");
       Var word_idxi("word_idxi");
 
-      _beta.specialize(number_terms >= 32)
-          .split(term_idx, term_idx, term_idxi, 32, TailStrategy::ShiftInwards)
-          .reorder({word_idx, term_idxi, term_idx, batch_idx})
-          .fuse(word_idx, term_idxi, word_idx)
-          .vectorize(word_idx, 8);
-
-      _coeff.vectorize(re_im_idx, 2);
-      _coeff.specialize(number_terms >= 8)
-          .split(term_idx, term_idx, term_idxi, 8, TailStrategy::ShiftInwards)
-          .reorder({term_idxi, re_im_idx, term_idx, batch_idx})
-          .vectorize(term_idxi, 8);
-
       if (_number_words == 1) {
-        delta.store_in(MemoryType::Stack).compute_at(_coeff, term_idx);
-        delta.specialize(number_terms >= 8)
-            .split(term_idx, term_idx, term_idxi, 8, TailStrategy::ShiftInwards)
-            .reorder({term_idxi, term_idx, batch_idx})
-            .vectorize(term_idxi, 8);
+        auto const number_terms = _v.dim(1).extent();
+        auto const batch_size = _alpha.dim(1).extent();
+        _beta.compute_root()
+            .specialize(number_terms >= 32 && batch_size >= 32)
+            .split(term_idx, term_idx, term_idxi, 32,
+                   TailStrategy::ShiftInwards)
+            .split(batch_idx, batch_idx, batch_idxi, 32,
+                   TailStrategy::ShiftInwards)
+            .reorder({word_idx, term_idxi, batch_idxi, term_idx, batch_idx})
+            .fuse(word_idx, term_idxi, word_idx)
+            .vectorize(word_idx, 8);
 
-        count.store_in(MemoryType::Stack).compute_at(_coeff, term_idx);
-        count.specialize(number_terms >= 8)
+        _coeff.vectorize(re_im_idx);
+        _coeff.specialize(number_terms >= 8 && batch_size >= 8)
             .split(term_idx, term_idx, term_idxi, 8, TailStrategy::ShiftInwards)
-            .reorder({term_idxi, term_idx, batch_idx})
-            .vectorize(term_idxi, 8);
+            .split(batch_idx, batch_idx, batch_idxi, 8,
+                   TailStrategy::ShiftInwards)
+            .reorder({re_im_idx, term_idxi, batch_idxi, batch_idx, term_idx});
+        sign.store_in(MemoryType::Stack)
+            .split(term_idx, term_idx, term_idxi, 8, TailStrategy::GuardWithIf)
+            .split(batch_idx, batch_idx, batch_idxi, 8,
+                   TailStrategy::GuardWithIf)
+            .vectorize(batch_idxi)
+            .compute_at(_coeff, batch_idx)
+            .reorder({batch_idxi, term_idxi, batch_idx, term_idx})
+            .reorder_storage(batch_idx, term_idx);
+        delta.store_in(MemoryType::Stack)
+            .split(term_idx, term_idx, term_idxi, 8, TailStrategy::GuardWithIf)
+            .split(batch_idx, batch_idx, batch_idxi, 8,
+                   TailStrategy::GuardWithIf)
+            .vectorize(batch_idxi)
+            .compute_at(_coeff, batch_idx)
+            .reorder({batch_idxi, term_idxi, batch_idx, term_idx})
+            .reorder_storage(batch_idx, term_idx);
       }
-
-      // _beta.split(term_idx, term_idx, term_idxi, 32,
-      // TailStrategy::ShiftInwards)
-      //     .split(batch_idx, batch_idx, batch_idxi, 32,
-      //            TailStrategy::ShiftInwards)
-      //     .compute_root()
-      //     .fuse(word_idx, term_idxi, word_idx)
-      //     .reorder({word_idx, batch_idxi, term_idx, batch_idx})
-      //     .fuse(term_idx, batch_idx, term_idx);
     }
-    // if (!auto_schedule) {
-    //   delta.compute_root();
-    //   count.compute_root();
-    //   _coeff.compute_root();
-    //   _beta.compute_root();
-    // }
   }
 
   void schedule() {
