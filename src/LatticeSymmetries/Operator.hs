@@ -162,6 +162,15 @@ destroyCnonbranching_terms p
 foreign import ccall safe "ls_hs_destroy_basis_v2"
   ls_hs_destroy_basis :: Ptr Cbasis -> IO ()
 
+foreign import ccall unsafe "ls_internal_create_apply_off_diag_kernel_data"
+  ls_internal_create_apply_off_diag_kernel_data :: Ptr Cnonbranching_terms -> IO (Ptr Coperator_kernel_data)
+
+foreign import ccall unsafe "ls_internal_create_apply_diag_kernel_data"
+  ls_internal_create_apply_diag_kernel_data :: Ptr Cnonbranching_terms -> IO (Ptr Coperator_kernel_data)
+
+foreign import ccall unsafe "ls_internal_destroy_operator_kernel_data"
+  ls_internal_destroy_operator_kernel_data :: Ptr Coperator_kernel_data -> IO ()
+
 operatorFromHeader ::
   HasNonbranchingRepresentation (Generator Int (GeneratorType t)) =>
   OperatorHeader t ->
@@ -171,10 +180,14 @@ operatorFromHeader x = unsafePerformIO $ do
       numberBits = getNumberBits . basisHeader . opBasis $ x
   diag_terms <- createCnonbranching_terms numberBits diag
   off_diag_terms <- createCnonbranching_terms numberBits offDiag
+  apply_diag_cxt <- ls_internal_create_apply_diag_kernel_data diag_terms
+  apply_off_diag_cxt <- ls_internal_create_apply_off_diag_kernel_data off_diag_terms
   basis <- borrowCbasis (opBasis x)
 
   fp <- mallocForeignPtr
   addForeignPtrConcFinalizer fp (ls_hs_destroy_basis basis)
+  addForeignPtrConcFinalizer fp (ls_internal_destroy_operator_kernel_data apply_off_diag_cxt)
+  addForeignPtrConcFinalizer fp (ls_internal_destroy_operator_kernel_data apply_diag_cxt)
   addForeignPtrConcFinalizer fp (destroyCnonbranching_terms off_diag_terms)
   addForeignPtrConcFinalizer fp (destroyCnonbranching_terms diag_terms)
   withForeignPtr fp $ \ptr ->
@@ -184,6 +197,8 @@ operatorFromHeader x = unsafePerformIO $ do
           coperator_basis = basis,
           coperator_off_diag_terms = off_diag_terms,
           coperator_diag_terms = diag_terms,
+          coperator_apply_off_diag_cxt = apply_off_diag_cxt,
+          coperator_apply_diag_cxt = apply_diag_cxt,
           coperator_haskell_payload = nullPtr
         }
   pure $ Operator x fp

@@ -15,6 +15,7 @@ module LatticeSymmetries.FFI
     basisPeekStateIndexKernel,
     basisPeekPayload,
     basisPokePayload,
+    Coperator_kernel_data,
     Cnonbranching_terms (..),
     Coperator (..),
     Cscalar,
@@ -223,11 +224,16 @@ instance Storable Cnonbranching_terms where
     #{poke ls_hs_nonbranching_terms, s} p (cnonbranching_terms_s x)
   {-# INLINE poke #-}
 
+data {-# CTYPE "lattice_symmetries_haskell.h" "ls_internal_operator_kernel_data" #-}
+  Coperator_kernel_data
+
 data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_operator" #-} Coperator = Coperator
   { coperator_refcount :: {-# UNPACK #-} !CInt,
     coperator_basis :: {-# UNPACK #-} !(Ptr Cbasis),
     coperator_off_diag_terms :: {-# UNPACK #-} !(Ptr Cnonbranching_terms),
     coperator_diag_terms :: {-# UNPACK #-} !(Ptr Cnonbranching_terms),
+    coperator_apply_off_diag_cxt :: {-# UNPACK #-} !(Ptr Coperator_kernel_data),
+    coperator_apply_diag_cxt :: {-# UNPACK #-} !(Ptr Coperator_kernel_data),
     coperator_haskell_payload :: {-# UNPACK #-} !(Ptr ())
   }
 
@@ -266,14 +272,18 @@ instance Storable Coperator where
       <*> #{peek ls_hs_operator, basis} p
       <*> #{peek ls_hs_operator, off_diag_terms} p
       <*> #{peek ls_hs_operator, diag_terms} p
+      <*> #{peek ls_hs_operator, apply_off_diag_cxt} p
+      <*> #{peek ls_hs_operator, apply_diag_cxt} p
       <*> #{peek ls_hs_operator, haskell_payload} p
   {-# INLINE peek #-}
   poke p x = do
     _ <- pokeRefCount (p `plusPtr` #{offset ls_hs_operator, refcount}) (coperator_refcount x)
-    #{poke ls_hs_operator, basis}           p (coperator_basis x)
-    #{poke ls_hs_operator, off_diag_terms}  p (coperator_off_diag_terms x)
-    #{poke ls_hs_operator, diag_terms}      p (coperator_diag_terms x)
-    #{poke ls_hs_operator, haskell_payload} p (coperator_haskell_payload x)
+    #{poke ls_hs_operator, basis}               p (coperator_basis x)
+    #{poke ls_hs_operator, off_diag_terms}      p (coperator_off_diag_terms x)
+    #{poke ls_hs_operator, diag_terms}          p (coperator_diag_terms x)
+    #{poke ls_hs_operator, apply_off_diag_cxt}  p (coperator_apply_off_diag_cxt x)
+    #{poke ls_hs_operator, apply_diag_cxt}      p (coperator_apply_diag_cxt x)
+    #{poke ls_hs_operator, haskell_payload}     p (coperator_haskell_payload x)
   {-# INLINE poke #-}
 
 data {-# CTYPE "lattice_symmetries_haskell.h" "chpl_external_array" #-} Cexternal_array = Cexternal_array

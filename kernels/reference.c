@@ -229,6 +229,11 @@ void ls_hs_operator_apply_off_diag_kernel(
     return;
   }
 
+  ls_internal_operator_apply_off_diag(batch_size, alphas, alphas_stride, betas,
+                                      betas_stride, coeffs,
+                                      op->apply_off_diag_cxt);
+  return;
+
   int const number_words = (op->off_diag_terms->number_bits + 63) / 64;
   uint64_t *restrict const temp =
       malloc((size_t)number_words * sizeof(uint64_t));

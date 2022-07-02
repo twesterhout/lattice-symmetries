@@ -201,6 +201,8 @@ void ls_hs_free_stable_ptr(void *);
 //   { cbasis_state_index_kernel :: {-# UNPACK #-} !(FunPtr Cindex_kernel),
 //     cbasis_state_index_data :: {-# UNPACK #-} !(Ptr ())
 //   }
+typedef struct ls_internal_operator_kernel_data
+    ls_internal_operator_kernel_data;
 
 typedef struct ls_hs_nonbranching_terms {
   int number_terms;
@@ -220,6 +222,8 @@ typedef struct ls_hs_operator {
   ls_hs_basis const *basis;
   ls_hs_nonbranching_terms const *off_diag_terms;
   ls_hs_nonbranching_terms const *diag_terms;
+  ls_internal_operator_kernel_data const *apply_off_diag_cxt;
+  ls_internal_operator_kernel_data const *apply_diag_cxt;
   void *haskell_payload;
 } ls_hs_operator;
 
@@ -231,6 +235,21 @@ void ls_hs_print_terms(ls_hs_operator const *);
 void ls_hs_destroy_operator_v2(ls_hs_operator *);
 
 ls_hs_operator *ls_hs_load_hamiltonian_from_yaml(char const *);
+
+ls_internal_operator_kernel_data *ls_internal_create_apply_diag_kernel_data(
+    ls_hs_nonbranching_terms const *diag_terms);
+ls_internal_operator_kernel_data *ls_internal_create_apply_off_diag_kernel_data(
+    ls_hs_nonbranching_terms const *off_diag_terms);
+void ls_internal_destroy_operator_kernel_data(
+    ls_internal_operator_kernel_data *p);
+
+void ls_internal_operator_apply_off_diag(
+    ptrdiff_t batch_size, uint64_t const *alphas, ptrdiff_t alphas_stride,
+    uint64_t *betas, ptrdiff_t betas_stride, ls_hs_scalar *coeffs,
+    ls_internal_operator_kernel_data const *cxt);
+void ls_internal_operator_apply_diag(
+    ptrdiff_t batch_size, uint64_t const *alphas, ptrdiff_t alphas_stride,
+    ls_hs_scalar *coeffs, ls_internal_operator_kernel_data const *cxt);
 
 void ls_hs_operator_apply_diag_kernel(ls_hs_operator const *op,
                                       ptrdiff_t batch_size,

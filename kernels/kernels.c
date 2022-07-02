@@ -32,6 +32,13 @@ typedef int (*ls_internal_halide_is_representative_kernel_type)(
     struct halide_buffer_t *_is_representative_buffer,
     struct halide_buffer_t *_norm_buffer);
 
+typedef int (*ls_internal_halide_apply_off_diag_kernel_type)(
+    struct halide_buffer_t *_v_buffer, struct halide_buffer_t *_m_buffer,
+    struct halide_buffer_t *_r_buffer, struct halide_buffer_t *_x_buffer,
+    struct halide_buffer_t *_s_buffer, struct halide_buffer_t *_alpha_buffer,
+    struct halide_buffer_t *_beta_buffer,
+    struct halide_buffer_t *_coeff_buffer);
+
 typedef struct ls_internal_halide_kernels_list {
   ls_internal_halide_state_info_kernel_type state_info_general;
   ls_internal_halide_state_info_kernel_type state_info_symmetric;
@@ -40,6 +47,7 @@ typedef struct ls_internal_halide_kernels_list {
   ls_internal_halide_is_representative_kernel_type is_representative_symmetric;
   ls_internal_halide_is_representative_kernel_type
       is_representative_antisymmetric;
+  ls_internal_halide_apply_off_diag_kernel_type apply_off_diag;
 } ls_internal_halide_kernels_list;
 
 #define LS_AVX2_KERNELS                                                        \
@@ -54,6 +62,7 @@ typedef struct ls_internal_halide_kernels_list {
         &ls_internal_is_representative_symmetric_kernel_avx2_fma,              \
     .is_representative_antisymmetric =                                         \
         &ls_internal_is_representative_antisymmetric_kernel_avx2_fma,          \
+    .apply_off_diag = &ls_internal_apply_off_diag_kernel_avx2_fma,             \
   }
 
 #define LS_AVX_KERNELS                                                         \
@@ -68,6 +77,7 @@ typedef struct ls_internal_halide_kernels_list {
         &ls_internal_is_representative_symmetric_kernel_avx,                   \
     .is_representative_antisymmetric =                                         \
         &ls_internal_is_representative_antisymmetric_kernel_avx,               \
+    .apply_off_diag = &ls_internal_apply_off_diag_kernel_avx,                  \
   }
 
 #define LS_SSE4_KERNELS                                                        \
@@ -82,6 +92,7 @@ typedef struct ls_internal_halide_kernels_list {
         &ls_internal_is_representative_symmetric_kernel_sse41,                 \
     .is_representative_antisymmetric =                                         \
         &ls_internal_is_representative_antisymmetric_kernel_sse41,             \
+    .apply_off_diag = &ls_internal_apply_off_diag_kernel_sse41,                \
   }
 
 #define LS_GENERIC_KERNELS                                                     \
@@ -95,6 +106,7 @@ typedef struct ls_internal_halide_kernels_list {
         &ls_internal_is_representative_symmetric_kernel,                       \
     .is_representative_antisymmetric =                                         \
         &ls_internal_is_representative_antisymmetric_kernel,                   \
+    .apply_off_diag = &ls_internal_apply_off_diag_kernel,                      \
   }
 
 static void init_kernels_list(int const number_bits,
@@ -349,4 +361,221 @@ void ls_hs_state_info_halide_kernel(ptrdiff_t batch_size,
       (halide_buffer_t *)&state->eigvals_re,
       (halide_buffer_t *)&state->eigvals_im, (halide_buffer_t *)&state->shifts,
       &betas_buf, &characters_buf, &norms_buf);
+}
+
+// typedef struct ls_hs_nonbranching_terms {
+//   int number_terms;
+//   int number_bits;
+//   // number_words = ceil(number_bits / 64)
+//   ls_hs_scalar const *v; // array of shape [number_terms]
+//   uint64_t const *m;     // array of shape [number_terms, number_words]
+//   uint64_t const *l;     // array of shape [number_terms, number_words]
+//   uint64_t const *r;     // array of shape [number_terms, number_words]
+//   uint64_t const *x;     // array of shape [number_terms, number_words]
+//   uint64_t const *s;     // array of shape [number_terms, number_words]
+//   // all arrays are contiguous in row-major order
+// } ls_hs_nonbranching_terms;
+
+typedef struct ls_internal_operator_kernel_data {
+  struct halide_buffer_t v;
+  struct halide_buffer_t m;
+  struct halide_buffer_t l;
+  struct halide_buffer_t r;
+  struct halide_buffer_t x;
+  struct halide_buffer_t s;
+  struct halide_dimension_t v_dims[2];
+  struct halide_dimension_t m_dims[2];
+  ls_internal_halide_apply_off_diag_kernel_type apply_off_diag_kernel;
+  // ls_internal_halide_apply_diag_kernel_type apply_diag_kernel;
+} ls_internal_operator_kernel_data;
+
+static void
+init_operator_kernel_data_buffers(ls_internal_operator_kernel_data *self,
+                                  ls_hs_nonbranching_terms const *terms) {
+  LS_CHECK(terms != NULL, "terms is NULL");
+  self->v = (struct halide_buffer_t){.device = 0,
+                                     .device_interface = NULL,
+                                     .host = (uint8_t *)terms->v,
+                                     .flags = 0,
+                                     .type = {halide_type_float, 64, 1},
+                                     .dimensions = 2,
+                                     .dim = self->v_dims,
+                                     .padding = NULL};
+  self->m = (struct halide_buffer_t){.device = 0,
+                                     .device_interface = NULL,
+                                     .host = (uint8_t *)terms->m,
+                                     .flags = 0,
+                                     .type = {halide_type_uint, 64, 1},
+                                     .dimensions = 2,
+                                     .dim = self->m_dims,
+                                     .padding = NULL};
+  self->l = (struct halide_buffer_t){.device = 0,
+                                     .device_interface = NULL,
+                                     .host = (uint8_t *)terms->l,
+                                     .flags = 0,
+                                     .type = {halide_type_uint, 64, 1},
+                                     .dimensions = 2,
+                                     .dim = self->m_dims,
+                                     .padding = NULL};
+  self->r = (struct halide_buffer_t){.device = 0,
+                                     .device_interface = NULL,
+                                     .host = (uint8_t *)terms->r,
+                                     .flags = 0,
+                                     .type = {halide_type_uint, 64, 1},
+                                     .dimensions = 2,
+                                     .dim = self->m_dims,
+                                     .padding = NULL};
+  self->x = (struct halide_buffer_t){.device = 0,
+                                     .device_interface = NULL,
+                                     .host = (uint8_t *)terms->x,
+                                     .flags = 0,
+                                     .type = {halide_type_uint, 64, 1},
+                                     .dimensions = 2,
+                                     .dim = self->m_dims,
+                                     .padding = NULL};
+  self->s = (struct halide_buffer_t){.device = 0,
+                                     .device_interface = NULL,
+                                     .host = (uint8_t *)terms->s,
+                                     .flags = 0,
+                                     .type = {halide_type_uint, 64, 1},
+                                     .dimensions = 2,
+                                     .dim = self->m_dims,
+                                     .padding = NULL};
+  int32_t const number_terms = terms->number_terms;
+  int32_t const number_words = (terms->number_bits + 63) / 64;
+
+  self->v_dims[0] = (struct halide_dimension_t){
+      .min = 0, .extent = 2, .stride = 1, .flags = 0};
+  self->v_dims[1] = (struct halide_dimension_t){
+      .min = 0, .extent = number_terms, .stride = 2, .flags = 0};
+
+  self->m_dims[0] = (struct halide_dimension_t){
+      .min = 0, .extent = number_words, .stride = 1, .flags = 0};
+  self->m_dims[1] = (struct halide_dimension_t){
+      .min = 0, .extent = number_terms, .stride = number_words, .flags = 0};
+}
+
+ls_internal_operator_kernel_data *ls_internal_create_apply_diag_kernel_data(
+    ls_hs_nonbranching_terms const *diag_terms) {
+  ls_internal_operator_kernel_data *self =
+      malloc(sizeof(ls_internal_operator_kernel_data));
+  LS_CHECK(self != NULL,
+           "malloc failed when allocating ls_internal_operator_kernel_data");
+  if (diag_terms == NULL) {
+    // self->apply_diag_kernel = NULL;
+    return self;
+  }
+  init_operator_kernel_data_buffers(self, diag_terms);
+  ls_internal_halide_kernels_list list;
+  init_kernels_list(diag_terms->number_bits, &list);
+  // self->apply_diag_kernel = list.apply_diag;
+  return self;
+}
+
+ls_internal_operator_kernel_data *ls_internal_create_apply_off_diag_kernel_data(
+    ls_hs_nonbranching_terms const *off_diag_terms) {
+  ls_internal_operator_kernel_data *self =
+      malloc(sizeof(ls_internal_operator_kernel_data));
+  LS_CHECK(self != NULL,
+           "malloc failed when allocating ls_internal_operator_kernel_data");
+  // If there are no off-diagonal terms, we don't have to initialize anything.
+  // We just set the function pointer to NULL to indicate to the outside code
+  // that nothing's been initialized.
+  if (off_diag_terms == NULL) {
+    self->apply_off_diag_kernel = NULL;
+    return self;
+  }
+  init_operator_kernel_data_buffers(self, off_diag_terms);
+  ls_internal_halide_kernels_list list;
+  init_kernels_list(off_diag_terms->number_bits, &list);
+  self->apply_off_diag_kernel = list.apply_off_diag;
+  return self;
+}
+
+void ls_internal_destroy_operator_kernel_data(
+    ls_internal_operator_kernel_data *p) {
+  free(p);
+}
+
+void ls_internal_operator_apply_off_diag(
+    ptrdiff_t batch_size, uint64_t const *alphas, ptrdiff_t const alphas_stride,
+    uint64_t *betas, ptrdiff_t const betas_stride, ls_hs_scalar *coeffs,
+    ls_internal_operator_kernel_data const *cxt) {
+  LS_CHECK(cxt->apply_off_diag_kernel != NULL,
+           "apply_off_diag has not been initialized");
+
+  int32_t const number_terms = cxt->m_dims[1].extent;
+  int32_t const number_words = cxt->m_dims[0].extent;
+  // fprintf(stderr, "batch_size=%zi, number_terms=%i, number_words=%i\n",
+  //         batch_size, number_terms, number_words);
+
+  halide_dimension_t alphas_dims[2] = {
+      (halide_dimension_t){
+          .min = 0, .extent = number_words, .stride = 1, .flags = 0},
+      (halide_dimension_t){.min = 0,
+                           .extent = (int32_t)batch_size,
+                           .stride = (int32_t)alphas_stride,
+                           .flags = 0},
+  };
+
+  halide_buffer_t alphas_buf = (struct halide_buffer_t){
+      .device = 0,
+      .device_interface = NULL,
+      .host = (uint8_t *)alphas,
+      .flags = 0,
+      .type = {halide_type_uint, 64, 1},
+      .dimensions = 2,
+      .dim = alphas_dims,
+      .padding = NULL,
+  };
+
+  halide_dimension_t betas_dims[3] = {
+      (halide_dimension_t){
+          .min = 0, .extent = number_words, .stride = 1, .flags = 0},
+      (halide_dimension_t){.min = 0,
+                           .extent = number_terms,
+                           .stride = (int32_t)betas_stride,
+                           .flags = 0},
+      (halide_dimension_t){.min = 0,
+                           .extent = (int32_t)batch_size,
+                           .stride = (int32_t)betas_stride * number_terms,
+                           .flags = 0},
+  };
+
+  halide_buffer_t betas_buf = (struct halide_buffer_t){
+      .device = 0,
+      .device_interface = NULL,
+      .host = (uint8_t *)betas,
+      .flags = 0,
+      .type = {halide_type_uint, 64, 1},
+      .dimensions = 3,
+      .dim = betas_dims,
+      .padding = NULL,
+  };
+
+  halide_dimension_t coeffs_dims[3] = {
+      (halide_dimension_t){.min = 0, .extent = 2, .stride = 1, .flags = 0},
+      (halide_dimension_t){
+          .min = 0, .extent = number_terms, .stride = 2, .flags = 0},
+      (halide_dimension_t){.min = 0,
+                           .extent = (int32_t)batch_size,
+                           .stride = 2 * number_terms,
+                           .flags = 0},
+  };
+  halide_buffer_t coeffs_buf = (struct halide_buffer_t){
+      .device = 0,
+      .device_interface = NULL,
+      .host = (uint8_t *)coeffs,
+      .flags = 0,
+      .type = {halide_type_float, 64, 1},
+      .dimensions = 3,
+      .dim = coeffs_dims,
+      .padding = NULL,
+  };
+
+  ls_internal_operator_kernel_data *const mut_cxt =
+      (ls_internal_operator_kernel_data *)cxt;
+  (*cxt->apply_off_diag_kernel)(&mut_cxt->v, &mut_cxt->m, &mut_cxt->r,
+                                &mut_cxt->x, &mut_cxt->s, &alphas_buf,
+                                &betas_buf, &coeffs_buf);
 }
