@@ -448,8 +448,8 @@ main = hspec $ do
                 5
                 [Generator 5 SpinMinus, Generator 10 SpinZ, Generator 11 SpinPlus]
             ]
-      simplify x₀ `shouldBe` y₀
-      simplify x₁ `shouldBe` y₁
+      simplifyPolynomial x₀ `shouldBe` y₀
+      simplifyPolynomial x₁ `shouldBe` y₁
 
   describe "simplify (spin)" $ do
     let parseString ::
@@ -460,35 +460,49 @@ main = hspec $ do
           Left e -> error (show e)
           Right x -> x
     it "computes spin commutators" $ do
-      simplify (parseString "σ⁺₁₀ σᶻ₁₀" - parseString "σᶻ₁₀ σ⁺₁₀")
+      simplifyPolynomial (parseString "σ⁺₁₀ σᶻ₁₀" - parseString "σᶻ₁₀ σ⁺₁₀")
         `shouldBe` [Scaled (-2) [Generator 10 SpinPlus]]
-      simplify (parseString "σ⁺₁₀ σ⁻₁₀" - parseString "σ⁻₁₀ σ⁺₁₀")
+      simplifyPolynomial (parseString "σ⁺₁₀ σ⁻₁₀" - parseString "σ⁻₁₀ σ⁺₁₀")
         `shouldBe` [Scaled 1 [Generator 10 SpinZ]]
-      simplify (parseString "σ⁻₁₀ σᶻ₁₀" - parseString "σᶻ₁₀ σ⁻₁₀")
+      simplifyPolynomial (parseString "σ⁻₁₀ σᶻ₁₀" - parseString "σᶻ₁₀ σ⁻₁₀")
         `shouldBe` [Scaled 2 [Generator 10 SpinMinus]]
     it "simplifies products of primitive operators" $ do
-      simplify (parseString "σᶻ₁₀ σᶻ₁₀") `shouldBe` [Scaled 1 [Generator 10 SpinIdentity]]
-      simplify (parseString "σ⁺₁₀ σ⁺₁₀") `shouldBe` []
-      simplify (parseString "σ⁻₁₀ σ⁻₁₀") `shouldBe` []
-      simplify (parseString "σ⁺₁₀ σᶻ₁₀") `shouldBe` [Scaled (-1) [Generator 10 SpinPlus]]
-      simplify (parseString "σ⁻₁₀ σᶻ₁₀") `shouldBe` [Scaled 1 [Generator 10 SpinMinus]]
-      simplify (parseString "σᶻ₁₀ σ⁺₁₀") `shouldBe` [Scaled 1 [Generator 10 SpinPlus]]
-      simplify (parseString "σᶻ₁₀ σ⁻₁₀") `shouldBe` [Scaled (-1) [Generator 10 SpinMinus]]
-      simplify (parseString "σ⁺₁₀ σ⁻₁₀")
+      simplifyPolynomial (parseString "σᶻ₁₀ σᶻ₁₀") `shouldBe` [Scaled 1 [Generator 10 SpinIdentity]]
+      simplifyPolynomial (parseString "σ⁺₁₀ σ⁺₁₀") `shouldBe` []
+      simplifyPolynomial (parseString "σ⁻₁₀ σ⁻₁₀") `shouldBe` []
+      simplifyPolynomial (parseString "σ⁺₁₀ σᶻ₁₀") `shouldBe` [Scaled (-1) [Generator 10 SpinPlus]]
+      simplifyPolynomial (parseString "σ⁻₁₀ σᶻ₁₀") `shouldBe` [Scaled 1 [Generator 10 SpinMinus]]
+      simplifyPolynomial (parseString "σᶻ₁₀ σ⁺₁₀") `shouldBe` [Scaled 1 [Generator 10 SpinPlus]]
+      simplifyPolynomial (parseString "σᶻ₁₀ σ⁻₁₀") `shouldBe` [Scaled (-1) [Generator 10 SpinMinus]]
+      simplifyPolynomial (parseString "σ⁺₁₀ σ⁻₁₀")
         `shouldBe` [ Scaled (fromRational (1 % 2)) [Generator 10 SpinIdentity],
                      Scaled (fromRational (1 % 2)) [Generator 10 SpinZ]
                    ]
-      simplify (parseString "σ⁻₁₀ σ⁺₁₀")
+      simplifyPolynomial (parseString "σ⁻₁₀ σ⁺₁₀")
         `shouldBe` [ Scaled (fromRational (1 % 2)) [Generator 10 SpinIdentity],
                      Scaled (fromRational (-1 % 2)) [Generator 10 SpinZ]
                    ]
     it "simplifies products with identities" $ do
       forM_ ([SpinIdentity, SpinPlus, SpinMinus, SpinZ] :: [SpinGeneratorType]) $ \g -> do
-        simplify [Scaled 1 [Generator 5 SpinIdentity, Generator 5 g]]
+        simplifyPolynomial [Scaled 1 [Generator 5 SpinIdentity, Generator 5 g]]
           `shouldBe` [Scaled (1 :: Rational) [Generator (5 :: Int) g]]
-        simplify [Scaled 1 [Generator 5 g, Generator 5 SpinIdentity]]
+        simplifyPolynomial [Scaled 1 [Generator 5 g, Generator 5 SpinIdentity]]
           `shouldBe` [Scaled (1 :: Rational) [Generator (5 :: Int) g]]
 
+  describe "simplify (fermion)" $ do
+    let parseString ::
+          Text ->
+          Polynomial ComplexRational (Generator Int FermionGeneratorType)
+        parseString s = case parse (pOperatorString pFermionicOperator) "" s of
+          Left e -> error (show e)
+          Right x -> x
+    it "computes fermionic commutators" $ do
+      simplifyPolynomial (parseString "c†₈ c₈" + parseString "c₈ c†₈")
+        `shouldBe` [Scaled 1 [Generator 8 FermionIdentity]]
+      simplifyPolynomial (parseString "n₈ c†₈" + parseString "c†₈ n₈")
+        `shouldBe` [Scaled 1 [Generator 8 FermionCreate]]
+      simplifyPolynomial (parseString "n₈ c₈" + parseString "c₈ n₈")
+        `shouldBe` [Scaled 1 [Generator 8 FermionAnnihilate]]
   -- describe "CSR.csrMatrixFromDense" $ do
   --   it "converts dense matrices to sparse form" $ do
   --     CSR.csrMatrixFromDense ([[1, 2], [3, 4]] :: Dense.DenseMatrix S.Vector (Complex Double))

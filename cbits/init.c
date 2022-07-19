@@ -4,18 +4,19 @@
 #include <stdio.h>
 
 void ls_hs_init(void) {
-  // LATTICE_SYMMETRIES_LOG_DEBUG("%s", "Calling hs_init...\n");
-  // hs_init(NULL, NULL);
-  int argc = 3;
-  char *argv[] = {"+RTS", "-N1", "-RTS", NULL};
+  int argc = 1;
+  char *argv[] = {"lattice_symmetries", NULL};
+  // "+RTS", "-N1", "--install-signal-handlers=no", "-RTS", NULL};
   char **pargv = argv;
+
+  // For some reason, options from argv are not processed properly, so we
+  // manually set all RTS options using rts_opts field of RtsConfig
   RtsConfig conf = defaultRtsConfig;
   conf.rts_opts_enabled = RtsOptsAll;
+  conf.rts_opts = "-N1 --install-signal-handlers=no";
   hs_init_ghc(&argc, &pargv, conf);
-  // hs_init(&argc, &pargv);
+
   ls_hs_internal_set_free_stable_ptr(&hs_free_stable_ptr);
-  // ls_hs_internal_set_free_stable_ptr(&ls_hs_free_stable_ptr);
-  // LATTICE_SYMMETRIES_LOG_DEBUG("%s", "Initialized RTS!\n");
 }
 
 void ls_hs_exit(void) {

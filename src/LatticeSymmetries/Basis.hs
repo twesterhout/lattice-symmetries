@@ -39,6 +39,7 @@ module LatticeSymmetries.Basis
     hasFixedHammingWeight,
     minStateEstimate,
     maxStateEstimate,
+    matchParticleType2,
     withParticleType,
     withReconstructedBasis,
     -- ls_hs_create_basis,
@@ -84,16 +85,27 @@ import LatticeSymmetries.Group
 -- import LatticeSymmetries.IO
 import LatticeSymmetries.NonbranchingTerm
 import LatticeSymmetries.Utils
+import Prettyprinter (Doc, Pretty (..))
+import qualified Prettyprinter as Pretty
+import Prettyprinter.Render.Text (renderStrict)
 import System.IO.Unsafe (unsafePerformIO)
-import Text.PrettyPrint.ANSI.Leijen (Pretty (..))
-import qualified Text.PrettyPrint.ANSI.Leijen as Pretty
 import Type.Reflection
 
-data BasisState = BasisState {-# UNPACK #-} !Int !BitString
+-- | Particle type
+data ParticleTy
+  = -- | A localized spin-1/2 particle.
+    SpinTy
+  | -- | An electron (i.e. a fermion with spin-1/2)
+    SpinfulFermionTy
+  | -- | A spinless fermion
+    SpinlessFermionTy
+  deriving stock (Show, Eq, Typeable)
+
+data BasisState (t :: ParticleTy) = BasisState {-# UNPACK #-} !Int !BitString
   deriving stock (Show, Eq, Ord)
 
-data ParticleTy = SpinTy | SpinfulFermionTy | SpinlessFermionTy
-  deriving stock (Show, Eq, Typeable)
+unsafeCastBasisState :: BasisState t1 -> BasisState t2
+unsafeCastBasisState (BasisState n bits) = BasisState n bits
 
 instance Pretty ParticleTy where
   pretty SpinTy = "spin-1/2"
@@ -105,18 +117,52 @@ instance FromJSON ParticleTy where
     where
       f t
         | t == "spin" || t == "spin-1/2" = pure SpinTy
+        | t == "spinful" || t == "spinful-fermion" || t == "spinful fermion" = pure SpinfulFermionTy
         | t == "spinless" || t == "spinless-fermion" || t == "spinless fermion" =
           pure SpinlessFermionTy
-        | t == "spinful" || t == "spinful-fermion" || t == "spinful fermion" = pure SpinfulFermionTy
         | otherwise = fail "invalid particle type"
 
 instance ToJSON ParticleTy where
-  toJSON x = String . fromString $ Pretty.displayS (Pretty.renderCompact (pretty x)) ""
+  toJSON = String . renderStrict . Pretty.layoutCompact . pretty
+
+prettyBitString :: Int -> Integer -> Doc ann
+prettyBitString n bits = mconcat $ (prettyBool . testBit bits) <$> reverse [0 .. n - 1]
+  where
+    prettyBool True = "1"
+    prettyBool False = "0"
+
+matchParticleType2 ::
+  forall (t1 :: ParticleTy) (t2 :: ParticleTy) proxy1 proxy2.
+  (Typeable t1, Typeable t2) =>
+  proxy1 t1 ->
+  proxy2 t2 ->
+  Maybe (t1 :~~: t2)
+matchParticleType2 _ _ = case eqTypeRep (typeRep @t1) (typeRep @t2) of
+  Just HRefl -> Just HRefl
+  Nothing -> Nothing
+
+instance Typeable t => Pretty (BasisState t) where
+  pretty (BasisState n bits)
+    | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinTy) =
+      "|" <> prettyBitString n (unBitString bits) <> "⟩"
+    | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinfulFermionTy) =
+      let up = unBitString bits `shiftR` (n `div` 2)
+       in mconcat
+            [ "|",
+              prettyBitString (n `div` 2) up,
+              "⟩",
+              "|",
+              prettyBitString (n `div` 2) (unBitString bits),
+              "⟩"
+            ]
+    | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinlessFermionTy) =
+      pretty (BasisState n bits :: BasisState 'SpinTy)
+    | otherwise = error "this cannot happen by construction"
 
 class
   ( Enum (GeneratorType t),
     Bounded (GeneratorType t),
-    HasMatrixRepresentation (GeneratorType t),
+    -- HasMatrixRepresentation (GeneratorType t),
     HasNonbranchingRepresentation (Generator Int (GeneratorType t)),
     Algebra (GeneratorType t),
     Ord (IndexType t),
@@ -323,26 +369,10 @@ decodeCString cStr = do
 ls_hs_destroy_string :: Ptr CChar -> IO ()
 ls_hs_destroy_string = free
 
-newCString :: ByteString -> IO CString
-newCString (PS fp _ l) = do
-  (buf :: Ptr CChar) <- mallocBytes (l + 1)
-  withForeignPtr fp $ \(p :: Ptr Word8) -> do
-    copyBytes buf (castPtr p) l
-    pokeByteOff buf l (0 :: CChar)
-  pure buf
-
 ls_hs_basis_to_json :: Ptr Cbasis -> IO CString
 ls_hs_basis_to_json cBasis =
   withReconstructedBasis cBasis $ \basis ->
     newCString $ toStrict (Data.Aeson.encode basis)
-
-foreign import ccall unsafe "ls_hs_error"
-  ls_hs_error :: CString -> IO ()
-
-propagateErrorToC :: Exception e => a -> e -> IO a
-propagateErrorToC x₀ = \e -> do
-  logDebug' $ "Throwing " <> show e <> " ..."
-  useAsCString (show e) ls_hs_error >> pure x₀
 
 ls_hs_basis_from_json :: CString -> IO (Ptr Cbasis)
 ls_hs_basis_from_json cStr = handleAny (propagateErrorToC nullPtr) $ do
@@ -449,7 +479,7 @@ basisBuild basis
       ls_hs_build_representatives basisPtr (fromIntegral lower) (fromIntegral upper)
   | otherwise = error "too many bits"
 
-stateIndex :: Basis t -> BasisState -> Maybe Int
+stateIndex :: Basis t -> BasisState t -> Maybe Int
 stateIndex basis (BasisState _ (BitString α))
   | α <= fromIntegral (maxBound :: Word64) = unsafePerformIO . withCbasis basis $ \basisPtr ->
     with (fromIntegral α :: Word64) $ \spinsPtr ->
@@ -546,7 +576,7 @@ hasFixedHammingWeight x = case x of
   _ -> False
 {-# INLINE hasFixedHammingWeight #-}
 
-maxStateEstimate :: BasisHeader t -> BasisState
+maxStateEstimate :: BasisHeader t -> BasisState t
 maxStateEstimate x = case x of
   SpinHeader n (Just h) i _ ->
     BasisState n . BitString $
@@ -555,26 +585,38 @@ maxStateEstimate x = case x of
         else (bit h - 1) `shiftL` (n - h - 1)
   -- TODO: improve the bound for fixed spin inversion
   SpinHeader n Nothing _ _ -> BasisState n . BitString $ bit n - 1
-  SpinfulFermionHeader n SpinfulNoOccupation -> maxStateEstimate (SpinlessFermionHeader (2 * n) Nothing)
-  SpinfulFermionHeader n (SpinfulTotalParticles p) -> maxStateEstimate (SpinlessFermionHeader (2 * n) (Just p))
+  SpinfulFermionHeader n SpinfulNoOccupation ->
+    unsafeCastBasisState $
+      maxStateEstimate (SpinlessFermionHeader (2 * n) Nothing)
+  SpinfulFermionHeader n (SpinfulTotalParticles p) ->
+    unsafeCastBasisState $
+      maxStateEstimate (SpinlessFermionHeader (2 * n) (Just p))
   SpinfulFermionHeader n (SpinfulPerSector down up) ->
     let (BasisState _ minDown) = maxStateEstimate (SpinlessFermionHeader n (Just down))
         (BasisState _ minUp) = maxStateEstimate (SpinlessFermionHeader n (Just up))
      in BasisState (2 * n) $ (minUp `shiftL` n) .|. minDown
-  SpinlessFermionHeader n p -> maxStateEstimate (SpinHeader n p Nothing emptySymmetries)
+  SpinlessFermionHeader n p ->
+    unsafeCastBasisState $
+      maxStateEstimate (SpinHeader n p Nothing emptySymmetries)
 
-minStateEstimate :: BasisHeader t -> BasisState
+minStateEstimate :: BasisHeader t -> BasisState t
 minStateEstimate x = case x of
   SpinHeader n (Just h) _ _ -> BasisState n . BitString $ bit h - 1
   -- TODO: improve the bound for fixed spin inversion
   SpinHeader n Nothing _ _ -> BasisState n . BitString $ zeroBits
-  SpinfulFermionHeader n SpinfulNoOccupation -> minStateEstimate (SpinlessFermionHeader (2 * n) Nothing)
-  SpinfulFermionHeader n (SpinfulTotalParticles p) -> minStateEstimate (SpinlessFermionHeader (2 * n) (Just p))
+  SpinfulFermionHeader n SpinfulNoOccupation ->
+    unsafeCastBasisState $
+      minStateEstimate (SpinlessFermionHeader (2 * n) Nothing)
+  SpinfulFermionHeader n (SpinfulTotalParticles p) ->
+    unsafeCastBasisState $
+      minStateEstimate (SpinlessFermionHeader (2 * n) (Just p))
   SpinfulFermionHeader n (SpinfulPerSector down up) ->
     let (BasisState _ minDown) = minStateEstimate (SpinlessFermionHeader n (Just down))
         (BasisState _ minUp) = minStateEstimate (SpinlessFermionHeader n (Just up))
      in BasisState (2 * n) $ (minUp `shiftL` n) .|. minDown
-  SpinlessFermionHeader n p -> minStateEstimate (SpinHeader n p Nothing emptySymmetries)
+  SpinlessFermionHeader n p ->
+    unsafeCastBasisState $
+      minStateEstimate (SpinHeader n p Nothing emptySymmetries)
 
 optionalNatural :: Maybe Int -> CInt
 optionalNatural x = case x of
@@ -614,7 +656,11 @@ borrowCbasis basis = do
 withCbasis :: Basis t -> (Ptr Cbasis -> IO a) -> IO a
 withCbasis x action = withForeignPtr (basisContents x) action
 
-withParticleType :: HasCallStack => Cparticle_type -> (forall (t :: ParticleTy). IsBasis t => Proxy t -> a) -> a
+withParticleType ::
+  HasCallStack =>
+  Cparticle_type ->
+  (forall (t :: ParticleTy). IsBasis t => Proxy t -> a) ->
+  a
 withParticleType t action
   | t == c_LS_HS_SPIN = action (Proxy :: Proxy 'SpinTy)
   | t == c_LS_HS_SPINFUL_FERMION = action (Proxy :: Proxy 'SpinfulFermionTy)

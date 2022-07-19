@@ -24,10 +24,6 @@ typedef struct {
 #endif
 #endif
 
-// void ls_hs_internal_destroy_external_array(chpl_external_array *p);
-
-// #include <lattice_symmetries/lattice_symmetries.h>
-
 #if defined(__cplusplus)
 extern "C" {
 #endif
@@ -35,13 +31,19 @@ extern "C" {
 #if defined(__cplusplus)
 using ls_hs_scalar = std::complex<double>;
 #else
+#if defined(LS_NO_STD_COMPLEX)
+typedef struct ls_hs_scalar {
+  double real;
+  double imag;
+} ls_hs_scalar;
+#else
 typedef _Complex double ls_hs_scalar;
 #endif
+#endif
 
+// {{{ Misc
 void ls_hs_init(void);
 void ls_hs_exit(void);
-void ls_hs_internal_set_free_stable_ptr(void (*f)(void *));
-
 __attribute__((noreturn)) void ls_hs_fatal_error(char const *func, int line,
                                                  char const *message);
 
@@ -52,29 +54,9 @@ void ls_hs_error(char const *message);
 
 #define LS_CHECK(cond, msg)                                                    \
   ((cond) ? ((void)0) : ls_hs_fatal_error(__func__, __LINE__, msg))
+// }}}
 
-// typedef struct ls_hs_spin_basis_v1 {
-//   ls_spin_basis const *const payload;
-//   void *const context;
-// } ls_hs_spin_basis_v1;
-
-// typedef struct ls_hs_operator_v1 {
-//   ls_operator const *const payload;
-//   void *const context;
-// } ls_hs_operator_v1;
-
-// void ls_hs_basis_and_hamiltonian_from_yaml(char const *path,
-//                                            ls_hs_spin_basis_v1 *basis,
-//                                            ls_hs_operator_v1 *hamiltonian);
-// void ls_hs_destroy_spin_basis(ls_hs_spin_basis_v1 *basis);
-// void ls_hs_destroy_operator(ls_hs_operator_v1 *op);
-
-// ls_error_code ls_hs_operator_apply(ls_hs_operator_v1 const *op, uint64_t
-// count,
-//                                    uint64_t const *spins, uint64_t *offsets,
-//                                    uint64_t *out_spins,
-//                                    _Complex double *out_coeffs);
-
+// {{{ HDF5
 unsigned ls_hs_hdf5_get_dataset_rank(char const *filename, char const *dataset);
 void ls_hs_hdf5_get_dataset_shape(char const *filename, char const *dataset,
                                   uint64_t *shape);
@@ -100,7 +82,9 @@ void ls_hs_hdf5_read_chunk_u64(char const *filename, char const *dataset,
 void ls_hs_hdf5_read_chunk_f64(char const *filename, char const *dataset,
                                unsigned dim, uint64_t const *offset,
                                uint64_t const *shape, double *data);
+// }}}
 
+// {{{ Basis
 typedef enum ls_hs_particle_type {
   LS_HS_SPIN,
   LS_HS_SPINFUL_FERMION,
@@ -158,51 +142,29 @@ ls_hs_basis *ls_hs_clone_basis(ls_hs_basis const *);
 void ls_hs_destroy_basis_v2(ls_hs_basis *);
 uint64_t ls_hs_max_state_estimate(ls_hs_basis const *);
 uint64_t ls_hs_min_state_estimate(ls_hs_basis const *);
-
-ls_hs_basis *ls_hs_create_spin_basis_from_json(char const *json_string);
-ls_hs_basis *ls_hs_create_spin_basis_from_yaml(char const *yaml_filename);
-
-ls_hs_basis *
-ls_hs_create_spinless_fermion_basis_from_json(char const *json_string);
-
-ls_hs_basis *
-ls_hs_create_spinful_fermion_basis_from_json(char const *json_string);
+int ls_hs_basis_number_bits(ls_hs_basis const *basis);
+int ls_hs_basis_number_words(ls_hs_basis const *basis);
 
 ls_hs_basis *ls_hs_basis_from_json(char const *json_string);
 char const *ls_hs_basis_to_json(ls_hs_basis const *);
-
 void ls_hs_destroy_string(char const *);
 
 void ls_hs_basis_build(ls_hs_basis *basis);
 
-int ls_hs_basis_number_bits(ls_hs_basis const *);
-
 bool ls_hs_basis_has_fixed_hamming_weight(ls_hs_basis const *);
+
+char const *ls_hs_basis_state_to_string(ls_hs_basis const *,
+                                        uint64_t const *state);
 
 void ls_hs_state_index(ls_hs_basis const *basis, ptrdiff_t batch_size,
                        uint64_t const *spins, ptrdiff_t spins_stride,
                        ptrdiff_t *indices, ptrdiff_t indices_stride);
+// }}}
 
-void ls_hs_perform_gc();
+void ls_hs_internal_set_free_stable_ptr(void (*f)(void *));
+
 void ls_hs_free_stable_ptr(void *);
-// -- |
-// -- Cstate_index_kernel
-// --   batch_size
-// --   spins
-// --   spins_stride
-// --   indices
-// --   indices_stride
-// --   private_kernel_data
-// type Cindex_kernel = CPtrdiff -> Ptr Word64 -> CPtrdiff -> Ptr CPtrdiff ->
-// CPtrdiff -> Ptr () -> IO ()
-//
-// foreign import ccall "dynamic"
-//   mkCindex_kernel :: FunPtr Cindex_kernel -> Cindex_kernel
-//
-// data Cbasis_kernels = Cbasis_kernels
-//   { cbasis_state_index_kernel :: {-# UNPACK #-} !(FunPtr Cindex_kernel),
-//     cbasis_state_index_data :: {-# UNPACK #-} !(Ptr ())
-//   }
+
 typedef struct ls_internal_operator_kernel_data
     ls_internal_operator_kernel_data;
 
@@ -229,11 +191,29 @@ typedef struct ls_hs_operator {
   void *haskell_payload;
 } ls_hs_operator;
 
-ls_hs_operator *ls_hs_create_operator(ls_hs_basis const *, char const *, int,
-                                      int, int const *);
+ls_hs_operator *ls_hs_create_operator(ls_hs_basis const *basis,
+                                      char const *expression, int number_tuples,
+                                      int tuple_size, int const *indices);
+char const *ls_hs_operator_to_json(ls_hs_operator const *, bool include_basis);
+ls_hs_operator *ls_hs_operator_from_json(char const *json_string,
+                                         ls_hs_basis const *basis);
+
 ls_hs_operator *ls_hs_operator_plus(ls_hs_operator const *,
                                     ls_hs_operator const *);
-void ls_hs_print_terms(ls_hs_operator const *);
+ls_hs_operator *ls_hs_operator_minus(ls_hs_operator const *,
+                                     ls_hs_operator const *);
+ls_hs_operator *ls_hs_operator_times(ls_hs_operator const *,
+                                     ls_hs_operator const *);
+ls_hs_operator *ls_hs_operator_scale(ls_hs_scalar const *,
+                                     ls_hs_operator const *);
+ls_hs_operator *ls_hs_operator_hermitian_conjugate(ls_hs_operator const *);
+
+bool ls_hs_operator_is_hermitian(ls_hs_operator const *);
+bool ls_hs_operator_is_identity(ls_hs_operator const *);
+bool ls_hs_operator_is_real(ls_hs_operator const *);
+
+char const *ls_hs_operator_pretty_terms(ls_hs_operator const *);
+
 void ls_hs_destroy_operator_v2(ls_hs_operator *);
 
 ls_hs_operator *ls_hs_load_hamiltonian_from_yaml(char const *);
@@ -266,10 +246,12 @@ void ls_hs_operator_apply_off_diag_kernel(
 
 void ls_internal_operator_apply_off_diag_x1(
     ls_hs_operator const *op, ptrdiff_t batch_size, uint64_t const *alphas,
-    uint64_t *betas, ls_hs_scalar *coeffs, ptrdiff_t *offsets, double const *xs);
-void ls_internal_operator_apply_diag_x1(
-    ls_hs_operator const *op, ptrdiff_t batch_size, uint64_t const *alphas,
-    double *ys, double const *xs);
+    uint64_t *betas, ls_hs_scalar *coeffs, ptrdiff_t *offsets,
+    double const *xs);
+void ls_internal_operator_apply_diag_x1(ls_hs_operator const *op,
+                                        ptrdiff_t batch_size,
+                                        uint64_t const *alphas, double *ys,
+                                        double const *xs);
 
 // {{{ Binomials
 typedef struct {
@@ -389,6 +371,9 @@ void ls_hs_state_index_binary_search_kernel(ptrdiff_t batch_size,
 typedef struct ls_chpl_kernels {
   void (*enumerate_states)(ls_hs_basis const *, uint64_t, uint64_t,
                            chpl_external_array *);
+  void (*operator_apply_off_diag)(ls_hs_operator *, int64_t, uint64_t *,
+                                  chpl_external_array *, chpl_external_array *,
+                                  chpl_external_array *, int64_t);
 } ls_chpl_kernels;
 
 ls_chpl_kernels const *ls_hs_internal_get_chpl_kernels();

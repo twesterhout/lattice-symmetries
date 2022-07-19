@@ -23,7 +23,7 @@ import LatticeSymmetries.Generator
 import LatticeSymmetries.NonbranchingTerm
 import LatticeSymmetries.Utils (loopM)
 import System.IO.Unsafe (unsafePerformIO)
-import Prelude hiding (Sum)
+import Prelude hiding (Product, Sum)
 
 data OperatorHeader (t :: ParticleTy) = OperatorHeader
   { opBasis :: !(Basis t),
@@ -58,15 +58,62 @@ opTermsFlat :: OperatorHeader t -> Polynomial ComplexRational (Generator Int (Ge
 opTermsFlat (OperatorHeader basis terms) =
   fmap (fmap (fmap (\(Generator i g) -> Generator (flattenIndex basis i) g))) terms
 
+withSameBasis :: IsBasis t => OperatorHeader t -> OperatorHeader t -> (Basis t -> a) -> a
+withSameBasis a b f
+  | opBasis a == opBasis b = f (opBasis a)
+  | otherwise = error "expected operators defined on the same basis"
+
 instance IsBasis t => Num (OperatorHeader t) where
-  (+) a b
-    | opBasis a == opBasis b = OperatorHeader (opBasis a) (simplify $ opTerms a + opTerms b)
+  (+) a b = withSameBasis a b $ \basis -> OperatorHeader basis (simplifyPolynomial $ opTerms a + opTerms b)
+  (-) a b = withSameBasis a b $ \basis -> OperatorHeader basis (simplifyPolynomial $ opTerms a - opTerms b)
+  (*) a b = withSameBasis a b $ \basis -> OperatorHeader basis (simplifyPolynomial $ opTerms a * opTerms b)
+  negate a = OperatorHeader (opBasis a) (negate (opTerms a))
+  abs a = error "Num instance of OperatorHeader does not implement abs"
+  signum _ = error "Num instance of OperatorHeader does not implement signum"
+  fromInteger _ = error "Num instance of OperatorHeader does not implement fromInteger"
+
+instance IsBasis t => CanScale ComplexRational (OperatorHeader t) where
+  scale c a = OperatorHeader (opBasis a) (c `scale` opTerms a)
 
 instance IsBasis t => Num (Operator t) where
   (+) a b = operatorFromHeader $ opHeader a + opHeader b
+  (-) a b = operatorFromHeader $ opHeader a - opHeader b
+  (*) a b = operatorFromHeader $ opHeader a * opHeader b
+  negate a = operatorFromHeader $ negate (opHeader a)
+  abs a = operatorFromHeader $ abs (opHeader a)
+  signum a = operatorFromHeader $ signum (opHeader a)
+  fromInteger n = operatorFromHeader $ fromInteger n
+
+instance IsBasis t => CanScale ComplexRational (Operator t) where
+  scale c a = operatorFromHeader $ scale c (opHeader a)
 
 -- getNumberTerms :: Operator c basis -> Int
 -- getNumberTerms operator = let (Sum v) = opTerms operator in G.length v
+
+opIsIdentity :: IsBasis t => Operator t -> Bool
+opIsIdentity operator = G.length terms == 1 && isId (G.head terms)
+  where
+    isId (Scaled _ (Product p)) = G.length p == 1 && isIdentity (G.head p)
+    terms = unSum . opTerms . opHeader $ operator
+
+opIsHermitian :: IsBasis t => Operator t -> Bool
+opIsHermitian operator = terms == conjugatePolynomial terms
+  where
+    terms = opTerms $ opHeader operator
+
+conjugateOperator :: IsBasis t => Operator t -> Operator t
+conjugateOperator operator =
+  operatorFromHeader $
+    OperatorHeader basis (conjugatePolynomial terms)
+  where
+    basis = opBasis $ opHeader operator
+    terms = opTerms $ opHeader operator
+
+-- opHermitianConjugate :: IsBasis t => Operator t -> Operator t
+-- opHermitianConjugate operator = operatorFromHeader $
+--   where
+
+-- opIsHermitian :: IsBasis t => Symmetric
 
 getNonbranchingTerms ::
   HasNonbranchingRepresentation (Generator Int (GeneratorType t)) =>

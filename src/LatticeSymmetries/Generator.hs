@@ -4,7 +4,7 @@ module LatticeSymmetries.Generator
     SpinGeneratorType (..),
     FermionGeneratorType (..),
     Generator (..),
-    HasMatrixRepresentation (..),
+    -- HasMatrixRepresentation (..),
   )
 where
 
@@ -14,8 +14,8 @@ import qualified Data.Vector.Generic as G
 import LatticeSymmetries.BitString
 import LatticeSymmetries.Dense
 import LatticeSymmetries.NonbranchingTerm
-import Text.PrettyPrint.ANSI.Leijen (Pretty (..))
-import qualified Text.PrettyPrint.ANSI.Leijen as Pretty
+import Prettyprinter (Doc, Pretty (..))
+import qualified Prettyprinter as Pretty
 import Prelude hiding (Product, Sum, identity, toList)
 
 data SpinIndex = SpinUp | SpinDown
@@ -76,33 +76,33 @@ toSubscript n = Text.map h (show n)
     h _ = error "invalid character"
 
 instance Pretty g => Pretty (Generator Int g) where
-  pretty (Generator i g) = pretty g <> Pretty.text (Text.unpack (toSubscript i))
+  pretty (Generator i g) = pretty g <> pretty (Text.unpack (toSubscript i))
 
 instance Pretty g => Pretty (Generator (SpinIndex, Int) g) where
-  pretty (Generator (σ, i) g) = pretty g <> pretty σ <> Pretty.text (Text.unpack (toSubscript i))
+  pretty (Generator (σ, i) g) = pretty g <> pretty σ <> pretty (Text.unpack (toSubscript i))
 
-class HasMatrixRepresentation g where
-  matrixRepresentation :: (G.Vector v c, Num c) => g -> DenseMatrix v c
-
-instance HasMatrixRepresentation SpinGeneratorType where
-  matrixRepresentation = spinMatrixRepresentation
-
-instance HasMatrixRepresentation FermionGeneratorType where
-  matrixRepresentation = fermionMatrixRepresentation
-
-spinMatrixRepresentation :: (G.Vector v c, Num c) => SpinGeneratorType -> DenseMatrix v c
-spinMatrixRepresentation g = fromList $ case g of
-  SpinIdentity -> [[1, 0], [0, 1]]
-  SpinZ -> [[1, 0], [0, -1]]
-  SpinPlus -> [[0, 1], [0, 0]]
-  SpinMinus -> [[0, 0], [1, 0]]
-
-fermionMatrixRepresentation :: (G.Vector v c, Num c) => FermionGeneratorType -> DenseMatrix v c
-fermionMatrixRepresentation g = fromList $ case g of
-  FermionIdentity -> [[1, 0], [0, 1]]
-  FermionCount -> [[1, 0], [0, 0]]
-  FermionCreate -> [[0, 1], [0, 0]]
-  FermionAnnihilate -> [[0, 0], [1, 0]]
+-- class HasMatrixRepresentation g where
+--   matrixRepresentation :: (G.Vector v c, Num c) => g -> DenseMatrix v c
+--
+-- instance HasMatrixRepresentation SpinGeneratorType where
+--   matrixRepresentation = spinMatrixRepresentation
+--
+-- instance HasMatrixRepresentation FermionGeneratorType where
+--   matrixRepresentation = fermionMatrixRepresentation
+--
+-- spinMatrixRepresentation :: (G.Vector v c, Num c) => SpinGeneratorType -> DenseMatrix v c
+-- spinMatrixRepresentation g = fromList $ case g of
+--   SpinIdentity -> [[1, 0], [0, 1]]
+--   SpinZ -> [[1, 0], [0, -1]]
+--   SpinPlus -> [[0, 1], [0, 0]]
+--   SpinMinus -> [[0, 0], [1, 0]]
+--
+-- fermionMatrixRepresentation :: (G.Vector v c, Num c) => FermionGeneratorType -> DenseMatrix v c
+-- fermionMatrixRepresentation g = fromList $ case g of
+--   FermionIdentity -> [[1, 0], [0, 1]]
+--   FermionCount -> [[1, 0], [0, 0]]
+--   FermionCreate -> [[0, 1], [0, 0]]
+--   FermionAnnihilate -> [[0, 0], [1, 0]]
 
 instance HasNonbranchingRepresentation (Generator Int SpinGeneratorType) where
   nonbranchingRepresentation (Generator _ SpinIdentity) =

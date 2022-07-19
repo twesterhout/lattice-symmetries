@@ -188,7 +188,7 @@ termsFromText ::
   Polynomial ComplexRational (Factor t)
 termsFromText s indices = case parse (pOperatorString (getPrimitiveParser (Proxy @t))) "" s of
   Left e -> error $ "failed to parse " <> show s <> ": " <> show e
-  Right x -> simplify $ forSiteIndices x indices
+  Right x -> simplifyPolynomial $ forSiteIndices x indices
 
 operatorFromString ::
   forall t.
@@ -201,7 +201,7 @@ operatorFromString basis s indices =
   operatorFromHeader . OperatorHeader basis $
     termsFromText @t s indices
 
-pBasisState :: Stream s m Char => ParsecT s u m BasisState
+pBasisState :: Stream s m Char => ParsecT s u m (BasisState t)
 pBasisState = do
   _ <- char '|'
   s <- many1 (char '0' <|> char '1')
@@ -215,7 +215,7 @@ pBasisState = do
             _ -> error "should never happen"
   pure $ go 0 0 s
 
-instance IsString BasisState where
+instance IsString (BasisState t) where
   fromString s = case parse pBasisState "" s of
     Left e -> error (show e)
     Right x -> x

@@ -1,3 +1,8 @@
+-- |
+-- Module      : LatticeSymmetries.BitString
+-- Description : Defines the 'BitString' data type
+-- Copyright   : (c) Tom Westerhout, 2022
+-- Stability   : experimental
 module LatticeSymmetries.BitString
   ( BitString (..),
     readBitString,
@@ -16,7 +21,11 @@ import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Generic.Mutable as GM
 import Foreign.Ptr
 
-newtype BitString = BitString Integer
+-- | A newtype over 'Integer' indicating that we don't treat it as a number, but rather as a
+-- collection of bits.
+--
+-- The order of bits is determined by the 'Bits' instance of 'Integer'.
+newtype BitString = BitString {unBitString :: Integer}
   deriving stock (Show, Eq, Ord)
   deriving newtype (Bits)
 

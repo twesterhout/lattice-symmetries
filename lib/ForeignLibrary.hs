@@ -1,18 +1,28 @@
+{-# LANGUAGE RankNTypes #-}
+
 module ForeignLibrary () where
 
+import Control.Exception.Safe (handleAny)
 import Data.List.Split (chunksOf)
 import Foreign.C.String (CString)
 import Foreign.C.Types (CBool (..), CInt (..), CUInt (..))
 import Foreign.Marshal.Array (peekArray)
 import Foreign.Marshal.Utils (fromBool)
-import Foreign.Ptr (Ptr)
+import Foreign.Ptr (Ptr, nullPtr)
+import Foreign.Storable (Storable (..))
 import LatticeSymmetries
+import LatticeSymmetries.Algebra (scale)
 import LatticeSymmetries.Basis
+import LatticeSymmetries.BitString (readBitString)
+import LatticeSymmetries.ComplexRational (ComplexRational, fromComplexDouble)
 import LatticeSymmetries.FFI
 import LatticeSymmetries.Operator
 import LatticeSymmetries.Parser
 import LatticeSymmetries.Utils
-import Text.PrettyPrint.ANSI.Leijen (hardline, pretty, putDoc)
+import Prettyprinter (Pretty (..))
+import qualified Prettyprinter as Pretty
+import Prettyprinter.Render.Text (renderStrict)
+import Type.Reflection
 
 foreign export ccall "ls_hs_hdf5_create_dataset_u64"
   ls_hs_hdf5_create_dataset_u64 :: CString -> CString -> CUInt -> Ptr Word64 -> IO ()
@@ -115,48 +125,118 @@ foreign export ccall "ls_hs_basis_build"
 foreign export ccall "ls_hs_basis_has_fixed_hamming_weight"
   ls_hs_basis_has_fixed_hamming_weight :: Ptr Cbasis -> IO CBool
 
-ls_hs_basis_number_bits :: Ptr Cbasis -> IO CInt
-ls_hs_basis_number_bits basis =
-  fromIntegral
-    <$> withReconstructedBasis basis (pure . getNumberBits . basisHeader)
-
 foreign export ccall "ls_hs_basis_number_bits"
   ls_hs_basis_number_bits :: Ptr Cbasis -> IO CInt
 
+ls_hs_basis_number_bits basisPtr =
+  fromIntegral
+    <$> withReconstructedBasis basisPtr (pure . getNumberBits . basisHeader)
+
+foreign export ccall "ls_hs_basis_number_words"
+  ls_hs_basis_number_words :: Ptr Cbasis -> IO CInt
+
+ls_hs_basis_number_words basisPtr =
+  fromIntegral
+    <$> withReconstructedBasis basisPtr (pure . getNumberWords . basisHeader)
+
+foreign export ccall "ls_hs_basis_state_to_string"
+  ls_hs_basis_state_to_string :: Ptr Cbasis -> Ptr Word64 -> IO CString
+
+ls_hs_basis_state_to_string basisPtr statePtr =
+  withReconstructedBasis basisPtr $ \(basis :: Basis t) -> do
+    let numberBits = getNumberBits (basisHeader basis)
+        numberWords = getNumberWords (basisHeader basis)
+    state <- BasisState @t numberBits <$> readBitString numberWords statePtr
+    newCString . encodeUtf8 . renderStrict . Pretty.layoutCompact . pretty $ state
+
 ls_hs_create_operator :: Ptr Cbasis -> CString -> CInt -> CInt -> Ptr CInt -> IO (Ptr Coperator)
 ls_hs_create_operator basisPtr cStr numberTuples tupleSize tuplesPtr =
-  withReconstructedBasis basisPtr $ \basis -> do
-    indices <-
-      chunksOf (fromIntegral tupleSize)
-        <$> fmap fromIntegral
-        <$> peekArray (fromIntegral (numberTuples * tupleSize)) tuplesPtr
-    s <- peekUtf8 cStr
-    logDebug' $ "Creating operator from " <> show s <> " ..."
-    let !operator = operatorFromString basis s indices
-    borrowCoperator operator
+  handleAny (propagateErrorToC nullPtr) $
+    withReconstructedBasis basisPtr $ \basis -> do
+      indices <-
+        chunksOf (fromIntegral tupleSize)
+          <$> fmap fromIntegral
+          <$> peekArray (fromIntegral (numberTuples * tupleSize)) tuplesPtr
+      s <- peekUtf8 cStr
+      borrowCoperator $ operatorFromString basis s indices
 
 foreign export ccall "ls_hs_create_operator"
   ls_hs_create_operator :: Ptr Cbasis -> CString -> CInt -> CInt -> Ptr CInt -> IO (Ptr Coperator)
 
-foreign export ccall "ls_hs_load_hamiltonian_from_yaml"
-  ls_hs_load_hamiltonian_from_yaml :: CString -> IO (Ptr Coperator)
+operatorBinaryFunction ::
+  (forall t. IsBasis t => Operator t -> Operator t -> Operator t) ->
+  Ptr Coperator ->
+  Ptr Coperator ->
+  IO (Ptr Coperator)
+operatorBinaryFunction f aPtr bPtr =
+  handleAny (propagateErrorToC nullPtr) $
+    withReconstructedOperator aPtr $ \a ->
+      withReconstructedOperator bPtr $ \b ->
+        case matchParticleType2 a b of
+          Just HRefl -> borrowCoperator (f a b)
+          Nothing -> error "operators have different particle types"
 
 ls_hs_operator_plus :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
-ls_hs_operator_plus aPtr bPtr =
-  withReconstructedOperator aPtr $ \a ->
-    withSameTypeAs a (withReconstructedOperator bPtr) $ \b ->
-      borrowCoperator (a + b)
+ls_hs_operator_plus = operatorBinaryFunction (+)
+
+ls_hs_operator_minus :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
+ls_hs_operator_minus = operatorBinaryFunction (-)
+
+ls_hs_operator_times :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
+ls_hs_operator_times = operatorBinaryFunction (*)
+
+ls_hs_operator_scale :: Ptr Cscalar -> Ptr Coperator -> IO (Ptr Coperator)
+ls_hs_operator_scale cPtr opPtr =
+  handleAny (propagateErrorToC nullPtr) $
+    withReconstructedOperator opPtr $ \op -> do
+      (c :: ComplexRational) <- fromComplexDouble <$> peek cPtr
+      borrowCoperator $ scale c op
 
 foreign export ccall "ls_hs_operator_plus"
   ls_hs_operator_plus :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
 
-ls_hs_print_terms :: Ptr Coperator -> IO ()
-ls_hs_print_terms p =
-  withReconstructedOperator p $ \operator ->
-    putDoc (pretty (opTerms (opHeader operator)) <> hardline)
+foreign export ccall "ls_hs_operator_minus"
+  ls_hs_operator_minus :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
 
-foreign export ccall "ls_hs_print_terms"
-  ls_hs_print_terms :: Ptr Coperator -> IO ()
+foreign export ccall "ls_hs_operator_times"
+  ls_hs_operator_times :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
+
+foreign export ccall "ls_hs_operator_scale"
+  ls_hs_operator_scale :: Ptr Cscalar -> Ptr Coperator -> IO (Ptr Coperator)
+
+foreign export ccall "ls_hs_operator_hermitian_conjugate"
+  ls_hs_operator_hermitian_conjugate :: Ptr Coperator -> IO (Ptr Coperator)
+
+ls_hs_operator_hermitian_conjugate opPtr =
+  withReconstructedOperator opPtr (borrowCoperator . conjugateOperator)
+
+foreign export ccall "ls_hs_operator_is_hermitian"
+  ls_hs_operator_is_hermitian :: Ptr Coperator -> IO CBool
+
+ls_hs_operator_is_hermitian opPtr =
+  fromBool <$> withReconstructedOperator opPtr (pure . opIsHermitian)
+
+foreign export ccall "ls_hs_operator_is_identity"
+  ls_hs_operator_is_identity :: Ptr Coperator -> IO CBool
+
+ls_hs_operator_is_identity opPtr =
+  fromBool <$> withReconstructedOperator opPtr (pure . opIsIdentity)
+
+foreign export ccall "ls_hs_load_hamiltonian_from_yaml"
+  ls_hs_load_hamiltonian_from_yaml :: CString -> IO (Ptr Coperator)
+
+ls_hs_operator_pretty_terms :: Ptr Coperator -> IO CString
+ls_hs_operator_pretty_terms p =
+  withReconstructedOperator p $ \op ->
+    newCString
+      . encodeUtf8
+      . renderStrict
+      . Pretty.layoutPretty (Pretty.LayoutOptions Pretty.Unbounded)
+      . pretty
+      $ opTerms (opHeader op)
+
+foreign export ccall "ls_hs_operator_pretty_terms"
+  ls_hs_operator_pretty_terms :: Ptr Coperator -> IO CString
 
 -- foreign export ccall "ls_hs_fatal_error"
 --   ls_hs_fatal_error :: CString -> CString -> IO ()

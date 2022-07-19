@@ -21,10 +21,12 @@ setup(
     author_email="14264576+twesterhout@users.noreply.github.com",
     license="BSD3",
     packages=["lattice_symmetries"],
-    setup_requires=["cffi>=1.0.0"],
+    setup_requires=["cffi>=1.15.0"],
     cffi_modules=["lattice_symmetries/build_extension.py:ffibuilder"],
     install_requires=[
-        "cffi>=1.0.0",
+        "cffi>=1.15.0",
+        "numpy>=1.23.0",
+        "scipy>=1.8.0",
     ],
     zip_safe=False,
 )

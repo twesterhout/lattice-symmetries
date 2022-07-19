@@ -9,12 +9,21 @@ module LatticeSymmetries.Utils
     logError',
     ApproxEq (..),
     peekUtf8,
+    newCString,
+    propagateErrorToC,
   )
 where
 
 import Colog
-import Data.ByteString (packCString)
-import Foreign.C.String
+import Data.ByteString (packCString, useAsCString)
+import Data.ByteString.Internal (ByteString (..))
+import Foreign.C.String (CString)
+import Foreign.C.Types (CChar)
+import Foreign.ForeignPtr (withForeignPtr)
+import Foreign.Marshal.Alloc (mallocBytes)
+import Foreign.Marshal.Utils (copyBytes)
+import Foreign.Ptr (Ptr, castPtr)
+import Foreign.Storable (Storable (..))
 import System.IO.Unsafe (unsafePerformIO)
 
 loopM :: Monad m => i -> (i -> Bool) -> (i -> i) -> (i -> m ()) -> m ()
@@ -57,6 +66,17 @@ logWarning' t = withFrozenCallStack $ withDefaultLogger (logWarning t)
 logError' :: HasCallStack => Text -> IO ()
 logError' t = withFrozenCallStack $ withDefaultLogger (logError t)
 
+foreign import ccall unsafe "ls_hs_error"
+  ls_hs_error :: CString -> IO ()
+
+propagateErrorToC :: Exception e => a -> e -> IO a
+propagateErrorToC x₀ = \e -> do
+  let msg :: Text
+      msg = show e
+  -- logError' msg
+  useAsCString (encodeUtf8 msg) ls_hs_error
+  pure x₀
+
 -- ls_hs_fatal_error :: HasCallStack => CString -> CString -> IO ()
 -- ls_hs_fatal_error c_func c_msg = withFrozenCallStack $ do
 --   func <- peekUtf8 c_func
@@ -76,3 +96,11 @@ instance ApproxEq Double where
 
 peekUtf8 :: CString -> IO Text
 peekUtf8 c_str = decodeUtf8 <$> packCString c_str
+
+newCString :: ByteString -> IO CString
+newCString (PS fp _ l) = do
+  (buf :: Ptr CChar) <- mallocBytes (l + 1)
+  withForeignPtr fp $ \(p :: Ptr Word8) -> do
+    copyBytes buf (castPtr p) l
+    pokeByteOff buf l (0 :: CChar)
+  pure buf

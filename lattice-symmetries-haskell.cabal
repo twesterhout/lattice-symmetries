@@ -124,7 +124,7 @@ library
                      -- , binary
                      -- , vector-binary-instances
                      , hdf5-hs
-                     , ansi-wl-pprint
+                     , prettyprinter >= 1.7
                      -- , HaskellForMaths
   extra-libraries:     lattice_symmetries_core
   -- pkgconfig-depends:   lattice_symmetries
@@ -148,14 +148,16 @@ foreign-library lattice_symmetries_haskell
   -- MyForeignLib.SomeOtherModule
   -- c-sources:           csrc/MyForeignLibWrapper.c
   c-sources:           cbits/init.c
-  cc-options:          -fPIC -Wall -Wextra -Wpedantic
+  cc-options:          -fPIC -Wall -Wextra
+  -- -Wpedantic
   ghc-options:         -threaded
   -- -optl -Wl,--retain-symbols-file=api.txt
   include-dirs:        cbits
   build-depends:       lattice-symmetries-haskell
+                     , safe-exceptions
                      , text
                      , bytestring
-                     , ansi-wl-pprint
+                     , prettyprinter
                      , vector
                      , split
   buildable: True
@@ -165,7 +167,7 @@ executable example01
   hs-source-dirs:      app
   main-is:             Example01.hs
   build-depends:       lattice-symmetries-haskell
-                     , ansi-wl-pprint
+                     , prettyprinter >= 1.7
   -- extra-libraries:     -- HSrts-ghc8.10.7
                        -- HSghc-prim-0.6.1
                        -- HSghc-boot-th-8.10.7
@@ -196,7 +198,7 @@ test-suite lattice-symmetries-haskell-test
                      , aeson
                      , vector
                      , parsec
-                     , ansi-wl-pprint
+                     , prettyprinter
                      -- , mwc-random
   ghc-options:         -threaded
                        -rtsopts

@@ -11,21 +11,21 @@ where
 
 import Data.Complex (Complex (..))
 import Foreign.C.Types (CDouble (..))
-import Text.PrettyPrint.ANSI.Leijen (Pretty (..))
-import qualified Text.PrettyPrint.ANSI.Leijen as Pretty
+import Prettyprinter (Doc, Pretty (..))
+import qualified Prettyprinter as Pretty
 
 data ComplexRational = ComplexRational {-# UNPACK #-} !Rational {-# UNPACK #-} !Rational
   deriving stock (Eq, Show)
 
-prettyRational :: Rational -> Pretty.Doc
+prettyRational :: Rational -> Doc ann
 prettyRational x
-  | realToFrac (fromRational x :: Double) == x = Pretty.double (fromRational x :: Double)
-  | otherwise = Pretty.rational x
+  | realToFrac (fromRational x :: Double) == x = pretty (fromRational x :: Double)
+  | otherwise = Pretty.parens $ pretty (numerator x) <> "/" <> pretty (denominator x)
 
 instance Pretty ComplexRational where
   pretty (ComplexRational r i)
     | i == 0 = prettyRational r
-    | otherwise = Pretty.parens $ prettyRational r <> Pretty.text " + " <> prettyRational i <> "𝕚"
+    | otherwise = Pretty.parens $ prettyRational r <> " + " <> prettyRational i <> "𝕚"
 
 realPart :: ComplexRational -> Rational
 realPart (ComplexRational r _) = r
