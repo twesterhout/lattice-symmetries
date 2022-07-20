@@ -56,6 +56,8 @@ void ls_hs_error(char const *message);
   ((cond) ? ((void)0) : ls_hs_fatal_error(__func__, __LINE__, msg))
 // }}}
 
+void ls_hs_destroy_external_array(chpl_external_array *arr);
+
 // {{{ HDF5
 unsigned ls_hs_hdf5_get_dataset_rank(char const *filename, char const *dataset);
 void ls_hs_hdf5_get_dataset_shape(char const *filename, char const *dataset,
@@ -374,6 +376,10 @@ typedef struct ls_chpl_kernels {
   void (*operator_apply_off_diag)(ls_hs_operator *, int64_t, uint64_t *,
                                   chpl_external_array *, chpl_external_array *,
                                   chpl_external_array *, int64_t);
+  void (*operator_apply_diag)(ls_hs_operator *, int64_t, uint64_t *,
+                              chpl_external_array *, int64_t);
+  void (*matrix_vector_product)(ls_hs_operator *, int, double const *,
+                                double *);
 } ls_chpl_kernels;
 
 ls_chpl_kernels const *ls_hs_internal_get_chpl_kernels();

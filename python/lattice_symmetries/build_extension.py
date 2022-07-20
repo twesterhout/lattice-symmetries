@@ -23,6 +23,20 @@ ffibuilder.cdef(
       void *freer;
     } chpl_external_array;
 
+    void ls_hs_destroy_external_array(chpl_external_array *arr);
+
+    typedef struct ls_chpl_kernels {
+      void (*enumerate_states)(ls_hs_basis const *, uint64_t, uint64_t,
+                               chpl_external_array *);
+      void (*operator_apply_off_diag)(ls_hs_operator *, int64_t, uint64_t *,
+                                      chpl_external_array *, chpl_external_array *,
+                                      chpl_external_array *, int64_t);
+      void (*operator_apply_diag)(ls_hs_operator *, int64_t, uint64_t *,
+                                  chpl_external_array *, int64_t);
+      void (*matrix_vector_product)(ls_hs_operator *, int, double const *, double *);
+    } ls_chpl_kernels;
+    ls_chpl_kernels const *ls_hs_internal_get_chpl_kernels();
+
     ls_hs_basis *ls_hs_clone_basis(ls_hs_basis const *);
     void ls_hs_destroy_basis_v2(ls_hs_basis *);
     uint64_t ls_hs_max_state_estimate(ls_hs_basis const *);
@@ -123,7 +137,6 @@ ffibuilder.set_source(
         chpl__init_MatrixVectorProduct(1, 2);
         chpl__init_StatesEnumeration(1, 2);
         chpl__init_Vector(1, 2);
-        // ls_chpl_init_kernels();
     }
 """,
     include_dirs=["../cbits", "/home/tom/src/distributed-matvec/lib/lattice_symmetries_chapel.h"],

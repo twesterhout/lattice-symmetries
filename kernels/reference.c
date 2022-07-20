@@ -46,6 +46,16 @@ void ls_hs_error(char const *message) {
   (*handler)(message);
 }
 
+void ls_hs_destroy_external_array(chpl_external_array *arr) {
+  fprintf(stderr, "Finalizing chpl_external_array %p ...\n", arr);
+  LS_CHECK(arr != NULL, "trying to destroy a NULL chpl_external_array");
+  if (arr->freer != NULL) {
+    ls_hs_internal_chpl_free_func const free_func =
+        (ls_hs_internal_chpl_free_func)arr->freer;
+    (*free_func)(arr->elts);
+  }
+}
+
 // void ls_hs_internal_destroy_external_array(chpl_external_array *p) {
 //   ls_hs_internal_chpl_free_func free_func =
 //       (ls_hs_internal_chpl_free_func)p->freer;
@@ -217,22 +227,24 @@ void ls_hs_operator_apply_diag_kernel(ls_hs_operator const *op,
 #define BATCH_BLOCK_SIZE 8
 #define TERM_BLOCK_SIZE 8
 
-#define PRODUCE_DELTA deltas[batch_idxi + term_idxi * BATCH_BLOCK_SIZE] = \
-                        (alphas[batch_idx + batch_idxi] & terms->m[term_idx + term_idxi]) \
-                           == terms->r[term_idx + term_idxi]
-#define CONSUME_DELTA \
-                uint8_t const delta = deltas[batch_idxi + term_idxi * BATCH_BLOCK_SIZE]; \
-                if (delta != 0) { \
-                  int const sign = \
-                      1 - 2 * (__builtin_popcountll(alphas[batch_idx + batch_idxi] \
-                                                    & terms->s[term_idx + term_idxi]) % 2); \
-                  coeffs[(batch_idx + batch_idxi) * number_terms + offsets[batch_idxi]] = \
-                      terms->v[term_idx + term_idxi] * (delta * sign); \
-                  betas[(batch_idx + batch_idxi) * number_terms + offsets[batch_idxi]] = \
-                      alphas[batch_idx + batch_idxi] ^ terms->x[term_idx + term_idxi]; \
-                  ++offsets[batch_idxi]; \
-                } \
-                (void)0
+#define PRODUCE_DELTA                                                          \
+  deltas[batch_idxi + term_idxi * BATCH_BLOCK_SIZE] =                          \
+      (alphas[batch_idx + batch_idxi] & terms->m[term_idx + term_idxi]) ==     \
+      terms->r[term_idx + term_idxi]
+#define CONSUME_DELTA                                                          \
+  uint8_t const delta = deltas[batch_idxi + term_idxi * BATCH_BLOCK_SIZE];     \
+  if (delta != 0) {                                                            \
+    int const sign =                                                           \
+        1 - 2 * (__builtin_popcountll(alphas[batch_idx + batch_idxi] &         \
+                                      terms->s[term_idx + term_idxi]) %        \
+                 2);                                                           \
+    coeffs[(batch_idx + batch_idxi) * number_terms + offsets[batch_idxi]] =    \
+        terms->v[term_idx + term_idxi] * (delta * sign);                       \
+    betas[(batch_idx + batch_idxi) * number_terms + offsets[batch_idxi]] =     \
+        alphas[batch_idx + batch_idxi] ^ terms->x[term_idx + term_idxi];       \
+    ++offsets[batch_idxi];                                                     \
+  }                                                                            \
+  (void)0
 
 #define min(a, b) (((a) < (b)) ? a : b)
 
@@ -280,9 +292,11 @@ void ls_internal_operator_apply_off_diag_x1_v1(
 }
 #endif
 
-void ls_internal_operator_apply_diag_x1(
-    ls_hs_operator const *const op, ptrdiff_t const batch_size, uint64_t const *restrict const alphas,
-    double *restrict const ys, double const* restrict const xs) {
+void ls_internal_operator_apply_diag_x1(ls_hs_operator const *const op,
+                                        ptrdiff_t const batch_size,
+                                        uint64_t const *restrict const alphas,
+                                        double *restrict const ys,
+                                        double const *restrict const xs) {
   // The diagonal is zero
   if (op->diag_terms == NULL || op->diag_terms->number_terms == 0) {
     memset(ys, 0, (size_t)batch_size * sizeof(double));
@@ -295,22 +309,26 @@ void ls_internal_operator_apply_diag_x1(
     double acc = 0;
     uint64_t const alpha = alphas[batch_idx];
     for (ptrdiff_t term_idx = 0; term_idx < number_terms; ++term_idx) {
-        uint8_t const delta = (alpha & terms->m[term_idx]) == terms->r[term_idx];
-        if (delta != 0) {
-          int const sign =
-              1 - 2 * (__builtin_popcountll(alpha & terms->s[term_idx]) % 2);
-          double const factor = (xs != NULL) ? delta * sign * xs[batch_idx] : delta * sign;
-          acc += creal(terms->v[term_idx]) * factor;
-        }
+      uint8_t const delta = (alpha & terms->m[term_idx]) == terms->r[term_idx];
+      if (delta != 0) {
+        int const sign =
+            1 - 2 * (__builtin_popcountll(alpha & terms->s[term_idx]) % 2);
+        double const factor =
+            (xs != NULL) ? delta * sign * xs[batch_idx] : delta * sign;
+        acc += creal(terms->v[term_idx]) * factor;
+      }
     }
     ys[batch_idx] = acc;
   }
 }
 
-void ls_internal_operator_apply_off_diag_x1(
-    ls_hs_operator const *const op, ptrdiff_t const batch_size, uint64_t const *const alphas,
-    uint64_t *const betas, ls_hs_scalar *const coeffs, ptrdiff_t *const offsets,
-    double const *const xs) {
+void ls_internal_operator_apply_off_diag_x1(ls_hs_operator const *const op,
+                                            ptrdiff_t const batch_size,
+                                            uint64_t const *const alphas,
+                                            uint64_t *const betas,
+                                            ls_hs_scalar *const coeffs,
+                                            ptrdiff_t *const offsets,
+                                            double const *const xs) {
   // Nothing to apply
   if (op->off_diag_terms == NULL || op->off_diag_terms->number_terms == 0) {
     memset(offsets, 0, (size_t)(batch_size + 1) * sizeof(ptrdiff_t));
@@ -324,21 +342,24 @@ void ls_internal_operator_apply_off_diag_x1(
   ptrdiff_t offset = 0;
   for (ptrdiff_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
     for (ptrdiff_t term_idx = 0; term_idx < number_terms; ++term_idx) {
-        uint8_t const delta = (alphas[batch_idx] & terms->m[term_idx]) == terms->r[term_idx];
-        if (delta != 0) {
-          int const sign =
-              1 - 2 * (__builtin_popcountll(alphas[batch_idx] & terms->s[term_idx]) % 2);
-          double const factor = (xs != NULL) ? delta * sign * xs[batch_idx] : delta * sign;
-          coeffs[offset] = CMPLX(creal(terms->v[term_idx]) * factor, cimag(terms->v[term_idx]) * factor);
-          betas[offset] = alphas[batch_idx] ^ terms->x[term_idx];
-          ++offset;
-        }
+      uint8_t const delta =
+          (alphas[batch_idx] & terms->m[term_idx]) == terms->r[term_idx];
+      if (delta != 0) {
+        int const sign = 1 - 2 * (__builtin_popcountll(alphas[batch_idx] &
+                                                       terms->s[term_idx]) %
+                                  2);
+        double const factor =
+            (xs != NULL) ? delta * sign * xs[batch_idx] : delta * sign;
+        coeffs[offset] = CMPLX(creal(terms->v[term_idx]) * factor,
+                               cimag(terms->v[term_idx]) * factor);
+        betas[offset] = alphas[batch_idx] ^ terms->x[term_idx];
+        ++offset;
+      }
     }
     offsets[batch_idx + 1] = offset;
   }
   return;
 }
-
 
 void ls_hs_operator_apply_off_diag_kernel(
     ls_hs_operator const *op, ptrdiff_t batch_size, uint64_t const *alphas,
@@ -351,7 +372,8 @@ void ls_hs_operator_apply_off_diag_kernel(
     return;
   }
 
-  // ls_internal_operator_apply_off_diag(batch_size, alphas, alphas_stride, betas,
+  // ls_internal_operator_apply_off_diag(batch_size, alphas, alphas_stride,
+  // betas,
   //                                     betas_stride, coeffs,
   //                                     op->apply_off_diag_cxt);
   // return;
@@ -615,10 +637,14 @@ void ls_hs_state_info(ls_hs_basis const *basis, ptrdiff_t batch_size,
 
 int get_number_bits(ls_hs_basis const *basis) {
   switch (basis->particle_type) {
-    case LS_HS_SPIN: return basis->number_sites;
-    case LS_HS_SPINFUL_FERMION: return 2 * basis->number_sites;
-    case LS_HS_SPINLESS_FERMION: return basis->number_sites;
-    default: LS_CHECK(false, "should never happen: invalid particle type");
+  case LS_HS_SPIN:
+    return basis->number_sites;
+  case LS_HS_SPINFUL_FERMION:
+    return 2 * basis->number_sites;
+  case LS_HS_SPINLESS_FERMION:
+    return basis->number_sites;
+  default:
+    LS_CHECK(false, "should never happen: invalid particle type");
   }
 }
 
@@ -658,7 +684,10 @@ void ls_hs_unchecked_set_representatives(ls_hs_basis *basis,
 }
 
 // TODO: currently not thread-safe, fix it
-static ls_chpl_kernels global_chpl_kernels = {.enumerate_states = NULL};
+static ls_chpl_kernels global_chpl_kernels = {.enumerate_states = NULL,
+                                              .operator_apply_off_diag = NULL,
+                                              .operator_apply_diag = NULL,
+                                              .matrix_vector_product = NULL};
 // static pthread_mutex_t global_chpl_kernels_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 ls_chpl_kernels const *ls_hs_internal_get_chpl_kernels() {

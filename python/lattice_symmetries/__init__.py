@@ -31,7 +31,9 @@ from ._ls_hs import ffi, lib
 import json
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
-from typing import overload, Optional, Tuple, Union
+import scipy.sparse.linalg
+from scipy.sparse.linalg import LinearOperator
+from typing import overload, Any, List, Optional, Tuple, Union
 import weakref
 
 
@@ -50,7 +52,16 @@ class _RuntimeInitializer:
 
 
 _runtime_init = _RuntimeInitializer()
-lib.set_python_exception_handler()
+# lib.set_python_exception_handler()
+
+
+def _basis_state_to_array(state: int, number_words: int) -> ffi.CData:
+    state = int(state)
+    arr = ffi.new("uint64_t[]", number_words)
+    for i in range(number_words):
+        arr[i] = state & 0xFFFFFFFFFFFFFFFF
+        state >>= 64
+    return arr
 
 
 class Basis:
@@ -64,12 +75,16 @@ class Basis:
         self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_basis_v2, self._payload)
         self._representatives = None
 
+    @property
+    def is_built(self) -> bool:
+        return self._representatives is not None
+
     def build(self) -> None:
         """Generate a list of representatives.
 
         These can later be accessed using the `number_states` and `states` attributes.
         """
-        if self._representatives is None:
+        if not self.is_built:
             # The actual compute-intensive part
             lib.ls_hs_basis_build(self._payload)
             # Create a buffer
@@ -78,6 +93,7 @@ class Basis:
             buffer = ffi.buffer(p, n * ffi.sizeof("uint64_t"))
             # Create an array
             self._representatives = np.frombuffer(buffer, dtype=np.uint64)
+        assert self.is_built
 
     @property
     def number_states(self) -> int:
@@ -115,12 +131,7 @@ class Basis:
         return lib.ls_hs_basis_number_words(self._payload)
 
     def state_to_string(self, state: int) -> str:
-        state = int(state)
-        n = self.number_words
-        arr = ffi.new("uint64_t[]", n)
-        for i in range(n):
-            arr[i] = state & 0xFFFFFFFFFFFFFFFF
-            state >>= 64
+        arr = _basis_state_to_array(state, self.number_words)
         c_str = lib.ls_hs_basis_state_to_string(self._payload, arr)
         s = ffi.string(c_str).decode("utf-8")
         lib.ls_hs_destroy_string(c_str)
@@ -195,7 +206,15 @@ def _assert_subtype(variable, required_type):
         raise TypeError("expected a '{}', but got '{}'".format(required_type, type(variable)))
 
 
-class Operator:
+def _chpl_external_array_as_ndarray(arr: ffi.CData, dtype) -> NDArray[Any]:
+    if not isinstance(dtype, np.dtype):
+        dtype = np.dtype(dtype)
+    buf = ffi.buffer(arr.elts, arr.num_elts * dtype.itemsize)
+    weakref.finalize(buf, lambda: lib.ls_hs_destroy_external_array(arr))
+    return np.frombuffer(buf, dtype=dtype)
+
+
+class Operator(LinearOperator):
     _payload: ffi.CData
     _finalizer: weakref.finalize
     basis: Basis
@@ -240,7 +259,7 @@ class Operator:
         else:
             self._make_from_expression(basis, *args, **kwargs)
 
-    def conj(self):
+    def adjoint(self):
         return Operator(self.basis, lib.ls_hs_operator_hermitian_conjugate(self._payload))
 
     @property
@@ -261,16 +280,27 @@ class Operator:
         _assert_subtype(other, Operator)
         return Operator(self.basis, lib.ls_hs_operator_minus(self._payload, other._payload))
 
+    def scale(self, coeff: complex) -> "Operator":
+        coeff = complex(coeff)
+        c_coeff = ffi.new("ls_hs_scalar const*", [coeff.real, coeff.imag])
+        return Operator(self.basis, lib.ls_hs_operator_scale(c_coeff, self._payload))
+
     def __mul__(self, other):
         """Multiply `self` by `other` Operator."""
-        _assert_subtype(other, Operator)
-        return Operator(self.basis, lib.ls_hs_operator_times(self._payload, other._payload))
+        if isinstance(other, Operator):
+            return Operator(self.basis, lib.ls_hs_operator_times(self._payload, other._payload))
+        else:
+            NotImplemented
 
     def __rmul__(self, other: complex):
         """Scale `self` by a scalar `other`."""
-        coeff = complex(other)
-        c_coeff = ffi.new("ls_hs_scalar const*", [coeff.real, coeff.imag])
-        return Operator(self.basis, lib.ls_hs_operator_scale(c_coeff, self._payload))
+        if np.isscalar(other):
+            return self.scale(other)
+        else:
+            NotImplemented
+
+    def __matmul__(self, other: NDArray[Any]) -> NDArray[Any]:
+        return self.apply_to_state_vector(other)
 
     def __str__(self):
         """Get the string representation of the underlying expression"""
@@ -278,3 +308,77 @@ class Operator:
         s = ffi.string(c_str).decode("utf-8")
         lib.ls_hs_destroy_string(c_str)
         return s
+
+    def __repr__(self):
+        return "<Operator defined on {}>".format(self.basis.__class__.__name__)
+
+    def apply_diag_to_basis_state(self, state: int) -> float:
+        arr = _basis_state_to_array(state, self.basis.number_words)
+        coeffs = ffi.new("chpl_external_array *")
+        kernels = lib.ls_hs_internal_get_chpl_kernels()
+        kernels.operator_apply_diag(self._payload, 1, arr, coeffs, 0)
+
+        coeffs_arr = _chpl_external_array_as_ndarray(coeffs, np.float64)
+        return float(coeffs_arr[0])
+
+    def apply_off_diag_to_basis_state(self, state: int) -> List[Tuple[complex, int]]:
+        arr = _basis_state_to_array(state, self.basis.number_words)
+        betas = ffi.new("chpl_external_array *")
+        coeffs = ffi.new("chpl_external_array *")
+        offsets = ffi.new("chpl_external_array *")
+        kernels = lib.ls_hs_internal_get_chpl_kernels()
+        kernels.operator_apply_off_diag(self._payload, 1, arr, betas, coeffs, offsets, 0)
+
+        offsets_arr = _chpl_external_array_as_ndarray(offsets, np.int64)
+        betas_arr = _chpl_external_array_as_ndarray(betas, np.uint64)[: offsets_arr[1]]
+        coeffs_arr = _chpl_external_array_as_ndarray(coeffs, np.complex128)[: offsets_arr[1]]
+        return list(zip(coeffs_arr, betas_arr))
+
+    def apply_to_state_vector(self, vector: NDArray[np.float64]) -> NDArray[np.float64]:
+        self._check_basis_is_built("apply_to_state_vector")
+        if vector.dtype != np.float64:
+            raise TypeError(
+                "expected a NDArray[float64], but got {}[{}]"
+                "".format(type(vector).__name__, type(vector.dtype))
+            )
+
+        out = np.empty_like(vector)
+        x_ptr = ffi.from_buffer("double[]", vector, require_writable=False)
+        y_ptr = ffi.from_buffer("double[]", out, require_writable=True)
+
+        kernels = lib.ls_hs_internal_get_chpl_kernels()
+        kernels.matrix_vector_product(self._payload, 1, x_ptr, y_ptr)
+        return out
+
+    def _check_basis_is_built(self, attribute):
+        if not self.basis.is_built:
+            raise AttributeError(
+                "'Operator' object has no attribute '{}' (did you forget to build the basis?)"
+                "".format(attribute),
+                name=attribute,
+                obj=self,
+            )
+
+    @property
+    def dtype(self):
+        self._check_basis_is_built("dtype")
+        return np.dtype("float64")
+
+    @property
+    def shape(self):
+        self._check_basis_is_built("shape")
+        n = self.basis.number_states
+        return (n, n)
+
+    def _matvec(self, x):
+        return self.apply_to_state_vector(x)
+
+
+def test_01():
+    basis = SpinBasis(2)
+    basis.build()
+    a = Operator(basis, "σ⁺₀ σ⁻₁", [(0, 1)])
+    b = Operator(basis, "σᶻ₀ σᶻ₁", [(0, 1)])
+    h = 2 * (a + a.adjoint()) + b
+    (e, v) = scipy.sparse.linalg.eigsh(h, k=3, which="SA")
+    return h, e, v
