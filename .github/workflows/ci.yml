@@ -67,6 +67,7 @@ jobs:
         mkdir -p third_party
         cp -r ~/hdf5 third_party/
     - name: Build HDF5
+      if: steps.cache-hdf5.outputs.cache-hit != 'true'
       run: |
         make hdf5
     - name: Save pre-built HDF5
