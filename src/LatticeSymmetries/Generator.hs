@@ -1,9 +1,14 @@
+-- |
+-- Module      : LatticeSymmetries.Generator
+-- Description : Bosonic and fermionic algebra generators
+-- Copyright   : (c) Tom Westerhout, 2022
+-- Stability   : experimental
 module LatticeSymmetries.Generator
   ( SpinIndex (..),
-    HasSiteIndex (..),
     SpinGeneratorType (..),
     FermionGeneratorType (..),
     Generator (..),
+    HasSiteIndex (..),
     -- HasMatrixRepresentation (..),
   )
 where
@@ -18,12 +23,62 @@ import Prettyprinter (Doc, Pretty (..))
 import qualified Prettyprinter as Pretty
 import Prelude hiding (Product, Sum, identity, toList)
 
-data SpinIndex = SpinUp | SpinDown
+-- | Index for the spin sector.
+--
+-- __Note the ordering__: spin up appears before spin down.
+data SpinIndex
+  = -- | ↑
+    SpinUp
+  | -- | ↓
+    SpinDown
   deriving stock (Show, Eq, Ord)
 
 instance Pretty SpinIndex where
   pretty SpinUp = "↑"
   pretty SpinDown = "↓"
+
+-- | Generators for the algebra of spin-1/2 particles.
+data SpinGeneratorType
+  = -- | Identity \( 1 = \begin{pmatrix} 1 & 0\\ 0 & 1\end{pmatrix} \)
+    SpinIdentity
+  | -- | Pauli matrix \( \sigma^z = \begin{pmatrix} 1 & 0\\ 0 & -1\end{pmatrix} \)
+    SpinZ
+  | -- | \( \sigma^{+} = \sigma^x + 𝕚\sigma^y = \begin{pmatrix} 0 & 1\\ 0 & 0 \end{pmatrix} \)
+    SpinPlus
+  | -- | \( \sigma^{-} = \sigma^x - 𝕚\sigma^y = \begin{pmatrix} 0 & 0\\ 1 & 0 \end{pmatrix} \)
+    SpinMinus
+  deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
+
+instance Pretty SpinGeneratorType where
+  pretty x = case x of
+    SpinIdentity -> "1"
+    SpinZ -> "σᶻ"
+    SpinPlus -> "σ⁺"
+    SpinMinus -> "σ⁻"
+
+-- | Generators for the fermionic algebra.
+data FermionGeneratorType
+  = -- | Identity 𝟙
+    FermionIdentity
+  | -- | Number counting operator
+    FermionCount
+  | -- | Creation operator \( c^\dagger \)
+    FermionCreate
+  | -- | Annihilation operator \( c \)
+    FermionAnnihilate
+  deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
+
+instance Pretty FermionGeneratorType where
+  pretty x = case x of
+    FermionIdentity -> "1"
+    FermionCount -> "n"
+    FermionCreate -> "c†"
+    FermionAnnihilate -> "c"
+
+-- | A generator (either spin or fermionic) which is not associated with an index @i@. The index
+-- could be the site index or a tuple of spin and site indices.
+data Generator i g = Generator !i !g
+  deriving stock (Eq, Ord, Show, Generic)
 
 class HasSiteIndex i where
   getSiteIndex :: i -> Int
@@ -36,29 +91,6 @@ instance HasSiteIndex Int where
 instance HasSiteIndex (SpinIndex, Int) where
   getSiteIndex (_, i) = i
   mapSiteIndex f (σ, i) = (σ, f i)
-
-data SpinGeneratorType = SpinIdentity | SpinZ | SpinPlus | SpinMinus
-  deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
-
-instance Pretty SpinGeneratorType where
-  pretty x = case x of
-    SpinIdentity -> "1"
-    SpinZ -> "σᶻ"
-    SpinPlus -> "σ⁺"
-    SpinMinus -> "σ⁻"
-
-data FermionGeneratorType = FermionIdentity | FermionCount | FermionCreate | FermionAnnihilate
-  deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
-
-instance Pretty FermionGeneratorType where
-  pretty x = case x of
-    FermionIdentity -> "1"
-    FermionCount -> "n"
-    FermionCreate -> "c†"
-    FermionAnnihilate -> "c"
-
-data Generator i g = Generator !i !g
-  deriving stock (Eq, Ord, Show, Generic)
 
 toSubscript :: HasCallStack => Int -> Text
 toSubscript n = Text.map h (show n)
@@ -76,33 +108,10 @@ toSubscript n = Text.map h (show n)
     h _ = error "invalid character"
 
 instance Pretty g => Pretty (Generator Int g) where
-  pretty (Generator i g) = pretty g <> pretty (Text.unpack (toSubscript i))
+  pretty (Generator i g) = pretty g <> pretty (toSubscript i)
 
 instance Pretty g => Pretty (Generator (SpinIndex, Int) g) where
-  pretty (Generator (σ, i) g) = pretty g <> pretty σ <> pretty (Text.unpack (toSubscript i))
-
--- class HasMatrixRepresentation g where
---   matrixRepresentation :: (G.Vector v c, Num c) => g -> DenseMatrix v c
---
--- instance HasMatrixRepresentation SpinGeneratorType where
---   matrixRepresentation = spinMatrixRepresentation
---
--- instance HasMatrixRepresentation FermionGeneratorType where
---   matrixRepresentation = fermionMatrixRepresentation
---
--- spinMatrixRepresentation :: (G.Vector v c, Num c) => SpinGeneratorType -> DenseMatrix v c
--- spinMatrixRepresentation g = fromList $ case g of
---   SpinIdentity -> [[1, 0], [0, 1]]
---   SpinZ -> [[1, 0], [0, -1]]
---   SpinPlus -> [[0, 1], [0, 0]]
---   SpinMinus -> [[0, 0], [1, 0]]
---
--- fermionMatrixRepresentation :: (G.Vector v c, Num c) => FermionGeneratorType -> DenseMatrix v c
--- fermionMatrixRepresentation g = fromList $ case g of
---   FermionIdentity -> [[1, 0], [0, 1]]
---   FermionCount -> [[1, 0], [0, 0]]
---   FermionCreate -> [[0, 1], [0, 0]]
---   FermionAnnihilate -> [[0, 0], [1, 0]]
+  pretty (Generator (σ, i) g) = pretty g <> pretty σ <> pretty (toSubscript i)
 
 instance HasNonbranchingRepresentation (Generator Int SpinGeneratorType) where
   nonbranchingRepresentation (Generator _ SpinIdentity) =

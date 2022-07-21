@@ -1,6 +1,3 @@
-{-# LANGUAGE BinaryLiterals #-}
-{-# LANGUAGE OverloadedLists #-}
-
 module LatticeSymmetries.BitStringSpec (spec) where
 
 import qualified Data.Vector.Storable as S

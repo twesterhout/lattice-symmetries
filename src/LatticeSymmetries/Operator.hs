@@ -223,7 +223,7 @@ operatorFromHeader ::
   OperatorHeader t ->
   Operator t
 operatorFromHeader x = unsafePerformIO $ do
-  let (diag, offDiag) = G.partition isNonbranchingTermDiagonal (getNonbranchingTerms x)
+  let (diag, offDiag) = G.partition nbtIsDiagonal (getNonbranchingTerms x)
       numberBits = getNumberBits . basisHeader . opBasis $ x
   diag_terms <- createCnonbranching_terms numberBits diag
   off_diag_terms <- createCnonbranching_terms numberBits offDiag

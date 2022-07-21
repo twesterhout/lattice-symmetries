@@ -27,6 +27,7 @@ import LatticeSymmetries.Benes
 
 import qualified LatticeSymmetries.BitStringSpec
 import LatticeSymmetries.ComplexRational
+import qualified LatticeSymmetries.ComplexRationalSpec
 import LatticeSymmetries.Dense
 import LatticeSymmetries.Generator
 import LatticeSymmetries.Group
@@ -65,6 +66,7 @@ type FermionicPolynomial =
 main :: IO ()
 main = hspec $ do
   describe "BitString" LatticeSymmetries.BitStringSpec.spec
+  describe "ComplexRational" LatticeSymmetries.ComplexRationalSpec.spec
   describe "ToJSON/FromJSON" $ do
     it "parses Permutation" $ do
       Aeson.decode "[3, 0, 2, 1]" `shouldBe` Just (mkPermutation [3, 0, 2, 1])

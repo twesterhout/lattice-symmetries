@@ -17,8 +17,9 @@ where
 import Colog
 import Data.ByteString (packCString, useAsCString)
 import Data.ByteString.Internal (ByteString (..))
+import Data.Complex
 import Foreign.C.String (CString)
-import Foreign.C.Types (CChar)
+import Foreign.C.Types (CChar, CDouble (..))
 import Foreign.ForeignPtr (withForeignPtr)
 import Foreign.Marshal.Alloc (mallocBytes)
 import Foreign.Marshal.Utils (copyBytes)
@@ -92,7 +93,16 @@ class ApproxEq a where
 
 instance ApproxEq Double where
   approx rtol atol a b = abs (a - b) <= max atol (rtol * max (abs a) (abs b))
-  a ≈ b = approx 1.4901161193847656e-8 8.881784197001252e-16 a b
+  (≈) = approx 1.4901161193847656e-8 8.881784197001252e-16
+
+instance ApproxEq (Complex Double) where
+  approx rtol atol (ra :+ ia) (rb :+ ib) =
+    approx rtol atol ra rb && approx rtol atol ia ib
+  (≈) = approx 1.4901161193847656e-8 8.881784197001252e-16
+
+instance ApproxEq (Complex CDouble) where
+  approx = coerce (approx :: Double -> Double -> Complex Double -> Complex Double -> Bool)
+  (≈) = coerce ((≈) :: Complex Double -> Complex Double -> Bool)
 
 peekUtf8 :: CString -> IO Text
 peekUtf8 c_str = decodeUtf8 <$> packCString c_str

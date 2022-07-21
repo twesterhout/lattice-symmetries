@@ -1,3 +1,8 @@
+-- |
+-- Module      : LatticeSymmetries.ComplexRational
+-- Description : Arbitrary-precision complex numbers
+-- Copyright   : (c) Tom Westerhout, 2022
+-- Stability   : experimental
 module LatticeSymmetries.ComplexRational
   ( ComplexRational (..),
     ConvertibleToComplexDouble (..),
@@ -65,10 +70,6 @@ instance Fractional ComplexRational where
     where
       d = magnitudeSquared z'
   fromRational a = ComplexRational a 0
-
--- class Fractional a => ComplexFloating a where
---   toComplexDouble :: a -> Complex Double
---   fromComplexDouble :: Complex Double -> a
 
 type Cscalar = Complex CDouble
 

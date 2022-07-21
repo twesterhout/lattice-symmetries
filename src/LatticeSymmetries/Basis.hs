@@ -7,38 +7,45 @@
 {-# LANGUAGE TypeOperators #-}
 
 module LatticeSymmetries.Basis
-  ( mkSpinBasis,
-    mkSpinlessFermionicBasis,
-    mkSpinfulFermionicBasis,
-    basisFromYAML,
-    objectFromYAML,
+  ( -- * High-level interface
+    ParticleTy (..),
     BasisState (..),
     Basis (..),
     BasisHeader (..),
+    SpinfulOccupation (..),
     SomeBasis (..),
+    basisBuild,
+
+    -- ** Creating bases
+    mkSpinBasis,
+    mkSpinlessFermionicBasis,
+    mkSpinfulFermionicBasis,
+
+    -- ** Querying information
+    getNumberBits,
+    getNumberWords,
+    minStateEstimate,
+    maxStateEstimate,
+    isStateIndexIdentity,
+    hasFixedHammingWeight,
+
+    -- ** Low-level interface
+    Cbasis (..),
+    basisFromYAML,
+    objectFromYAML,
     withSomeBasis,
     foldSomeBasis,
     Factor,
-    ParticleTy (..),
     IndexType,
     GeneratorType,
-    SpinfulOccupation (..),
-    Cbasis (..),
     IsBasis,
     borrowCbasis,
     Cparticle_type (..),
     Cbasis_kernels (..),
     createCbasis_kernels,
     destroyCbasis_kernels,
-    basisBuild,
     stateIndex,
     flattenIndex,
-    getNumberBits,
-    getNumberWords,
-    isStateIndexIdentity,
-    hasFixedHammingWeight,
-    minStateEstimate,
-    maxStateEstimate,
     matchParticleType2,
     withParticleType,
     withReconstructedBasis,
@@ -101,6 +108,7 @@ data ParticleTy
     SpinlessFermionTy
   deriving stock (Show, Eq, Typeable)
 
+-- | Hilbert space basis vector parametrized by the particle type.
 data BasisState (t :: ParticleTy) = BasisState {-# UNPACK #-} !Int !BitString
   deriving stock (Show, Eq, Ord)
 
