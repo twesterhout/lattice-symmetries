@@ -14,6 +14,7 @@ import Foreign.C.Types (CDouble (..))
 import Prettyprinter (Doc, Pretty (..))
 import qualified Prettyprinter as Pretty
 
+-- | Arbitrary precision complex number \(\mathbb{C}\) built from two 'Rational's.
 data ComplexRational = ComplexRational {-# UNPACK #-} !Rational {-# UNPACK #-} !Rational
   deriving stock (Eq, Show)
 
@@ -59,10 +60,10 @@ instance Num ComplexRational where
 instance Fractional ComplexRational where
   {-# INLINE (/) #-}
   {-# INLINE fromRational #-}
-  (ComplexRational r i) / (ComplexRational r' i') =
+  (ComplexRational r i) / z'@(ComplexRational r' i') =
     ComplexRational ((r * r' + i * i') / d) ((-r * i' + i * r') / d)
     where
-      d = r' * r' + i' * i'
+      d = magnitudeSquared z'
   fromRational a = ComplexRational a 0
 
 -- class Fractional a => ComplexFloating a where

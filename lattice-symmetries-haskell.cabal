@@ -194,6 +194,7 @@ test-suite lattice-symmetries-haskell-test
   main-is:             Spec.hs
   build-depends:       lattice-symmetries-haskell
                      , hspec
+                     , QuickCheck
                      , yaml
                      , aeson
                      , vector

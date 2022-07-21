@@ -19,19 +19,24 @@ import LatticeSymmetries.Algebra
 import LatticeSymmetries.Basis
 import LatticeSymmetries.Benes
 -- import qualified LatticeSymmetries.CSR as CSR
+
+-- import LatticeSymmetries.IO
+
+-- import LatticeSymmetries.Sparse
+-- import LatticeSymmetries.Types
+
+import qualified LatticeSymmetries.BitStringSpec
 import LatticeSymmetries.ComplexRational
 import LatticeSymmetries.Dense
 import LatticeSymmetries.Generator
 import LatticeSymmetries.Group
--- import LatticeSymmetries.IO
 import LatticeSymmetries.NonbranchingTerm
 import LatticeSymmetries.Operator
 import LatticeSymmetries.Parser
--- import LatticeSymmetries.Sparse
--- import LatticeSymmetries.Types
+import Prettyprinter (Pretty (..))
+import qualified Prettyprinter as Pretty
 import Test.Hspec
 import Text.Parsec (parse)
-import Text.PrettyPrint.ANSI.Leijen (hPutDoc, hardline, pretty, putDoc)
 import Prelude hiding (Product, Sum, toList)
 
 -- anySpinEDException :: Selector SpinEDException
@@ -59,6 +64,7 @@ type FermionicPolynomial =
 
 main :: IO ()
 main = hspec $ do
+  describe "BitString" LatticeSymmetries.BitStringSpec.spec
   describe "ToJSON/FromJSON" $ do
     it "parses Permutation" $ do
       Aeson.decode "[3, 0, 2, 1]" `shouldBe` Just (mkPermutation [3, 0, 2, 1])
