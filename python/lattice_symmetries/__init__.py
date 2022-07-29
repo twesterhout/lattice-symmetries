@@ -52,7 +52,7 @@ class _RuntimeInitializer:
 
 
 _runtime_init = _RuntimeInitializer()
-# lib.set_python_exception_handler()
+lib.set_python_exception_handler()
 
 
 def _basis_state_to_array(state: int, number_words: int) -> ffi.CData:
