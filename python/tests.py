@@ -8,7 +8,6 @@ def create_hubbard_hamiltonian(basis, t, U):
     operator -= t * lattice_symmetries.Operator(basis, "c†↑₁ c↑₀", [(0, 1)])
     operator -= t * lattice_symmetries.Operator(basis, "c†↓₁ c↓₀", [(0, 1)])
     operator -= t * lattice_symmetries.Operator(basis, "c†↓₀ c↓₁", [(0, 1)])
-
     operator += U * lattice_symmetries.Operator(basis, "n↑₀ n↓₀", [(0)])
     operator += U * lattice_symmetries.Operator(basis, "n↑₁ n↓₁", [(1)])
 
