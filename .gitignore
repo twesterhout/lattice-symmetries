@@ -1,0 +1,4 @@
+build/
+dist-newstyle/
+main
+init.o
