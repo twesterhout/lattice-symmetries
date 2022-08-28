@@ -29,8 +29,8 @@ HALIDE_DISTRIB_PATH ?= $(PWD)/../third_party/Halide-$(HL_VERSION)-$(HL_ARCH)-$(H
 # $(error Could not find a Halide distribution. Before building, set HALIDE_DISTRIB_PATH to the root of an existing Halide distribution)
 # endif
 
-# HL_TARGET_SUFFIX ?= -no_asserts-no_bounds_query-no_runtime
-HL_TARGET_SUFFIX ?= -no_runtime
+HL_TARGET_SUFFIX ?= -no_asserts-no_bounds_query-no_runtime
+# HL_TARGET_SUFFIX ?= -no_runtime
 HL_BASE_TARGET ?= $(HL_OS)-$(HL_ARCH)-$(HL_BITS)$(HL_TARGET_SUFFIX)
 
 UNAME_M = $(shell uname -m)
@@ -46,6 +46,7 @@ HL_ALL_TARGETS += $(HL_BASE_TARGET)
 CC = cc
 CXX = c++
 CFLAGS = -O3 -DNDEBUG -march=nehalem -mtune=haswell
+# -march=native
 SHELL = bash
 BIN_DIR ?= build
 SANITIZER_FLAGS ?=

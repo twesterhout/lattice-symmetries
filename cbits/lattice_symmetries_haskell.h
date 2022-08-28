@@ -214,6 +214,8 @@ bool ls_hs_operator_is_hermitian(ls_hs_operator const *);
 bool ls_hs_operator_is_identity(ls_hs_operator const *);
 bool ls_hs_operator_is_real(ls_hs_operator const *);
 
+int ls_hs_operator_max_number_off_diag(ls_hs_operator const*);
+
 char const *ls_hs_operator_pretty_terms(ls_hs_operator const *);
 
 void ls_hs_destroy_operator_v2(ls_hs_operator *);

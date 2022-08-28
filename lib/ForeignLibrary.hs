@@ -222,6 +222,12 @@ foreign export ccall "ls_hs_operator_is_identity"
 ls_hs_operator_is_identity opPtr =
   fromBool <$> withReconstructedOperator opPtr (pure . opIsIdentity)
 
+foreign export ccall "ls_hs_operator_max_number_off_diag"
+  ls_hs_operator_max_number_off_diag :: Ptr Coperator -> IO CInt
+
+ls_hs_operator_max_number_off_diag opPtr =
+  fromIntegral <$> withReconstructedOperator opPtr (pure . maxNumberOffDiag)
+
 foreign export ccall "ls_hs_load_hamiltonian_from_yaml"
   ls_hs_load_hamiltonian_from_yaml :: CString -> IO (Ptr Coperator)
 
