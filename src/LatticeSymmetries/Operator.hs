@@ -6,6 +6,7 @@
 module LatticeSymmetries.Operator where
 
 import qualified Data.Primitive.Ptr as P
+import qualified Data.Set as Set
 import Data.Vector (Vector)
 import qualified Data.Vector.Generic as G
 import Foreign.ForeignPtr
@@ -324,6 +325,11 @@ withSameTypeAs a _with _action = _with f
       ((SpinfulFermionHeader _ _), (SpinfulFermionHeader _ _)) -> _action b
       ((SpinlessFermionHeader _ _), (SpinlessFermionHeader _ _)) -> _action b
       _ -> error "operators have different types"
+
+maxNumberOffDiag :: IsBasis t => Operator t -> Int
+maxNumberOffDiag op = Set.size $ Set.fromList . G.toList . G.map nbtX $ offDiag
+  where
+    (_, offDiag) = G.partition nbtIsDiagonal (getNonbranchingTerms (opHeader op))
 
 -- applyOperator ::
 --   forall t.
