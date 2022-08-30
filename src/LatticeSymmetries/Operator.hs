@@ -152,50 +152,50 @@ createCnonbranching_terms :: Int -> Vector NonbranchingTerm -> IO (Ptr Cnonbranc
 createCnonbranching_terms numberBits terms
   | G.null terms = pure nullPtr
   | otherwise = do
-    let numberTerms = G.length terms
-        numberWords = (numberBits + 63) `div` 64
-    -- NOTE: the following is not exception-safe :/
-    -- TODO: fix it
-    vPtr <- mallocBytes (numberTerms * sizeOf (undefined :: Cscalar))
-    let mkArray = mallocBytes (numberTerms * numberWords * sizeOf (undefined :: Word64))
-    mPtr <- mkArray
-    lPtr <- mkArray
-    rPtr <- mkArray
-    xPtr <- mkArray
-    sPtr <- mkArray
-    loopM 0 (< numberTerms) (+ 1) $ \i -> do
-      let (NonbranchingTerm v m l r x s) = (G.!) terms i
-      pokeElemOff vPtr i (toComplexDouble v)
-      writeBitString numberWords (P.advancePtr mPtr (i * numberWords)) m
-      writeBitString numberWords (P.advancePtr lPtr (i * numberWords)) l
-      writeBitString numberWords (P.advancePtr rPtr (i * numberWords)) r
-      writeBitString numberWords (P.advancePtr xPtr (i * numberWords)) x
-      writeBitString numberWords (P.advancePtr sPtr (i * numberWords)) s
-    let c_terms =
-          Cnonbranching_terms
-            (fromIntegral numberTerms)
-            (fromIntegral numberBits)
-            vPtr
-            mPtr
-            lPtr
-            rPtr
-            xPtr
-            sPtr
-    p <- malloc
-    poke p c_terms
-    pure p
+      let numberTerms = G.length terms
+          numberWords = (numberBits + 63) `div` 64
+      -- NOTE: the following is not exception-safe :/
+      -- TODO: fix it
+      vPtr <- mallocBytes (numberTerms * sizeOf (undefined :: Cscalar))
+      let mkArray = mallocBytes (numberTerms * numberWords * sizeOf (undefined :: Word64))
+      mPtr <- mkArray
+      lPtr <- mkArray
+      rPtr <- mkArray
+      xPtr <- mkArray
+      sPtr <- mkArray
+      loopM 0 (< numberTerms) (+ 1) $ \i -> do
+        let (NonbranchingTerm v m l r x s) = (G.!) terms i
+        pokeElemOff vPtr i (toComplexDouble v)
+        writeBitString numberWords (P.advancePtr mPtr (i * numberWords)) m
+        writeBitString numberWords (P.advancePtr lPtr (i * numberWords)) l
+        writeBitString numberWords (P.advancePtr rPtr (i * numberWords)) r
+        writeBitString numberWords (P.advancePtr xPtr (i * numberWords)) x
+        writeBitString numberWords (P.advancePtr sPtr (i * numberWords)) s
+      let c_terms =
+            Cnonbranching_terms
+              (fromIntegral numberTerms)
+              (fromIntegral numberBits)
+              vPtr
+              mPtr
+              lPtr
+              rPtr
+              xPtr
+              sPtr
+      p <- malloc
+      poke p c_terms
+      pure p
 
 destroyCnonbranching_terms :: Ptr Cnonbranching_terms -> IO ()
 destroyCnonbranching_terms p
   | p /= nullPtr = do
-    Cnonbranching_terms _ _ vPtr mPtr lPtr rPtr xPtr sPtr <- peek p
-    free vPtr
-    free mPtr
-    free lPtr
-    free rPtr
-    free xPtr
-    free sPtr
-    free p
+      Cnonbranching_terms _ _ vPtr mPtr lPtr rPtr xPtr sPtr <- peek p
+      free vPtr
+      free mPtr
+      free lPtr
+      free rPtr
+      free xPtr
+      free sPtr
+      free p
   | otherwise = pure ()
 
 --

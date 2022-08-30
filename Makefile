@@ -48,7 +48,7 @@ endif
 
 
 .PHONY: haskell
-haskell: hdf5 kernels
+haskell: kernels
 	@PKG_CONFIG_PATH=$(HDF5_PREFIX)/lib/pkgconfig cabal v2-build
 
 .PHONY: kernels

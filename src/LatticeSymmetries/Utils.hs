@@ -10,11 +10,14 @@ module LatticeSymmetries.Utils
     ApproxEq (..),
     peekUtf8,
     newCString,
+    decodeCString,
     propagateErrorToC,
+    throwC,
   )
 where
 
 import Colog
+import Data.Aeson
 import Data.ByteString (packCString, useAsCString)
 import Data.ByteString.Internal (ByteString (..))
 import Data.Complex
@@ -70,13 +73,13 @@ logError' t = withFrozenCallStack $ withDefaultLogger (logError t)
 foreign import ccall unsafe "ls_hs_error"
   ls_hs_error :: CString -> IO ()
 
-propagateErrorToC :: Exception e => a -> e -> IO a
-propagateErrorToC x₀ = \e -> do
-  let msg :: Text
-      msg = show e
-  -- logError' msg
+throwC :: a -> Text -> IO a
+throwC x₀ msg = do
   useAsCString (encodeUtf8 msg) ls_hs_error
   pure x₀
+
+propagateErrorToC :: Exception e => a -> e -> IO a
+propagateErrorToC x₀ = \e -> throwC x₀ (show e)
 
 -- ls_hs_fatal_error :: HasCallStack => CString -> CString -> IO ()
 -- ls_hs_fatal_error c_func c_msg = withFrozenCallStack $ do
@@ -114,3 +117,10 @@ newCString (PS fp _ l) = do
     copyBytes buf (castPtr p) l
     pokeByteOff buf l (0 :: CChar)
   pure buf
+
+decodeCString :: (HasCallStack, FromJSON a) => CString -> IO a
+decodeCString cStr = do
+  s <- packCString cStr
+  case eitherDecode (fromStrict s) of
+    Right x -> pure x
+    Left msg -> error (toText msg)

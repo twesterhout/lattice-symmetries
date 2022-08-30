@@ -3,9 +3,11 @@
 module ForeignLibrary () where
 
 import Control.Exception.Safe (handleAny)
+import qualified Data.Aeson
 import Data.List.Split (chunksOf)
 import Foreign.C.String (CString)
 import Foreign.C.Types (CBool (..), CInt (..), CUInt (..))
+import Foreign.Marshal.Alloc (free)
 import Foreign.Marshal.Array (peekArray)
 import Foreign.Marshal.Utils (fromBool)
 import Foreign.Ptr (Ptr, nullPtr)
@@ -13,6 +15,7 @@ import Foreign.Storable (Storable (..))
 import LatticeSymmetries
 import LatticeSymmetries.Algebra (scale)
 import LatticeSymmetries.Basis
+import LatticeSymmetries.BitString
 import LatticeSymmetries.BitString (readBitString)
 import LatticeSymmetries.ComplexRational (ComplexRational, fromComplexDouble)
 import LatticeSymmetries.FFI
@@ -72,26 +75,40 @@ foreign export ccall "ls_hs_hdf5_get_dataset_shape"
 foreign export ccall "ls_hs_clone_basis"
   ls_hs_clone_basis :: Ptr Cbasis -> IO (Ptr Cbasis)
 
-foreign export ccall "ls_hs_create_spin_basis_from_json"
-  ls_hs_create_spin_basis_from_json :: CString -> IO (Ptr Cbasis)
+ls_hs_clone_basis ptr = do
+  _ <- basisIncRefCount ptr
+  pure ptr
 
-foreign export ccall "ls_hs_create_spinless_fermion_basis_from_json"
-  ls_hs_create_spinless_fermion_basis_from_json :: CString -> IO (Ptr Cbasis)
+-- foreign export ccall "ls_hs_create_spin_basis_from_json"
+--   ls_hs_create_spin_basis_from_json :: CString -> IO (Ptr Cbasis)
 
-foreign export ccall "ls_hs_create_spinful_fermion_basis_from_json"
-  ls_hs_create_spinful_fermion_basis_from_json :: CString -> IO (Ptr Cbasis)
+-- foreign export ccall "ls_hs_create_spinless_fermion_basis_from_json"
+--   ls_hs_create_spinless_fermion_basis_from_json :: CString -> IO (Ptr Cbasis)
 
-foreign export ccall "ls_hs_create_spin_basis_from_yaml"
-  ls_hs_create_spin_basis_from_yaml :: CString -> IO (Ptr Cbasis)
+-- foreign export ccall "ls_hs_create_spinful_fermion_basis_from_json"
+--   ls_hs_create_spinful_fermion_basis_from_json :: CString -> IO (Ptr Cbasis)
+
+-- foreign export ccall "ls_hs_create_spin_basis_from_yaml"
+--   ls_hs_create_spin_basis_from_yaml :: CString -> IO (Ptr Cbasis)
 
 foreign export ccall "ls_hs_basis_to_json"
   ls_hs_basis_to_json :: Ptr Cbasis -> IO CString
 
+ls_hs_basis_to_json cBasis =
+  withReconstructedBasis cBasis $ \basis ->
+    newCString $ toStrict (Data.Aeson.encode basis)
+
 foreign export ccall "ls_hs_basis_from_json"
   ls_hs_basis_from_json :: CString -> IO (Ptr Cbasis)
 
+ls_hs_basis_from_json cStr = handleAny (propagateErrorToC nullPtr) $ do
+  (basis :: SomeBasis) <- decodeCString cStr
+  foldSomeBasis borrowCbasis basis
+
 foreign export ccall "ls_hs_destroy_string"
   ls_hs_destroy_string :: CString -> IO ()
+
+ls_hs_destroy_string = free
 
 -- foreign export ccall "ls_hs_spin_chain_10_basis"
 --   ls_hs_spin_chain_10_basis :: IO (Ptr Cbasis)
@@ -108,8 +125,22 @@ foreign export ccall "ls_hs_destroy_string"
 foreign export ccall "ls_hs_min_state_estimate"
   ls_hs_min_state_estimate :: Ptr Cbasis -> IO Word64
 
+ls_hs_min_state_estimate p =
+  withReconstructedBasis p $ \basis ->
+    let (BasisState n (BitString x)) = minStateEstimate (basisHeader basis)
+     in if n > 64
+          then throwC 0 "minimal state is not representable as a 64-bit integer"
+          else pure $ fromIntegral x
+
 foreign export ccall "ls_hs_max_state_estimate"
   ls_hs_max_state_estimate :: Ptr Cbasis -> IO Word64
+
+ls_hs_max_state_estimate p =
+  withReconstructedBasis p $ \basis ->
+    let (BasisState n (BitString x)) = maxStateEstimate (basisHeader basis)
+     in if n > 64
+          then throwC (-1) "maximal state is not representable as a 64-bit integer"
+          else pure $ fromIntegral x
 
 ls_hs_basis_has_fixed_hamming_weight :: Ptr Cbasis -> IO CBool
 ls_hs_basis_has_fixed_hamming_weight basis =

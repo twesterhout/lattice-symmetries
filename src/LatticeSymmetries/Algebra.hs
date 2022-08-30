@@ -11,6 +11,7 @@ module LatticeSymmetries.Algebra
     Product (..),
     Sum (..),
     Polynomial,
+    Expr (..),
 
     -- * Fermionic and spin (bosonic) algebra
     CommutatorType (..),
@@ -65,6 +66,10 @@ newtype Sum g = Sum {unSum :: Vector g}
 
 -- | A polynomial in variable @g@ over a field @c@.
 type Polynomial c g = Sum (Scaled c (Product g))
+
+newtype Expr t = Expr
+  { unExpr :: Polynomial ComplexRational (Generator (IndexType t) (GeneratorType t))
+  }
 
 -- | Specifies the type of commutator to use for an algebra.
 data CommutatorType
@@ -155,64 +160,8 @@ instance
     | not (G.null v) = G.foldl1' (<>) . G.map nonbranchingRepresentation $ v
     | otherwise = error "empty products do not have a nonbranching representation"
 
--- getValues :: (Enum g, Bounded g) => [g]
--- getValues = enumFromTo minBound maxBound
-
--- getBasisExpansion ::
---   (Enum g, Bounded g, HasMatrixRepresentation g, G.Vector v c, Eq c, Fractional c) =>
---   DenseMatrix v c ->
---   [(c, g)]
--- getBasisExpansion m = filter (\(c, _) -> c /= 0) $ getFactor <$> getValues
---   where
---     getFactor g =
---       let !a = matrixRepresentation g
---           !dot = denseDot a m
---           !norm = denseDot a a
---        in (dot / norm, g)
---
--- getBasisExpansion' ::
---   (Enum g, Bounded g, HasMatrixRepresentation g, G.Vector v c, Eq c, Fractional c) =>
---   DenseMatrix v c ->
---   Sum (Scaled c g)
--- getBasisExpansion' m =
---   Sum
---     . G.map (\(c, g) -> Scaled c g)
---     . G.filter (\(!c, _) -> c /= 0)
---     . G.map getFactor
---     $ G.fromList getValues
---   where
---     getFactor !g =
---       let !a = matrixRepresentation g
---           !dot = denseDot a m
---           !norm = denseDot a a
---        in (dot / norm, g)
-
--- isIdentity :: forall g. HasMatrixRepresentation g => g -> Bool
--- isIdentity g = m == (denseEye (dmRows m) :: DenseMatrix Vector Rational)
---   where
---     m = matrixRepresentation g
-
 instance Num c => CanScale c (CommutatorType, Sum (Scaled c g)) where
   scale z (tp, terms) = (tp, scale z terms)
-
--- default commute ::
---   forall c.
---   (Enum g, Bounded g, HasMatrixRepresentation g, Eq c, Fractional c) =>
---   g ->
---   g ->
---   CommutationResult c g
--- commute a b = case nonDiagonalCommutatorType @g of
---   Commutator -> CommutationResult commutator
---   Anticommutator -> AnticommutationResult anticommutator
---   where
---     -- isDiagonal a || isDiagonal b = CommutationResult []
---     aMatrix :: DenseMatrix Vector c
---     aMatrix = matrixRepresentation a
---     bMatrix = matrixRepresentation b
---     ab = aMatrix `denseMatMul` bMatrix
---     ba = bMatrix `denseMatMul` aMatrix
---     commutator = getBasisExpansion $ ab - ba
---     anticommutator = getBasisExpansion $ ab + ba
 
 instance Algebra SpinGeneratorType where
   nonDiagonalCommutatorType = Commutator
@@ -306,7 +255,7 @@ instance (Algebra g, Ord i) => Algebra (Generator i g) where
   conjugateGenerator (Generator i g) = Generator i (conjugateGenerator g)
   commute (Generator i a) (Generator j b)
     | i == j = case commute a b of
-      (tp, ts) -> (tp, pack <$> ts)
+        (tp, ts) -> (tp, pack <$> ts)
     -- TODO: the following is probably unsafe, but it does work for both spins and fermions
     | isDiagonal a || isDiagonal b = (Commutator, [])
     | otherwise = (nonDiagonalCommutatorType @g, [])
@@ -315,8 +264,6 @@ instance (Algebra g, Ord i) => Algebra (Generator i g) where
   simplifyOrderedProduct (Generator i a) (Generator j b)
     | i == j = fmap (fmap (Generator i)) $ simplifyOrderedProduct a b
     | otherwise = error "cannot simplify product of operators on different sites"
-
--- infix 9 :*:
 
 instance Num c => CanScale c (Scaled c g) where
   scale c (Scaled c' g) = Scaled (c * c') g
@@ -348,111 +295,11 @@ instance Num c => Num (Sum (Scaled c (Product g))) where
   signum _ = error "Num instance of Sum does not implement signum"
   fromInteger _ = error "Num instance of Sum does not implement fromInteger"
 
--- data Monomial c g = !c :*: !(Vector g)
---   deriving stock (Eq, Ord, Show, Generic)
-
--- data SignedMonomial c g = SignedMonomial !c !(Vector g) ![(i, i)]
---   deriving stock (Eq, Ord, Show, Generic)
-
--- instance (Ord c, Ord g) => Ord (Monomial c g) where
---   compare (c₁ :*: t₁) (c₂ :*: t₂) = compare (t₁, c₁) (t₂, c₂)
-
--- instance Functor (Monomial c) where
---   fmap f (c :*: v) = c :*: (fmap f v)
-
--- instance Num c => IsList (Monomial c g) where
---   type Item (Monomial c g) = g
---   fromList gs = 1 :*: (G.fromList gs)
---   toList = error "IsList instance of Monomial does not implement toList"
-
--- monomialMapCoeff :: (c -> d) -> Monomial c g -> Monomial d g
--- monomialMapCoeff f (c :*: g) = f c :*: g
-
--- instance (Num c, HasIdentity g) => HasIdentity (Monomial c g) where
---   identity = 1 :*: G.singleton identity
-
--- newtype Polynomial c g = Polynomial (Vector (Monomial c g))
---   deriving stock (Eq, Show, Generic)
-
--- instance Num c => IsList (Polynomial c g) where
---   type Item (Polynomial c g) = (Monomial c g)
---   fromList = Polynomial . G.fromList
---   toList = error "IsList instance of Polynomial does not implement toList"
-
--- instance Functor (Polynomial c) where
---   fmap f (Polynomial v) = Polynomial $ fmap (fmap f) v
-
--- polynomialMapCoeff :: (c -> d) -> Polynomial c g -> Polynomial d g
--- polynomialMapCoeff f (Polynomial v) = Polynomial $ G.map (monomialMapCoeff f) v
-
--- instance (Num c, HasIdentity g) => HasIdentity (Polynomial c g) where
---   identity = Polynomial . G.singleton $ identity
--- identityPolynomial :: (HasMatrixRepresentation g r, Fractional c) => Polynomial c g
--- identityPolynomial = undefined
-
--- scaleMonomial :: Num c => c -> Monomial c g -> Monomial c g
--- scaleMonomial c = monomialMapCoeff (c *)
-
--- scalePolynomial :: Num c => c -> Polynomial c g -> Polynomial c g
--- scalePolynomial c = polynomialMapCoeff (c *)
-
--- instance (Num c) => Num (Polynomial c g) where
---   (+) (Polynomial a) (Polynomial b) = Polynomial (a G.++ b)
---   (*) (Polynomial a) (Polynomial b) = Polynomial . G.fromList $ (<>) <$> G.toList a <*> G.toList b
---   negate a = (-1) `scalePolynomial` a
---   abs = mapPolynomial (\(z :*: g) -> abs z :*: g)
---   signum = error "Num instance of Polynomial does not implement signum"
---   fromInteger _ = error "Num instance of Polynomial does not implement fromInteger"
-
--- monomialDropIdentities :: (Num c, HasIdentity g, Eq g) => Monomial c g -> Monomial c g
--- monomialDropIdentities (c :*: v)
---   | G.null v' = (c :*: G.singleton identity)
---   | otherwise = (c :*: v')
---   where
---     v' = G.filter (/= identity) v
-
--- dropIdentities :: (Num c, HasIdentity g, Eq g) => Polynomial c g -> Polynomial c g
--- dropIdentities (Polynomial v) = Polynomial $ G.map monomialDropIdentities v
-
--- dropZeros :: (Num c, Eq c) => Polynomial c g -> Polynomial c g
--- dropZeros (Polynomial v) = Polynomial $ G.filter (\(c :*: g) -> c /= 0) v
-
 sortVectorBy :: G.Vector v a => (a -> a -> Ordering) -> v a -> v a
 sortVectorBy comp v = runST $ do
   buffer <- G.thaw v
   Data.Vector.Algorithms.Intro.sortBy comp buffer
   G.unsafeFreeze buffer
-
--- sortMonomials :: (Ord c, Ord g) => Polynomial c g -> Polynomial c g
--- sortMonomials (Polynomial v) = Polynomial $
---   runST $ do
---     buffer <- G.thaw v
---     Data.Vector.Algorithms.Intro.sort buffer
---     G.unsafeFreeze buffer
-
--- groupMonomials :: (Num c, Eq c, Eq g) => Polynomial c g -> Polynomial c g
--- groupMonomials (Polynomial v) =
---   dropZeros . Polynomial $
---     combineNeighbors
---       (\(_ :*: a) (_ :*: b) -> a == b)
---       (\(a :*: t) (b :*: _) -> (a + b) :*: t)
---       v
-
--- commute ::
---   forall g c r.
---   (Enum g, Bounded g, HasMatrixRepresentation g r, Algebra g, Eq c, Fractional c) =>
---   g ->
---   g ->
---   [(c, g)]
--- commute a b =
---   getBasisExpansion $
---     (aMatrix `denseMatMul` bMatrix) - c * (bMatrix `denseMatMul` aMatrix)
---   where
---     (aMatrix :: DenseMatrix Vector r r c) = matrixRepresentation a
---     bMatrix = matrixRepresentation b
---     c = case commutatorTypeOf (Proxy @g) of
---       Commutator -> 1
---       Anticommutator -> -1
 
 -- | Swaps generators at positions @i@ and @i+1@
 swapGenerators ::
@@ -486,9 +333,9 @@ productToCanonical t₀ = go (Scaled 1 t₀) 0 False
     go :: Scaled c (Product g) -> Int -> Bool -> Sum (Scaled c (Product g))
     go x@(Scaled c t@(Product v)) !i !keepGoing
       | i < G.length v - 1 =
-        case compare (v ! i) (v ! (i + 1)) of
-          GT -> c `scale` foldMap (\x' -> go x' i True) (swapGenerators i t)
-          _ -> go x (i + 1) keepGoing
+          case compare (v ! i) (v ! (i + 1)) of
+            GT -> c `scale` foldMap (\x' -> go x' i True) (swapGenerators i t)
+            _ -> go x (i + 1) keepGoing
       | keepGoing = go x 0 False
       | otherwise = Sum (G.singleton x)
 
@@ -524,23 +371,6 @@ simplifyProduct =
       | otherwise = Product $ G.take 1 identities
       where
         (identities, useful) = G.partition (\(Generator _ g) -> isIdentity g) v
-
--- simplifyPrimitiveProduct' ::
---   forall c g.
---   (Enum g, Bounded g, HasMatrixRepresentation g, Fractional c, Eq c) =>
---   Product g ->
---   Sum (Scaled c g)
--- simplifyPrimitiveProduct' (Product !v)
---   | G.null v = []
---   | otherwise = getBasisExpansion' $ G.foldl' combine acc₀ v
---   where
---     acc₀ :: DenseMatrix Vector c
---     acc₀ = denseEye $ dmRows (matrixRepresentation (G.head v) :: DenseMatrix Vector c)
---     combine !acc !g = acc `denseMatMul` (matrixRepresentation g)
-
--- in trace ("combining " <> show acc <> " with " <> show g <> " --> " <> show r) r
--- basis x = let y = getBasisExpansion' x
---    in trace ("basis expansion of " <> show x <> " is " <> show y) y
 
 collectTerms :: (Num c, Eq c, Eq g) => Sum (Scaled c g) -> Sum (Scaled c g)
 collectTerms = Sum . dropZeros . combine . unSum
@@ -619,63 +449,18 @@ conjugatePolynomial = simplifyPolynomial . fmap conjugateScaled
     conjugateProduct = Product . G.reverse . G.map conjugateGenerator . unProduct
     conjugateScaled = fmap conjugateProduct
 
-{-
-data SignMask i = SignMask ![(i, i)]
-  deriving stock (Show, Eq, Ord)
-
-getSignMask ::
-  (HasMatrixRepresentation g, Algebra g, Ord i) =>
-  i ->
-  Product (Generator i g) ->
-  SignMask i
-getSignMask iₘᵢₙ (Product gs)
-  | G.null gs' = SignMask []
-  | otherwise = SignMask . reverse $ go [] (G.length edges `mod` 2 == 1) (G.toList edges)
-  where
-    needsSignMask = not . isDiagonal
-    gs' = G.map (\(Generator i _) -> i) . G.filter needsSignMask $ gs
-    edges = G.cons iₘᵢₙ gs'
-    go acc _ [] = acc
-    go acc !flag (i : j : rest) =
-      let acc' = if flag then (i, j) : acc else acc
-       in go acc' (not flag) (j : rest)
-    go _ _ [_] = error "this should not have happened"
--}
-
-{-
-data LoweredOperator i g = LoweredOperator !(Vector i) !(SignMask i) !g
-  deriving stock (Show, Eq, Ord)
-
-data LoweredTerm i g = LoweredTerm !(Vector i) !(SignMask i) !g
-  deriving stock (Show, Eq, Ord)
-
-isStrictlyOrdered :: Ord i => Vector i -> Bool
-isStrictlyOrdered v = G.all id $ G.zipWith (\i j -> i < j) v (G.drop 1 v)
-
-extractIndices :: Ord i => Product (Generator i g) -> Vector i
-extractIndices (Product v)
-  | isStrictlyOrdered is = is
-  | otherwise = error "indices are not strictly ordered"
-  where
-    is = G.map (\(Generator i _) -> i) v
-
-extractGenerators :: Product (Generator i g) -> Product g
-extractGenerators (Product v) = Product $ G.map (\(Generator _ g) -> g) v
-
-lower0 ::
-  (HasMatrixRepresentation g, Algebra g, Ord i) =>
-  i ->
-  Product (Generator i g) ->
-  LoweredOperator i (Product g)
-lower0 i₀ p = LoweredOperator (extractIndices p) (getSignMask i₀ p) (extractGenerators p)
--}
-
 collectIndices :: Ord i => Polynomial c (Generator i g) -> [i]
 collectIndices = List.nub . List.sort . collectSum
   where
     collectSum (Sum v) = concatMap collectScaled (G.toList v)
     collectScaled (Scaled _ p) = collectProduct p
     collectProduct (Product v) = (\(Generator i _) -> i) <$> (G.toList v)
+
+mapGenerators :: (g -> g) -> Polynomial c g -> Polynomial c g
+mapGenerators f = fmap (fmap (fmap f))
+
+mapIndices :: (IndexType t -> IndexType t) -> Expr t -> Expr t
+mapIndices f = Expr . mapGenerators (\(Generator i g) -> Generator (f i) g) . unExpr
 
 {-
 replaceIndices :: Ord i => Polynomial c (Generator i g) -> [(i, i)] -> Polynomial c (Generator i g)

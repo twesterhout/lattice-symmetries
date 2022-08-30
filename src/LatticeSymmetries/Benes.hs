@@ -45,6 +45,7 @@ import Prelude hiding (cycle)
 -- }
 -- _cxt.types.resize(n);
 
+-- | A permutation of numbers @[0 .. N - 1]@.
 newtype Permutation = Permutation {unPermutation :: U.Vector Int}
   deriving stock (Show, Eq, Ord)
 
@@ -59,19 +60,35 @@ instance IsList Permutation where
   toList (Permutation p) = G.toList p
   fromList p = mkPermutation (G.fromList p)
 
-permuteVector :: (HasCallStack, G.Vector v a) => Permutation -> v a -> v a
+-- | Rearrange elements of the input vector according to the given permutation.
+permuteVector ::
+  (HasCallStack, G.Vector v a) =>
+  -- | Specifies how to order elements
+  Permutation ->
+  -- | Input vector
+  v a ->
+  -- | Rearranged vector
+  v a
 permuteVector (Permutation p) xs
   | G.length p == G.length xs = G.generate (G.length p) (\i -> G.unsafeIndex xs (G.unsafeIndex p i))
   | otherwise = error $ "length mismatch: " <> show (G.length p) <> " != " <> show (G.length xs)
 
+-- | Get the length of the permutation. If we are given a permutation of numbers @[0 .. N-1]@, then
+-- this function will return @N@.
 permutationLength :: Permutation -> Int
 permutationLength (Permutation p) = G.length p
 
-identityPermutation :: HasCallStack => Int -> Permutation
+-- | Generate the identity permutation of given length.
+identityPermutation ::
+  HasCallStack =>
+  -- | Length of the permutation
+  Int ->
+  Permutation
 identityPermutation size
   | size >= 0 = Permutation $ G.generate size id
   | otherwise = error $ "invalid size: " <> show size
 
+-- | Create a permutation from vector.
 mkPermutation :: HasCallStack => U.Vector Int -> Permutation
 mkPermutation p
   | Set.toAscList (Set.fromList (G.toList p)) == [0 .. G.length p - 1] = Permutation p
@@ -98,6 +115,7 @@ randomShuffle xs g₀ = runST $ do
   xs' <- G.unsafeFreeze buffer
   pure (xs', g')
 
+-- | Generate a random permutation
 randomPermutation :: RandomGen g => Int -> g -> (Permutation, g)
 randomPermutation n g = (mkPermutation p, g')
   where
@@ -122,8 +140,8 @@ data Point = Point !Index !Value
 data Edge = Edge !Focus !Point !Point
   deriving stock (Show, Eq, Ord)
 
--- data InvertiblePermutation s = InvertiblePermutation {ipPermutation :: !(U.MVector s Int), ipInverse :: !(U.MVector s Int)}
-data InvertiblePermutation = InvertiblePermutation {ipPermutation :: !(U.Vector Int), ipInverse :: !(U.Vector Int)}
+data InvertiblePermutation = InvertiblePermutation
+  {ipPermutation :: !(U.Vector Int), ipInverse :: !(U.Vector Int)}
 
 ipValue :: InvertiblePermutation -> Index -> Value
 ipValue p (Index i) = Value (ipPermutation p ! i)
@@ -248,7 +266,11 @@ solveStage !s = (srcMask, tgtMask, s')
     (srcSwaps, tgtSwaps) = L.partition (\(Swap loc _ _) -> loc == Source) swaps
     !srcMask = getMask srcSwaps
     !tgtMask = getMask tgtSwaps
-    !s' = SolverState (applySwaps (ssSource s) srcSwaps) (applySwaps (ssTarget s) tgtSwaps) (2 * ssDelta s)
+    !s' =
+      SolverState
+        (applySwaps (ssSource s) srcSwaps)
+        (applySwaps (ssTarget s) tgtSwaps)
+        (2 * ssDelta s)
 
 solve :: InvertiblePermutation -> InvertiblePermutation -> ([Integer], [Integer], [Int])
 solve src tgt = unpack $ go s₀

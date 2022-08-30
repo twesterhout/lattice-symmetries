@@ -49,22 +49,6 @@ module LatticeSymmetries.Basis
     matchParticleType2,
     withParticleType,
     withReconstructedBasis,
-    -- ls_hs_create_basis,
-    ls_hs_clone_basis,
-    ls_hs_basis_from_json,
-    ls_hs_basis_to_json,
-    ls_hs_destroy_string,
-    ls_hs_create_spin_basis_from_json,
-    ls_hs_create_spinful_fermion_basis_from_json,
-    ls_hs_create_spinless_fermion_basis_from_json,
-    ls_hs_create_spin_basis_from_yaml,
-    ls_hs_min_state_estimate,
-    ls_hs_max_state_estimate,
-    -- ls_hs_spin_chain_10_basis,
-    -- ls_hs_spin_kagome_12_basis,
-    -- ls_hs_spin_kagome_16_basis,
-    -- ls_hs_spin_square_4x4_basis,
-    -- withIsBasis,
   )
 where
 
@@ -98,40 +82,12 @@ import Prettyprinter.Render.Text (renderStrict)
 import System.IO.Unsafe (unsafePerformIO)
 import Type.Reflection
 
--- | Particle type
-data ParticleTy
-  = -- | A localized spin-1/2 particle.
-    SpinTy
-  | -- | An electron (i.e. a fermion with spin-1/2)
-    SpinfulFermionTy
-  | -- | A spinless fermion
-    SpinlessFermionTy
-  deriving stock (Show, Eq, Typeable)
-
 -- | Hilbert space basis vector parametrized by the particle type.
 data BasisState (t :: ParticleTy) = BasisState {-# UNPACK #-} !Int !BitString
   deriving stock (Show, Eq, Ord)
 
 unsafeCastBasisState :: BasisState t1 -> BasisState t2
 unsafeCastBasisState (BasisState n bits) = BasisState n bits
-
-instance Pretty ParticleTy where
-  pretty SpinTy = "spin-1/2"
-  pretty SpinfulFermionTy = "spinful-fermion"
-  pretty SpinlessFermionTy = "spinless-fermion"
-
-instance FromJSON ParticleTy where
-  parseJSON = withText "ParticleTy" f
-    where
-      f t
-        | t == "spin" || t == "spin-1/2" = pure SpinTy
-        | t == "spinful" || t == "spinful-fermion" || t == "spinful fermion" = pure SpinfulFermionTy
-        | t == "spinless" || t == "spinless-fermion" || t == "spinless fermion" =
-          pure SpinlessFermionTy
-        | otherwise = fail "invalid particle type"
-
-instance ToJSON ParticleTy where
-  toJSON = String . renderStrict . Pretty.layoutCompact . pretty
 
 prettyBitString :: Int -> Integer -> Doc ann
 prettyBitString n bits = mconcat $ (prettyBool . testBit bits) <$> reverse [0 .. n - 1]
@@ -149,23 +105,41 @@ matchParticleType2 _ _ = case eqTypeRep (typeRep @t1) (typeRep @t2) of
   Just HRefl -> Just HRefl
   Nothing -> Nothing
 
-instance Typeable t => Pretty (BasisState t) where
-  pretty (BasisState n bits)
-    | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinTy) =
-      "|" <> prettyBitString n (unBitString bits) <> "⟩"
-    | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinfulFermionTy) =
-      let up = unBitString bits `shiftR` (n `div` 2)
-       in mconcat
-            [ "|",
-              prettyBitString (n `div` 2) up,
-              "⟩",
-              "|",
-              prettyBitString (n `div` 2) (unBitString bits),
-              "⟩"
-            ]
-    | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinlessFermionTy) =
-      pretty (BasisState n bits :: BasisState 'SpinTy)
-    | otherwise = error "this cannot happen by construction"
+instance Pretty (BasisState 'SpinTy) where
+  pretty (BasisState n bits) = "|" <> prettyBitString n (unBitString bits) <> "⟩"
+
+instance Pretty (BasisState 'SpinfulFermionTy) where
+  pretty (BasisState n bits) =
+    let up = unBitString bits `shiftR` (n `div` 2)
+     in mconcat
+          [ "|",
+            prettyBitString (n `div` 2) up,
+            "⟩",
+            "|",
+            prettyBitString (n `div` 2) (unBitString bits),
+            "⟩"
+          ]
+
+instance Pretty (BasisState 'SpinlessFermionTy) where
+  pretty (BasisState n bits) = pretty (BasisState n bits :: BasisState 'SpinTy)
+
+-- instance Typeable t => Pretty (BasisState t) where
+--   pretty (BasisState n bits)
+--     | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinTy) =
+--         "|" <> prettyBitString n (unBitString bits) <> "⟩"
+--     | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinfulFermionTy) =
+--         let up = unBitString bits `shiftR` (n `div` 2)
+--          in mconcat
+--               [ "|",
+--                 prettyBitString (n `div` 2) up,
+--                 "⟩",
+--                 "|",
+--                 prettyBitString (n `div` 2) (unBitString bits),
+--                 "⟩"
+--               ]
+--     | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinlessFermionTy) =
+--         pretty (BasisState n bits :: BasisState 'SpinTy)
+--     | otherwise = error "this cannot happen by construction"
 
 class
   ( Enum (GeneratorType t),
@@ -178,6 +152,7 @@ class
     Pretty (IndexType t),
     Pretty (GeneratorType t),
     Pretty (Generator (IndexType t) (GeneratorType t)),
+    Pretty (BasisState t),
     HasSiteIndex (IndexType t),
     Typeable t
   ) =>
@@ -188,6 +163,23 @@ instance IsBasis 'SpinTy
 instance IsBasis 'SpinfulFermionTy
 
 instance IsBasis 'SpinlessFermionTy
+
+-- isBasisDict :: proxy (t :: ParticleTy) -> Dict (IsBasis t)
+-- isBasisDict _
+--   | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinTy) =
+--     "|" <> prettyBitString n (unBitString bits) <> "⟩"
+--   | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinfulFermionTy) =
+--     let up = unBitString bits `shiftR` (n `div` 2)
+--      in mconcat
+--           [ "|",
+--             prettyBitString (n `div` 2) up,
+--             "⟩",
+--             "|",
+--             prettyBitString (n `div` 2) (unBitString bits),
+--             "⟩"
+--           ]
+--   | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinlessFermionTy) =
+--     pretty (BasisState n bits :: BasisState 'SpinTy)
 
 data BasisHeader (t :: ParticleTy) where
   SpinHeader :: !Int -> !(Maybe Int) -> !(Maybe Int) -> !Symmetries -> BasisHeader 'SpinTy
@@ -205,7 +197,7 @@ deriving stock instance Eq (BasisHeader t)
 --   | t == "spinful" || t == "spinful-fermion" || t == "spinful fermion" = f (Proxy @SpinfulFermionTy)
 --   | otherwise = error "invalid particle type"
 
-instance Typeable t => FromJSON (BasisHeader t) where
+instance FromJSON SomeBasisHeader where
   parseJSON = basisHeaderFromJSON
 
 instance ToJSON (BasisHeader t) where
@@ -230,38 +222,50 @@ encodeSpinfulOccupation (SpinfulPerSector up down) =
 basisHeaderToJSON :: BasisHeader t -> Value
 basisHeaderToJSON x
   | (SpinHeader n h i g) <- x =
-    object
-      ["particle" .= SpinTy, "number_spins" .= n, "hamming_weight" .= h, "spin_inversion" .= i, "symmetries" .= g]
+      object
+        [ "particle" .= SpinTy,
+          "number_spins" .= n,
+          "hamming_weight" .= h,
+          "spin_inversion" .= i,
+          "symmetries" .= g
+        ]
   | (SpinfulFermionHeader n o) <- x =
-    object $
-      ["particle" .= SpinfulFermionTy, "number_sites" .= n] <> encodeSpinfulOccupation o
+      object $
+        ["particle" .= SpinfulFermionTy, "number_sites" .= n] <> encodeSpinfulOccupation o
   | (SpinlessFermionHeader n o) <- x =
-    object $
-      ["particle" .= SpinlessFermionTy, "number_sites" .= n, "number_particles" .= o]
+      object $
+        ["particle" .= SpinlessFermionTy, "number_sites" .= n, "number_particles" .= o]
 
-basisHeaderFromJSON :: forall (t :: ParticleTy). Typeable t => Value -> Parser (BasisHeader t)
-basisHeaderFromJSON
-  | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinTy) = withObject "Basis" $ \v ->
-    SpinHeader
-      <$> v .: "number_spins"
-      <*> v .:? "hamming_weight"
-      <*> v .:? "spin_inversion"
-      <*> v .:! "symmetries" .!= emptySymmetries
-  | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinlessFermionTy) = withObject "Basis" $ \v ->
-    SpinlessFermionHeader
-      <$> v .: "number_sites"
-      <*> v .:? "number_particles"
-  | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinfulFermionTy) = withObject "Basis" $ \v ->
-    SpinfulFermionHeader
-      <$> v .: "number_sites"
-      <*> parseSpinfulOccupation v
-  | otherwise = error "this should never happen by construction"
+basisHeaderFromJSON :: Value -> Parser SomeBasisHeader
+basisHeaderFromJSON = withObject "Basis" $ \v -> do
+  tp <- v .:! "particle" .!= SpinTy
+  case tp of
+    SpinTy ->
+      fmap SomeBasisHeader $
+        SpinHeader
+          <$> (v .: "number_spins")
+          <*> (v .:? "hamming_weight")
+          <*> (v .:? "spin_inversion")
+          <*> (v .:! "symmetries" .!= emptySymmetries)
+    SpinlessFermionTy ->
+      fmap SomeBasisHeader $
+        SpinlessFermionHeader
+          <$> (v .: "number_sites")
+          <*> (v .:? "number_particles")
+    SpinfulFermionTy ->
+      fmap SomeBasisHeader $
+        SpinfulFermionHeader
+          <$> (v .: "number_sites")
+          <*> parseSpinfulOccupation v
 
 data Basis t = Basis
   { basisHeader :: !(BasisHeader t),
     basisContents :: !(ForeignPtr Cbasis)
   }
   deriving stock (Show)
+
+data SomeBasisHeader where
+  SomeBasisHeader :: BasisHeader t -> SomeBasisHeader
 
 data SomeBasis where
   SomeBasis :: IsBasis t => Basis t -> SomeBasis
@@ -278,32 +282,26 @@ foldSomeBasis f x = case x of
   SomeBasis basis -> f basis
 {-# INLINE foldSomeBasis #-}
 
-instance IsBasis t => FromJSON (Basis t) where
-  parseJSON x = fmap basisFromHeader (parseJSON x)
+withSomeBasisHeader :: SomeBasisHeader -> (forall t. IsBasis t => BasisHeader t -> a) -> a
+withSomeBasisHeader x f = case x of
+  SomeBasisHeader header@(SpinHeader _ _ _ _) -> f header
+  SomeBasisHeader header@(SpinfulFermionHeader _ _) -> f header
+  SomeBasisHeader header@(SpinlessFermionHeader _ _) -> f header
+{-# INLINE withSomeBasisHeader #-}
+
+-- instance IsBasis t => FromJSON (Basis t) where
+--   parseJSON x = fmap basisFromHeader (parseJSON x)
 
 instance FromJSON (SomeBasis) where
   parseJSON x = do
-    tp <- withObject "Basis" (\v -> v .:! "particle" .!= SpinTy) x
-    case tp of
-      SpinTy -> SomeBasis <$> (parseJSON x :: Parser (Basis 'SpinTy))
-      SpinfulFermionTy -> SomeBasis <$> (parseJSON x :: Parser (Basis 'SpinfulFermionTy))
-      SpinlessFermionTy -> SomeBasis <$> (parseJSON x :: Parser (Basis 'SpinlessFermionTy))
+    header <- parseJSON x
+    pure $ withSomeBasisHeader header (SomeBasis . basisFromHeader)
 
 instance ToJSON (Basis t) where
   toJSON = toJSON . basisHeader
 
 instance Eq (Basis t) where
   (==) a b = basisHeader a == basisHeader b
-
-type family IndexType (t :: ParticleTy) where
-  IndexType 'SpinTy = Int
-  IndexType 'SpinfulFermionTy = (SpinIndex, Int)
-  IndexType 'SpinlessFermionTy = Int
-
-type family GeneratorType (t :: ParticleTy) where
-  GeneratorType 'SpinTy = SpinGeneratorType
-  GeneratorType 'SpinfulFermionTy = FermionGeneratorType
-  GeneratorType 'SpinlessFermionTy = FermionGeneratorType
 
 type Factor t = Generator (IndexType t) (GeneratorType t)
 
@@ -350,8 +348,8 @@ mkSpinfulFermionicBasis n (SpinfulTotalParticles p)
   | p < 0 || p > n = error $ "invalid number of particles: " <> show p
 mkSpinfulFermionicBasis n (SpinfulPerSector u d)
   | u < 0 || u > n || d < 0 || d > n =
-    error $
-      "invalid number of particles: " <> show u <> " up, " <> show d <> " down"
+      error $
+        "invalid number of particles: " <> show u <> " up, " <> show d <> " down"
 mkSpinfulFermionicBasis n occupation = basisFromHeader $ SpinfulFermionHeader n occupation
 
 mkSpinlessFermionicBasis ::
@@ -367,30 +365,23 @@ mkSpinlessFermionicBasis n (Just h)
   | h < 0 || h > n = error $ "invalid number of particles: " <> show h
 mkSpinlessFermionicBasis n h = basisFromHeader $ SpinlessFermionHeader n h
 
-decodeCString :: FromJSON a => CString -> IO a
-decodeCString cStr = do
-  s <- packCString cStr
-  case eitherDecode (fromStrict s) of
-    Right x -> pure x
-    Left msg -> error (toText msg)
+-- ls_hs_destroy_string :: Ptr CChar -> IO ()
+-- ls_hs_destroy_string = free
 
-ls_hs_destroy_string :: Ptr CChar -> IO ()
-ls_hs_destroy_string = free
+-- ls_hs_basis_to_json :: Ptr Cbasis -> IO CString
+-- ls_hs_basis_to_json cBasis =
+--   withReconstructedBasis cBasis $ \basis ->
+--     newCString $ toStrict (Data.Aeson.encode basis)
 
-ls_hs_basis_to_json :: Ptr Cbasis -> IO CString
-ls_hs_basis_to_json cBasis =
-  withReconstructedBasis cBasis $ \basis ->
-    newCString $ toStrict (Data.Aeson.encode basis)
+-- ls_hs_basis_from_json :: CString -> IO (Ptr Cbasis)
+-- ls_hs_basis_from_json cStr = handleAny (propagateErrorToC nullPtr) $ do
+--   (basis :: SomeBasis) <- decodeCString cStr
+--   foldSomeBasis borrowCbasis basis
 
-ls_hs_basis_from_json :: CString -> IO (Ptr Cbasis)
-ls_hs_basis_from_json cStr = handleAny (propagateErrorToC nullPtr) $ do
-  (basis :: SomeBasis) <- decodeCString cStr
-  foldSomeBasis borrowCbasis basis
-
-ls_hs_create_spin_basis_from_json :: CString -> IO (Ptr Cbasis)
-ls_hs_create_spin_basis_from_json cStr = do
-  (basis :: Basis 'SpinTy) <- decodeCString cStr
-  borrowCbasis basis
+-- ls_hs_create_spin_basis_from_json :: CString -> IO (Ptr Cbasis)
+-- ls_hs_create_spin_basis_from_json cStr = do
+--   (basis :: Basis 'SpinTy) <- decodeCString cStr
+--   borrowCbasis basis
 
 newtype BasisOnlyConfig = BasisOnlyConfig SomeBasis
 
@@ -408,9 +399,9 @@ objectFromYAML name filename = do
 basisFromYAML :: HasCallStack => Text -> IO SomeBasis
 basisFromYAML path = (\(BasisOnlyConfig x) -> x) <$> objectFromYAML "Basis" path
 
-ls_hs_create_spin_basis_from_yaml :: CString -> IO (Ptr Cbasis)
-ls_hs_create_spin_basis_from_yaml cFilename =
-  foldSomeBasis borrowCbasis =<< basisFromYAML =<< peekUtf8 cFilename
+-- ls_hs_create_spin_basis_from_yaml :: CString -> IO (Ptr Cbasis)
+-- ls_hs_create_spin_basis_from_yaml cFilename =
+--   foldSomeBasis borrowCbasis =<< basisFromYAML =<< peekUtf8 cFilename
 
 -- loadRawBasis :: MonadIO m => Text -> m (Ptr Cspin_basis)
 -- loadRawBasis path = do
@@ -421,15 +412,15 @@ ls_hs_create_spin_basis_from_yaml cFilename =
 --       mapM_ print warnings
 --       toRawBasis basisSpec
 
-ls_hs_create_spinful_fermion_basis_from_json :: CString -> IO (Ptr Cbasis)
-ls_hs_create_spinful_fermion_basis_from_json cStr = do
-  (basis :: Basis 'SpinfulFermionTy) <- decodeCString cStr
-  borrowCbasis basis
+-- ls_hs_create_spinful_fermion_basis_from_json :: CString -> IO (Ptr Cbasis)
+-- ls_hs_create_spinful_fermion_basis_from_json cStr = do
+--   (basis :: Basis 'SpinfulFermionTy) <- decodeCString cStr
+--   borrowCbasis basis
 
-ls_hs_create_spinless_fermion_basis_from_json :: CString -> IO (Ptr Cbasis)
-ls_hs_create_spinless_fermion_basis_from_json cStr = do
-  (basis :: Basis 'SpinlessFermionTy) <- decodeCString cStr
-  borrowCbasis basis
+-- ls_hs_create_spinless_fermion_basis_from_json :: CString -> IO (Ptr Cbasis)
+-- ls_hs_create_spinless_fermion_basis_from_json cStr = do
+--   (basis :: Basis 'SpinlessFermionTy) <- decodeCString cStr
+--   borrowCbasis basis
 
 -- ls_hs_create_basis :: HasCallStack => Cparticle_type -> CInt -> CInt -> CInt -> IO (Ptr Cbasis)
 -- ls_hs_create_basis particleType numberSites numberParticles numberUp
@@ -450,27 +441,6 @@ ls_hs_create_spinless_fermion_basis_from_json cStr = do
 --      in borrowCbasis basis
 --   | otherwise = error $ "invalid particle type: " <> show particleType
 
-ls_hs_clone_basis :: Ptr Cbasis -> IO (Ptr Cbasis)
-ls_hs_clone_basis ptr = do
-  _ <- basisIncRefCount ptr
-  pure ptr
-
-ls_hs_max_state_estimate :: HasCallStack => Ptr Cbasis -> IO Word64
-ls_hs_max_state_estimate p =
-  withReconstructedBasis p $ \basis ->
-    let (BasisState n (BitString x)) = maxStateEstimate (basisHeader basis)
-     in if n > 64
-          then error "maximal state is not representable as a 64-bit integer"
-          else pure $ fromIntegral x
-
-ls_hs_min_state_estimate :: HasCallStack => Ptr Cbasis -> IO Word64
-ls_hs_min_state_estimate p =
-  withReconstructedBasis p $ \basis ->
-    let (BasisState n (BitString x)) = minStateEstimate (basisHeader basis)
-     in if n > 64
-          then error "minimal state is not representable as a 64-bit integer"
-          else pure $ fromIntegral x
-
 -- newtype ChapelArray = ChapelArray (ForeignPtr Cexternal_array)
 
 -- data Representatives = Representatives {rStates :: !ChapelArray}
@@ -481,26 +451,26 @@ foreign import ccall safe "ls_hs_build_representatives"
 basisBuild :: Basis t -> IO ()
 basisBuild basis
   | getNumberBits (basisHeader basis) <= 64 =
-    withForeignPtr (basisContents basis) $ \basisPtr -> do
-      let (BasisState _ (BitString lower)) = minStateEstimate (basisHeader basis)
-          (BasisState _ (BitString upper)) = maxStateEstimate (basisHeader basis)
-      ls_hs_build_representatives basisPtr (fromIntegral lower) (fromIntegral upper)
+      withForeignPtr (basisContents basis) $ \basisPtr -> do
+        let (BasisState _ (BitString lower)) = minStateEstimate (basisHeader basis)
+            (BasisState _ (BitString upper)) = maxStateEstimate (basisHeader basis)
+        ls_hs_build_representatives basisPtr (fromIntegral lower) (fromIntegral upper)
   | otherwise = error "too many bits"
 
 stateIndex :: Basis t -> BasisState t -> Maybe Int
 stateIndex basis (BasisState _ (BitString α))
   | α <= fromIntegral (maxBound :: Word64) = unsafePerformIO . withCbasis basis $ \basisPtr ->
-    with (fromIntegral α :: Word64) $ \spinsPtr ->
-      alloca $ \indicesPtr -> do
-        (f, env) <- basisPeekStateIndexKernel basisPtr
-        if f == nullFunPtr
-          then pure Nothing
-          else do
-            mkCindex_kernel f 1 spinsPtr 1 indicesPtr 1 env
-            i <- peek indicesPtr
-            if i < 0
-              then pure Nothing
-              else pure $ Just (fromIntegral i)
+      with (fromIntegral α :: Word64) $ \spinsPtr ->
+        alloca $ \indicesPtr -> do
+          (f, env) <- basisPeekStateIndexKernel basisPtr
+          if f == nullFunPtr
+            then pure Nothing
+            else do
+              mkCindex_kernel f 1 spinsPtr 1 indicesPtr 1 env
+              i <- peek indicesPtr
+              if i < 0
+                then pure Nothing
+                else pure $ Just (fromIntegral i)
   | otherwise = Nothing
 
 flattenIndex :: Basis t -> IndexType t -> Int
@@ -723,16 +693,16 @@ foreign import ccall safe "lattice_symmetries_haskell.h &ls_hs_state_info_halide
 setStateInfoKernel :: BasisHeader t -> Cbasis_kernels -> IO Cbasis_kernels
 setStateInfoKernel (SpinHeader n _ i g) k
   | n <= 64 = do
-    kernelData <-
-      withForeignPtr (symmetriesContents g) $ \gPtr ->
-        ls_internal_create_halide_kernel_data gPtr (maybe 0 fromIntegral i)
-    pure $
-      k
-        { cbasis_state_info_kernel = ls_hs_state_info_halide_kernel,
-          cbasis_state_info_data = castPtr kernelData,
-          cbasis_is_representative_kernel = ls_hs_is_representative_halide_kernel,
-          cbasis_is_representative_data = castPtr kernelData
-        }
+      kernelData <-
+        withForeignPtr (symmetriesContents g) $ \gPtr ->
+          ls_internal_create_halide_kernel_data gPtr (maybe 0 fromIntegral i)
+      pure $
+        k
+          { cbasis_state_info_kernel = ls_hs_state_info_halide_kernel,
+            cbasis_state_info_data = castPtr kernelData,
+            cbasis_is_representative_kernel = ls_hs_is_representative_halide_kernel,
+            cbasis_is_representative_data = castPtr kernelData
+          }
 setStateInfoKernel _ k =
   pure $
     k
@@ -745,39 +715,39 @@ setStateInfoKernel _ k =
 setStateIndexKernel :: BasisHeader t -> Cbasis_kernels -> IO Cbasis_kernels
 setStateIndexKernel x k
   | getNumberBits x > 64 || requiresProjection x =
-    pure $
-      k
-        { cbasis_state_index_kernel = nullFunPtr,
-          cbasis_state_index_data = nullPtr
-        }
+      pure $
+        k
+          { cbasis_state_index_kernel = nullFunPtr,
+            cbasis_state_index_data = nullPtr
+          }
   | isStateIndexIdentity x =
-    pure $
-      k
-        { cbasis_state_index_kernel = ls_hs_state_index_identity_kernel,
-          cbasis_state_index_data = nullPtr
-        }
+      pure $
+        k
+          { cbasis_state_index_kernel = ls_hs_state_index_identity_kernel,
+            cbasis_state_index_data = nullPtr
+          }
   | hasFixedHammingWeight x && not (requiresProjection x) = do
-    kernelData <-
-      ls_hs_internal_create_combinadics_kernel_data
-        (fromIntegral (getNumberBits x))
-        (fromBool False)
-    pure $
-      k
-        { cbasis_state_index_kernel = ls_hs_state_index_combinadics_kernel,
-          cbasis_state_index_data = castPtr kernelData
-        }
-  | otherwise = case x of
-    (SpinfulFermionHeader n (SpinfulPerSector _ _)) -> do
       kernelData <-
         ls_hs_internal_create_combinadics_kernel_data
-          (fromIntegral n) -- NOTE: not 2 * n !
-          (fromBool True)
+          (fromIntegral (getNumberBits x))
+          (fromBool False)
       pure $
         k
           { cbasis_state_index_kernel = ls_hs_state_index_combinadics_kernel,
             cbasis_state_index_data = castPtr kernelData
           }
-    _ -> error "not implemented"
+  | otherwise = case x of
+      (SpinfulFermionHeader n (SpinfulPerSector _ _)) -> do
+        kernelData <-
+          ls_hs_internal_create_combinadics_kernel_data
+            (fromIntegral n) -- NOTE: not 2 * n !
+            (fromBool True)
+        pure $
+          k
+            { cbasis_state_index_kernel = ls_hs_state_index_combinadics_kernel,
+              cbasis_state_index_data = castPtr kernelData
+            }
+      _ -> error "not implemented"
 
 createCbasis_kernels :: BasisHeader t -> IO (Ptr Cbasis_kernels)
 createCbasis_kernels x =
@@ -806,15 +776,15 @@ destroyCstate_info_kernel :: HasCallStack => Cbasis_kernels -> IO ()
 destroyCstate_info_kernel p
   | cbasis_state_info_kernel p == ls_hs_state_info_halide_kernel
       && cbasis_is_representative_kernel p == ls_hs_is_representative_halide_kernel =
-    do
-      ls_internal_destroy_halide_kernel_data (castPtr (cbasis_state_info_data p))
-      when (cbasis_state_info_data p /= cbasis_is_representative_data p) $
-        ls_internal_destroy_halide_kernel_data (castPtr (cbasis_is_representative_data p))
+      do
+        ls_internal_destroy_halide_kernel_data (castPtr (cbasis_state_info_data p))
+        when (cbasis_state_info_data p /= cbasis_is_representative_data p) $
+          ls_internal_destroy_halide_kernel_data (castPtr (cbasis_is_representative_data p))
   | cbasis_state_info_kernel p == nullFunPtr
       && cbasis_state_info_data p == nullPtr
       && cbasis_is_representative_kernel p == nullFunPtr
       && cbasis_is_representative_data p == nullPtr =
-    pure ()
+      pure ()
   | otherwise = error "failed to automatically deallocate state_info and is_representative kernels"
 
 destroyCbasis_kernels :: HasCallStack => Ptr Cbasis_kernels -> IO ()

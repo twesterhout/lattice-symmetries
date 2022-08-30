@@ -1,3 +1,6 @@
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE GADTs #-}
+
 -- |
 -- Module      : LatticeSymmetries.Generator
 -- Description : Bosonic and fermionic algebra generators
@@ -8,11 +11,17 @@ module LatticeSymmetries.Generator
     SpinGeneratorType (..),
     FermionGeneratorType (..),
     Generator (..),
+    ParticleTy (..),
+    ParticleTag (..),
+    IndexType (..),
+    GeneratorType (..),
     HasSiteIndex (..),
     -- HasMatrixRepresentation (..),
   )
 where
 
+import Data.Aeson
+import Data.Aeson.Types (Pair)
 import Data.Bits
 import qualified Data.Text as Text
 import qualified Data.Vector.Generic as G
@@ -21,7 +30,49 @@ import LatticeSymmetries.Dense
 import LatticeSymmetries.NonbranchingTerm
 import Prettyprinter (Doc, Pretty (..))
 import qualified Prettyprinter as Pretty
+import Prettyprinter.Render.Text (renderStrict)
+import Type.Reflection
 import Prelude hiding (Product, Sum, identity, toList)
+
+-- | Particle type
+data ParticleTy
+  = -- | A localized spin-1/2 particle.
+    SpinTy
+  | -- | An electron (i.e. a fermion with spin-1/2)
+    SpinfulFermionTy
+  | -- | A spinless fermion
+    SpinlessFermionTy
+  deriving stock (Show, Eq, Typeable)
+
+instance Pretty ParticleTy where
+  pretty SpinTy = "spin-1/2"
+  pretty SpinfulFermionTy = "spinful-fermion"
+  pretty SpinlessFermionTy = "spinless-fermion"
+
+instance FromJSON ParticleTy where
+  parseJSON = withText "ParticleTy" f
+    where
+      f t
+        | t == "spin" || t == "spin-1/2" = pure SpinTy
+        | t == "spinful" || t == "spinful-fermion" || t == "spinful fermion" = pure SpinfulFermionTy
+        | t == "spinless" || t == "spinless-fermion" || t == "spinless fermion" =
+            pure SpinlessFermionTy
+        | otherwise = fail "invalid particle type"
+
+instance ToJSON ParticleTy where
+  toJSON = String . renderStrict . Pretty.layoutCompact . pretty
+
+data ParticleTag (t :: ParticleTy) where
+  SpinTag :: ParticleTag 'SpinTy
+  SpinfulFermionTag :: ParticleTag 'SpinfulFermionTy
+  SpinlessFermionTag :: ParticleTag 'SpinlessFermionTy
+
+particleDispatch :: forall (t :: ParticleTy). (HasCallStack, Typeable t) => ParticleTag t
+particleDispatch
+  | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinTy) = SpinTag
+  | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinfulFermionTy) = SpinfulFermionTag
+  | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinlessFermionTy) = SpinlessFermionTag
+  | otherwise = error "this should never happen by construction"
 
 -- | Index for the spin sector.
 --
@@ -74,6 +125,20 @@ instance Pretty FermionGeneratorType where
     FermionCount -> "n"
     FermionCreate -> "c†"
     FermionAnnihilate -> "c"
+
+type family IndexType (t :: ParticleTy) where
+  IndexType 'SpinTy = Int
+  IndexType 'SpinfulFermionTy = (SpinIndex, Int)
+  IndexType 'SpinlessFermionTy = Int
+
+type family GeneratorType (t :: ParticleTy) where
+  GeneratorType 'SpinTy = SpinGeneratorType
+  GeneratorType 'SpinfulFermionTy = FermionGeneratorType
+  GeneratorType 'SpinlessFermionTy = FermionGeneratorType
+
+type IsGeneratorType g = (Eq g, Ord g, Pretty g)
+
+type IsIndexType i = (Eq i, Ord i, Pretty i)
 
 -- | A generator (either spin or fermionic) which is not associated with an index @i@. The index
 -- could be the site index or a tuple of spin and site indices.
