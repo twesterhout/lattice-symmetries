@@ -1,10 +1,13 @@
 {-# LANGUAGE OverloadedLists #-}
 
 module LatticeSymmetries.Parser
-  ( pFermionicOperator,
+  ( pSpinlessFermionicOperator,
+    pSpinfulFermionicOperator,
     pSpinOperator,
     pOperatorString,
     pBasisState,
+    pNumber,
+    pExpr,
     SpinIndex (..),
     -- mkSpinOperator,
     termsFromText,
@@ -35,9 +38,11 @@ import LatticeSymmetries.Generator
 import LatticeSymmetries.Operator
 import LatticeSymmetries.Utils
 import Text.Parsec
+import Text.Parsec.Language (emptyDef)
+import Text.Parsec.Token
 import Type.Reflection
 -- import qualified Text.Read (read)
-import Prelude hiding (Product, Sum, (<|>))
+import Prelude hiding (Product, Sum, many, optional, (<|>))
 
 -- type ℝ = Rational
 
@@ -115,17 +120,25 @@ pFermionicOperatorType =
         True -> pure FermionCreate
         False -> pure FermionAnnihilate
 
-pFermionicOperator ::
-  (KnownIndex i, Num c, Stream s m Char) =>
-  ParsecT s u m (Sum (Scaled c (Generator i FermionGeneratorType)))
-pFermionicOperator = do
+pSpinfulFermionicOperator ::
+  (Num c, Stream s m Char) =>
+  ParsecT s u m (Expr 'SpinfulFermionTy)
+pSpinfulFermionicOperator = do
   (_, t) <- pFermionicOperatorType
   i <- pIndex
-  pure $ [Scaled 1 (Generator i t)]
+  pure $ Expr [Scaled 1 [Generator i t]]
+
+pSpinlessFermionicOperator ::
+  (Num c, Stream s m Char) =>
+  ParsecT s u m (Expr 'SpinlessFermionTy)
+pSpinlessFermionicOperator = do
+  (_, t) <- pFermionicOperatorType
+  i <- pIndex
+  pure $ Expr [Scaled 1 [Generator i t]]
 
 pSpinOperator ::
   Stream s m Char =>
-  ParsecT s u m (Sum (Scaled ComplexRational (Generator Int SpinGeneratorType)))
+  ParsecT s u m (Expr 'SpinTy)
 pSpinOperator = do
   c <- oneOf "σS" <?> "one of σ, S"
   superscript <- oneOf "⁺⁻ˣʸᶻ" <?> "one of ⁺, ⁻, ˣ, ʸ, ᶻ"
@@ -133,26 +146,109 @@ pSpinOperator = do
   let pre :: ComplexRational
       pre = if c == 'S' then fromRational (1 % 2) else 1
       t = case superscript of
-        '⁺' -> [Scaled 1 (Generator i SpinPlus)]
-        '⁻' -> [Scaled 1 (Generator i SpinMinus)]
-        'ˣ' -> [Scaled 1 (Generator i SpinPlus), Scaled 1 (Generator i SpinMinus)]
+        '⁺' -> [Scaled 1 [Generator i SpinPlus]]
+        '⁻' -> [Scaled 1 [Generator i SpinMinus]]
+        'ˣ' -> [Scaled 1 [Generator i SpinPlus], Scaled 1 [Generator i SpinMinus]]
         'ʸ' ->
           (ComplexRational 0 (-1))
-            `scale` [Scaled 1 (Generator i SpinPlus), Scaled (-1) (Generator i SpinMinus)]
-        'ᶻ' -> [Scaled 1 (Generator i SpinZ)]
+            `scale` [Scaled 1 [Generator i SpinPlus], Scaled (-1) [Generator i SpinMinus]]
+        'ᶻ' -> [Scaled 1 [Generator i SpinZ]]
         _ -> error "should not have happened"
-  pure $ pre `scale` t
+  pure $ Expr $ pre `scale` t
 
 -- pPrimitiveOperator :: Stream s m Char => ParsecT s u m PrimitiveOperator
 -- pPrimitiveOperator = (pSpinOperator <|> pFermionicOperator) <?> "primitive operator"
 
+myDef :: Stream s m Char => GenLanguageDef s u m
+myDef =
+  LanguageDef
+    { commentStart = "",
+      commentEnd = "",
+      commentLine = "",
+      nestedComments = True,
+      identStart = letter <|> char '_',
+      identLetter = alphaNum <|> oneOf "_'",
+      opStart = oneOf ":!#$%&*+./<=>?@\\^|-~",
+      opLetter = oneOf ":!#$%&*+./<=>?@\\^|-~",
+      reservedOpNames = [],
+      reservedNames = [],
+      caseSensitive = True
+    }
+
+skipSpaces :: Stream s m Char => ParsecT s u m ()
+skipSpaces = do
+  _ <- many space
+  pure ()
+
+-- skipSpaces1 :: Stream s m Char => ParsecT s u m ()
+-- skipSpaces1 = do
+--   _ <- Parsec.many1 Parsec.space
+--   pure ()
+
+pNumber :: Stream s m Char => ParsecT s u m ComplexRational
+pNumber = (try pComplex <|> (ComplexRational <$> pReal <*> pure 0)) <?> "real or complex number"
+  where
+    pReal = (<?> "real number") $ do
+      r <- naturalOrFloat (Text.Parsec.Token.makeTokenParser myDef)
+      pure $ either toRational toRational r
+    pImag = (<?> "imaginary part") $ do
+      c <- char '+' <|> char '-'
+      skipSpaces
+      i <- pReal
+      (char 'i' >> char 'm') <|> (char 'I') <|> (char 'ⅈ')
+      if c == '+'
+        then pure i
+        else pure (-i)
+    pComplex = do
+      char '(' >> skipSpaces
+      r <- pReal
+      i <- option 0 (try pImag)
+      skipSpaces >> char ')' >> skipSpaces
+      pure $ ComplexRational r i
+
 pOperatorString ::
-  (Stream s m Char, Num c) =>
-  ParsecT s u m (Sum (Scaled c (Generator i g))) ->
-  ParsecT s u m (Sum (Scaled c (Product (Generator i g))))
-pOperatorString pPrimitive =
-  expandProduct . fromList
-    <$> (pPrimitive `sepBy1` spaces <?> "operator string")
+  (Stream s m Char, Ord (IndexType t), Algebra (GeneratorType t)) =>
+  ParsecT s u m (Expr t) ->
+  ParsecT s u m (Expr t)
+pOperatorString pPrimitive = do
+  c <- option 1 $ do z <- pNumber; optional (char '×' >> skipSpaces); pure z
+  ops <- pPrimitive `sepBy1` spaces <?> "operator string"
+  let expr = case (unExpr <$> ops) of
+        (o : os) -> scale c . simplifyExpr . Expr $ foldr (*) o os
+        [] -> error "should never happen"
+  pure expr
+
+pExpr ::
+  forall s u m t.
+  (Stream s m Char, Ord (IndexType t), Algebra (GeneratorType t)) =>
+  ParsecT s u m (Expr t) ->
+  ParsecT s u m (Expr t)
+pExpr pPrimitive = do
+  t <- pTerm
+  skipSpaces
+  ts <- many $ do
+    t' <- pPlusTerm <|> pMinusTerm
+    skipSpaces
+    pure t'
+  pure $ foldl' (+) t ts
+  where
+    pProduct p = do
+      terms <- many1 $ do t <- p; skipSpaces; pure t
+      case terms of
+        (t : ts) -> pure $ foldl' (*) t ts
+        [] -> error "should never happen"
+    pScaledExpr = do
+      z <- pNumber
+      optional (char '×' >> skipSpaces)
+      expr <- pParenExpr <|> pPrimitive
+      pure $ scale z expr
+    pParenExpr =
+      between (char '(' >> skipSpaces) (skipSpaces >> char ')' >> skipSpaces) $
+        pExpr pPrimitive
+    -- pNormalExpr = pProduct pPrimitive
+    pTerm = pProduct (try pScaledExpr <|> pParenExpr <|> pPrimitive)
+    pPlusTerm = char '+' >> skipSpaces >> pTerm
+    pMinusTerm = char '-' >> skipSpaces >> (fmap negate pTerm)
 
 -- mkSpinOperator ::
 --   HasCallStack =>
@@ -173,11 +269,11 @@ getPrimitiveParser ::
   forall (t :: ParticleTy) s m proxy u.
   (Stream s m Char, Typeable t) =>
   proxy t ->
-  ParsecT s u m (Sum (Scaled ComplexRational (Factor t)))
+  ParsecT s u m (Expr t)
 getPrimitiveParser _
   | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinTy) = pSpinOperator
-  | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinlessFermionTy) = pFermionicOperator
-  | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinfulFermionTy) = pFermionicOperator
+  | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinlessFermionTy) = pSpinlessFermionicOperator
+  | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinfulFermionTy) = pSpinfulFermionicOperator
   | otherwise = error "this should never happen by construction"
 
 termsFromText ::
@@ -188,7 +284,7 @@ termsFromText ::
   Polynomial ComplexRational (Factor t)
 termsFromText s indices = case parse (pOperatorString (getPrimitiveParser (Proxy @t))) "" s of
   Left e -> error $ "failed to parse " <> show s <> ": " <> show e
-  Right x -> simplifyPolynomial $ forSiteIndices x indices
+  Right x -> forSiteIndices (unExpr x) indices
 
 operatorFromString ::
   forall t.
@@ -199,7 +295,8 @@ operatorFromString ::
   Operator t
 operatorFromString basis s indices =
   operatorFromHeader . OperatorHeader basis $
-    termsFromText @t s indices
+    Expr $
+      termsFromText @t s indices
 
 pBasisState :: Stream s m Char => ParsecT s u m (BasisState t)
 pBasisState = do

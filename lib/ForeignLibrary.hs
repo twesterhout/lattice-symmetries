@@ -13,7 +13,7 @@ import Foreign.Marshal.Utils (fromBool)
 import Foreign.Ptr (Ptr, nullPtr)
 import Foreign.Storable (Storable (..))
 import LatticeSymmetries
-import LatticeSymmetries.Algebra (scale)
+import LatticeSymmetries.Algebra (conjugateExpr, isHermitianExpr, isIdentityExpr, scale)
 import LatticeSymmetries.Basis
 import LatticeSymmetries.BitString
 import LatticeSymmetries.BitString (readBitString)
@@ -239,19 +239,21 @@ foreign export ccall "ls_hs_operator_hermitian_conjugate"
   ls_hs_operator_hermitian_conjugate :: Ptr Coperator -> IO (Ptr Coperator)
 
 ls_hs_operator_hermitian_conjugate opPtr =
-  withReconstructedOperator opPtr (borrowCoperator . conjugateOperator)
+  withReconstructedOperator opPtr $ \(Operator (OperatorHeader basis terms) _) ->
+    borrowCoperator $
+      operatorFromHeader (OperatorHeader basis (conjugateExpr terms))
 
 foreign export ccall "ls_hs_operator_is_hermitian"
   ls_hs_operator_is_hermitian :: Ptr Coperator -> IO CBool
 
 ls_hs_operator_is_hermitian opPtr =
-  fromBool <$> withReconstructedOperator opPtr (pure . opIsHermitian)
+  fromBool <$> withReconstructedOperator opPtr (pure . isHermitianExpr . opTerms . opHeader)
 
 foreign export ccall "ls_hs_operator_is_identity"
   ls_hs_operator_is_identity :: Ptr Coperator -> IO CBool
 
 ls_hs_operator_is_identity opPtr =
-  fromBool <$> withReconstructedOperator opPtr (pure . opIsIdentity)
+  fromBool <$> withReconstructedOperator opPtr (pure . isIdentityExpr . opTerms . opHeader)
 
 foreign export ccall "ls_hs_operator_max_number_off_diag"
   ls_hs_operator_max_number_off_diag :: Ptr Coperator -> IO CInt

@@ -27,6 +27,15 @@ module LatticeSymmetries.Algebra
     CanScale (..),
     forSiteIndices,
     HasSiteIndex,
+
+    -- * Expressions
+    conjugateExpr,
+    isHermitianExpr,
+    isIdentityExpr,
+    mapGenerators,
+    mapIndices,
+    mapCoeffs,
+    simplifyExpr,
   )
 where
 
@@ -70,6 +79,11 @@ type Polynomial c g = Sum (Scaled c (Product g))
 newtype Expr t = Expr
   { unExpr :: Polynomial ComplexRational (Generator (IndexType t) (GeneratorType t))
   }
+  deriving stock (Generic)
+
+deriving instance (Eq (IndexType t), Eq (GeneratorType t)) => Eq (Expr t)
+
+deriving instance (Show (IndexType t), Show (GeneratorType t)) => Show (Expr t)
 
 -- | Specifies the type of commutator to use for an algebra.
 data CommutatorType
@@ -415,8 +429,7 @@ simplifyPolynomial =
   collectTerms
     . reorderTerms
     . collectIdentities
-    . foldMap (foldScaled simplifyProduct)
-    . foldMap (foldScaled (productToCanonical @c))
+    . termsToCanonical
 
 termsToCanonical ::
   forall c g i.
@@ -459,8 +472,58 @@ collectIndices = List.nub . List.sort . collectSum
 mapGenerators :: (g -> g) -> Polynomial c g -> Polynomial c g
 mapGenerators f = fmap (fmap (fmap f))
 
+foldlGenerators' :: (a -> g -> a) -> a -> Polynomial c g -> a
+foldlGenerators' combine x₀ (Sum s) =
+  G.foldl' (\ !x (Scaled _ (Product p)) -> G.foldl' combine x p) x₀ s
+
 mapIndices :: (IndexType t -> IndexType t) -> Expr t -> Expr t
 mapIndices f = Expr . mapGenerators (\(Generator i g) -> Generator (f i) g) . unExpr
+
+mapCoeffs :: (ComplexRational -> ComplexRational) -> Expr t -> Expr t
+mapCoeffs f = Expr . fmap (\(Scaled c p) -> Scaled (f c) p) . unExpr
+
+foldlCoeffs' :: (a -> c -> a) -> a -> Polynomial c g -> a
+foldlCoeffs' combine x₀ (Sum s) =
+  G.foldl' (\ !x (Scaled c _) -> combine x c) x₀ s
+
+simplifyExpr :: (Algebra (GeneratorType t), Ord (IndexType t)) => Expr t -> Expr t
+simplifyExpr = Expr . simplifyPolynomial . unExpr
+
+conjugateExpr :: (Algebra (GeneratorType t), Ord (IndexType t)) => Expr t -> Expr t
+conjugateExpr = simplifyExpr . Expr . mapGenerators conjugateGenerator . unExpr . mapCoeffs conjugate
+
+isIdentityExpr :: Algebra (GeneratorType t) => Expr t -> Bool
+isIdentityExpr = isIdentitySum . unExpr
+  where
+    isIdentitySum (Sum terms) = G.length terms == 1 && isIdentityScaled (G.head terms)
+    isIdentityScaled (Scaled _ (Product p)) = G.length p == 1 && isIdentityGenerator (G.head p)
+    isIdentityGenerator (Generator _ g) = isIdentity g
+
+isHermitianExpr :: (Ord (IndexType t), Eq (GeneratorType t), Algebra (GeneratorType t)) => Expr t -> Bool
+isHermitianExpr terms = terms == conjugateExpr terms
+
+isRealExpr :: Expr t -> Bool
+isRealExpr = foldlCoeffs' (\f c -> f && imagPart c == 0) True . unExpr
+
+instance (Algebra (GeneratorType t), Ord (IndexType t)) => Num (Expr t) where
+  (+) a b = simplifyExpr . Expr $ unExpr a + unExpr b
+  (-) a b = simplifyExpr . Expr $ unExpr a - unExpr b
+  (*) a b = simplifyExpr . Expr $ unExpr a * unExpr b
+  negate = Expr . negate . unExpr
+  abs = Expr . abs . unExpr
+  signum = Expr . signum . unExpr
+  fromInteger _ =
+    error $
+      "Num instance of Expr does not implement fromInteger; "
+        <> "consider constructing an explicit identity 𝟙₀ and then scaling it"
+
+instance CanScale ComplexRational (Expr t) where
+  scale c a
+    | c == 0 = Expr []
+    | otherwise = Expr $ c `scale` (unExpr a)
+
+instance Pretty (Generator (IndexType t) (GeneratorType t)) => Pretty (Expr t) where
+  pretty (Expr terms) = pretty terms
 
 {-
 replaceIndices :: Ord i => Polynomial c (Generator i g) -> [(i, i)] -> Polynomial c (Generator i g)

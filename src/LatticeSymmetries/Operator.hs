@@ -28,7 +28,8 @@ import Prelude hiding (Product, Sum)
 
 data OperatorHeader (t :: ParticleTy) = OperatorHeader
   { opBasis :: !(Basis t),
-    opTerms :: !(Polynomial ComplexRational (Generator (IndexType t) (GeneratorType t)))
+    opTerms :: !(Expr t)
+    -- Polynomial ComplexRational (Generator (IndexType t) (GeneratorType t)))
   }
 
 deriving stock instance
@@ -57,7 +58,7 @@ foldSomeOperator f x = case x of
 
 opTermsFlat :: OperatorHeader t -> Polynomial ComplexRational (Generator Int (GeneratorType t))
 opTermsFlat (OperatorHeader basis terms) =
-  fmap (fmap (fmap (\(Generator i g) -> Generator (flattenIndex basis i) g))) terms
+  fmap (fmap (fmap (\(Generator i g) -> Generator (flattenIndex basis i) g))) (unExpr terms)
 
 withSameBasis :: IsBasis t => OperatorHeader t -> OperatorHeader t -> (Basis t -> a) -> a
 withSameBasis a b f
@@ -65,12 +66,12 @@ withSameBasis a b f
   | otherwise = error "expected operators defined on the same basis"
 
 instance IsBasis t => Num (OperatorHeader t) where
-  (+) a b = withSameBasis a b $ \basis -> OperatorHeader basis (simplifyPolynomial $ opTerms a + opTerms b)
-  (-) a b = withSameBasis a b $ \basis -> OperatorHeader basis (simplifyPolynomial $ opTerms a - opTerms b)
-  (*) a b = withSameBasis a b $ \basis -> OperatorHeader basis (simplifyPolynomial $ opTerms a * opTerms b)
+  (+) a b = withSameBasis a b $ \basis -> OperatorHeader basis (opTerms a + opTerms b)
+  (-) a b = withSameBasis a b $ \basis -> OperatorHeader basis (opTerms a - opTerms b)
+  (*) a b = withSameBasis a b $ \basis -> OperatorHeader basis (opTerms a * opTerms b)
   negate a = OperatorHeader (opBasis a) (negate (opTerms a))
-  abs a = error "Num instance of OperatorHeader does not implement abs"
-  signum _ = error "Num instance of OperatorHeader does not implement signum"
+  abs a = OperatorHeader (opBasis a) (abs (opTerms a))
+  signum a = OperatorHeader (opBasis a) (signum (opTerms a))
   fromInteger _ = error "Num instance of OperatorHeader does not implement fromInteger"
 
 instance IsBasis t => CanScale ComplexRational (OperatorHeader t) where
@@ -91,24 +92,24 @@ instance IsBasis t => CanScale ComplexRational (Operator t) where
 -- getNumberTerms :: Operator c basis -> Int
 -- getNumberTerms operator = let (Sum v) = opTerms operator in G.length v
 
-opIsIdentity :: IsBasis t => Operator t -> Bool
-opIsIdentity operator = G.length terms == 1 && isId (G.head terms)
-  where
-    isId (Scaled _ (Product p)) = G.length p == 1 && isIdentity (G.head p)
-    terms = unSum . opTerms . opHeader $ operator
+-- opIsIdentity :: IsBasis t => Operator t -> Bool
+-- opIsIdentity operator = G.length terms == 1 && isId (G.head terms)
+--   where
+--     isId (Scaled _ (Product p)) = G.length p == 1 && isIdentity (G.head p)
+--     terms = unSum . opTerms . opHeader $ operator
 
-opIsHermitian :: IsBasis t => Operator t -> Bool
-opIsHermitian operator = terms == conjugatePolynomial terms
-  where
-    terms = opTerms $ opHeader operator
+-- opIsHermitian :: IsBasis t => Operator t -> Bool
+-- opIsHermitian operator = terms == conjugateExpr terms
+--   where
+--     terms = opTerms $ opHeader operator
 
-conjugateOperator :: IsBasis t => Operator t -> Operator t
-conjugateOperator operator =
-  operatorFromHeader $
-    OperatorHeader basis (conjugatePolynomial terms)
-  where
-    basis = opBasis $ opHeader operator
-    terms = opTerms $ opHeader operator
+-- conjugateOperator :: IsBasis t => Operator t -> Operator t
+-- conjugateOperator operator =
+--   operatorFromHeader $
+--     OperatorHeader basis (conjugateExpr terms)
+--   where
+--     basis = opBasis $ opHeader operator
+--     terms = opTerms $ opHeader operator
 
 -- opHermitianConjugate :: IsBasis t => Operator t -> Operator t
 -- opHermitianConjugate operator = operatorFromHeader $
