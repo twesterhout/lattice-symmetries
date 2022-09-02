@@ -2,23 +2,25 @@
 
 module ForeignLibrary () where
 
-import Control.Exception.Safe (handleAny)
+import Control.Exception.Safe (handleAny, handleAnyDeep)
 import qualified Data.Aeson
 import Data.List.Split (chunksOf)
+import qualified Data.Text as Text
 import Foreign.C.String (CString)
 import Foreign.C.Types (CBool (..), CInt (..), CUInt (..))
-import Foreign.Marshal.Alloc (free)
+import Foreign.Marshal.Alloc (alloca, free)
 import Foreign.Marshal.Array (peekArray)
-import Foreign.Marshal.Utils (fromBool)
-import Foreign.Ptr (Ptr, nullPtr)
+import Foreign.Marshal.Utils (fromBool, new)
+import Foreign.Ptr (FunPtr, Ptr, nullPtr)
+import Foreign.StablePtr
 import Foreign.Storable (Storable (..))
 import LatticeSymmetries
-import LatticeSymmetries.Algebra (conjugateExpr, isHermitianExpr, isIdentityExpr, scale)
+import LatticeSymmetries.Algebra
 import LatticeSymmetries.Basis
 import LatticeSymmetries.BitString
-import LatticeSymmetries.BitString (readBitString)
 import LatticeSymmetries.ComplexRational (ComplexRational, fromComplexDouble)
 import LatticeSymmetries.FFI
+import LatticeSymmetries.Generator
 import LatticeSymmetries.Operator
 import LatticeSymmetries.Parser
 import LatticeSymmetries.Utils
@@ -26,6 +28,7 @@ import Prettyprinter (Pretty (..))
 import qualified Prettyprinter as Pretty
 import Prettyprinter.Render.Text (renderStrict)
 import Type.Reflection
+import Prelude hiding (state)
 
 foreign export ccall "ls_hs_hdf5_create_dataset_u64"
   ls_hs_hdf5_create_dataset_u64 :: CString -> CString -> CUInt -> Ptr Word64 -> IO ()
@@ -178,21 +181,134 @@ ls_hs_basis_state_to_string basisPtr statePtr =
     let numberBits = getNumberBits (basisHeader basis)
         numberWords = getNumberWords (basisHeader basis)
     state <- BasisState @t numberBits <$> readBitString numberWords statePtr
-    newCString . encodeUtf8 . renderStrict . Pretty.layoutCompact . pretty $ state
+    newCString . encodeUtf8 . toPrettyText $ state
 
-ls_hs_create_operator :: Ptr Cbasis -> CString -> CInt -> CInt -> Ptr CInt -> IO (Ptr Coperator)
-ls_hs_create_operator basisPtr cStr numberTuples tupleSize tuplesPtr =
-  handleAny (propagateErrorToC nullPtr) $
-    withReconstructedBasis basisPtr $ \basis -> do
-      indices <-
-        chunksOf (fromIntegral tupleSize)
-          <$> fmap fromIntegral
-          <$> peekArray (fromIntegral (numberTuples * tupleSize)) tuplesPtr
-      s <- peekUtf8 cStr
-      borrowCoperator $ operatorFromString basis s indices
+newCexpr :: SomeExpr -> IO (Ptr Cexpr)
+newCexpr !expr = do
+  cExpr <- (new . Cexpr 1 . castStablePtrToPtr) =<< newStablePtr expr
+  pure cExpr
+
+withCexpr :: Ptr Cexpr -> (SomeExpr -> IO a) -> IO a
+withCexpr !p f =
+  f =<< deRefStablePtr =<< exprPeekPayload p
+
+withCexpr2 :: Ptr Cexpr -> Ptr Cexpr -> (SomeExpr -> SomeExpr -> a) -> IO a
+withCexpr2 !p1 !p2 f =
+  withCexpr p1 $ \x1 ->
+    withCexpr p2 $ \x2 ->
+      pure (f x1 x2)
+
+forCexpr :: (SomeExpr -> IO a) -> Ptr Cexpr -> IO a
+forCexpr f p = withCexpr p f
+
+foreign export ccall "ls_hs_create_expr"
+  ls_hs_create_expr :: CString -> IO (Ptr Cexpr)
+
+ls_hs_create_expr cStr =
+  handleAnyDeep (propagateErrorToC nullPtr) $ do
+    s <- peekUtf8 cStr
+    let create :: forall t. ParticleTag t -> IO (Ptr Cexpr)
+        create tag = newCexpr . SomeExpr tag $ mkExpr tag s
+        result :: IO (Ptr Cexpr)
+        result
+          | isJust $ Text.find (\c -> c == 'σ' || c == 'S') s = create SpinTag
+          | isJust $ Text.find (\c -> c == '↑' || c == '↓') s = create SpinfulFermionTag
+          | otherwise = create SpinlessFermionTag
+    result
+
+foreign export ccall "ls_hs_destroy_expr"
+  ls_hs_destroy_expr :: Ptr Cexpr -> IO ()
+
+ls_hs_destroy_expr p = do
+  refcount <- exprDecRefCount p
+  when (refcount == 0) $ do
+    freeStablePtr =<< exprPeekPayload p
+    free p
+
+foreign export ccall "ls_hs_expr_to_string"
+  ls_hs_expr_to_string :: Ptr Cexpr -> IO CString
+
+ls_hs_expr_to_string p =
+  handleAnyDeep (propagateErrorToC nullPtr) $
+    withCexpr p $
+      newCString . encodeUtf8 . toPrettyText
+
+foreign export ccall "ls_hs_expr_plus"
+  ls_hs_expr_plus :: Ptr Cexpr -> Ptr Cexpr -> IO (Ptr Cexpr)
+
+ls_hs_expr_plus a b = handleAnyDeep (propagateErrorToC nullPtr) $ withCexpr2 a b (+) >>= newCexpr
+
+foreign export ccall "ls_hs_expr_minus"
+  ls_hs_expr_minus :: Ptr Cexpr -> Ptr Cexpr -> IO (Ptr Cexpr)
+
+ls_hs_expr_minus a b = handleAnyDeep (propagateErrorToC nullPtr) $ withCexpr2 a b (-) >>= newCexpr
+
+foreign export ccall "ls_hs_expr_times"
+  ls_hs_expr_times :: Ptr Cexpr -> Ptr Cexpr -> IO (Ptr Cexpr)
+
+ls_hs_expr_times a b = handleAnyDeep (propagateErrorToC nullPtr) $ withCexpr2 a b (*) >>= newCexpr
+
+foreign export ccall "ls_hs_expr_scale"
+  ls_hs_expr_scale :: Ptr Cscalar -> Ptr Cexpr -> IO (Ptr Cexpr)
+
+ls_hs_expr_scale c_z c_a =
+  handleAnyDeep (propagateErrorToC nullPtr) $
+    withCexpr c_a $ \a -> do
+      z <- fromComplexDouble <$> peek c_z
+      newCexpr $ scale (z :: ComplexRational) a
+
+foreign export ccall "ls_hs_replace_indices"
+  ls_hs_replace_indices :: Ptr Cexpr -> FunPtr Creplace_index -> IO (Ptr Cexpr)
+
+ls_hs_replace_indices exprPtr fPtr =
+  handleAnyDeep (propagateErrorToC nullPtr) $
+    withCexpr exprPtr $ \expr -> do
+      let f :: Int -> Int -> IO (Int, Int)
+          f !s !i =
+            alloca $ \spinPtr ->
+              alloca $ \sitePtr -> do
+                mkCreplace_index fPtr (fromIntegral s) (fromIntegral i) spinPtr sitePtr
+                (,)
+                  <$> (fromIntegral <$> peek spinPtr)
+                  <*> (fromIntegral <$> peek sitePtr)
+      newCexpr
+        =<< case expr of
+          SomeExpr SpinTag terms ->
+            SomeExpr SpinTag <$> mapIndicesM (\i -> snd <$> f 0 i) terms
+          SomeExpr SpinlessFermionTag terms ->
+            SomeExpr SpinlessFermionTag <$> mapIndicesM (\i -> snd <$> f 0 i) terms
+          SomeExpr SpinfulFermionTag terms ->
+            let f' (s, i) = do
+                  (s', i') <- f (fromEnum s) i
+                  pure (toEnum s', i')
+             in SomeExpr SpinfulFermionTag <$> mapIndicesM f' terms
+
+foreign export ccall "ls_hs_expr_to_json"
+  ls_hs_expr_to_json :: Ptr Cexpr -> IO CString
+
+ls_hs_expr_to_json cExpr =
+  withCexpr cExpr $ \expr -> do
+    newCString $ toStrict (Data.Aeson.encode expr)
+
+foreign export ccall "ls_hs_expr_from_json"
+  ls_hs_expr_from_json :: CString -> IO (Ptr Cexpr)
+
+ls_hs_expr_from_json cStr = handleAny (propagateErrorToC nullPtr) $ do
+  !expr <- decodeCString cStr
+  newCexpr expr
 
 foreign export ccall "ls_hs_create_operator"
-  ls_hs_create_operator :: Ptr Cbasis -> CString -> CInt -> CInt -> Ptr CInt -> IO (Ptr Coperator)
+  ls_hs_create_operator :: Ptr Cbasis -> Ptr Cexpr -> IO (Ptr Coperator)
+
+ls_hs_create_operator :: Ptr Cbasis -> Ptr Cexpr -> IO (Ptr Coperator)
+ls_hs_create_operator basisPtr exprPtr =
+  handleAny (propagateErrorToC nullPtr) $
+    withReconstructedBasis basisPtr $ \basis ->
+      withCexpr exprPtr $ \someExpr ->
+        withSomeExpr @IsBasis someExpr $ \expr ->
+          case matchParticleType2 basis expr of
+            Just HRefl -> borrowCoperator (mkOperator basis expr)
+            Nothing -> error "basis and expression have different particle types"
 
 operatorBinaryFunction ::
   (forall t. IsBasis t => Operator t -> Operator t -> Operator t) ->

@@ -13,6 +13,7 @@ module LatticeSymmetries.Generator
     Generator (..),
     ParticleTy (..),
     ParticleTag (..),
+    particleTagToType,
     IndexType (..),
     GeneratorType (..),
     HasSiteIndex (..),
@@ -67,6 +68,12 @@ data ParticleTag (t :: ParticleTy) where
   SpinfulFermionTag :: ParticleTag 'SpinfulFermionTy
   SpinlessFermionTag :: ParticleTag 'SpinlessFermionTy
 
+particleTagToType :: ParticleTag t -> ParticleTy
+particleTagToType x = case x of
+  SpinTag -> SpinTy
+  SpinfulFermionTag -> SpinfulFermionTy
+  SpinlessFermionTag -> SpinlessFermionTy
+
 particleDispatch :: forall (t :: ParticleTy). (HasCallStack, Typeable t) => ParticleTag t
 particleDispatch
   | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinTy) = SpinTag
@@ -83,6 +90,13 @@ data SpinIndex
   | -- | ↓
     SpinDown
   deriving stock (Show, Eq, Ord)
+
+instance Enum SpinIndex where
+  toEnum 0 = SpinUp
+  toEnum 1 = SpinDown
+  toEnum i = error $ "invalid spin index: " <> show i <> "; expected either 0 or 1"
+  fromEnum SpinUp = 0
+  fromEnum SpinDown = 1
 
 instance Pretty SpinIndex where
   pretty SpinUp = "↑"

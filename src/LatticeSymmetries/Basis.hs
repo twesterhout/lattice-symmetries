@@ -482,6 +482,14 @@ flattenIndex basis i = case basisHeader basis of
       (SpinDown, k) -> n + k
   SpinlessFermionHeader _ _ -> i
 
+unFlattenIndex :: Basis t -> Int -> IndexType t
+unFlattenIndex basis i = case basisHeader basis of
+  SpinHeader _ _ _ _ -> i
+  SpinlessFermionHeader _ _ -> i
+  SpinfulFermionHeader n _
+    | i > n -> (SpinDown, i - n)
+    | otherwise -> (SpinUp, i)
+
 getNumberSites :: BasisHeader t -> Int
 getNumberSites x = case x of
   SpinHeader n _ _ _ -> n

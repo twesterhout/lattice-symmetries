@@ -1,7 +1,10 @@
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE OverloadedLists #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 
@@ -12,6 +15,8 @@ module LatticeSymmetries.Algebra
     Sum (..),
     Polynomial,
     Expr (..),
+    SomeExpr (..),
+    withSomeExpr,
 
     -- * Fermionic and spin (bosonic) algebra
     CommutatorType (..),
@@ -33,7 +38,9 @@ module LatticeSymmetries.Algebra
     isHermitianExpr,
     isIdentityExpr,
     mapGenerators,
+    mapGeneratorsM,
     mapIndices,
+    mapIndicesM,
     mapCoeffs,
     simplifyExpr,
   )
@@ -41,7 +48,11 @@ where
 
 import Control.Exception (assert)
 import Control.Monad.ST
+import Data.Aeson
+import Data.Aeson.Types (parserThrowError)
 import qualified Data.List as List
+import qualified Data.Map.Strict as Map
+import qualified Data.Text as Text
 import Data.Vector (Vector)
 import qualified Data.Vector.Algorithms.Intro
 import qualified Data.Vector.Fusion.Bundle as Bundle (inplace)
@@ -49,13 +60,18 @@ import Data.Vector.Fusion.Bundle.Size (toMax)
 import Data.Vector.Fusion.Stream.Monadic (Step (..), Stream (..))
 import Data.Vector.Generic ((!))
 import qualified Data.Vector.Generic as G
+import Foreign.C.Types (CInt (..))
+import Foreign.Marshal.Array (peekArray)
+import Foreign.Ptr (Ptr)
 import GHC.Exts (IsList (..))
 import LatticeSymmetries.ComplexRational
 import LatticeSymmetries.Dense
 import LatticeSymmetries.Generator
 import LatticeSymmetries.NonbranchingTerm
+import LatticeSymmetries.Utils
 import Prettyprinter (Doc, Pretty (..))
 import qualified Prettyprinter as Pretty
+import Prettyprinter.Render.Text (renderStrict)
 import Prelude hiding (Product, Sum, identity, toList)
 
 -- | Represents a term of the form @c × g@ where @c@ is typically a scalar and @g@ is some
@@ -472,12 +488,21 @@ collectIndices = List.nub . List.sort . collectSum
 mapGenerators :: (g -> g) -> Polynomial c g -> Polynomial c g
 mapGenerators f = fmap (fmap (fmap f))
 
+mapGeneratorsM :: Monad m => (g -> m g) -> Polynomial c g -> m (Polynomial c g)
+mapGeneratorsM f =
+  fmap Sum
+    . G.mapM (\(Scaled c p) -> Scaled c . Product <$> G.mapM f (unProduct p))
+    . unSum
+
 foldlGenerators' :: (a -> g -> a) -> a -> Polynomial c g -> a
 foldlGenerators' combine x₀ (Sum s) =
   G.foldl' (\ !x (Scaled _ (Product p)) -> G.foldl' combine x p) x₀ s
 
 mapIndices :: (IndexType t -> IndexType t) -> Expr t -> Expr t
 mapIndices f = Expr . mapGenerators (\(Generator i g) -> Generator (f i) g) . unExpr
+
+mapIndicesM :: Monad m => (IndexType t -> m (IndexType t)) -> Expr t -> m (Expr t)
+mapIndicesM f = fmap Expr . mapGeneratorsM (\(Generator i g) -> Generator <$> (f i) <*> pure g) . unExpr
 
 mapCoeffs :: (ComplexRational -> ComplexRational) -> Expr t -> Expr t
 mapCoeffs f = Expr . fmap (\(Scaled c p) -> Scaled (f c) p) . unExpr
@@ -524,6 +549,114 @@ instance CanScale ComplexRational (Expr t) where
 
 instance Pretty (Generator (IndexType t) (GeneratorType t)) => Pretty (Expr t) where
   pretty (Expr terms) = pretty terms
+
+instance Pretty SomeExpr where
+  pretty (SomeExpr SpinTag expr) = pretty expr
+  pretty (SomeExpr SpinlessFermionTag expr) = pretty expr
+  pretty (SomeExpr SpinfulFermionTag expr) = pretty expr
+
+data SomeExpr where
+  SomeExpr :: !(ParticleTag t) -> !(Expr t) -> SomeExpr
+
+withSomeExpr ::
+  forall c a.
+  (c 'SpinTy, c 'SpinlessFermionTy, c 'SpinfulFermionTy) =>
+  SomeExpr ->
+  (forall t. c t => Expr t -> a) ->
+  a
+withSomeExpr (SomeExpr SpinTag a) f = f a
+withSomeExpr (SomeExpr SpinfulFermionTag a) f = f a
+withSomeExpr (SomeExpr SpinlessFermionTag a) f = f a
+
+forSomeExpr ::
+  forall c a.
+  (c 'SpinTy, c 'SpinlessFermionTy, c 'SpinfulFermionTy) =>
+  (forall t. c t => Expr t -> a) ->
+  SomeExpr ->
+  a
+forSomeExpr f expr = withSomeExpr @c expr f
+
+mapSomeExpr ::
+  forall c a.
+  (c 'SpinTy, c 'SpinlessFermionTy, c 'SpinfulFermionTy) =>
+  (forall t. c t => Expr t -> Expr t) ->
+  SomeExpr ->
+  SomeExpr
+mapSomeExpr f expr = case expr of
+  SomeExpr SpinTag x -> SomeExpr SpinTag (f x)
+  SomeExpr SpinfulFermionTag x -> SomeExpr SpinfulFermionTag (f x)
+  SomeExpr SpinlessFermionTag x -> SomeExpr SpinlessFermionTag (f x)
+
+binaryOp ::
+  (forall t. (Algebra (GeneratorType t), Ord (IndexType t)) => Expr t -> Expr t -> Expr t) ->
+  SomeExpr ->
+  SomeExpr ->
+  SomeExpr
+binaryOp op (SomeExpr tag@SpinTag a) (SomeExpr SpinTag b) = SomeExpr tag $ op a b
+binaryOp op (SomeExpr tag@SpinlessFermionTag a) (SomeExpr SpinlessFermionTag b) = SomeExpr tag $ op a b
+binaryOp op (SomeExpr tag@SpinfulFermionTag a) (SomeExpr SpinfulFermionTag b) = SomeExpr tag $ op a b
+binaryOp op (SomeExpr t₁ _) (SomeExpr t₂ _) =
+  error $
+    "Expressions are defined for different particle types: "
+      <> show (particleTagToType t₁)
+      <> " and "
+      <> show (particleTagToType t₂)
+
+class Num (Expr t) => ProvidesNum t
+
+instance Num (Expr t) => ProvidesNum t
+
+instance Num SomeExpr where
+  (+) = binaryOp (+)
+  (-) = binaryOp (-)
+  (*) = binaryOp (*)
+  negate = mapSomeExpr @ProvidesNum negate
+  abs = mapSomeExpr @ProvidesNum abs
+  signum = mapSomeExpr @ProvidesNum signum
+  fromInteger _ =
+    error $
+      "Num instance of SomeExpr does not implement fromInteger; "
+        <> "consider constructing an explicit identity 𝟙₀ and then scaling it"
+
+class CanScale ComplexRational (Expr t) => ProvidesCanScale t
+
+instance CanScale ComplexRational (Expr t) => ProvidesCanScale t
+
+instance CanScale ComplexRational SomeExpr where
+  scale z = mapSomeExpr @ProvidesCanScale (scale z)
+
+class Pretty (Expr t) => ProvidesPretty t
+
+instance Pretty (Expr t) => ProvidesPretty t
+
+instance ToJSON SomeExpr where
+  toJSON x@(SomeExpr tag _) =
+    object $
+      [ "particle" .= particleTagToType tag,
+        "expression" .= withSomeExpr @ProvidesPretty x toPrettyText
+      ]
+
+tableFromLowLevelMapping :: (i ~ IndexType t, Ord i) => ParticleTag t -> Int -> Ptr CInt -> Ptr CInt -> IO (Map i i)
+tableFromLowLevelMapping tag count fromPtr toPtr =
+  Map.fromList
+    <$> case tag of
+      SpinTag ->
+        zip
+          <$> (fmap fromIntegral <$> peekArray count fromPtr)
+          <*> (fmap fromIntegral <$> peekArray count toPtr)
+      SpinlessFermionTag ->
+        zip
+          <$> (fmap fromIntegral <$> peekArray count fromPtr)
+          <*> (fmap fromIntegral <$> peekArray count toPtr)
+      SpinfulFermionTag ->
+        zip
+          <$> (toSpinfulIndex <$> peekArray (2 * count) fromPtr)
+          <*> (toSpinfulIndex <$> peekArray (2 * count) toPtr)
+  where
+    toSpinfulIndex :: [CInt] -> [(SpinIndex, Int)]
+    toSpinfulIndex [] = []
+    toSpinfulIndex (s : i : rest) = (toEnum (fromIntegral s), fromIntegral i) : toSpinfulIndex rest
+    toSpinfulIndex _ = error "this cannot happen by construction"
 
 {-
 replaceIndices :: Ord i => Polynomial c (Generator i g) -> [(i, i)] -> Polynomial c (Generator i g)

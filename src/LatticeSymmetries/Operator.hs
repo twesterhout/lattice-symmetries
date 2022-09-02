@@ -89,6 +89,9 @@ instance IsBasis t => Num (Operator t) where
 instance IsBasis t => CanScale ComplexRational (Operator t) where
   scale c a = operatorFromHeader $ scale c (opHeader a)
 
+mkOperator :: IsBasis t => Basis t -> Expr t -> Operator t
+mkOperator basis expr = operatorFromHeader $ OperatorHeader basis expr
+
 -- getNumberTerms :: Operator c basis -> Int
 -- getNumberTerms operator = let (Sum v) = opTerms operator in G.length v
 

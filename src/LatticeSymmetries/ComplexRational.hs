@@ -31,7 +31,7 @@ prettyRational x
 instance Pretty ComplexRational where
   pretty (ComplexRational r i)
     | i == 0 = prettyRational r
-    | otherwise = Pretty.parens $ prettyRational r <> " + " <> prettyRational i <> "𝕚"
+    | otherwise = Pretty.parens $ prettyRational r <> " + " <> prettyRational i <> "ⅈ"
 
 realPart :: ComplexRational -> Rational
 realPart (ComplexRational r _) = r

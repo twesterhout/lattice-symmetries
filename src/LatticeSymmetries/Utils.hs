@@ -13,6 +13,7 @@ module LatticeSymmetries.Utils
     decodeCString,
     propagateErrorToC,
     throwC,
+    toPrettyText,
   )
 where
 
@@ -28,6 +29,9 @@ import Foreign.Marshal.Alloc (mallocBytes)
 import Foreign.Marshal.Utils (copyBytes)
 import Foreign.Ptr (Ptr, castPtr)
 import Foreign.Storable (Storable (..))
+import Prettyprinter (Doc, Pretty (..))
+import qualified Prettyprinter as Pretty
+import Prettyprinter.Render.Text (renderStrict)
 import System.IO.Unsafe (unsafePerformIO)
 
 loopM :: Monad m => i -> (i -> Bool) -> (i -> i) -> (i -> m ()) -> m ()
@@ -75,10 +79,11 @@ foreign import ccall unsafe "ls_hs_error"
 
 throwC :: a -> Text -> IO a
 throwC x₀ msg = do
+  logError' "Throwing error to C ..."
   useAsCString (encodeUtf8 msg) ls_hs_error
   pure x₀
 
-propagateErrorToC :: Exception e => a -> e -> IO a
+propagateErrorToC :: a -> SomeException -> IO a
 propagateErrorToC x₀ = \e -> throwC x₀ (show e)
 
 -- ls_hs_fatal_error :: HasCallStack => CString -> CString -> IO ()
@@ -124,3 +129,6 @@ decodeCString cStr = do
   case eitherDecode (fromStrict s) of
     Right x -> pure x
     Left msg -> error (toText msg)
+
+toPrettyText :: Pretty a => a -> Text
+toPrettyText = renderStrict . Pretty.layoutPretty (Pretty.LayoutOptions Pretty.Unbounded) . pretty

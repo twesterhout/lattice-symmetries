@@ -8,6 +8,8 @@ module LatticeSymmetries.Parser
     pBasisState,
     pNumber,
     pExpr,
+    mkExprSafe,
+    mkExpr,
     SpinIndex (..),
     -- mkSpinOperator,
     termsFromText,
@@ -17,13 +19,14 @@ module LatticeSymmetries.Parser
   )
 where
 
-import Data.Aeson (FromJSON (..), withObject, (.:))
+import Data.Aeson hiding ((<?>))
 import qualified Data.Aeson.Key
 import qualified Data.Aeson.KeyMap
-import Data.Aeson.Types (Parser, Value)
+import Data.Aeson.Types (JSONPathElement (..), Parser, Value, parserThrowError)
 import Data.Bits
 -- import qualified Data.List.NonEmpty as NonEmpty
 import Data.Ratio
+import qualified Data.Text as Text
 import Foreign.C.String (CString)
 import Foreign.Ptr (Ptr)
 -- import Data.String (IsString (..))
@@ -224,13 +227,16 @@ pExpr ::
   ParsecT s u m (Expr t) ->
   ParsecT s u m (Expr t)
 pExpr pPrimitive = do
+  isMinus <- isJust <$> optionMaybe (char '-' >> skipSpaces)
   t <- pTerm
   skipSpaces
   ts <- many $ do
     t' <- pPlusTerm <|> pMinusTerm
     skipSpaces
     pure t'
-  pure $ foldl' (+) t ts
+  pure $
+    (if isMinus then negate else id) $
+      foldl' (+) t ts
   where
     pProduct p = do
       terms <- many1 $ do t <- p; skipSpaces; pure t
@@ -249,6 +255,38 @@ pExpr pPrimitive = do
     pTerm = pProduct (try pScaledExpr <|> pParenExpr <|> pPrimitive)
     pPlusTerm = char '+' >> skipSpaces >> pTerm
     pMinusTerm = char '-' >> skipSpaces >> (fmap negate pTerm)
+
+instance IsString (Expr 'SpinTy) where
+  fromString = mkExpr SpinTag . toText
+
+instance IsString (Expr 'SpinlessFermionTy) where
+  fromString = mkExpr SpinlessFermionTag . toText
+
+instance IsString (Expr 'SpinfulFermionTy) where
+  fromString = mkExpr SpinfulFermionTag . toText
+
+mkExprSafe :: ParticleTag t -> Text -> Either ParseError (Expr t)
+mkExprSafe SpinTag s = parse (pExpr pSpinOperator) "" s
+mkExprSafe SpinlessFermionTag s = parse (pExpr pSpinlessFermionicOperator) "" s
+mkExprSafe SpinfulFermionTag s = parse (pExpr pSpinfulFermionicOperator) "" s
+
+mkExpr :: ParticleTag t -> Text -> Expr t
+mkExpr tag s = either (error . show) id (mkExprSafe tag s)
+
+instance FromJSON SomeExpr where
+  parseJSON = withObject "SomeExpr" $ \v -> do
+    tp <- v .:? "particle"
+    s <- v .: "expression"
+    let make :: ParticleTag t -> Parser SomeExpr
+        make tag = either (parserThrowError [Key "expression"] . show) (pure . SomeExpr tag) $ mkExprSafe tag s
+        dispatch
+          | Just SpinTy <- tp = make SpinTag
+          | Just SpinlessFermionTy <- tp = make SpinlessFermionTag
+          | Just SpinfulFermionTy <- tp = make SpinfulFermionTag
+          | isJust $ Text.find (\c -> c == 'σ' || c == 'S') s = make SpinTag
+          | isJust $ Text.find (\c -> c == '↑' || c == '↓') s = make SpinfulFermionTag
+          | otherwise = make SpinlessFermionTag
+    dispatch
 
 -- mkSpinOperator ::
 --   HasCallStack =>

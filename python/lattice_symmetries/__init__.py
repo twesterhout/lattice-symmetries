@@ -33,6 +33,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 import scipy.sparse.linalg
 from scipy.sparse.linalg import LinearOperator
+import threading
 from typing import overload, Any, List, Optional, Tuple, Union
 import weakref
 
@@ -214,50 +215,227 @@ def _chpl_external_array_as_ndarray(arr: ffi.CData, dtype) -> NDArray[Any]:
     return np.frombuffer(buf, dtype=dtype)
 
 
+def _to_spin_index(i) -> str:
+    if isinstance(i, int):
+        if i == 0:
+            return "↑"
+        elif i == 1:
+            return "↓"
+        else:
+            raise ValueError("invalid spin index: {}; expected either 0 or 1".format(i))
+    elif isinstance(i, str):
+        if i == "↑" or i == "↓":
+            return i
+        else:
+            raise ValueError("invalid spin index: {}; expected either ↑ or ↓".format(i))
+    else:
+        raise TypeError("invalid spin index: {}".format(i))
+
+
+def _from_spin_index(i) -> int:
+    if isinstance(i, int):
+        if i == 0:
+            return 0
+        elif i == 1:
+            return 1
+        else:
+            raise ValueError("invalid spin index: {}; expected either 0 or 1".format(i))
+    elif isinstance(i, str):
+        if i == "↑":
+            return 0
+        elif i == "↓":
+            return 1
+        else:
+            raise ValueError("invalid spin index: {}; expected either ↑ or ↓".format(i))
+    else:
+        raise TypeError("invalid spin index: {}".format(i))
+
+
+replace_indices_impl = None
+replace_indices_impl_lock = threading.Lock()
+
+
+@ffi.def_extern()
+def python_replace_indices(s, i, new_s_ptr, new_i_ptr):
+    assert replace_indices_impl is not None
+    (new_s, new_i) = replace_indices_impl(s, i)
+    new_s_ptr[0] = new_s
+    new_i_ptr[0] = new_i
+
+
+class Expr(object):
+    _payload: ffi.CData
+    _finalizer: weakref.finalize
+
+    def _make_from_payload(self, payload: ffi.CData):
+        self._payload = payload
+        assert self._payload != 0
+        self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_expr, self._payload)
+
+    def _make_from_expression(self, expression: str):
+        _assert_subtype(expression, str)
+        c_expression = expression.encode("utf-8")
+        self._payload = lib.ls_hs_create_expr(c_expression)
+        assert self._payload != 0
+        self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_expr, self._payload)
+
+    def __init__(self, *args, **kwargs):
+        if len(args) == 0 and len(kwargs) == 1 and "payload" in kwargs:
+            self._make_from_payload(*args, **kwargs)
+        else:
+            self._make_from_expression(*args, **kwargs)
+
+    @staticmethod
+    def from_json(json_string: str) -> "Expr":
+        _assert_subtype(json_string, str)
+        c_str = json_string.encode("utf-8")
+        return Expr(payload=lib.ls_hs_expr_from_json(c_str))
+
+    def to_json(self) -> str:
+        c_str = lib.ls_hs_expr_to_json(self._payload)
+        s = ffi.string(c_str).decode("utf-8")
+        lib.ls_hs_destroy_string(c_str)
+        return s
+
+    def __str__(self):
+        """Get the string representation of the underlying expression"""
+        c_str = lib.ls_hs_expr_to_string(self._payload)
+        s = ffi.string(c_str).decode("utf-8")
+        lib.ls_hs_destroy_string(c_str)
+        return s
+
+    def replace_indices(self, mapping):
+        if isinstance(mapping, dict):
+            if len(mapping) == 0:
+                return self
+            element = next(iter(mapping))
+            if isinstance(element, int):
+
+                # Mapping over site indices
+                def f(s, i):
+                    if i in mapping:
+                        return (s, mapping[i])
+                    else:
+                        return (s, i)
+
+            elif isinstance(element, str):
+
+                # Mapping over spin indices
+                def f(s, i):
+                    k = _to_spin_index(s)
+                    if k in mapping:
+                        return (_from_spin_index(mapping[k]), i)
+                    else:
+                        return (s, i)
+
+            elif isinstance(element, tuple):
+
+                # Mapping over both
+                def f(s, i):
+                    k = (_to_spin_index(s), i)
+                    if k in mapping:
+                        (new_s, new_i) = mapping[k]
+                        return (_from_spin_index(new_s), new_i)
+                    else:
+                        return (s, i)
+
+            else:
+                raise ValueError("invalid mapping: {}".format(mapping))
+
+            with replace_indices_impl_lock:
+                global replace_indices_impl
+                replace_indices_impl = f
+                r = Expr(
+                    payload=lib.ls_hs_replace_indices(self._payload, lib.python_replace_indices)
+                )
+                replace_indices_impl = None
+                return r
+
+        else:
+            NotImplemented
+
+    def __add__(self, other):
+        _assert_subtype(other, Expr)
+        return Expr(payload=lib.ls_hs_expr_plus(self._payload, other._payload))
+
+    def __sub__(self, other):
+        _assert_subtype(other, Expr)
+        return Expr(payload=lib.ls_hs_expr_minus(self._payload, other._payload))
+
+    def scale(self, coeff: complex) -> "Expr":
+        coeff = complex(coeff)
+        c_coeff = ffi.new("ls_hs_scalar const*", [coeff.real, coeff.imag])
+        return Expr(payload=lib.ls_hs_expr_scale(c_coeff, self._payload))
+
+    def __mul__(self, other):
+        _assert_subtype(other, Expr)
+        return Expr(payload=lib.ls_hs_expr_times(self._payload, other._payload))
+
+    def __rmul__(self, other: complex):
+        if np.isscalar(other):
+            return self.scale(other)
+        else:
+            NotImplemented
+
+
+# str(ls.Expr("5 σ⁺₀ σ⁻₁ + (8 + 3im) σ⁻₁"))
+# str(ls.Expr("-2 (c†₀ c₁ + c†₁ c₀)"))
+
+
 class Operator(LinearOperator):
     _payload: ffi.CData
     _finalizer: weakref.finalize
     basis: Basis
+    expression: Expr
 
-    def _make_from_payload(self, basis: Basis, payload: ffi.CData):
-        """
-        !!! warning
-            This is an internal function. Do not use it directly unless you know what you're doing.
+    # def _make_from_payload(self, basis: Basis, expression: Expr, payload: ffi.CData):
+    #     """
+    #     !!! warning
+    #         This is an internal function. Do not use it directly unless you know what you're doing.
 
-        Create a quantum operator from its C representation.
-        """
-        self._payload = payload
-        self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_operator_v2, self._payload)
-        self.basis = basis
+    #     Create a quantum operator from its C representation.
+    #     """
+    #     self._payload = payload
+    #     self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_operator_v2, self._payload)
+    #     self.basis = basis
+    #     self.expression = expression
 
-    def _make_from_expression(self, basis: Basis, expression: str, sites: ArrayLike):
-        """Create a quantum operator from a mathematical expression.
+    # def _make_from_expression(self, basis: Basis, expression: str, sites: ArrayLike):
+    #     """Create a quantum operator from a mathematical expression.
 
-        `basis` specifies the Hilbert space on which the operator will be defined. `expression` is a
-        mathematical expression specifying the interaction, e.g. `"σ⁺₀ σ⁻₁"` or `"n↑₀ n↓₁"`.
-        """
-        _assert_subtype(expression, str)
-        c_sites = _normalize_site_indices(sites)
-        c_expression = expression.encode("utf-8")
-        self._payload = lib.ls_hs_create_operator(
-            basis._payload,
-            c_expression,
-            c_sites.shape[0],
-            c_sites.shape[1],
-            ffi.from_buffer("int[]", c_sites),
-        )
-        self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_operator_v2, self._payload)
-        self.basis = basis
+    #     `basis` specifies the Hilbert space on which the operator will be defined. `expression` is a
+    #     mathematical expression specifying the interaction, e.g. `"σ⁺₀ σ⁻₁"` or `"n↑₀ n↓₁"`.
+    #     """
+    #     _assert_subtype(expression, str)
+    #     c_sites = _normalize_site_indices(sites)
+    #     c_expression = expression.encode("utf-8")
+    #     self._payload = lib.ls_hs_create_operator(
+    #         basis._payload,
+    #         c_expression,
+    #         c_sites.shape[0],
+    #         c_sites.shape[1],
+    #         ffi.from_buffer("int[]", c_sites),
+    #     )
+    #     self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_operator_v2, self._payload)
+    #     self.basis = basis
 
-    def __init__(self, basis: Basis, *args, **kwargs):
+    def __init__(self, basis: Basis, expression: Expr):
         _assert_subtype(basis, Basis)
+        _assert_subtype(expression, Expr)
+        self._payload = lib.ls_hs_create_operator(basis._payload, expression._payload)
+        self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_operator_v2, self._payload)
+        self.basis = basis
+        self.expression = expression
 
-        if len(args) == 1 and len(kwargs) == 0:
-            self._make_from_payload(basis, *args, **kwargs)
-        elif len(args) == 0 and len(kwargs) == 1 and "payload" in kwargs:
-            self._make_from_payload(basis, *args, **kwargs)
-        else:
-            self._make_from_expression(basis, *args, **kwargs)
+    # def __init__(self, basis: Basis, *args, **kwargs):
+    #     _assert_subtype(basis, Basis)
+
+    #     if len(args) == 1 and len(kwargs) == 0:
+    #         self._make_from_payload(basis, *args, **kwargs)
+    #     elif len(args) == 0 and len(kwargs) == 1 and "payload" in kwargs:
+    #         self._make_from_payload(basis, *args, **kwargs)
+    #     else:
+    #         self._make_from_expression(basis, *args, **kwargs)
 
     def adjoint(self):
         return Operator(self.basis, lib.ls_hs_operator_hermitian_conjugate(self._payload))
@@ -377,8 +555,7 @@ class Operator(LinearOperator):
 def test_01():
     basis = SpinBasis(2)
     basis.build()
-    a = Operator(basis, "σ⁺₀ σ⁻₁", [(0, 1)])
-    b = Operator(basis, "σᶻ₀ σᶻ₁", [(0, 1)])
-    h = 2 * (a + a.adjoint()) + b
+    a = Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁")
+    h = Operator(basis, a)
     (e, v) = scipy.sparse.linalg.eigsh(h, k=3, which="SA")
     return h, e, v

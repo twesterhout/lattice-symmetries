@@ -15,6 +15,13 @@ module LatticeSymmetries.FFI
     basisPeekStateIndexKernel,
     basisPeekPayload,
     basisPokePayload,
+    Cexpr (..),
+    Creplace_index,
+    mkCreplace_index,
+    exprIncRefCount,
+    exprDecRefCount,
+    exprPeekPayload,
+    exprPokePayload,
     Coperator_kernel_data,
     Cnonbranching_terms (..),
     Coperator (..),
@@ -126,8 +133,8 @@ foreign import ccall safe "ls_hs_internal_write_refcount"
 foreign import ccall safe "ls_hs_internal_inc_refcount"
   incRefCount :: Ptr CInt -> IO CInt
 
--- foreign import ccall unsafe "ls_hs_internal_dec_refcount"
---   decRefCount :: Ptr CInt -> IO CInt
+foreign import ccall unsafe "ls_hs_internal_dec_refcount"
+  decRefCount :: Ptr CInt -> IO CInt
 
 basisIncRefCount :: Ptr Cbasis -> IO CInt
 basisIncRefCount p = incRefCount (p `plusPtr` #{offset ls_hs_basis, refcount})
@@ -183,6 +190,47 @@ instance Storable Cbasis where
     #{poke ls_hs_basis, representatives}         p (cbasis_representatives x)
     #{poke ls_hs_basis, haskell_payload}         p (cbasis_haskell_payload x)
   {-# INLINE poke #-}
+
+data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_expr" #-} Cexpr = Cexpr
+  { cexpr_refcount :: {-# UNPACK #-} !CInt,
+    cexpr_haskell_payload :: {-# UNPACK #-} !(Ptr ())
+  }
+
+exprIncRefCount :: Ptr Cexpr -> IO CInt
+exprIncRefCount p = incRefCount (p `plusPtr` #{offset ls_hs_expr, refcount})
+{-# INLINE exprIncRefCount #-}
+
+exprDecRefCount :: Ptr Cexpr -> IO CInt
+exprDecRefCount p = decRefCount (p `plusPtr` #{offset ls_hs_expr, refcount})
+{-# INLINE exprDecRefCount #-}
+
+exprPeekPayload :: Ptr Cexpr -> IO (StablePtr a)
+exprPeekPayload p = #{peek ls_hs_expr, haskell_payload} p
+{-# INLINE exprPeekPayload #-}
+
+exprPokePayload :: Ptr Cexpr -> StablePtr a -> IO ()
+exprPokePayload p x = #{poke ls_hs_expr, haskell_payload} p x
+{-# INLINE exprPokePayload #-}
+
+instance Storable Cexpr where
+  sizeOf _ = #{size ls_hs_expr}
+  {-# INLINE sizeOf #-}
+  alignment _ = #{alignment ls_hs_expr}
+  {-# INLINE alignment #-}
+  peek p =
+    Cexpr
+      <$> peekRefCount (p `plusPtr` #{offset ls_hs_expr, refcount})
+      <*> #{peek ls_hs_expr, haskell_payload} p
+  {-# INLINE peek #-}
+  poke p x = do
+    _ <- pokeRefCount (p `plusPtr` #{offset ls_hs_expr, refcount}) (cexpr_refcount x)
+    #{poke ls_hs_expr, haskell_payload} p (cexpr_haskell_payload x)
+  {-# INLINE poke #-}
+
+type Creplace_index = CInt -> CInt -> Ptr CInt -> Ptr CInt -> IO ()
+
+foreign import ccall "dynamic"
+  mkCreplace_index :: FunPtr Creplace_index -> Creplace_index
 
 data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_operator" #-} Cnonbranching_terms =
   Cnonbranching_terms

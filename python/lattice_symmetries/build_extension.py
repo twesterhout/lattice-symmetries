@@ -55,7 +55,35 @@ ffibuilder.cdef(
     ptrdiff_t ls_hs_basis_number_states(ls_hs_basis const* basis);
     uint64_t const* ls_hs_basis_states(ls_hs_basis const* basis);
 
-    ls_hs_operator *ls_hs_create_operator(ls_hs_basis const *, char const *, int, int, int const *);
+    typedef enum ls_hs_particle_type {
+      LS_HS_SPIN,
+      LS_HS_SPINFUL_FERMION,
+      LS_HS_SPINLESS_FERMION
+    } ls_hs_particle_type;
+
+    typedef struct ls_hs_expr { ...; } ls_hs_expr;
+    typedef void (*ls_hs_index_replacement_type)(int spin, int site, int *new_spin,
+                                                 int *new_site);
+
+    extern "Python" void python_replace_indices(int, int, int*, int*);
+
+    ls_hs_expr *ls_hs_create_expr(char const *expression);
+    ls_hs_expr *ls_hs_replace_indices(ls_hs_expr const *expr,
+                                      ls_hs_index_replacement_type callback);
+    char const *ls_hs_expr_to_string(ls_hs_expr const *expr);
+    void ls_hs_destroy_expr(ls_hs_expr *expr);
+
+    char const *ls_hs_expr_to_json(ls_hs_expr const *expr);
+    ls_hs_expr *ls_hs_expr_from_json(char const *json_string);
+
+    ls_hs_expr *ls_hs_expr_plus(ls_hs_expr const *a, ls_hs_expr const *b);
+    ls_hs_expr *ls_hs_expr_minus(ls_hs_expr const *a, ls_hs_expr const *b);
+    ls_hs_expr *ls_hs_expr_times(ls_hs_expr const *a, ls_hs_expr const *b);
+    ls_hs_expr *ls_hs_expr_scale(ls_hs_scalar const *z, ls_hs_expr const *a);
+
+    ls_hs_operator *ls_hs_create_operator(ls_hs_basis const *, ls_hs_expr const *);
+    void ls_hs_destroy_operator_v2(ls_hs_operator *);
+
     ls_hs_operator *ls_hs_operator_plus(ls_hs_operator const *, ls_hs_operator const *);
     ls_hs_operator *ls_hs_operator_minus(ls_hs_operator const *, ls_hs_operator const *);
     ls_hs_operator *ls_hs_operator_times(ls_hs_operator const *, ls_hs_operator const *);
@@ -68,7 +96,6 @@ ffibuilder.cdef(
     char const *ls_hs_operator_pretty_terms(ls_hs_operator const *);
     void ls_hs_destroy_string(char const *);
 
-    void ls_hs_destroy_operator_v2(ls_hs_operator *);
 
     char const *ls_hs_basis_state_to_string(ls_hs_basis const *,
                                             uint64_t const *state);
