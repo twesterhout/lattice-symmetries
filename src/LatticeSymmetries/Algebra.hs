@@ -36,6 +36,7 @@ module LatticeSymmetries.Algebra
     -- * Expressions
     conjugateExpr,
     isHermitianExpr,
+    isRealExpr,
     isIdentityExpr,
     mapGenerators,
     mapGeneratorsM,
@@ -43,6 +44,7 @@ module LatticeSymmetries.Algebra
     mapIndicesM,
     mapCoeffs,
     simplifyExpr,
+    replicateSiteIndices,
   )
 where
 
@@ -52,6 +54,7 @@ import Data.Aeson
 import Data.Aeson.Types (parserThrowError)
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 import qualified Data.Text as Text
 import Data.Vector (Vector)
 import qualified Data.Vector.Algorithms.Intro
@@ -636,7 +639,13 @@ instance ToJSON SomeExpr where
         "expression" .= withSomeExpr @ProvidesPretty x toPrettyText
       ]
 
-tableFromLowLevelMapping :: (i ~ IndexType t, Ord i) => ParticleTag t -> Int -> Ptr CInt -> Ptr CInt -> IO (Map i i)
+tableFromLowLevelMapping ::
+  (i ~ IndexType t, Ord i) =>
+  ParticleTag t ->
+  Int ->
+  Ptr CInt ->
+  Ptr CInt ->
+  IO (Map i i)
 tableFromLowLevelMapping tag count fromPtr toPtr =
   Map.fromList
     <$> case tag of
@@ -657,6 +666,34 @@ tableFromLowLevelMapping tag count fromPtr toPtr =
     toSpinfulIndex [] = []
     toSpinfulIndex (s : i : rest) = (toEnum (fromIntegral s), fromIntegral i) : toSpinfulIndex rest
     toSpinfulIndex _ = error "this cannot happen by construction"
+
+collectSiteIndices :: (Ord (IndexType t), HasSiteIndex (IndexType t)) => Expr t -> [Int]
+collectSiteIndices expr@(Expr poly) =
+  Set.toList . Set.fromList . fmap getSiteIndex $ collectIndices poly
+
+replicateSiteIndices ::
+  (Ord (IndexType t), HasSiteIndex (IndexType t), Algebra (GeneratorType t)) =>
+  [[Int]] ->
+  Expr t ->
+  Expr t
+replicateSiteIndices newIndices expr@(Expr poly) =
+  case newIndices of
+    [] -> Expr []
+    (i : is) -> foldl' (+) (replace i) $ fmap replace is
+  where
+    oldSiteIndices = collectSiteIndices expr
+    k = length oldSiteIndices
+    replace siteIndices
+      | Map.size mapping == k = mapIndices (mapSiteIndex (mapping Map.!)) expr
+      | otherwise =
+          error $
+            "wrong number of site indices: " <> show (length siteIndices) <> "; expected " <> show k
+      where
+        mapping = Map.fromList (zip oldSiteIndices siteIndices)
+
+-- collectIndices :: Ord (IndexType t) => Expr t -> Set (IndexType i)
+-- collectIndices (Expr p) =
+--   foldlGenerators' (\ !s (Generator i _) -> Set.insert i s) Set.empty p
 
 {-
 replaceIndices :: Ord i => Polynomial c (Generator i g) -> [(i, i)] -> Polynomial c (Generator i g)

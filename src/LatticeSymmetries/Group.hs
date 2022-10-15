@@ -11,6 +11,7 @@ module LatticeSymmetries.Group
     mkSymmetries,
     symmetriesFromHeader,
     Symmetries (..),
+    areSymmetriesReal,
     nullSymmetries,
     emptySymmetries,
     symmetriesGetNumberBits,
@@ -76,8 +77,8 @@ instance ToJSON Symmetry where
 mkSymmetry :: Permutation -> Int -> Symmetry
 mkSymmetry p sector
   | sector < 0 || sector >= periodicity =
-    error $
-      "invalid sector: " <> show sector <> "; permutation has periodicity " <> show periodicity
+      error $
+        "invalid sector: " <> show sector <> "; permutation has periodicity " <> show periodicity
   | otherwise = Symmetry p (sector % periodicity)
   where
     periodicity = getPeriodicity p
@@ -120,6 +121,9 @@ instance FromJSON Symmetries where
 
 instance ToJSON Symmetries where
   toJSON symmetries = toJSON (toSymmetryList symmetries)
+
+areSymmetriesReal :: Symmetries -> Bool
+areSymmetriesReal = G.all (== 0) . symmHeaderCharactersImag . symmetriesHeader
 
 toSymmetryList :: Symmetries -> [Symmetry]
 toSymmetryList (Symmetries (SymmetriesHeader (PermutationGroup gs) _ λsRe λsIm) _) =
@@ -169,14 +173,14 @@ mkSymmetriesHeader :: [Symmetry] -> Maybe SymmetriesHeader
 mkSymmetriesHeader [] = Just emptySymmetriesHeader
 mkSymmetriesHeader gs@(g : _)
   | all ((== n) . symmetryNumberSites) gs = case isConsistent of
-    True ->
-      let permutations = G.fromList $ symmetryPermutation <$> symmetries
-          permGroup = PermutationGroup permutations
-          benesNetwork = mkBatchedBenesNetwork $ G.map toBenesNetwork permutations
-          charactersReal = G.fromList $ (\φ -> cos (-2 * pi * realToFrac φ)) <$> symmetryPhase <$> symmetries
-          charactersImag = G.fromList $ (\φ -> sin (-2 * pi * realToFrac φ)) <$> symmetryPhase <$> symmetries
-       in Just $ SymmetriesHeader permGroup benesNetwork charactersReal charactersImag
-    False -> Nothing
+      True ->
+        let permutations = G.fromList $ symmetryPermutation <$> symmetries
+            permGroup = PermutationGroup permutations
+            benesNetwork = mkBatchedBenesNetwork $ G.map toBenesNetwork permutations
+            charactersReal = G.fromList $ (\φ -> cos (-2 * pi * realToFrac φ)) <$> symmetryPhase <$> symmetries
+            charactersImag = G.fromList $ (\φ -> sin (-2 * pi * realToFrac φ)) <$> symmetryPhase <$> symmetries
+         in Just $ SymmetriesHeader permGroup benesNetwork charactersReal charactersImag
+      False -> Nothing
   | otherwise = error "symmetries have different number of sites"
   where
     n = symmetryNumberSites g

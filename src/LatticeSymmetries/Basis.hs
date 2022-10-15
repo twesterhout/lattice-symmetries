@@ -28,11 +28,13 @@ module LatticeSymmetries.Basis
     maxStateEstimate,
     isStateIndexIdentity,
     hasFixedHammingWeight,
+    getParticleTag,
+    isBasisReal,
 
     -- ** Low-level interface
     Cbasis (..),
-    basisFromYAML,
-    objectFromYAML,
+    -- basisFromYAML,
+    -- objectFromYAML,
     withSomeBasis,
     foldSomeBasis,
     Factor,
@@ -383,22 +385,6 @@ mkSpinlessFermionicBasis n h = basisFromHeader $ SpinlessFermionHeader n h
 --   (basis :: Basis 'SpinTy) <- decodeCString cStr
 --   borrowCbasis basis
 
-newtype BasisOnlyConfig = BasisOnlyConfig SomeBasis
-
-instance FromJSON BasisOnlyConfig where
-  parseJSON = withObject "Basis" $ \v -> BasisOnlyConfig <$> v .: "basis"
-
-objectFromYAML :: (HasCallStack, FromJSON a) => Text -> Text -> IO a
-objectFromYAML name filename = do
-  logDebug' $ "Loading " <> name <> " from " <> show filename <> " ..."
-  r <- decodeFileWithWarnings (toString filename)
-  case r of
-    Left e -> error $ toText $ prettyPrintParseException e
-    Right (warnings, x) -> mapM_ (logWarning' . show) warnings >> pure x
-
-basisFromYAML :: HasCallStack => Text -> IO SomeBasis
-basisFromYAML path = (\(BasisOnlyConfig x) -> x) <$> objectFromYAML "Basis" path
-
 -- ls_hs_create_spin_basis_from_yaml :: CString -> IO (Ptr Cbasis)
 -- ls_hs_create_spin_basis_from_yaml cFilename =
 --   foldSomeBasis borrowCbasis =<< basisFromYAML =<< peekUtf8 cFilename
@@ -539,6 +525,13 @@ getParticleType x = case x of
   SpinlessFermionHeader _ _ -> c_LS_HS_SPINLESS_FERMION
 {-# INLINE getParticleType #-}
 
+getParticleTag :: BasisHeader t -> ParticleTag t
+getParticleTag x = case x of
+  SpinHeader _ _ _ _ -> SpinTag
+  SpinfulFermionHeader _ _ -> SpinfulFermionTag
+  SpinlessFermionHeader _ _ -> SpinlessFermionTag
+{-# INLINE getParticleTag #-}
+
 isStateIndexIdentity :: BasisHeader t -> Bool
 isStateIndexIdentity x = case x of
   SpinHeader _ Nothing Nothing g -> nullSymmetries g
@@ -603,6 +596,12 @@ minStateEstimate x = case x of
   SpinlessFermionHeader n p ->
     unsafeCastBasisState $
       minStateEstimate (SpinHeader n p Nothing emptySymmetries)
+
+isBasisReal :: BasisHeader t -> Bool
+isBasisReal x = case x of
+  SpinHeader _ _ _ g -> areSymmetriesReal g
+  SpinfulFermionHeader _ _ -> True
+  SpinlessFermionHeader _ _ -> True
 
 optionalNatural :: Maybe Int -> CInt
 optionalNatural x = case x of

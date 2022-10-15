@@ -14,8 +14,11 @@ module LatticeSymmetries.Parser
     -- mkSpinOperator,
     termsFromText,
     operatorFromString,
+    basisFromYAML,
     hamiltonianFromYAML,
-    ls_hs_load_hamiltonian_from_yaml,
+    observablesFromYAML,
+    configFromYAML,
+    ConfigSpec (..),
   )
 where
 
@@ -27,6 +30,9 @@ import Data.Bits
 -- import qualified Data.List.NonEmpty as NonEmpty
 import Data.Ratio
 import qualified Data.Text as Text
+import Data.Vector (Vector)
+import qualified Data.Vector.Generic as G
+import Data.Yaml.Aeson (decodeFileWithWarnings, prettyPrintParseException)
 import Foreign.C.String (CString)
 import Foreign.Ptr (Ptr)
 -- import Data.String (IsString (..))
@@ -423,12 +429,57 @@ instance IsString (BasisState t) where
 
 -- normalizeIndices :: NonEmpty PrimitiveOperator -> Either Text (NonEmpty PrimitiveOperator)
 -- normalizeIndices = undefined
-
 termsFromJSON :: forall t. IsBasis t => Value -> Parser (Polynomial ComplexRational (Factor t))
 termsFromJSON = withObject "Term" $ \v -> do
   expr <- v .: "expression"
   sites <- v .: "sites"
   pure $ termsFromText @t expr sites
+
+objectFromYAML :: (HasCallStack, FromJSON a) => Text -> Text -> IO a
+objectFromYAML name filename = do
+  logDebug' $ "Loading " <> name <> " from " <> show filename <> " ..."
+  r <- decodeFileWithWarnings (toString filename)
+  case r of
+    Left e -> error $ toText $ prettyPrintParseException e
+    Right (warnings, x) -> mapM_ (logWarning' . show) warnings >> pure x
+
+data ConfigSpec = ConfigSpec !SomeBasis !(Maybe SomeOperator) !(Vector SomeOperator)
+
+instance FromJSON ConfigSpec where
+  parseJSON = withObject "Config" $ \v -> do
+    someBasis <- v .: "basis"
+    maybeHamiltonian <-
+      withSomeBasis someBasis $ \basis ->
+        case Data.Aeson.KeyMap.lookup (Data.Aeson.Key.fromString "hamiltonian") v of
+          Just h -> Just . SomeOperator <$> operatorFromJSON basis h
+          Nothing -> pure Nothing
+    observables <-
+      withSomeBasis someBasis $ \basis ->
+        case Data.Aeson.KeyMap.lookup (Data.Aeson.Key.fromString "observables") v of
+          Just h ->
+            flip (withArray "Observables") h $
+              G.mapM (fmap SomeOperator . operatorFromJSON basis)
+          Nothing -> pure G.empty
+    pure $ ConfigSpec someBasis maybeHamiltonian observables
+
+configFromYAML :: HasCallStack => Text -> IO ConfigSpec
+configFromYAML path = objectFromYAML "config" path
+
+basisFromYAML :: HasCallStack => Text -> IO SomeBasis
+basisFromYAML = fmap (\(ConfigSpec basis _ _) -> basis) . configFromYAML
+
+hamiltonianFromYAML :: HasCallStack => Text -> IO SomeOperator
+hamiltonianFromYAML path = do
+  (ConfigSpec basis maybeHamiltonian _) <- configFromYAML path
+  case maybeHamiltonian of
+    Just h -> pure h
+    Nothing -> error $ "missing 'hamiltonian' key in '" <> path <> "'"
+
+observablesFromYAML :: HasCallStack => Text -> IO (Vector SomeOperator)
+observablesFromYAML = fmap (\(ConfigSpec _ _ observables) -> observables) . configFromYAML
+
+-- basisFromYAML :: HasCallStack => Text -> IO SomeBasis
+-- basisFromYAML path = (\(BasisOnlyConfig x) -> x) <$> objectFromYAML "Basis" path
 
 data OperatorTermSpec = OperatorTermSpec !Text ![[Int]]
 
@@ -442,19 +493,28 @@ operatorFromJSON basis = withObject "Operator" $ \v -> do
   let (o :| os) = fmap (\(OperatorTermSpec expr sites) -> operatorFromString basis expr sites) terms
   pure $ foldl' (+) o os
 
-newtype BasisAndHamiltonianConfig = BasisAndHamiltonianConfig SomeOperator
-
-instance FromJSON BasisAndHamiltonianConfig where
-  parseJSON = withObject "Config" $ \v -> do
-    basis <- v .: "basis"
-    withSomeBasis basis $ \basis' ->
-      case Data.Aeson.KeyMap.lookup (Data.Aeson.Key.fromString "hamiltonian") v of
-        Just h -> BasisAndHamiltonianConfig . SomeOperator <$> operatorFromJSON basis' h
-        Nothing -> fail "missing 'hamiltonian' key"
-
-hamiltonianFromYAML :: HasCallStack => Text -> IO SomeOperator
-hamiltonianFromYAML path = (\(BasisAndHamiltonianConfig x) -> x) <$> objectFromYAML "Hamiltonian" path
-
-ls_hs_load_hamiltonian_from_yaml :: CString -> IO (Ptr Coperator)
-ls_hs_load_hamiltonian_from_yaml cFilename =
-  foldSomeOperator borrowCoperator =<< hamiltonianFromYAML =<< peekUtf8 cFilename
+-- newtype BasisAndHamiltonianConfig = BasisAndHamiltonianConfig SomeOperator
+--
+-- instance FromJSON BasisAndHamiltonianConfig where
+--   parseJSON = withObject "Config" $ \v -> do
+--     basis <- v .: "basis"
+--     withSomeBasis basis $ \basis' ->
+--       case Data.Aeson.KeyMap.lookup (Data.Aeson.Key.fromString "hamiltonian") v of
+--         Just h -> BasisAndHamiltonianConfig . SomeOperator <$> operatorFromJSON basis' h
+--         Nothing -> fail "missing 'hamiltonian' key"
+--
+-- hamiltonianFromYAML :: HasCallStack => Text -> IO SomeOperator
+-- hamiltonianFromYAML path = (\(BasisAndHamiltonianConfig x) -> x) <$> objectFromYAML "Hamiltonian" path
+--
+-- newtype ObservablesSpec = ObservablesSpec (Vector SomeOperator)
+--
+-- instance FromJSON ObservablesSpec where
+--   parseJSON = withObject "Config" $ \v -> do
+--     basis <- v .: "basis"
+--     withSomeBasis basis $ \basis' ->
+--       case Data.Aeson.KeyMap.lookup (Data.Aeson.Key.fromString "observables") v of
+--         Just h ->
+--           flip (withArray "Observables") h $
+--             fmap ObservablesSpec
+--               . G.mapM (fmap SomeOperator . operatorFromJSON basis')
+--         Nothing -> pure $ ObservablesSpec G.empty

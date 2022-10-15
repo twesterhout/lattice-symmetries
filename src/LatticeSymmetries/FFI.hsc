@@ -36,6 +36,7 @@ module LatticeSymmetries.FFI
     -- ls_hs_internal_destroy_external_array,
     Cpermutation_group (..),
     Cchpl_kernels (..),
+    Cyaml_config (..),
     -- ls_hs_internal_get_chpl_kernels,
   ) where
 
@@ -416,6 +417,32 @@ instance Storable Cchpl_kernels where
   {-# INLINE peek #-}
   poke p x = do
     #{poke ls_chpl_kernels, enumerate_states} p (cchpl_kernels_enumerate_states x)
+  {-# INLINE poke #-}
+
+data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_yaml_config" #-} Cyaml_config = Cyaml_config
+  { cyaml_config_basis :: {-# UNPACK #-} !(Ptr Cbasis),
+    cyaml_config_hamiltonian :: {-# UNPACK #-} !(Ptr Coperator),
+    cyaml_config_number_observables :: {-# UNPACK #-} !CInt,
+    cyaml_config_observables :: {-# UNPACK #-} !(Ptr (Ptr Coperator))
+  }
+
+instance Storable Cyaml_config where
+  sizeOf _ = #{size ls_hs_yaml_config}
+  {-# INLINE sizeOf #-}
+  alignment _ = #{alignment ls_hs_yaml_config}
+  {-# INLINE alignment #-}
+  peek p =
+    Cyaml_config
+      <$> #{peek ls_hs_yaml_config, basis} p
+      <*> #{peek ls_hs_yaml_config, hamiltonian} p
+      <*> #{peek ls_hs_yaml_config, number_observables} p
+      <*> #{peek ls_hs_yaml_config, observables} p
+  {-# INLINE peek #-}
+  poke p x = do
+    #{poke ls_hs_yaml_config, basis}               p (cyaml_config_basis x)
+    #{poke ls_hs_yaml_config, hamiltonian}         p (cyaml_config_hamiltonian x)
+    #{poke ls_hs_yaml_config, number_observables}  p (cyaml_config_number_observables x)
+    #{poke ls_hs_yaml_config, observables}         p (cyaml_config_observables x)
   {-# INLINE poke #-}
 
 -- foreign import ccall unsafe "ls_hs_internal_get_chpl_kernels"

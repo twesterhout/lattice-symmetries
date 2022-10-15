@@ -6,10 +6,11 @@ import Control.Exception.Safe (handleAny, handleAnyDeep)
 import qualified Data.Aeson
 import Data.List.Split (chunksOf)
 import qualified Data.Text as Text
+import qualified Data.Vector.Generic as G
 import Foreign.C.String (CString)
 import Foreign.C.Types (CBool (..), CInt (..), CUInt (..))
-import Foreign.Marshal.Alloc (alloca, free)
-import Foreign.Marshal.Array (peekArray)
+import Foreign.Marshal.Alloc (alloca, free, malloc)
+import Foreign.Marshal.Array (newArray, peekArray)
 import Foreign.Marshal.Utils (fromBool, new)
 import Foreign.Ptr (FunPtr, Ptr, nullPtr)
 import Foreign.StablePtr
@@ -300,6 +301,13 @@ ls_hs_expr_from_json cStr = handleAny (propagateErrorToC nullPtr) $ do
 foreign export ccall "ls_hs_create_operator"
   ls_hs_create_operator :: Ptr Cbasis -> Ptr Cexpr -> IO (Ptr Coperator)
 
+foreign export ccall "ls_hs_clone_operator"
+  ls_hs_clone_operator :: Ptr Coperator -> IO (Ptr Coperator)
+
+ls_hs_clone_operator ptr = do
+  _ <- operatorIncRefCount ptr
+  pure ptr
+
 ls_hs_create_operator :: Ptr Cbasis -> Ptr Cexpr -> IO (Ptr Coperator)
 ls_hs_create_operator basisPtr exprPtr =
   handleAny (propagateErrorToC nullPtr) $
@@ -365,6 +373,15 @@ foreign export ccall "ls_hs_operator_is_hermitian"
 ls_hs_operator_is_hermitian opPtr =
   fromBool <$> withReconstructedOperator opPtr (pure . isHermitianExpr . opTerms . opHeader)
 
+foreign export ccall "ls_hs_operator_is_real"
+  ls_hs_operator_is_real :: Ptr Coperator -> IO CBool
+
+ls_hs_operator_is_real opPtr =
+  withReconstructedOperator opPtr $ \op ->
+    pure . fromBool $
+      (isRealExpr . opTerms . opHeader $ op)
+        && (isBasisReal . basisHeader . opBasis . opHeader $ op)
+
 foreign export ccall "ls_hs_operator_is_identity"
   ls_hs_operator_is_identity :: Ptr Coperator -> IO CBool
 
@@ -377,8 +394,61 @@ foreign export ccall "ls_hs_operator_max_number_off_diag"
 ls_hs_operator_max_number_off_diag opPtr =
   fromIntegral <$> withReconstructedOperator opPtr (pure . maxNumberOffDiag)
 
+foreign export ccall "ls_hs_operator_get_expr"
+  ls_hs_operator_get_expr :: Ptr Coperator -> IO (Ptr Cexpr)
+
+ls_hs_operator_get_expr opPtr =
+  withReconstructedOperator opPtr $ \op ->
+    newCexpr $
+      SomeExpr
+        (getParticleTag . basisHeader . opBasis . opHeader $ op)
+        (opTerms . opHeader $ op)
+
 foreign export ccall "ls_hs_load_hamiltonian_from_yaml"
   ls_hs_load_hamiltonian_from_yaml :: CString -> IO (Ptr Coperator)
+
+ls_hs_load_hamiltonian_from_yaml cFilename =
+  foldSomeOperator borrowCoperator =<< hamiltonianFromYAML =<< peekUtf8 cFilename
+
+foreign import ccall "ls_hs_destroy_basis_v2"
+  ls_hs_destroy_basis_v2 :: Ptr Cbasis -> IO ()
+
+foreign import ccall "ls_hs_destroy_operator_v2"
+  ls_hs_destroy_operator_v2 :: Ptr Coperator -> IO ()
+
+toCyaml_config :: ConfigSpec -> IO (Ptr Cyaml_config)
+toCyaml_config (ConfigSpec basis maybeHamiltonian observables) = do
+  p <- malloc
+  basisPtr <- withSomeBasis basis borrowCbasis
+  hamiltonianPtr <- case maybeHamiltonian of
+    Just h -> withSomeOperator h borrowCoperator
+    Nothing -> pure nullPtr
+  observablesPtr <-
+    (newArray =<<) $
+      G.toList <$> G.mapM (foldSomeOperator borrowCoperator) observables
+  poke p $
+    Cyaml_config basisPtr hamiltonianPtr (fromIntegral (G.length observables)) observablesPtr
+  pure p
+
+foreign export ccall "ls_hs_load_yaml_config"
+  ls_hs_load_yaml_config :: CString -> IO (Ptr Cyaml_config)
+
+ls_hs_load_yaml_config cFilename =
+  toCyaml_config =<< configFromYAML =<< peekUtf8 cFilename
+
+foreign export ccall "ls_hs_destroy_yaml_config"
+  ls_hs_destroy_yaml_config :: Ptr Cyaml_config -> IO ()
+
+ls_hs_destroy_yaml_config p
+  | p == nullPtr = pure ()
+  | otherwise = do
+      (Cyaml_config basisPtr hamiltonianPtr numberObservables observablesPtr) <- peek p
+      forM_ [0 .. fromIntegral numberObservables - 1] $ \i ->
+        ls_hs_destroy_operator_v2 =<< peekElemOff observablesPtr i
+      when (observablesPtr /= nullPtr) $ free observablesPtr
+      when (hamiltonianPtr /= nullPtr) $ ls_hs_destroy_operator_v2 hamiltonianPtr
+      ls_hs_destroy_basis_v2 basisPtr
+      free p
 
 ls_hs_operator_pretty_terms :: Ptr Coperator -> IO CString
 ls_hs_operator_pretty_terms p =

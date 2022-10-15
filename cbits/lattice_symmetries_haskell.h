@@ -223,13 +223,15 @@ typedef struct ls_hs_operator {
 
 ls_hs_operator *ls_hs_create_operator(ls_hs_basis const *basis,
                                       ls_hs_expr const *expr);
+ls_hs_operator *ls_hs_clone_operator(ls_hs_operator const *);
 // ls_hs_operator *ls_hs_create_operator(ls_hs_basis const *basis,
 //                                       char const *expression, int
 //                                       number_tuples, int tuple_size, int
 //                                       const *indices);
-char const *ls_hs_operator_to_json(ls_hs_operator const *, bool include_basis);
-ls_hs_operator *ls_hs_operator_from_json(char const *json_string,
-                                         ls_hs_basis const *basis);
+// char const *ls_hs_operator_to_json(ls_hs_operator const *, bool
+// include_basis); ls_hs_operator *ls_hs_operator_from_json(char const
+// *json_string,
+//                                          ls_hs_basis const *basis);
 
 ls_hs_operator *ls_hs_operator_plus(ls_hs_operator const *,
                                     ls_hs_operator const *);
@@ -247,11 +249,23 @@ bool ls_hs_operator_is_real(ls_hs_operator const *);
 
 int ls_hs_operator_max_number_off_diag(ls_hs_operator const *);
 
+ls_hs_expr const *ls_hs_operator_get_expr(ls_hs_operator const *);
+
 char const *ls_hs_operator_pretty_terms(ls_hs_operator const *);
 
 void ls_hs_destroy_operator_v2(ls_hs_operator *);
 
 ls_hs_operator *ls_hs_load_hamiltonian_from_yaml(char const *);
+
+typedef struct ls_hs_yaml_config {
+  ls_hs_basis const *basis;
+  ls_hs_operator const *hamiltonian;
+  int number_observables;
+  ls_hs_operator const *const *observables;
+} ls_hs_yaml_config;
+
+ls_hs_yaml_config *ls_hs_load_yaml_config(char const *);
+void ls_hs_destroy_yaml_config(ls_hs_yaml_config *);
 
 ls_internal_operator_kernel_data *ls_internal_create_apply_diag_kernel_data(
     ls_hs_nonbranching_terms const *diag_terms);
