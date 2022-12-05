@@ -407,16 +407,16 @@ int get_nth_spin_512(ls_bits512 const* bits, unsigned const n)
 
 Ordering of spin configurations is defined by the following functions:
 ```c
-bool is_less_than(ls_bits64 const a, ls_bits64 const b)
+bool is_less_than_64(ls_bits64 const a, ls_bits64 const b)
 {
     return a < b;
 }
 
-bool get_nth_spin_512(ls_bits512 const* a, ls_bits512 const* b)
+bool is_less_than_512(ls_bits512 const* a, ls_bits512 const* b)
 {
     for (int i = 0; i < 8; ++i) {
-        if (is_less_than(a, b)) { return true; }
-        if (is_less_than(b, a)) { return false; }
+        if (is_less_than_64(a, b)) { return true; }
+        if (is_less_than_64(b, a)) { return false; }
     }
     return false;
 }
