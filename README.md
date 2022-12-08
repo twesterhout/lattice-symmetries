@@ -305,7 +305,7 @@ replace original elements *|σ⟩* with **orbits** *orbit(σ) = {g|σ⟩ | g∈G
 we choose a **representative** vector as *|σ̃⟩ = min orbit(σ)* where ordering is
 defined by integer representations of spin configurations. Putting it all
 together, we define the symmetry-adapted basis: *|S⟩ = norm *
-∑<sub><sub>orbit</sub></sub> χ\*(g) |σ̃⟩*.  Here, *norm* is chosen such that
+∑<sub><sub>g ∈ G</sub></sub> χ\*(g) g|σ̃⟩*.  Here, *norm* is chosen such that
 ⟨S|S⟩ = 1.
 
 
