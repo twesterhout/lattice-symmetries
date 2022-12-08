@@ -26,6 +26,9 @@ jobs:
 
     - name: configure
       run: |
+        # NOTE: AppleClang fails to find OpenMP
+        # and GCC fails to link Halide generators since Halide was built against libc++
+        # ... so... we stick to LLVM/Clang
         cmake -Bbuild \
               -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
               -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/$INSTALL_LOCATION \
