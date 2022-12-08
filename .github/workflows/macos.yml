@@ -29,7 +29,8 @@ jobs:
         cmake -Bbuild \
               -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
               -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/$INSTALL_LOCATION \
-              -DOpenMP_C_FLAGS="-fopenmp=libomp"
+              -DOpenMP_C_FLAGS="-fopenmp=libomp" \
+              -DOpenMP_C_LIB_NAMES="libomp"
       
     - name: build
       run: cmake --build build -j4
