@@ -24,7 +24,7 @@ if(NOT Catch2_FOUND)
   FetchContent_Declare(
     Catch2
     GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-    GIT_TAG        v2.13.0
+    GIT_TAG        v3.2.0
   ) 
 
   FetchContent_GetProperties(Catch2)
@@ -41,7 +41,7 @@ endif()
 target_link_libraries(
   ${PROJECT_NAME} 
   PUBLIC
-    Catch2::Catch2
+    Catch2::Catch2WithMain
     lattice_symmetries
 )
 # Header files in src/ are not part of the external interface, but we still

@@ -2,9 +2,11 @@
 #include "cpu/search_sorted.hpp"
 #include "lattice_symmetries/lattice_symmetries.h"
 #include <bitset>
-#include <catch2/catch.hpp>
+#include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
 #include <complex>
 #include <cstdio>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <numeric>
@@ -119,8 +121,8 @@ TEST_CASE("constructs symmetries", "[api]")
         REQUIRE(ls_get_periodicity(self.get()) == 100);
         REQUIRE(ls_get_phase(self.get()) == 0.01);
         REQUIRE(ls_symmetry_get_number_spins(self.get()) == 100);
-        REQUIRE(get_eigenvalue(self.get()).real() == Approx(0.998026728428272));
-        REQUIRE(get_eigenvalue(self.get()).imag() == Approx(-0.062790519529313));
+        REQUIRE(get_eigenvalue(self.get()).real() == Catch::Approx(0.998026728428272));
+        REQUIRE(get_eigenvalue(self.get()).imag() == Catch::Approx(-0.062790519529313));
         check_permutation(self.get(),
                           {0b0100000000000000000000000000000100000000000000000000000000000001UL,
                            0b100000000000000000000000000000000000UL},
@@ -266,19 +268,19 @@ inline auto check_state_info(ls_spin_basis const* basis, std::initializer_list<u
         REQUIRE(predicted_character.real() == character.real());
     }
     else {
-        REQUIRE(predicted_character.real() == Approx(character.real()));
+        REQUIRE(predicted_character.real() == Catch::Approx(character.real()));
     }
 
     if (character.imag() == 0.0 || character.imag() == -1.0 || character.imag() == 1.0) {
         REQUIRE(predicted_character.imag() == character.imag());
     }
     else {
-        REQUIRE(predicted_character.imag() == Approx(character.imag()));
+        REQUIRE(predicted_character.imag() == Catch::Approx(character.imag()));
     }
 
     if (norm == 0.0 || norm == 1.0) { REQUIRE(predicted_norm == norm); }
     else {
-        REQUIRE(predicted_norm == Approx(norm));
+        REQUIRE(predicted_norm == Catch::Approx(norm));
     }
 }
 
