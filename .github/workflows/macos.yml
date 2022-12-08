@@ -22,7 +22,7 @@ jobs:
       
     - name: install dependencies
       run: |
-        brew install llvm gcc libomp
+        brew reinstall gcc libomp
 
     - name: configure
       run: |
