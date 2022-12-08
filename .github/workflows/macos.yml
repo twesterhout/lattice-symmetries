@@ -22,15 +22,15 @@ jobs:
       
     - name: install dependencies
       run: |
-        brew reinstall gcc libomp
+        brew install libomp
 
     - name: configure
       run: |
         cmake -Bbuild \
               -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
               -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/$INSTALL_LOCATION \
-              -DCMAKE_C_COMPILER="gcc" \
-              -DCMAKE_CXX_COMPILER="g++"
+              -DCMAKE_C_COMPILER="gcc-11" \
+              -DCMAKE_CXX_COMPILER="g++-11"
       
     - name: build
       run: cmake --build build -j4
