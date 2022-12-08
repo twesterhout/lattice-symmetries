@@ -33,7 +33,7 @@ jobs:
               -DCMAKE_CXX_COMPILER="clang++" \
               -DOpenMP_C_FLAGS="-Xpreprocessor -fopenmp" \
               -DOpenMP_C_LIB_NAMES="omp" \
-              -DOpenMP_libomp_LIBRARY="omp" \
+              -DOpenMP_omp_LIBRARY="omp" \
               -DOpenMP_CXX_FLAGS="-Xpreprocessor -fopenmp" \
               -DOpenMP_CXX_LIB_NAMES="omp"
       
