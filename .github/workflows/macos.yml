@@ -29,11 +29,13 @@ jobs:
         cmake -Bbuild \
               -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
               -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/$INSTALL_LOCATION \
+              -DCMAKE_C_COMPILER="clang" \
+              -DCMAKE_CXX_COMPILER="clang++" \
               -DOpenMP_C_FLAGS="-Xpreprocessor -fopenmp" \
-              -DOpenMP_C_LIB_NAMES="libomp" \
-              -DOpenMP_libomp_LIBRARY="libomp" \
+              -DOpenMP_C_LIB_NAMES="omp" \
+              -DOpenMP_libomp_LIBRARY="omp" \
               -DOpenMP_CXX_FLAGS="-Xpreprocessor -fopenmp" \
-              -DOpenMP_CXX_LIB_NAMES="libomp"
+              -DOpenMP_CXX_LIB_NAMES="omp"
       
     - name: build
       run: cmake --build build -j4
