@@ -29,10 +29,10 @@ jobs:
         cmake -Bbuild \
               -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
               -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/$INSTALL_LOCATION \
-              -DOpenMP_C_FLAGS="-fopenmp=libomp" \
+              -DOpenMP_C_FLAGS="-Xpreprocessor -fopenmp" \
               -DOpenMP_C_LIB_NAMES="libomp" \
               -DOpenMP_libomp_LIBRARY="libomp" \
-              -DOpenMP_CXX_FLAGS="-fopenmp=libomp" \
+              -DOpenMP_CXX_FLAGS="-Xpreprocessor -fopenmp" \
               -DOpenMP_CXX_LIB_NAMES="libomp"
       
     - name: build
