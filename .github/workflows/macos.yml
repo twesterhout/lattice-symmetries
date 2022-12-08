@@ -22,7 +22,7 @@ jobs:
       
     - name: install dependencies
       run: |
-        brew install libomp
+        brew install llvm libomp
 
     - name: configure
       run: |
@@ -31,7 +31,9 @@ jobs:
               -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/$INSTALL_LOCATION \
               -DOpenMP_C_FLAGS="-fopenmp=libomp" \
               -DOpenMP_C_LIB_NAMES="libomp" \
-              -DOpenMP_libomp_LIBRARY="libomp"
+              -DOpenMP_libomp_LIBRARY="libomp" \
+              -DOpenMP_CXX_FLAGS="-fopenmp=libomp" \
+              -DOpenMP_CXX_LIB_NAMES="libomp"
       
     - name: build
       run: cmake --build build -j4
