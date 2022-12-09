@@ -118,9 +118,8 @@ simple. You will need the following:
   * CMake (**3.15+**);
   * Git
 
-We also provide a [Conda environment
-file](https://github.com/twesterhout/lattice-symmetries/blob/master/conda-devel.yml)
-for a Linux system which contains the required dependencies (except Git).
+We also provide a Conda environment files for [Linux](https://github.com/twesterhout/lattice-symmetries/blob/master/conda-devel-linux.yml) and [macOS](https://github.com/twesterhout/lattice-symmetries/blob/master/conda-devel-osx.yml)
+which contains the required dependencies (except Git).
 
 First step is to clone the repository:
 
