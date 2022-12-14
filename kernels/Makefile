@@ -1,7 +1,7 @@
 MAKEFLAGS += --no-builtin-rules
 .SUFFIXES:
 
-CONDA_CC ?= $(shell conda run -n ci_devel bash -c "echo \$${CC}")
+CONDA_CC ?= $(shell conda run -n ci_devel bash -c "which \$${CC}")
 CONDA_PREFIX ?= $(shell conda run -n ci_devel bash -c "echo \$${CONDA_PREFIX}")
 
 HL_ARCH ?= x86
