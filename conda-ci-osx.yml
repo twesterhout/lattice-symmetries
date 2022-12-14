@@ -4,3 +4,6 @@ channels:
 dependencies:
   - clang_osx-64
   - clangxx_osx-64
+  - gmp
+  - libffi
+  - numactl-devel-cos7-x86_64

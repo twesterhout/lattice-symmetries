@@ -1,6 +1,10 @@
 name: ci_devel
 channels:
   - defaults
+  - conda-forge
 dependencies:
   - gcc_linux-64
   - gxx_linux-64
+  - gmp
+  - libffi
+  - numactl-devel-cos7-x86_64

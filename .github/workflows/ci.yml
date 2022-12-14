@@ -56,13 +56,16 @@ jobs:
 
     - uses: conda-incubator/setup-miniconda@v2
       with:
+        mamba-version: "*"
+        channels: conda-forge,defaults
+        channel-priority: true
         auto-activate-base: false
     - name: Info
       run: |
         if [[ ${{ matrix.os }} == "macos-latest" ]]; then
-          conda env create -f conda-ci-osx.yml
+          mamba env create -f conda-ci-osx.yml
         else
-          conda env create -f conda-ci-linux.yml
+          mamba env create -f conda-ci-linux.yml
         fi
         # conda info
         # conda env list
@@ -89,12 +92,10 @@ jobs:
         #     cp -r third_party/hdf5 ~/
     - name: Build C code
       run: |
-        export CONDA_CC=$(conda run -n base bash -c "echo \${CC}")
-        make CONDA_CC=$CONDA_CC kernels
+        make kernels
     - name: Build Haskell code
       run: |
-        export CONDA_CC=$(conda run -n base bash -c "echo \${CC}")
-        make CONDA_CC=$CONDA_CC haskell
+        make haskell
     - name: Test
       run: |
         export LD_LIBRARY_PATH=$PWD/kernels/build:$LD_LIBRARY_PATH
@@ -102,8 +103,7 @@ jobs:
         cabal v2-test --test-show-details=direct
     - name: Package
       run: |
-        export CONDA_CC=$(conda run -n base bash -c "echo \${CC}")
-        make CONDA_CC=$CONDA_CC release
+        make release
         # COMMIT=$(git rev-parse --short HEAD)
         # PREFIX=lattice-symmetries-haskell-$COMMIT
         # mkdir $PREFIX
