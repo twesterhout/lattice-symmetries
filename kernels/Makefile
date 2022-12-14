@@ -87,7 +87,7 @@ GENERATOR_DEPS_STATIC ?= $(LIB_HALIDE_STATIC) $(HALIDE_DISTRIB_PATH)/include/Hal
 
 # Generators which use autoscheduler plugin need to specify the linker where to find libHalide.so required by the plugin.
 LIBHALIDE_LDFLAGS ?= -Wl,-rpath,$(dir $(LIB_HALIDE)) -L $(dir $(LIB_HALIDE)) -lHalide -lz $(LDFLAGS)
-LIBHALIDE_LDFLAGS_STATIC ?= $(LIB_HALIDE_STATIC) $(LDFLAGS)
+LIBHALIDE_LDFLAGS_STATIC ?= $(LIB_HALIDE_STATIC) -lz $(LDFLAGS)
 
 # Autoschedulers. Mullapudi2016 is currently the default, because it's fast.
 AUTOSCHEDULER ?= adams2019
