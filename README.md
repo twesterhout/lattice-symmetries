@@ -118,9 +118,8 @@ simple. You will need the following:
   * CMake (**3.15+**);
   * Git
 
-We also provide a [Conda environment
-file](https://github.com/twesterhout/lattice-symmetries/blob/master/conda-devel.yml)
-for a Linux system which contains the required dependencies (except Git).
+We also provide a Conda environment files for [Linux](https://github.com/twesterhout/lattice-symmetries/blob/master/conda-devel-linux.yml) and [macOS](https://github.com/twesterhout/lattice-symmetries/blob/master/conda-devel-osx.yml)
+which contains the required dependencies (except Git).
 
 First step is to clone the repository:
 
@@ -305,7 +304,7 @@ replace original elements *|σ⟩* with **orbits** *orbit(σ) = {g|σ⟩ | g∈G
 we choose a **representative** vector as *|σ̃⟩ = min orbit(σ)* where ordering is
 defined by integer representations of spin configurations. Putting it all
 together, we define the symmetry-adapted basis: *|S⟩ = norm *
-∑<sub><sub>orbit</sub></sub> χ\*(g) |σ̃⟩*.  Here, *norm* is chosen such that
+∑<sub><sub>g ∈ G</sub></sub> χ\*(g) g|σ̃⟩*.  Here, *norm* is chosen such that
 ⟨S|S⟩ = 1.
 
 
