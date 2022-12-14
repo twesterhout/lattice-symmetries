@@ -55,7 +55,10 @@ BIN_DIR ?= build
 SANITIZER_FLAGS ?=
 GENERATOR_OUTPUTS ?= static_library,c_header,stmt_html,assembly
 
-LDFLAGS += -ldl -lpthread -lz
+LDFLAGS += -lpthread -lz
+ifeq ($(UNAME), Linux)
+LDFLAGS += -ldl
+endif
 CFLAGS += -I ../cbits -isystem $(HALIDE_DISTRIB_PATH)/include/ -isystem $(HALIDE_DISTRIB_PATH)/share/Halide/tools/ -Wall -Wextra -Wpedantic -Wconversion -Wdouble-promotion -Wformat=2 -Wformat-overflow=2 -Winit-self -Wimplicit-fallthrough -Wunused -Wuninitialized -Wstrict-overflow=4 -Wduplicated-branches -Wfloat-equal -Wshadow -Wundef -Wunused-macros -Wmissing-field-initializers
 CXXFLAGS += -std=c++17 -I $(HALIDE_DISTRIB_PATH)/include/ -I $(HALIDE_DISTRIB_PATH)/share/Halide/tools/ $(SANITIZER_FLAGS) -Wall -Wno-unused-function -Wcast-qual -Wignored-qualifiers -Wno-comment -Wsign-compare -Wno-unknown-warning-option -Wno-psabi
 
