@@ -2,6 +2,7 @@ MAKEFLAGS += --no-builtin-rules
 .SUFFIXES:
 
 CONDA_CC ?= $(shell conda run -n ci_devel bash -c "echo \$${CC}")
+CONDA_PREFIX ?= $(shell conda run -n ci_devel bash -c "echo \$${CONDA_PREFIX}")
 
 HL_ARCH ?= x86
 HL_BITS ?= 64
@@ -114,7 +115,8 @@ all: $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) ../cabal.project.local
 	cd .. && \
 	echo "-- DO NOT MODIFY (Generated automatically by kernels/Makefile)" >>cabal.project.local && \
 	echo "package lattice-symmetries-haskell" >>cabal.project.local && \
-  	echo "  extra-lib-dirs: $(realpath $(BIN_DIR))" >>cabal.project.local && \
+	echo "  extra-lib-dirs: $(realpath $(BIN_DIR))" >>cabal.project.local && \
+	echo "                  $(CONDA_PREFIX)/lib" >>cabal.project.local && \
 	echo "  ghc-options: -pgmP $(CONDA_CC) -pgmc $(CONDA_CC) -pgma $(CONDA_CC) -pgml $(CONDA_CC)" >>cabal.project.local
 
 $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT): $(BIN_DIR)/reference.o $(BIN_DIR)/indexing.o $(BIN_DIR)/binary_search.o $(BIN_DIR)/kernels.o $(OPS) $(BIN_DIR)/runtime.a 
