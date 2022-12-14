@@ -1,0 +1,8 @@
+name: ci_devel
+channels:
+  - defaults
+dependencies:
+  - gcc_linux-64 # [linux]
+  - gxx_linux-64 # [linux]
+  - clang_linux-64 # [osx]
+  - clangxx_linux-64 # [osx]
