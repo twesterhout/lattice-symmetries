@@ -55,12 +55,14 @@ jobs:
         brew install libomp
 
     - uses: conda-incubator/setup-miniconda@v2
+      if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
       with:
         mamba-version: "*"
         channels: conda-forge,defaults
         channel-priority: true
         auto-activate-base: false
-    - name: Info
+    - name: Create Conda environment
+      if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
       run: |
         if [[ ${{ matrix.os }} == "macos-latest" ]]; then
           mamba env create -f conda-ci-osx.yml

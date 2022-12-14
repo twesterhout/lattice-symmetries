@@ -1,8 +1,13 @@
 MAKEFLAGS += --no-builtin-rules
 .SUFFIXES:
 
+ifeq ($(UNAME), Linux)
 CONDA_CC ?= $(shell conda run -n ci_devel bash -c "which \$${CC}")
 CONDA_PREFIX ?= $(shell conda run -n ci_devel bash -c "echo \$${CONDA_PREFIX}")
+else
+CONDA_CC = $(CC)
+CONDA_PREFIX = 
+endif
 
 HL_ARCH ?= x86
 HL_BITS ?= 64
