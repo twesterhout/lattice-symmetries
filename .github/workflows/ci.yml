@@ -47,40 +47,50 @@ jobs:
       if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
       run: |
         # sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
-        echo "Hello"
         sudo apt-get update
-        echo "World"
         sudo apt-get install -y --no-install-recommends libnuma-dev libgmp-dev
     - name: Install system dependencies (MacOS)
       if: matrix.os == 'macos-latest'
       run: |
         brew install libomp
-    - uses: actions/cache@v3
-      name: Cache ~/hdf5
-      id: cache-hdf5
+
+    - uses: conda-incubator/setup-miniconda@v2
       with:
-        path: ~/hdf5
-        key: ${{ runner.os }}-${{ matrix.ghc }}-hdf5-v1
-    - name: Restore pre-built HDF5
-      if: steps.cache-hdf5.outputs.cache-hit == 'true'
+        auto-activate-base: false
+    - name: Info
       run: |
-        mkdir -p third_party
-        cp -r ~/hdf5 third_party/
-    - name: Build HDF5
-      if: steps.cache-hdf5.outputs.cache-hit != 'true'
-      run: |
-        make hdf5
-    - name: Save pre-built HDF5
-      if: steps.cache-hdf5.outputs.cache-hit != 'true'
-      run: |
-        mkdir -p third_party
-        cp -r third_party/hdf5 ~/
+        # conda info
+        conda env list
+        conda env create -f conda-ci-devel.yml
+
+        # - uses: actions/cache@v3
+        #   name: Cache ~/hdf5
+        #   id: cache-hdf5
+        #   with:
+        #     path: ~/hdf5
+        #     key: ${{ runner.os }}-${{ matrix.ghc }}-hdf5-v1
+        # - name: Restore pre-built HDF5
+        #   if: steps.cache-hdf5.outputs.cache-hit == 'true'
+        #   run: |
+        #     mkdir -p third_party
+        #     cp -r ~/hdf5 third_party/
+        # - name: Build HDF5
+        #   if: steps.cache-hdf5.outputs.cache-hit != 'true'
+        #   run: |
+        #     make hdf5
+        # - name: Save pre-built HDF5
+        #   if: steps.cache-hdf5.outputs.cache-hit != 'true'
+        #   run: |
+        #     mkdir -p third_party
+        #     cp -r third_party/hdf5 ~/
     - name: Build C code
       run: |
-        make kernels
+        export CONDA_CC=$(conda run -n base bash -c "echo \${CC}")
+        make CONDA_CC=$CONDA_CC kernels
     - name: Build Haskell code
       run: |
-        make haskell
+        export CONDA_CC=$(conda run -n base bash -c "echo \${CC}")
+        make CONDA_CC=$CONDA_CC haskell
     - name: Test
       run: |
         export LD_LIBRARY_PATH=$PWD/kernels/build:$LD_LIBRARY_PATH
@@ -88,7 +98,8 @@ jobs:
         cabal v2-test --test-show-details=direct
     - name: Package
       run: |
-        make release
+        export CONDA_CC=$(conda run -n base bash -c "echo \${CC}")
+        make CONDA_CC=$CONDA_CC release
         # COMMIT=$(git rev-parse --short HEAD)
         # PREFIX=lattice-symmetries-haskell-$COMMIT
         # mkdir $PREFIX

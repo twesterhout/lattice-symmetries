@@ -31,6 +31,7 @@ import Prettyprinter.Render.Text (renderStrict)
 import Type.Reflection
 import Prelude hiding (state)
 
+{-
 foreign export ccall "ls_hs_hdf5_create_dataset_u64"
   ls_hs_hdf5_create_dataset_u64 :: CString -> CString -> CUInt -> Ptr Word64 -> IO ()
 
@@ -63,6 +64,7 @@ foreign export ccall "ls_hs_hdf5_get_dataset_rank"
 
 foreign export ccall "ls_hs_hdf5_get_dataset_shape"
   ls_hs_hdf5_get_dataset_shape :: CString -> CString -> Ptr Word64 -> IO ()
+-}
 
 -- foreign export ccall "ls_hs_basis_and_hamiltonian_from_yaml"
 --   ls_hs_basis_and_hamiltonian_from_yaml :: CString -> Ptr Types.SpinBasisWrapper -> Ptr Types.OperatorWrapper -> IO ()

@@ -123,7 +123,7 @@ library
                      -- , inline-c
                      -- , binary
                      -- , vector-binary-instances
-                     , hdf5-hs
+                     -- , hdf5-hs
                      , prettyprinter >= 1.7
                      -- , HaskellForMaths
   extra-libraries:     lattice_symmetries_core

@@ -1,6 +1,10 @@
 MAKEFLAGS += --no-builtin-rules
 .SUFFIXES:
 
+USE_CONDA ?= 1
+CONDA_PREFIX := $(shell conda run -n base bash -c "echo \$${CONDA_PREFIX}")
+CONDA_CC ?= $(CC)
+
 HL_ARCH ?= x86
 HL_BITS ?= 64
 
@@ -112,11 +116,12 @@ all: $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) ../cabal.project.local
 	cd .. && \
 	echo "-- DO NOT MODIFY (Generated automatically by kernels/Makefile)" >>cabal.project.local && \
 	echo "package lattice-symmetries-haskell" >>cabal.project.local && \
-  	echo "  extra-lib-dirs: $(realpath $(BIN_DIR))" >>cabal.project.local
+  	echo "  extra-lib-dirs: $(realpath $(BIN_DIR))" >>cabal.project.local && \
+	echo "  ghc-options: -pgmP $(CONDA_CC) -pgmc $(CONDA_CC) -pgma $(CONDA_CC) -pgml $(CONDA_CC)" >>cabal.project.local
 
 $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT): $(BIN_DIR)/reference.o $(BIN_DIR)/indexing.o $(BIN_DIR)/binary_search.o $(BIN_DIR)/kernels.o $(OPS) $(BIN_DIR)/runtime.a 
 	@mkdir -p $(@D)
-	$(CC) $(SHARED_FLAG) -o $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) $^ -ldl -lpthread
+	$(CONDA_CC) $(SHARED_FLAG) -o $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) $^ -ldl -lpthread
 ifeq ($(UNAME), Darwin)
 	install_name_tool -id $(CURDIR)/$(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT)
 endif

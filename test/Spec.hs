@@ -443,6 +443,9 @@ main = hspec $ do
                 Scaled (ComplexRational (9 % 2) 0) [Generator 10 SpinZ]
               ]
           )
+  it "" $ do
+    replicateSiteIndices [[0, 1], [1, 2], [2, 3]] ("σ⁺₁ σ⁻₂" :: Expr 'SpinTy)
+      `shouldBe` "σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₂ + σ⁺₂ σ⁻₃"
   -- describe "pOperatorString" $ do
   --   it ".." $ do
   --     parse (pOperatorString pSpinOperator) "" ("σᶻ₁₀σ⁺₁₁" :: Text)

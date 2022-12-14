@@ -4,29 +4,29 @@
 -- {-# LANGUAGE TemplateHaskell #-}
 
 module LatticeSymmetries
-  ( ls_hs_hdf5_create_dataset_u64,
-    ls_hs_hdf5_create_dataset_f32,
-    ls_hs_hdf5_create_dataset_f64,
-    ls_hs_hdf5_create_dataset_c64,
-    ls_hs_hdf5_create_dataset_c128,
-    ls_hs_hdf5_write_chunk_u64,
-    ls_hs_hdf5_write_chunk_f32,
-    ls_hs_hdf5_write_chunk_f64,
-    ls_hs_hdf5_write_chunk_c64,
-    ls_hs_hdf5_write_chunk_c128,
-    ls_hs_hdf5_read_chunk_u64,
-    ls_hs_hdf5_read_chunk_f32,
-    ls_hs_hdf5_read_chunk_f64,
-    ls_hs_hdf5_read_chunk_c64,
-    ls_hs_hdf5_read_chunk_c128,
-    ls_hs_hdf5_get_dataset_rank,
-    ls_hs_hdf5_get_dataset_shape,
+  ( -- ls_hs_hdf5_create_dataset_u64,
+    -- ls_hs_hdf5_create_dataset_f32,
+    -- ls_hs_hdf5_create_dataset_f64,
+    -- ls_hs_hdf5_create_dataset_c64,
+    -- ls_hs_hdf5_create_dataset_c128,
+    -- ls_hs_hdf5_write_chunk_u64,
+    -- ls_hs_hdf5_write_chunk_f32,
+    -- ls_hs_hdf5_write_chunk_f64,
+    -- ls_hs_hdf5_write_chunk_c64,
+    -- ls_hs_hdf5_write_chunk_c128,
+    -- ls_hs_hdf5_read_chunk_u64,
+    -- ls_hs_hdf5_read_chunk_f32,
+    -- ls_hs_hdf5_read_chunk_f64,
+    -- ls_hs_hdf5_read_chunk_c64,
+    -- ls_hs_hdf5_read_chunk_c128,
+    -- ls_hs_hdf5_get_dataset_rank,
+    -- ls_hs_hdf5_get_dataset_shape,
   )
   where
 
 import Data.Complex
-import qualified Data.HDF5 as H5
-import qualified Data.HDF5.Types as H5
+-- import qualified Data.HDF5 as H5
+-- import qualified Data.HDF5.Types as H5
 import qualified Data.Vector.Storable as V
 import Foreign.C.String (CString, peekCString)
 import Foreign.C.Types (CUInt (..))
@@ -91,6 +91,7 @@ checkSymmetrySpec (SymmetrySpec permutation sector) = do
   undefined
 -}
 
+{-
 createDataset ::
   forall a.
   (H5.KnownDatatype a) =>
@@ -122,6 +123,7 @@ ls_hs_hdf5_create_dataset_c64 = createDataset @(Complex Float)
 
 ls_hs_hdf5_create_dataset_c128 :: CString -> CString -> CUInt -> Ptr Word64 -> IO ()
 ls_hs_hdf5_create_dataset_c128 = createDataset @(Complex Double)
+-}
 
 -- foreign export ccall "ls_hs_hdf5_create_dataset_u64"
 --   ls_hs_hdf5_create_dataset_u64 :: CString -> CString -> CUInt -> Ptr Word64 -> IO ()
@@ -138,6 +140,7 @@ ls_hs_hdf5_create_dataset_c128 = createDataset @(Complex Double)
 -- foreign export ccall "ls_hs_hdf5_create_dataset_c128"
 --   ls_hs_hdf5_create_dataset_c128 :: CString -> CString -> CUInt -> Ptr Word64 -> IO ()
 
+{-
 writeDatasetChunk ::
   forall a.
   (Storable a, H5.KnownDatatype a) =>
@@ -183,6 +186,7 @@ ls_hs_hdf5_write_chunk_c64 = writeDatasetChunk @(Complex Float)
 ls_hs_hdf5_write_chunk_c128 ::
   CString -> CString -> CUInt -> Ptr Word64 -> Ptr Word64 -> Ptr (Complex Double) -> IO ()
 ls_hs_hdf5_write_chunk_c128 = writeDatasetChunk @(Complex Double)
+-}
 
 -- foreign export ccall "ls_hs_hdf5_write_chunk_u64"
 --   ls_hs_hdf5_write_chunk_u64 :: CString -> CString -> CUInt -> Ptr Word64 -> Ptr Word64 -> Ptr Word64 -> IO ()
@@ -190,6 +194,7 @@ ls_hs_hdf5_write_chunk_c128 = writeDatasetChunk @(Complex Double)
 -- foreign export ccall "ls_hs_hdf5_write_chunk_f64"
 --   ls_hs_hdf5_write_chunk_f64 :: CString -> CString -> CUInt -> Ptr Word64 -> Ptr Word64 -> Ptr Double -> IO ()
 
+{-
 readDatasetChunk ::
   forall a.
   (Storable a, H5.KnownDatatype a) =>
@@ -235,6 +240,7 @@ ls_hs_hdf5_read_chunk_c64 = readDatasetChunk @(Complex Float)
 ls_hs_hdf5_read_chunk_c128 ::
   CString -> CString -> CUInt -> Ptr Word64 -> Ptr Word64 -> Ptr (Complex Double) -> IO ()
 ls_hs_hdf5_read_chunk_c128 = readDatasetChunk @(Complex Double)
+-}
 
 -- foreign export ccall "ls_hs_hdf5_read_chunk_u64"
 --   ls_hs_hdf5_read_chunk_u64 :: CString -> CString -> CUInt -> Ptr Word64 -> Ptr Word64 -> Ptr Word64 -> IO ()
@@ -242,6 +248,7 @@ ls_hs_hdf5_read_chunk_c128 = readDatasetChunk @(Complex Double)
 -- foreign export ccall "ls_hs_hdf5_read_chunk_f64"
 --   ls_hs_hdf5_read_chunk_f64 :: CString -> CString -> CUInt -> Ptr Word64 -> Ptr Word64 -> Ptr Double -> IO ()
 
+{-
 ls_hs_hdf5_get_dataset_rank :: CString -> CString -> IO CUInt
 ls_hs_hdf5_get_dataset_rank _fileName _datasetName = do
   fileName <- fromString <$> peekCString _fileName
@@ -249,10 +256,12 @@ ls_hs_hdf5_get_dataset_rank _fileName _datasetName = do
   rank <- H5.withFile fileName H5.ReadOnly $ \file ->
     H5.open file datasetName >>= return . H5.datasetRank
   pure (fromIntegral rank)
+-}
 
 -- foreign export ccall "ls_hs_hdf5_get_dataset_rank"
 --   ls_hs_hdf5_get_dataset_rank :: CString -> CString -> IO CUInt
 
+{-
 ls_hs_hdf5_get_dataset_shape :: CString -> CString -> Ptr Word64 -> IO ()
 ls_hs_hdf5_get_dataset_shape _fileName _datasetName sizePtr = do
   fileName <- fromString <$> peekCString _fileName
@@ -260,6 +269,7 @@ ls_hs_hdf5_get_dataset_shape _fileName _datasetName sizePtr = do
   shape <- H5.withFile fileName H5.ReadOnly $ \file ->
     H5.open file datasetName >>= return . H5.datasetShape
   pokeArray sizePtr (fromIntegral <$> shape)
+-}
 
 -- foreign export ccall "ls_hs_hdf5_get_dataset_shape"
 --   ls_hs_hdf5_get_dataset_shape :: CString -> CString -> Ptr Word64 -> IO ()

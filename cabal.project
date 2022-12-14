@@ -2,15 +2,22 @@ packages: .
 
 package *
   optimization: 2
+  documentation: false
   profiling: false
   ghc-options: -fPIC -fexpose-all-unfoldings -fspecialise-aggressively
   hsc2hs-options: --cross-compile
 
 package lattice-symmetries-haskell
   flags: +use-standalone
+  optimization: 0
+  documentation: true
+  haddock-html-location: https://hackage.haskell.org/package/$pkg-$version/docs
+  haddock-hyperlink-source: true
 
 package hdf5-hs
-  flags: +use-pkgconfig
+  flags: -use-pkgconfig +disable-default-paths
+  extra-lib-dirs: /home/tom/conda/envs/ls_hs/lib
+  extra-include-dirs: /home/tom/conda/envs/ls_hs/include
 
 source-repository-package
   type: git
