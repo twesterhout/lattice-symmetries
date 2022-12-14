@@ -55,7 +55,7 @@ BIN_DIR ?= build
 SANITIZER_FLAGS ?=
 GENERATOR_OUTPUTS ?= static_library,c_header,stmt_html,assembly
 
-LDFLAGS += -lpthread -lz
+LDFLAGS += -lpthread
 ifeq ($(UNAME), Linux)
 LDFLAGS += -ldl
 endif
@@ -86,7 +86,7 @@ GENERATOR_DEPS ?= $(LIB_AUTOSCHEDULER) $(LIB_HALIDE) $(HALIDE_DISTRIB_PATH)/incl
 GENERATOR_DEPS_STATIC ?= $(LIB_HALIDE_STATIC) $(HALIDE_DISTRIB_PATH)/include/Halide.h $(HALIDE_DISTRIB_PATH)/share/Halide/tools/GenGen.cpp
 
 # Generators which use autoscheduler plugin need to specify the linker where to find libHalide.so required by the plugin.
-LIBHALIDE_LDFLAGS ?= -Wl,-rpath,$(dir $(LIB_HALIDE)) -L $(dir $(LIB_HALIDE)) -lHalide $(LDFLAGS)
+LIBHALIDE_LDFLAGS ?= -Wl,-rpath,$(dir $(LIB_HALIDE)) -L $(dir $(LIB_HALIDE)) -lHalide -lz $(LDFLAGS)
 LIBHALIDE_LDFLAGS_STATIC ?= $(LIB_HALIDE_STATIC) $(LDFLAGS)
 
 # Autoschedulers. Mullapudi2016 is currently the default, because it's fast.
