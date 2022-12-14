@@ -59,9 +59,13 @@ jobs:
         auto-activate-base: false
     - name: Info
       run: |
+        if [[ ${{ matrix.os }} == "macos-latest" ]]; then
+          conda env create -f conda-ci-osx.yml
+        else
+          conda env create -f conda-ci-linux.yml
+        fi
         # conda info
-        conda env list
-        conda env create -f conda-ci-devel.yml
+        # conda env list
 
         # - uses: actions/cache@v3
         #   name: Cache ~/hdf5

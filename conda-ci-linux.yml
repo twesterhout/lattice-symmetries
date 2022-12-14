@@ -1,0 +1,6 @@
+name: ci_devel
+channels:
+  - defaults
+dependencies:
+  - gcc_linux-64
+  - gxx_linux-64
