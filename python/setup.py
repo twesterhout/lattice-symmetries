@@ -14,7 +14,7 @@ def get_version(package):
 
 setup(
     name="lattice-symmetries",
-    version="0.0.0", # get_version("annealing_sign_problem"),
+    version=get_version("lattice_symmetries"),
     description="See README.md",
     url="http://github.com/twesterhout/lattice-symmetries-haskell",
     author="Tom Westerhout",
@@ -28,6 +28,8 @@ setup(
         "numpy>=1.23.0",
         "scipy>=1.8.0",
     ],
+    include_package_data=True,
+    # package_data={"lattice-symmetries": ["lattice-symmetries-chapel-*"]}
     zip_safe=False,
 )
 

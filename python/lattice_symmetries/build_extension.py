@@ -1,4 +1,38 @@
 from cffi import FFI
+import glob
+import os
+
+def get_chapel_lib_path(prefix="lattice_symmetries"):
+    print(os.getcwd())
+    print(os.listdir(prefix))
+    for f in glob.glob(os.path.join(prefix, "lattice-symmetries-chapel-*")):
+        print("get_chapel_lib_path -> {}".format(f[len(prefix) + 1:]))
+        return f[len(prefix) + 1:]
+    return os.environ.get("LATTICE_SYMMETRIES_PATH")
+
+def get_include_dirs():
+    prefix = get_chapel_lib_path()
+    if prefix is None:
+        assert False
+        return []
+    else:
+        return [os.path.join("lattice_symmetries", prefix, "include")]
+
+def get_library_dirs():
+    prefix = get_chapel_lib_path()
+    if prefix is None:
+        assert False
+        return []
+    else:
+        return [os.path.join("lattice_symmetries", prefix, "lib")]
+
+def get_runtime_dirs():
+    prefix = get_chapel_lib_path()
+    if prefix is None:
+        assert False
+        return []
+    else:
+        return [os.path.join("$ORIGIN", prefix, "lib")]
 
 ffibuilder = FFI()
 
@@ -100,8 +134,8 @@ ffibuilder.cdef(
     char const *ls_hs_basis_state_to_string(ls_hs_basis const *,
                                             uint64_t const *state);
 
-    void chpl_library_init_wrapper(void);
-    void chpl_library_finalize(void);
+    void ls_chpl_init(void);
+    void ls_chpl_finalize(void);
 """
 )
 
@@ -132,47 +166,19 @@ ffibuilder.set_source(
     static uint64_t const* ls_hs_basis_states(ls_hs_basis const* basis) {
       return basis->representatives.elts;
     }
-
-    extern void chpl__init_BatchedOperator(int64_t _ln, int32_t _fn);
-    extern void chpl__init_CommunicationQueue(int64_t _ln, int32_t _fn);
-    extern void chpl__init_ConcurrentAccessor(int64_t _ln, int32_t _fn);
-    extern void chpl__init_DistributedMatrixVector(int64_t _ln, int32_t _fn);
-    extern void chpl__init_FFI(int64_t _ln, int32_t _fn);
-    extern void chpl__init_ForeignTypes(int64_t _ln, int32_t _fn);
-    extern void chpl__init_LatticeSymmetries(int64_t _ln, int32_t _fn);
-    extern void chpl__init_MatrixVectorProduct(int64_t _ln, int32_t _fn);
-    extern void chpl__init_StatesEnumeration(int64_t _ln, int32_t _fn);
-    extern void chpl__init_Vector(int64_t _ln, int32_t _fn);
-
-    extern void chpl_library_init(int argc, char* argv[]);
-    extern void chpl_library_finalize(void);
-    extern void ls_chpl_init_kernels(void);
-
-    static void chpl_library_init_wrapper(void) {
-        int const argc = 1;
-        char* argv[2] = {"lattice_symmetries", NULL};
-        chpl_library_init(argc, argv);
-        chpl__init_BatchedOperator(1, 2);
-        chpl__init_CommunicationQueue(1, 2);
-        chpl__init_ConcurrentAccessor(1, 2);
-        chpl__init_DistributedMatrixVector(1, 2);
-        chpl__init_FFI(1, 2);
-        chpl__init_ForeignTypes(1, 2);
-        chpl__init_StatesEnumeration(1, 2);
-        chpl__init_Vector(1, 2);
-        chpl__init_LatticeSymmetries(1, 2);
-        chpl__init_MatrixVectorProduct(1, 2);
-    }
 """,
-    include_dirs=[# "../cbits", "/home/tom/src/distributed-matvec/lib/lattice_symmetries_chapel.h"],
-                  "/home/tom/src/distributed-matvec/third_party/include"],
+    include_dirs=get_include_dirs(),
+    # [# "../cbits", "/home/tom/src/distributed-matvec/lib/lattice_symmetries_chapel.h"],
+    #               "/home/tom/src/distributed-matvec/third_party/include"],
     extra_compile_args=["-Wall", "-Wextra"],
     libraries=["lattice_symmetries_chapel", "lattice_symmetries_haskell", "lattice_symmetries_core"],
-    library_dirs=[
-                  "/home/tom/src/distributed-matvec/third_party/lib",
-                  # "../dist-newstyle/build/x86_64-linux/ghc-8.10.7/lattice-symmetries-haskell-0.1.0.0/f/lattice_symmetries_haskell/noopt/build/lattice_symmetries_haskell",
-                  # "../kernels/build",
-                  "/home/tom/src/distributed-matvec/lib"],
+    library_dirs=get_library_dirs(),
+    extra_link_args=["-Wl,-rpath,{}".format(d) for d in get_runtime_dirs()],
+    # [
+    #               "/home/tom/src/distributed-matvec/third_party/lib",
+    #               # "../dist-newstyle/build/x86_64-linux/ghc-8.10.7/lattice-symmetries-haskell-0.1.0.0/f/lattice_symmetries_haskell/noopt/build/lattice_symmetries_haskell",
+    #               # "../kernels/build",
+    #               "/home/tom/src/distributed-matvec/lib"],
 )
 
 if __name__ == "__main__":

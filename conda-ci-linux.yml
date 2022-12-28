@@ -8,3 +8,4 @@ dependencies:
   - gmp
   - libffi
   - numactl-devel-cos7-x86_64
+  - zlib

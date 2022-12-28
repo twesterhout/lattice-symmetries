@@ -37,19 +37,20 @@ import threading
 from typing import overload, Any, List, Optional, Tuple, Union
 import weakref
 
+__version__ = "2.0.0"
 
 class _RuntimeInitializer:
     def __init__(self):
         print("Initializing Haskell runtime...")
         lib.ls_hs_init()
         print("Initializing Chapel runtime...")
-        lib.chpl_library_init_wrapper()
+        lib.ls_chpl_init()
 
     def __del__(self):
+        print("Deinitializing Chapel runtime...")
+        lib.ls_chpl_finalize()
         print("Deinitializing Haskell runtime...")
         lib.ls_hs_exit()
-        print("Deinitializing Chapel runtime...")
-        lib.chpl_library_finalize()
 
 
 _runtime_init = _RuntimeInitializer()
