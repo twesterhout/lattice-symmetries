@@ -1,4 +1,6 @@
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE OverloadedLists #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module LatticeSymmetries.Parser
   ( pSpinlessFermionicOperator,
@@ -8,15 +10,17 @@ module LatticeSymmetries.Parser
     pBasisState,
     pNumber,
     pExpr,
-    mkExprSafe,
     mkExpr,
+    mkExpr',
+    mkSomeExpr,
+    mkSomeExpr',
     SpinIndex (..),
     -- mkSpinOperator,
-    termsFromText,
-    operatorFromString,
-    basisFromYAML,
-    hamiltonianFromYAML,
-    observablesFromYAML,
+    -- termsFromText,
+    -- operatorFromString,
+    -- basisFromYAML,
+    -- hamiltonianFromYAML,
+    -- observablesFromYAML,
     configFromYAML,
     ConfigSpec (..),
   )
@@ -25,7 +29,7 @@ where
 import Data.Aeson hiding ((<?>))
 import qualified Data.Aeson.Key
 import qualified Data.Aeson.KeyMap
-import Data.Aeson.Types (JSONPathElement (..), Parser, Value, parserThrowError)
+import Data.Aeson.Types (JSONPathElement (..), Parser, parserThrowError)
 import Data.Bits
 -- import qualified Data.List.NonEmpty as NonEmpty
 import Data.Ratio
@@ -33,8 +37,6 @@ import qualified Data.Text as Text
 import Data.Vector (Vector)
 import qualified Data.Vector.Generic as G
 import Data.Yaml.Aeson (decodeFileWithWarnings, prettyPrintParseException)
-import Foreign.C.String (CString)
-import Foreign.Ptr (Ptr)
 -- import Data.String (IsString (..))
 -- import qualified Data.Vector.Generic as G
 
@@ -42,14 +44,11 @@ import LatticeSymmetries.Algebra
 import LatticeSymmetries.Basis
 import LatticeSymmetries.BitString
 import LatticeSymmetries.ComplexRational
-import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
 import LatticeSymmetries.Operator
 import LatticeSymmetries.Utils
 import Text.Parsec
-import Text.Parsec.Language (emptyDef)
 import Text.Parsec.Token
-import Type.Reflection
 -- import qualified Text.Read (read)
 import Prelude hiding (Product, Sum, many, optional, (<|>))
 
@@ -130,7 +129,7 @@ pFermionicOperatorType =
         False -> pure FermionAnnihilate
 
 pSpinfulFermionicOperator ::
-  (Num c, Stream s m Char) =>
+  Stream s m Char =>
   ParsecT s u m (Expr 'SpinfulFermionTy)
 pSpinfulFermionicOperator = do
   (_, t) <- pFermionicOperatorType
@@ -138,7 +137,7 @@ pSpinfulFermionicOperator = do
   pure $ Expr [Scaled 1 [Generator i t]]
 
 pSpinlessFermionicOperator ::
-  (Num c, Stream s m Char) =>
+  Stream s m Char =>
   ParsecT s u m (Expr 'SpinlessFermionTy)
 pSpinlessFermionicOperator = do
   (_, t) <- pFermionicOperatorType
@@ -204,7 +203,7 @@ pNumber = (try pComplex <|> (ComplexRational <$> pReal <*> pure 0)) <?> "real or
       c <- char '+' <|> char '-'
       skipSpaces
       i <- pReal
-      (char 'i' >> char 'm') <|> (char 'I') <|> (char 'ⅈ')
+      _ <- (char 'i' >> char 'm') <|> (char 'I') <|> (char 'ⅈ')
       if c == '+'
         then pure i
         else pure (-i)
@@ -271,28 +270,84 @@ instance IsString (Expr 'SpinlessFermionTy) where
 instance IsString (Expr 'SpinfulFermionTy) where
   fromString = mkExpr SpinfulFermionTag . toText
 
-mkExprSafe :: ParticleTag t -> Text -> Either ParseError (Expr t)
-mkExprSafe SpinTag s = parse (pExpr pSpinOperator) "" s
-mkExprSafe SpinlessFermionTag s = parse (pExpr pSpinlessFermionicOperator) "" s
-mkExprSafe SpinfulFermionTag s = parse (pExpr pSpinfulFermionicOperator) "" s
+mkExpr' :: ParticleTag t -> Text -> Either Text (Expr t)
+mkExpr' t s = case run t of
+  Left e -> Left (show e)
+  Right x -> Right x
+  where
+    run :: ParticleTag t -> Either ParseError (Expr t)
+    run SpinTag = parse (pExpr pSpinOperator) "" s
+    run SpinlessFermionTag = parse (pExpr pSpinlessFermionicOperator) "" s
+    run SpinfulFermionTag = parse (pExpr pSpinfulFermionicOperator) "" s
 
-mkExpr :: ParticleTag t -> Text -> Expr t
-mkExpr tag s = either (error . show) id (mkExprSafe tag s)
+mkExpr :: HasCallStack => ParticleTag t -> Text -> Expr t
+mkExpr tag s = either error id $ mkExpr' tag s
+
+mkSomeExpr' :: Maybe ParticleTy -> Text -> Either Text SomeExpr
+mkSomeExpr' tp s
+  | Just SpinTy <- tp = make SpinTag
+  | Just SpinlessFermionTy <- tp = make SpinlessFermionTag
+  | Just SpinfulFermionTy <- tp = make SpinfulFermionTag
+  | isJust $ Text.find (\c -> c == 'σ' || c == 'S') s = make SpinTag
+  | isJust $ Text.find (\c -> c == '↑' || c == '↓') s = make SpinfulFermionTag
+  | otherwise = make SpinlessFermionTag
+  where
+    make :: ParticleTag t -> Either Text SomeExpr
+    make tag = fmap (SomeExpr tag) $ mkExpr' tag s
+
+mkSomeExpr :: HasCallStack => Maybe ParticleTy -> Text -> SomeExpr
+mkSomeExpr tp s = either error id $ mkSomeExpr' tp s
+
+exprFromJSON :: (Maybe ParticleTy -> Text -> Either Text a) -> ([[Int]] -> a -> a) -> Value -> Parser a
+exprFromJSON f expand = withObject "Expr" $ \v -> do
+  tp <- v .:? "particle"
+  s <- v .: "expression"
+  sites <- v .:? "sites"
+  let expand' x = case sites of
+        Just is -> expand is x
+        Nothing -> x
+  case fmap expand' (f tp s) of
+    Left e -> parserThrowError [Key "expression"] (toString e)
+    Right x -> pure x
+
+instance (IsBasis t, HasSiteIndex (IndexType t)) => FromJSON (Expr t) where
+  parseJSON = exprFromJSON (exprParserConcrete (particleDispatch @t)) replicateSiteIndices
+    where
+      exprParserConcrete :: ParticleTag t -> Maybe ParticleTy -> Text -> Either Text (Expr t)
+      exprParserConcrete tag Nothing s = mkExpr' tag s
+      exprParserConcrete tag (Just tp) s
+        | particleTagToType tag == tp = mkExpr' tag s
+        | otherwise = Left $ "invalid particle type: " <> show tp <> "; expected " <> show (particleTagToType tag)
 
 instance FromJSON SomeExpr where
-  parseJSON = withObject "SomeExpr" $ \v -> do
-    tp <- v .:? "particle"
-    s <- v .: "expression"
-    let make :: ParticleTag t -> Parser SomeExpr
-        make tag = either (parserThrowError [Key "expression"] . show) (pure . SomeExpr tag) $ mkExprSafe tag s
-        dispatch
-          | Just SpinTy <- tp = make SpinTag
-          | Just SpinlessFermionTy <- tp = make SpinlessFermionTag
-          | Just SpinfulFermionTy <- tp = make SpinfulFermionTag
-          | isJust $ Text.find (\c -> c == 'σ' || c == 'S') s = make SpinTag
-          | isJust $ Text.find (\c -> c == '↑' || c == '↓') s = make SpinfulFermionTag
-          | otherwise = make SpinlessFermionTag
-    dispatch
+  parseJSON = exprFromJSON mkSomeExpr' expandSomeExpr
+    where
+      expandSomeExpr :: [[Int]] -> SomeExpr -> SomeExpr
+      expandSomeExpr indices = mapSomeExpr @IsBasis (replicateSiteIndices indices)
+
+-- instance FromJSON SomeExpr where
+--   parseJSON = withObject "SomeExpr" $ \v -> do
+--     tp <- v .:? "particle"
+--     s <- v .: "expression"
+--     sites <- v .:? "sites"
+--     let expand x = case sites of
+--           Just is -> Expr $ forSiteIndices (unExpr x) is
+--           Nothing -> x
+--     case fmap expand of
+--       Left e -> parserThrowError [Key "expression"] (show e)
+--       Right x -> pure x
+
+-- (pure . SomeExpr tag) $ mkExprSafe tag s
+-- let make :: ParticleTag t -> Parser SomeExpr
+--     make tag = either (parserThrowError [Key "expression"] . show) (pure . SomeExpr tag) $ mkExprSafe tag s
+--     dispatch
+--       | Just SpinTy <- tp = make SpinTag
+--       | Just SpinlessFermionTy <- tp = make SpinlessFermionTag
+--       | Just SpinfulFermionTy <- tp = make SpinfulFermionTag
+--       | isJust $ Text.find (\c -> c == 'σ' || c == 'S') s = make SpinTag
+--       | isJust $ Text.find (\c -> c == '↑' || c == '↓') s = make SpinfulFermionTag
+--       | otherwise = make SpinlessFermionTag
+-- dispatch
 
 -- mkSpinOperator ::
 --   HasCallStack =>
@@ -309,6 +364,7 @@ instance FromJSON SomeExpr where
 --   SpinfulFermionHeader _ _ -> pFermionicOperator
 --   SpinlessFermionHeader _ _ -> pFermionicOperator
 
+{-
 getPrimitiveParser ::
   forall (t :: ParticleTy) s m proxy u.
   (Stream s m Char, Typeable t) =>
@@ -329,18 +385,24 @@ termsFromText ::
 termsFromText s indices = case parse (pOperatorString (getPrimitiveParser (Proxy @t))) "" s of
   Left e -> error $ "failed to parse " <> show s <> ": " <> show e
   Right x -> forSiteIndices (unExpr x) indices
+-}
 
+{-
 operatorFromString ::
   forall t.
   IsBasis t =>
   Basis t ->
   Text ->
-  [[Int]] ->
+  Maybe [[Int]] ->
   Operator t
-operatorFromString basis s indices =
-  operatorFromHeader . OperatorHeader basis $
-    Expr $
-      termsFromText @t s indices
+operatorFromString basis s maybeIndices =
+  operatorFromHeader . OperatorHeader basis $ expand expr
+  where
+    expr = mkExpr (getParticleTag (basisHeader basis)) s
+    expand x = case maybeIndices of
+      Just indices -> Expr $ forSiteIndices (unExpr x) indices
+      Nothing -> x
+-}
 
 pBasisState :: Stream s m Char => ParsecT s u m (BasisState t)
 pBasisState = do
@@ -429,11 +491,11 @@ instance IsString (BasisState t) where
 
 -- normalizeIndices :: NonEmpty PrimitiveOperator -> Either Text (NonEmpty PrimitiveOperator)
 -- normalizeIndices = undefined
-termsFromJSON :: forall t. IsBasis t => Value -> Parser (Polynomial ComplexRational (Factor t))
-termsFromJSON = withObject "Term" $ \v -> do
-  expr <- v .: "expression"
-  sites <- v .: "sites"
-  pure $ termsFromText @t expr sites
+-- termsFromJSON :: forall t. IsBasis t => Value -> Parser (Polynomial ComplexRational (Factor t))
+-- termsFromJSON = withObject "Term" $ \v -> do
+--   expr <- v .: "expression"
+--   sites <- v .: "sites"
+--   pure $ termsFromText @t expr sites
 
 objectFromYAML :: (HasCallStack, FromJSON a) => Text -> Text -> IO a
 objectFromYAML name filename = do
@@ -465,33 +527,32 @@ instance FromJSON ConfigSpec where
 configFromYAML :: HasCallStack => Text -> IO ConfigSpec
 configFromYAML path = objectFromYAML "config" path
 
-basisFromYAML :: HasCallStack => Text -> IO SomeBasis
-basisFromYAML = fmap (\(ConfigSpec basis _ _) -> basis) . configFromYAML
+-- basisFromYAML :: HasCallStack => Text -> IO SomeBasis
+-- basisFromYAML = fmap (\(ConfigSpec basis _ _) -> basis) . configFromYAML
 
-hamiltonianFromYAML :: HasCallStack => Text -> IO SomeOperator
-hamiltonianFromYAML path = do
-  (ConfigSpec basis maybeHamiltonian _) <- configFromYAML path
-  case maybeHamiltonian of
-    Just h -> pure h
-    Nothing -> error $ "missing 'hamiltonian' key in '" <> path <> "'"
+-- hamiltonianFromYAML :: HasCallStack => Text -> IO SomeOperator
+-- hamiltonianFromYAML path = do
+--   (ConfigSpec basis maybeHamiltonian _) <- configFromYAML path
+--   case maybeHamiltonian of
+--     Just h -> pure h
+--     Nothing -> error $ "missing 'hamiltonian' key in '" <> path <> "'"
 
-observablesFromYAML :: HasCallStack => Text -> IO (Vector SomeOperator)
-observablesFromYAML = fmap (\(ConfigSpec _ _ observables) -> observables) . configFromYAML
+-- observablesFromYAML :: HasCallStack => Text -> IO (Vector SomeOperator)
+-- observablesFromYAML = fmap (\(ConfigSpec _ _ observables) -> observables) . configFromYAML
 
 -- basisFromYAML :: HasCallStack => Text -> IO SomeBasis
 -- basisFromYAML path = (\(BasisOnlyConfig x) -> x) <$> objectFromYAML "Basis" path
 
-data OperatorTermSpec = OperatorTermSpec !Text ![[Int]]
+-- data OperatorTermSpec = OperatorTermSpec !Text !(Maybe [[Int]])
 
-instance FromJSON OperatorTermSpec where
-  parseJSON = withObject "Term" $ \v ->
-    OperatorTermSpec <$> v .: "expression" <*> v .: "sites"
+-- instance FromJSON OperatorTermSpec where
+--   parseJSON = withObject "Term" $ \v ->
+--     OperatorTermSpec <$> v .: "expression" <*> v .:? "sites"
 
 operatorFromJSON :: IsBasis t => Basis t -> Value -> Parser (Operator t)
 operatorFromJSON basis = withObject "Operator" $ \v -> do
-  (terms :: NonEmpty OperatorTermSpec) <- v .: "terms"
-  let (o :| os) = fmap (\(OperatorTermSpec expr sites) -> operatorFromString basis expr sites) terms
-  pure $ foldl' (+) o os
+  ((t :| ts) :: NonEmpty (Expr t)) <- v .: "terms"
+  pure $ operatorFromHeader . OperatorHeader basis $ foldl' (+) t ts
 
 -- newtype BasisAndHamiltonianConfig = BasisAndHamiltonianConfig SomeOperator
 --

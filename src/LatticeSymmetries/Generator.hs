@@ -14,6 +14,7 @@ module LatticeSymmetries.Generator
     ParticleTy (..),
     ParticleTag (..),
     particleTagToType,
+    particleDispatch,
     IndexType (..),
     GeneratorType (..),
     HasSiteIndex (..),

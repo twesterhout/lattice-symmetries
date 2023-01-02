@@ -443,6 +443,13 @@ main = hspec $ do
                 Scaled (ComplexRational (9 % 2) 0) [Generator 10 SpinZ]
               ]
           )
+      mkExpr' SpinTag "σᶻ₉ σᶻ₁₀ + σ⁺₅ σ⁺₆"
+        `shouldBe` Right
+          ( Expr
+              [ Scaled 1 [Generator 5 SpinPlus, Generator 6 SpinPlus],
+                Scaled 1 [Generator 9 SpinZ, Generator 10 SpinZ]
+              ]
+          )
   it "" $ do
     replicateSiteIndices [[0, 1], [1, 2], [2, 3]] ("σ⁺₁ σ⁻₂" :: Expr 'SpinTy)
       `shouldBe` "σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₂ + σ⁺₂ σ⁻₃"

@@ -406,11 +406,11 @@ ls_hs_operator_get_expr opPtr =
         (getParticleTag . basisHeader . opBasis . opHeader $ op)
         (opTerms . opHeader $ op)
 
-foreign export ccall "ls_hs_load_hamiltonian_from_yaml"
-  ls_hs_load_hamiltonian_from_yaml :: CString -> IO (Ptr Coperator)
-
-ls_hs_load_hamiltonian_from_yaml cFilename =
-  foldSomeOperator borrowCoperator =<< hamiltonianFromYAML =<< peekUtf8 cFilename
+-- foreign export ccall "ls_hs_load_hamiltonian_from_yaml"
+--   ls_hs_load_hamiltonian_from_yaml :: CString -> IO (Ptr Coperator)
+--
+-- ls_hs_load_hamiltonian_from_yaml cFilename =
+--   foldSomeOperator borrowCoperator =<< hamiltonianFromYAML =<< peekUtf8 cFilename
 
 foreign import ccall "ls_hs_destroy_basis_v2"
   ls_hs_destroy_basis_v2 :: Ptr Cbasis -> IO ()

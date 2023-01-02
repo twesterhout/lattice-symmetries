@@ -17,6 +17,8 @@ module LatticeSymmetries.Algebra
     Expr (..),
     SomeExpr (..),
     withSomeExpr,
+    forSomeExpr,
+    mapSomeExpr,
 
     -- * Fermionic and spin (bosonic) algebra
     CommutatorType (..),
