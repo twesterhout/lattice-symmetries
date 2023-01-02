@@ -14,7 +14,7 @@ cmake -GNinja \
   -DLatticeSymmetries_ENABLE_CPPCHECK=OFF \
   -DLatticeSymmetries_ENABLE_CODE_COVERAGE=OFF \
   -DLatticeSymmetries_LINK_STDLIB_STATICALLY=OFF \
-  -DCMAKE_OSX_DEPLOYMENT_TARGET=11.3 \
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15 \
   ..
 cmake --build .
 if [[ $(uname) == "Linux" ]]; then
