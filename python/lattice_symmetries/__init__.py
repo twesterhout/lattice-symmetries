@@ -658,16 +658,25 @@ class SpinBasis:
         return _ls_bits512_to_int(representative), complex(character[0], character[1]), norm.value
 
     def batched_state_info(self, spins: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Batched version of `self.state_info`. `batched_state_info` is equivalent to looping over `spins`
-        and calling `self.state_info` for each element, but is much faster.
+        """Batched version of `self.state_info`. `batched_state_info` is equivalent to looping over `spins` and calling `self.state_info` for each element, but is much faster.
         """
         if (
             not isinstance(spins, np.ndarray)
             or spins.dtype != np.uint64
-            or spins.ndim != 2
-            or spins.shape[1] != 8
+            or spins.ndim not in [1, 2]
+            or (spins.ndim == 2 and spins.shape[1] != 8)
         ):
-            raise TypeError("'spins' must be a 2D NumPy array of uint64 of shape (batch_size, 8)")
+            raise TypeError(
+                "'spins' must be a either 2D NumPy array of uint64 of shape (batch_size, 8) or 1D NumpyArray of uint64 of shape (batch_size,)"
+            )
+        one_column = spins.ndim == 1
+        if one_column:
+            spins = np.pad(
+                spins.reshape(-1, 1),
+                [(0, 0), (0, 7)],
+                "constant",
+                constant_values=0,
+            )
         if not spins.flags["C_CONTIGUOUS"]:
             spins = np.ascontiguousarray(spins)
         batch_size = spins.shape[0]
@@ -686,6 +695,10 @@ class SpinBasis:
             norm.ctypes.data_as(POINTER(c_double)),
             norm.strides[0] // norm.itemsize,
         )
+
+        if one_column:
+            representative = representative[:, 0]
+
         return representative, eigenvalue, norm
 
     def index(self, bits: int) -> int:
