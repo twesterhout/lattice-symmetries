@@ -211,8 +211,8 @@ destroyCnonbranching_terms p
 --   bool needs_projection;
 -- } ls_hs_operator;
 
-foreign import ccall safe "ls_hs_destroy_basis_v2"
-  ls_hs_destroy_basis :: Ptr Cbasis -> IO ()
+-- foreign import ccall safe "ls_hs_destroy_basis_v2"
+--   ls_hs_destroy_basis :: Ptr Cbasis -> IO ()
 
 foreign import ccall unsafe "ls_internal_create_apply_off_diag_kernel_data"
   ls_internal_create_apply_off_diag_kernel_data :: Ptr Cnonbranching_terms -> IO (Ptr Coperator_kernel_data)
@@ -237,7 +237,7 @@ operatorFromHeader x = unsafePerformIO $ do
   basis <- borrowCbasis (opBasis x)
 
   fp <- mallocForeignPtr
-  addForeignPtrConcFinalizer fp (ls_hs_destroy_basis basis)
+  addForeignPtrConcFinalizer fp (destroyCbasis basis)
   addForeignPtrConcFinalizer fp (ls_internal_destroy_operator_kernel_data apply_off_diag_cxt)
   addForeignPtrConcFinalizer fp (ls_internal_destroy_operator_kernel_data apply_diag_cxt)
   addForeignPtrConcFinalizer fp (destroyCnonbranching_terms off_diag_terms)
@@ -263,6 +263,12 @@ borrowCoperator operator = do
     _ <- operatorIncRefCount ptr
     operatorPokePayload ptr payload
   pure $ unsafeForeignPtrToPtr (opContents operator)
+
+destroyCoperator :: Ptr Coperator -> IO ()
+destroyCoperator ptr = do
+  refcount <- operatorDecRefCount ptr
+  when (refcount == 1) $
+    freeStablePtr =<< operatorPeekPayload ptr
 
 --
 -- createCoperator ::

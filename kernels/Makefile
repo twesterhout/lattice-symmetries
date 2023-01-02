@@ -53,8 +53,10 @@ HL_ALL_TARGETS += $(HL_BASE_TARGET)
 
 CC = cc
 CXX = c++
-CFLAGS = -O3 -DNDEBUG -march=nehalem -mtune=haswell
-# -march=native
+CFLAGS = -O3 -DNDEBUG 
+ifeq ($(UNAME_M),x86_64)
+  CFLAGS += -march=nehalem -mtune=haswell
+endif
 SHELL = bash
 BIN_DIR ?= build
 SANITIZER_FLAGS ?=
@@ -62,9 +64,9 @@ GENERATOR_OUTPUTS ?= static_library,c_header,stmt_html,assembly
 
 LDFLAGS =
 ifeq ($(UNAME), Linux)
-LDFLAGS += -ldl -lpthread
+  LDFLAGS += -ldl -lpthread
 endif
-CFLAGS += -I ../cbits -isystem $(HALIDE_DISTRIB_PATH)/include/ -isystem $(HALIDE_DISTRIB_PATH)/share/Halide/tools/ -Wall -Wextra -Wpedantic -Wconversion -Wdouble-promotion -Wformat=2 -Wformat-overflow=2 -Winit-self -Wimplicit-fallthrough -Wunused -Wuninitialized -Wstrict-overflow=4 -Wduplicated-branches -Wfloat-equal -Wshadow -Wundef -Wunused-macros -Wmissing-field-initializers
+CFLAGS += -I ../cbits -isystem $(HALIDE_DISTRIB_PATH)/include/ -isystem $(HALIDE_DISTRIB_PATH)/share/Halide/tools/ -Wall -Wextra -Wpedantic -Wconversion -Wdouble-promotion -Wformat=2 -Wformat-overflow=2 -Winit-self -Wimplicit-fallthrough -Wunused -Wuninitialized -Wstrict-overflow=2 -Wduplicated-branches -Wfloat-equal -Wshadow -Wundef -Wunused-macros -Wmissing-field-initializers
 CXXFLAGS += -std=c++17 -I $(HALIDE_DISTRIB_PATH)/include/ -I $(HALIDE_DISTRIB_PATH)/share/Halide/tools/ $(SANITIZER_FLAGS) -Wall -Wno-unused-function -Wcast-qual -Wignored-qualifiers -Wno-comment -Wsign-compare -Wno-unknown-warning-option -Wno-psabi
 
 ifeq ($(UNAME), Darwin)
@@ -127,7 +129,7 @@ all: $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) ../cabal.project.local
 	echo "                  $(CONDA_PREFIX)/lib" >>cabal.project.local && \
 	echo "  ghc-options: -pgmP $(CONDA_CC) -pgmc $(CONDA_CC) -pgma $(CONDA_CC) -pgml $(CONDA_CC)" >>cabal.project.local
 
-$(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT): $(BIN_DIR)/reference.o $(BIN_DIR)/indexing.o $(BIN_DIR)/binary_search.o $(BIN_DIR)/kernels.o $(OPS) $(BIN_DIR)/runtime.a 
+$(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT): $(BIN_DIR)/reference.o $(BIN_DIR)/indexing.o $(BIN_DIR)/kernels.o $(OPS) $(BIN_DIR)/runtime.a 
 	@mkdir -p $(@D)
 	$(CONDA_CC) $(SHARED_FLAG) -o $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) $^ $(LDFLAGS)
 ifeq ($(UNAME), Darwin)
@@ -142,9 +144,9 @@ $(BIN_DIR)/indexing.o: indexing.c ../cbits/lattice_symmetries_haskell.h
 	@mkdir -p $(@D)
 	$(CC) -fPIC $(CFLAGS) -I$(PWD)/../cbits -o $@ -c $<
 
-$(BIN_DIR)/binary_search.o: binary_search.c ../cbits/lattice_symmetries_haskell.h
-	@mkdir -p $(@D)
-	$(CC) -fPIC $(CFLAGS) -I$(PWD)/../cbits -o $@ -c $<
+# $(BIN_DIR)/binary_search.o: binary_search.c ../cbits/lattice_symmetries_haskell.h
+# 	@mkdir -p $(@D)
+# 	$(CC) -fPIC $(CFLAGS) -I$(PWD)/../cbits -o $@ -c $<
 
 $(BIN_DIR)/kernels.o: kernels.c $(BIN_DIR)/kernels.h ../cbits/lattice_symmetries_haskell.h
 	@mkdir -p $(@D)

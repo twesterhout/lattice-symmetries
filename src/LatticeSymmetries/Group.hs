@@ -15,7 +15,7 @@ module LatticeSymmetries.Group
     nullSymmetries,
     emptySymmetries,
     symmetriesGetNumberBits,
-    symmetriesFromSpec,
+    -- symmetriesFromSpec,
     borrowCsymmetries,
     withReconstructedSymmetries,
   )
@@ -39,7 +39,7 @@ import GHC.ForeignPtr (unsafeForeignPtrToPtr)
 import LatticeSymmetries.Benes
 import LatticeSymmetries.Dense
 import LatticeSymmetries.FFI
-import LatticeSymmetries.IO
+-- import LatticeSymmetries.IO
 import LatticeSymmetries.Utils
 import System.IO.Unsafe (unsafePerformIO)
 import Prelude hiding (identity, permutations, toList)
@@ -229,12 +229,12 @@ symmetriesFromHeader x = unsafePerformIO $ do
   pure $ Symmetries x fp
 {-# NOINLINE symmetriesFromHeader #-}
 
-symmetryFromSpec :: SymmetrySpec -> Symmetry
-symmetryFromSpec (SymmetrySpec p k) =
-  mkSymmetry (mkPermutation (G.fromList (toList p))) k
+-- symmetryFromSpec :: SymmetrySpec -> Symmetry
+-- symmetryFromSpec (SymmetrySpec p k) =
+--   mkSymmetry (mkPermutation (G.fromList (toList p))) k
 
-symmetriesFromSpec :: [SymmetrySpec] -> Symmetries
-symmetriesFromSpec = mkSymmetries . fmap symmetryFromSpec
+-- symmetriesFromSpec :: [SymmetrySpec] -> Symmetries
+-- symmetriesFromSpec = mkSymmetries . fmap symmetryFromSpec
 
 borrowCsymmetries :: Symmetries -> IO (Ptr Cpermutation_group)
 borrowCsymmetries symm = do

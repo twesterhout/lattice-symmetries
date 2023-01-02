@@ -94,9 +94,8 @@ foreign export ccall "ls_hs_destroy_symmetries"
 
 ls_hs_destroy_symmetries p = do
   refcount <- symmetriesDecRefCount p
-  when (refcount == 0) $ do
+  when (refcount == 1) $ do
     freeStablePtr =<< symmetriesPeekPayload p
-    free p
 
 foreign export ccall "ls_hs_clone_basis"
   ls_hs_clone_basis :: Ptr Cbasis -> IO (Ptr Cbasis)
@@ -104,6 +103,9 @@ foreign export ccall "ls_hs_clone_basis"
 ls_hs_clone_basis ptr = do
   _ <- basisIncRefCount ptr
   pure ptr
+
+foreign export ccall "ls_hs_destroy_basis"
+  destroyCbasis :: Ptr Cbasis -> IO ()
 
 -- foreign export ccall "ls_hs_create_spin_basis_from_json"
 --   ls_hs_create_spin_basis_from_json :: CString -> IO (Ptr Cbasis)
@@ -244,7 +246,7 @@ foreign export ccall "ls_hs_destroy_expr"
 
 ls_hs_destroy_expr p = do
   refcount <- exprDecRefCount p
-  when (refcount == 0) $ do
+  when (refcount == 1) $ do
     freeStablePtr =<< exprPeekPayload p
     free p
 
@@ -329,6 +331,9 @@ foreign export ccall "ls_hs_clone_operator"
 ls_hs_clone_operator ptr = do
   _ <- operatorIncRefCount ptr
   pure ptr
+
+foreign export ccall "ls_hs_destroy_operator"
+  destroyCoperator :: Ptr Coperator -> IO ()
 
 ls_hs_create_operator :: Ptr Cbasis -> Ptr Cexpr -> IO (Ptr Coperator)
 ls_hs_create_operator basisPtr exprPtr =
@@ -432,11 +437,11 @@ ls_hs_operator_get_expr opPtr =
 -- ls_hs_load_hamiltonian_from_yaml cFilename =
 --   foldSomeOperator borrowCoperator =<< hamiltonianFromYAML =<< peekUtf8 cFilename
 
-foreign import ccall "ls_hs_destroy_basis_v2"
-  ls_hs_destroy_basis_v2 :: Ptr Cbasis -> IO ()
+-- foreign import ccall "ls_hs_destroy_basis_v2"
+--   ls_hs_destroy_basis_v2 :: Ptr Cbasis -> IO ()
 
-foreign import ccall "ls_hs_destroy_operator_v2"
-  ls_hs_destroy_operator_v2 :: Ptr Coperator -> IO ()
+-- foreign import ccall "ls_hs_destroy_operator_v2"
+--   ls_hs_destroy_operator_v2 :: Ptr Coperator -> IO ()
 
 toCyaml_config :: ConfigSpec -> IO (Ptr Cyaml_config)
 toCyaml_config (ConfigSpec basis maybeHamiltonian observables) = do
@@ -466,10 +471,10 @@ ls_hs_destroy_yaml_config p
   | otherwise = do
       (Cyaml_config basisPtr hamiltonianPtr numberObservables observablesPtr) <- peek p
       forM_ [0 .. fromIntegral numberObservables - 1] $ \i ->
-        ls_hs_destroy_operator_v2 =<< peekElemOff observablesPtr i
+        destroyCoperator =<< peekElemOff observablesPtr i
       when (observablesPtr /= nullPtr) $ free observablesPtr
-      when (hamiltonianPtr /= nullPtr) $ ls_hs_destroy_operator_v2 hamiltonianPtr
-      ls_hs_destroy_basis_v2 basisPtr
+      when (hamiltonianPtr /= nullPtr) $ destroyCoperator hamiltonianPtr
+      destroyCbasis basisPtr
       free p
 
 ls_hs_operator_pretty_terms :: Ptr Coperator -> IO CString

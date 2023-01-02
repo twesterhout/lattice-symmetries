@@ -47,7 +47,7 @@ void ls_hs_error(char const *message) {
 }
 
 void ls_hs_destroy_external_array(chpl_external_array *arr) {
-  fprintf(stderr, "Finalizing chpl_external_array %p ...\n", arr);
+  // fprintf(stderr, "Finalizing chpl_external_array %p ...\n", arr);
   LS_CHECK(arr != NULL, "trying to destroy a NULL chpl_external_array");
   if (arr->freer != NULL) {
     ls_hs_internal_chpl_free_func const free_func =
@@ -80,29 +80,29 @@ int ls_hs_internal_dec_refcount(_Atomic int *refcount) {
   return atomic_fetch_sub(refcount, 1);
 }
 
-void ls_hs_destroy_basis_v2(ls_hs_basis *basis) {
-  if (ls_hs_internal_dec_refcount(&basis->refcount) == 1) {
-    // Optionally free representatives
-    if (basis->representatives.freer != NULL) {
-      ls_hs_internal_chpl_free_func free_func =
-          (ls_hs_internal_chpl_free_func)basis->representatives.freer;
-      (*free_func)(basis->representatives.elts);
-    }
-    // Free Haskell payload
-    LS_CHECK(ls_hs_internal_free_stable_ptr != NULL,
-             "ls_hs_internal_free_stable_ptr not set");
-    (*ls_hs_internal_free_stable_ptr)(basis->haskell_payload);
-  }
-}
+// void ls_hs_destroy_basis_v2(ls_hs_basis *basis) {
+//   if (ls_hs_internal_dec_refcount(&basis->refcount) == 1) {
+//     // Optionally free representatives
+//     if (basis->representatives.freer != NULL) {
+//       ls_hs_internal_chpl_free_func free_func =
+//           (ls_hs_internal_chpl_free_func)basis->representatives.freer;
+//       (*free_func)(basis->representatives.elts);
+//     }
+//     // Free Haskell payload
+//     LS_CHECK(ls_hs_internal_free_stable_ptr != NULL,
+//              "ls_hs_internal_free_stable_ptr not set");
+//     (*ls_hs_internal_free_stable_ptr)(basis->haskell_payload);
+//   }
+// }
 
-void ls_hs_destroy_operator_v2(ls_hs_operator *op) {
-  if (ls_hs_internal_dec_refcount(&op->refcount) == 1) {
-    // Free Haskell payload
-    LS_CHECK(ls_hs_internal_free_stable_ptr != NULL,
-             "ls_hs_internal_free_stable_ptr not set");
-    (*ls_hs_internal_free_stable_ptr)(op->haskell_payload);
-  }
-}
+// void ls_hs_destroy_operator_v2(ls_hs_operator *op) {
+//   if (ls_hs_internal_dec_refcount(&op->refcount) == 1) {
+//     // Free Haskell payload
+//     LS_CHECK(ls_hs_internal_free_stable_ptr != NULL,
+//              "ls_hs_internal_free_stable_ptr not set");
+//     (*ls_hs_internal_free_stable_ptr)(op->haskell_payload);
+//   }
+// }
 
 #if 0
 typedef struct ls_hs_nonbranching_term {

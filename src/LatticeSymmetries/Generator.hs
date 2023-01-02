@@ -28,7 +28,7 @@ import Data.Bits
 import qualified Data.Text as Text
 import qualified Data.Vector.Generic as G
 import LatticeSymmetries.BitString
-import LatticeSymmetries.Dense
+-- import LatticeSymmetries.Dense
 import LatticeSymmetries.NonbranchingTerm
 import Prettyprinter (Doc, Pretty (..))
 import qualified Prettyprinter as Pretty
@@ -64,17 +64,20 @@ instance FromJSON ParticleTy where
 instance ToJSON ParticleTy where
   toJSON = String . renderStrict . Pretty.layoutCompact . pretty
 
+-- | Type-level analog of 'ParticleTy'.
 data ParticleTag (t :: ParticleTy) where
   SpinTag :: ParticleTag 'SpinTy
   SpinfulFermionTag :: ParticleTag 'SpinfulFermionTy
   SpinlessFermionTag :: ParticleTag 'SpinlessFermionTy
 
+-- | Get the runtime representation of the particle type.
 particleTagToType :: ParticleTag t -> ParticleTy
 particleTagToType x = case x of
   SpinTag -> SpinTy
   SpinfulFermionTag -> SpinfulFermionTy
   SpinlessFermionTag -> SpinlessFermionTy
 
+-- | Get the type-level representation of the particle type.
 particleDispatch :: forall (t :: ParticleTy). (HasCallStack, Typeable t) => ParticleTag t
 particleDispatch
   | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinTy) = SpinTag

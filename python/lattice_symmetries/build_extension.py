@@ -76,7 +76,7 @@ ffibuilder.cdef(
     void ls_hs_destroy_symmetries(ls_hs_permutation_group *);
 
     ls_hs_basis *ls_hs_clone_basis(ls_hs_basis const *);
-    void ls_hs_destroy_basis_v2(ls_hs_basis *);
+    void ls_hs_destroy_basis(ls_hs_basis *);
     uint64_t ls_hs_max_state_estimate(ls_hs_basis const *);
     uint64_t ls_hs_min_state_estimate(ls_hs_basis const *);
     ls_hs_basis *ls_hs_basis_from_json(char const *json_string);
@@ -125,7 +125,7 @@ ffibuilder.cdef(
     ls_hs_expr *ls_hs_expr_scale(ls_hs_scalar const *z, ls_hs_expr const *a);
 
     ls_hs_operator *ls_hs_create_operator(ls_hs_basis const *, ls_hs_expr const *);
-    void ls_hs_destroy_operator_v2(ls_hs_operator *);
+    void ls_hs_destroy_operator(ls_hs_operator *);
 
     ls_hs_operator *ls_hs_operator_plus(ls_hs_operator const *, ls_hs_operator const *);
     ls_hs_operator *ls_hs_operator_minus(ls_hs_operator const *, ls_hs_operator const *);

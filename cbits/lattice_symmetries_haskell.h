@@ -121,7 +121,7 @@ typedef struct ls_hs_basis {
 
 // ls_hs_basis *ls_hs_create_basis(ls_hs_particle_type, int, int, int);
 ls_hs_basis *ls_hs_clone_basis(ls_hs_basis const *);
-void ls_hs_destroy_basis_v2(ls_hs_basis *);
+void ls_hs_destroy_basis(ls_hs_basis *);
 uint64_t ls_hs_max_state_estimate(ls_hs_basis const *);
 uint64_t ls_hs_min_state_estimate(ls_hs_basis const *);
 int ls_hs_basis_number_bits(ls_hs_basis const *basis);
@@ -141,6 +141,12 @@ char const *ls_hs_basis_state_to_string(ls_hs_basis const *,
 void ls_hs_state_index(ls_hs_basis const *basis, ptrdiff_t batch_size,
                        uint64_t const *spins, ptrdiff_t spins_stride,
                        ptrdiff_t *indices, ptrdiff_t indices_stride);
+
+void ls_hs_build_representatives(ls_hs_basis *basis, uint64_t lower,
+                                 uint64_t upper);
+
+void ls_hs_unchecked_set_representatives(ls_hs_basis *basis,
+                                         chpl_external_array const *states);
 // }}}
 
 // {{{ Expr
@@ -229,9 +235,9 @@ ls_hs_expr const *ls_hs_operator_get_expr(ls_hs_operator const *);
 
 char const *ls_hs_operator_pretty_terms(ls_hs_operator const *);
 
-void ls_hs_destroy_operator_v2(ls_hs_operator *);
+void ls_hs_destroy_operator(ls_hs_operator *);
 
-ls_hs_operator *ls_hs_load_hamiltonian_from_yaml(char const *);
+// ls_hs_operator *ls_hs_load_hamiltonian_from_yaml(char const *);
 
 typedef struct ls_hs_yaml_config {
   ls_hs_basis const *basis;
@@ -407,65 +413,6 @@ typedef struct ls_chpl_kernels {
 
 ls_chpl_kernels const *ls_hs_internal_get_chpl_kernels();
 void ls_hs_internal_set_chpl_kernels(ls_chpl_kernels const *kernels);
-
-void ls_hs_build_representatives(ls_hs_basis *basis, uint64_t lower,
-                                 uint64_t upper);
-
-void ls_hs_unchecked_set_representatives(ls_hs_basis *basis,
-                                         chpl_external_array const *states);
-
-// Examples
-
-ls_hs_basis *ls_hs_spin_chain_10_basis();
-ls_hs_basis *ls_hs_spin_kagome_12_basis();
-ls_hs_basis *ls_hs_spin_kagome_16_basis();
-ls_hs_basis *ls_hs_spin_square_4x4_basis();
-
-#if 0
-typedef struct ls_sparse_operator ls_sparse_operator;
-typedef struct ls_term ls_term;
-
-typedef struct ls_hs_basis {
-  ls_flat_spin_basis const *payload;
-  void *context;
-} ls_hs_basis;
-
-typedef struct ls_hs_operator {
-  ls_sparse_operator const *payload;
-  void *context;
-} ls_hs_operator;
-
-typedef void (*ls_spin_copy_fn)(uint64_t const * /*source*/,
-                                uint64_t * /*destination*/);
-typedef void (*ls_spin_fill_fn)(uint64_t const * /*2D source*/,
-                                uint64_t /*count*/,
-                                uint64_t * /*2D destination*/);
-
-typedef struct ls_output_buffer {
-  uint64_t *spins;
-  _Complex double *coeffs;
-  _Complex double *const diagonal;
-  uint64_t const number_words;
-  ls_spin_copy_fn const spin_copy;
-  ls_spin_fill_fn const spin_fill;
-} ls_output_buffer;
-
-typedef struct ls_workspace {
-  uint64_t *spins;
-  _Complex double *characters;
-  double *norms;
-} ls_workspace;
-
-void ls_hs_create_operator(ls_hs_operator *self,
-                           ls_flat_spin_basis const *basis,
-                           unsigned number_terms, ls_term const *term);
-void ls_hs_destroy_operator(ls_hs_operator *self);
-void ls_hs_load_hamiltonian_from_yaml(ls_hs_operator *self, char const *path);
-void ls_hs_operator_get_basis(ls_hs_operator const *self, ls_hs_basis *basis);
-
-uint64_t ls_hs_apply_operator(ls_hs_operator const *term, uint64_t const *spin,
-                              ls_output_buffer *out, ls_workspace *workspace);
-#endif
 
 #ifdef __cplusplus
 } // extern "C"

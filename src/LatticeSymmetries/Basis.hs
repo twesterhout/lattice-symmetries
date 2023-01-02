@@ -42,6 +42,7 @@ module LatticeSymmetries.Basis
     GeneratorType,
     IsBasis,
     borrowCbasis,
+    destroyCbasis,
     Cparticle_type (..),
     Cbasis_kernels (..),
     createCbasis_kernels,
@@ -637,6 +638,17 @@ borrowCbasis basis = do
     _ <- basisIncRefCount ptr
     basisPokePayload ptr =<< newStablePtr basis
   pure $ unsafeForeignPtrToPtr (basisContents basis)
+
+foreign import ccall unsafe "ls_hs_destroy_external_array"
+  ls_hs_destroy_external_array :: Ptr Cexternal_array -> IO ()
+
+destroyCbasis :: Ptr Cbasis -> IO ()
+destroyCbasis ptr = do
+  refcount <- basisDecRefCount ptr
+  when (refcount == 1) $ do
+    reps <- basisPeekRepresentatives ptr
+    with reps ls_hs_destroy_external_array
+    freeStablePtr =<< basisPeekPayload ptr
 
 withCbasis :: Basis t -> (Ptr Cbasis -> IO a) -> IO a
 withCbasis x action = withForeignPtr (basisContents x) action

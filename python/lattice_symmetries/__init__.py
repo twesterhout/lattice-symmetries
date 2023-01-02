@@ -51,10 +51,10 @@ class _RuntimeInitializer:
         lib.set_python_exception_handler()
 
     def __del__(self):
-        logger.debug("Deinitializing Chapel runtime...")
-        lib.ls_chpl_finalize()
         logger.debug("Deinitializing Haskell runtime...")
         lib.ls_hs_exit()
+        logger.debug("Deinitializing Chapel runtime...")
+        lib.ls_chpl_finalize()
 
 
 _runtime_init = _RuntimeInitializer()
@@ -108,7 +108,7 @@ class Basis:
     def __init__(self, **kwargs):
         json_string = json.dumps(kwargs).encode("utf-8")
         self._payload = lib.ls_hs_basis_from_json(json_string)
-        self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_basis_v2, self._payload)
+        self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_basis, self._payload)
         self._representatives = None
 
     @property
@@ -497,7 +497,7 @@ class Operator(LinearOperator):
         _assert_subtype(basis, Basis)
         _assert_subtype(expression, Expr)
         self._payload = lib.ls_hs_create_operator(basis._payload, expression._payload)
-        self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_operator_v2, self._payload)
+        self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_operator, self._payload)
         self.basis = basis
         self.expression = expression
 

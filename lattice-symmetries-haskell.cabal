@@ -1,4 +1,4 @@
-cabal-version:         2.4
+cabal-version:         3.0
 name:                  lattice-symmetries-haskell
 version:               0.1.0.0
 synopsis:              See README for more info
@@ -7,14 +7,12 @@ license:               BSD-3-Clause
 license-file:          LICENSE
 author:                Tom Westerhout
 maintainer:            Tom Westerhout <14264576+twesterhout@users.noreply.github.com>
-copyright:             2021 Tom Westerhout
+copyright:             2021-2023 Tom Westerhout
 category:              Math
 build-type:            Simple
--- Custom
 extra-doc-files:       README.md
                        CHANGELOG.md
-tested-with:           GHC == 8.10.4
-                       GHC == 8.10.7
+tested-with:           GHC == 8.10.7
 
 flag use-standalone
   description: Use standalone option for foreign-library (requires GHC which was built with -fPIC support)
@@ -68,20 +66,20 @@ library
   import:              common-options
   hs-source-dirs:      src
   exposed-modules:     LatticeSymmetries
-                       LatticeSymmetries.ComplexRational
-                       LatticeSymmetries.Parser
                        LatticeSymmetries.Algebra
-                       LatticeSymmetries.Dense
                        LatticeSymmetries.Basis
-                       LatticeSymmetries.Generator
+                       LatticeSymmetries.Benes
                        LatticeSymmetries.BitString
+                       LatticeSymmetries.ComplexRational
+                       LatticeSymmetries.Dense
+                       LatticeSymmetries.FFI
+                       -- LatticeSymmetries.IO
+                       LatticeSymmetries.Generator
+                       LatticeSymmetries.Group
                        LatticeSymmetries.NonbranchingTerm
                        LatticeSymmetries.Operator
-                       LatticeSymmetries.Group
-                       LatticeSymmetries.Benes
+                       LatticeSymmetries.Parser
                        LatticeSymmetries.Utils
-                       LatticeSymmetries.FFI
-                       LatticeSymmetries.IO
   -- c-sources:           cbits/helpers.c
   --                      cbits/csr.c
   --                      cbits/reference.c
@@ -89,42 +87,38 @@ library
   include-dirs:        cbits
   build-tool-depends:  hsc2hs:hsc2hs
   build-depends:       vector
-                     -- , binary
-                     -- , vector-binary-instances
-                     , exceptions
-                     , safe-exceptions
-                     , some
-                     -- , resourcet
-                     -- , unliftio
-                     , unliftio-core
-                     , mtl
-                     , vector
                      , vector-algorithms
                      , text
-                     , scientific
+                     , bytestring
+                     , mtl
+                     , parsec
+                     , primitive
+                     , containers
+                     -- , binary
+                     -- , vector-binary-instances
+                     -- , exceptions
+                     , safe-exceptions
+                     , unliftio-core
+                     , prettyprinter >= 1.7
                      , yaml
                      , aeson >= 2
-                     , bytestring
+                     , scientific
                      , co-log
                      -- , co-log-core
                      -- , vector-algorithms
                      -- , deepseq
-                     , parsec
-                     , primitive
-                     , ghc-prim
+                     -- , ghc-prim
                      -- , mtl
-                     , random >= 1.2.0
+                     -- , random >= 1.2.0
                      -- , mwc-random
                      -- , text
                      -- , ghc-dump-core
                      -- , ghc-dump-util
-                     , containers
                      -- , template-haskell
                      -- , inline-c
                      -- , binary
                      -- , vector-binary-instances
                      -- , hdf5-hs
-                     , prettyprinter >= 1.7
                      -- , HaskellForMaths
   extra-libraries:     lattice_symmetries_core
   -- pkgconfig-depends:   lattice_symmetries
@@ -144,15 +138,10 @@ foreign-library lattice_symmetries_haskell
   --   mod-def-file: MyForeignLib.def
   hs-source-dirs:      lib
   other-modules:       ForeignLibrary
-  -- MyForeignLib.SomeModule
-  -- MyForeignLib.SomeOtherModule
-  -- c-sources:           csrc/MyForeignLibWrapper.c
   c-sources:           cbits/init.c
   cc-options:          -fPIC -Wall -Wextra
-  -- -Wpedantic
-  ghc-options:         -Wno-missing-signatures -threaded
-  -- -optl -Wl,--retain-symbols-file=api.txt
   include-dirs:        cbits
+  ghc-options:         -Wno-missing-signatures -threaded
   build-depends:       lattice-symmetries-haskell
                      , safe-exceptions
                      , text
@@ -163,19 +152,19 @@ foreign-library lattice_symmetries_haskell
                      , split
   buildable: True
 
-executable example01
-  import:              common-options
-  hs-source-dirs:      app
-  main-is:             Example01.hs
-  build-depends:       lattice-symmetries-haskell
-                     , prettyprinter >= 1.7
-  -- extra-libraries:     -- HSrts-ghc8.10.7
-                       -- HSghc-prim-0.6.1
-                       -- HSghc-boot-th-8.10.7
-  ghc-options:         -threaded
-                       -rtsopts
-                       -with-rtsopts=-N
-  buildable: False
+-- executable example01
+--   import:              common-options
+--   hs-source-dirs:      app
+--   main-is:             Example01.hs
+--   build-depends:       lattice-symmetries-haskell
+--                      , prettyprinter >= 1.7
+--   -- extra-libraries:     -- HSrts-ghc8.10.7
+--                        -- HSghc-prim-0.6.1
+--                        -- HSghc-boot-th-8.10.7
+--   ghc-options:         -threaded
+--                        -rtsopts
+--                        -with-rtsopts=-N
+--   buildable: False
 
 -- executable ising-ground-state
 --   import:              common-options

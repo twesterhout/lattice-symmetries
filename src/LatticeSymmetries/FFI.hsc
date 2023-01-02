@@ -16,8 +16,10 @@ module LatticeSymmetries.FFI
     symmetriesPokePayload,
     Cbasis (..),
     basisIncRefCount,
+    basisDecRefCount,
     basisPeekParticleType,
     basisPeekStateIndexKernel,
+    basisPeekRepresentatives,
     basisPeekPayload,
     basisPokePayload,
     Cexpr (..),
@@ -32,6 +34,7 @@ module LatticeSymmetries.FFI
     Coperator (..),
     Cscalar,
     operatorIncRefCount,
+    operatorDecRefCount,
     operatorPeekParticleType,
     operatorPeekNumberOffDiagTerms,
     operatorPeekPayload,
@@ -145,6 +148,10 @@ basisIncRefCount :: Ptr Cbasis -> IO CInt
 basisIncRefCount p = incRefCount (p `plusPtr` #{offset ls_hs_basis, refcount})
 {-# INLINE basisIncRefCount #-}
 
+basisDecRefCount :: Ptr Cbasis -> IO CInt
+basisDecRefCount p = decRefCount (p `plusPtr` #{offset ls_hs_basis, refcount})
+{-# INLINE basisDecRefCount #-}
+
 basisPeekParticleType :: Ptr Cbasis -> IO Cparticle_type
 basisPeekParticleType p = #{peek ls_hs_basis, particle_type} p
 {-# INLINE basisPeekParticleType #-}
@@ -164,6 +171,10 @@ basisPeekPayload p = #{peek ls_hs_basis, haskell_payload} p
 basisPokePayload :: Ptr Cbasis -> StablePtr a -> IO ()
 basisPokePayload p x = #{poke ls_hs_basis, haskell_payload} p x
 {-# INLINE basisPokePayload #-}
+
+basisPeekRepresentatives :: Ptr Cbasis -> IO Cexternal_array
+basisPeekRepresentatives p = #{peek ls_hs_basis, representatives} p
+{-# INLINE basisPeekRepresentatives #-}
 
 instance Storable Cbasis where
   sizeOf _ = #{size ls_hs_basis}
@@ -293,6 +304,10 @@ data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_operator" #-} Coperator = C
 operatorIncRefCount :: Ptr Coperator -> IO CInt
 operatorIncRefCount p = incRefCount (p `plusPtr` #{offset ls_hs_operator, refcount})
 {-# INLINE operatorIncRefCount #-}
+
+operatorDecRefCount :: Ptr Coperator -> IO CInt
+operatorDecRefCount p = decRefCount (p `plusPtr` #{offset ls_hs_operator, refcount})
+{-# INLINE operatorDecRefCount #-}
 
 operatorPeekParticleType :: Ptr Coperator -> IO Cparticle_type
 operatorPeekParticleType p = #{peek ls_hs_operator, basis} p >>= basisPeekParticleType

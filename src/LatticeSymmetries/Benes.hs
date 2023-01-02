@@ -4,7 +4,7 @@ module LatticeSymmetries.Benes
     mkPermutation,
     permuteVector,
     identityPermutation,
-    randomPermutation,
+    -- randomPermutation,
     BenesNetwork (..),
     toBenesNetwork,
     permuteBits,
@@ -33,7 +33,7 @@ import LatticeSymmetries.BitString
 import LatticeSymmetries.Dense
 import LatticeSymmetries.Utils
 import System.IO.Unsafe (unsafePerformIO)
-import System.Random
+-- import System.Random
 import Prelude hiding (cycle)
 
 -- auto const n = _info.source.size();
@@ -97,6 +97,7 @@ mkPermutation p
 instance Semigroup Permutation where
   (<>) x (Permutation ys) = Permutation $ permuteVector x ys
 
+{-
 randomShuffle :: (RandomGen g, G.Vector v a) => v a -> g -> (v a, g)
 randomShuffle xs g₀ = runST $ do
   v <- G.thaw xs
@@ -120,6 +121,7 @@ randomPermutation :: RandomGen g => Int -> g -> (Permutation, g)
 randomPermutation n g = (mkPermutation p, g')
   where
     (p, g') = randomShuffle (G.enumFromN 0 n) g
+-}
 
 newtype Index = Index Int
   deriving stock (Show, Eq, Ord)
