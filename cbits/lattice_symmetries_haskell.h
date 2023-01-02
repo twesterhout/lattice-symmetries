@@ -62,34 +62,6 @@ void ls_hs_free_stable_ptr(void *);
 
 void ls_hs_destroy_external_array(chpl_external_array *arr);
 
-// {{{ HDF5
-unsigned ls_hs_hdf5_get_dataset_rank(char const *filename, char const *dataset);
-void ls_hs_hdf5_get_dataset_shape(char const *filename, char const *dataset,
-                                  uint64_t *shape);
-void ls_hs_hdf5_create_dataset_u64(char const *filename, char const *dataset,
-                                   unsigned dim, uint64_t const *shape);
-void ls_hs_hdf5_create_dataset_f64(char const *filename, char const *dataset,
-                                   unsigned dim, uint64_t const *shape);
-void ls_hs_hdf5_create_dataset_f32(char const *filename, char const *dataset,
-                                   unsigned dim, uint64_t const *shape);
-void ls_hs_hdf5_create_dataset_c64(char const *filename, char const *dataset,
-                                   unsigned dim, uint64_t const *shape);
-void ls_hs_hdf5_create_dataset_c128(char const *filename, char const *dataset,
-                                    unsigned dim, uint64_t const *shape);
-void ls_hs_hdf5_write_chunk_u64(char const *filename, char const *dataset,
-                                unsigned dim, uint64_t const *offset,
-                                uint64_t const *shape, uint64_t const *data);
-void ls_hs_hdf5_write_chunk_f64(char const *filename, char const *dataset,
-                                unsigned dim, uint64_t const *offset,
-                                uint64_t const *shape, double const *data);
-void ls_hs_hdf5_read_chunk_u64(char const *filename, char const *dataset,
-                               unsigned dim, uint64_t const *offset,
-                               uint64_t const *shape, uint64_t *data);
-void ls_hs_hdf5_read_chunk_f64(char const *filename, char const *dataset,
-                               unsigned dim, uint64_t const *offset,
-                               uint64_t const *shape, double *data);
-// }}}
-
 // {{{ Basis
 typedef enum ls_hs_particle_type {
   LS_HS_SPIN,
@@ -128,7 +100,11 @@ typedef struct ls_hs_permutation_group {
   uint64_t *shifts;
   double *eigvals_re;
   double *eigvals_im;
+  void *haskell_payload;
 } ls_hs_permutation_group;
+
+ls_hs_permutation_group *ls_hs_symmetries_from_json(const char *json_string);
+void ls_hs_destroy_symmetries(ls_hs_permutation_group *);
 
 typedef struct ls_hs_basis {
   _Atomic int refcount;

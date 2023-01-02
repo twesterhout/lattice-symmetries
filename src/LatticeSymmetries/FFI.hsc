@@ -9,6 +9,11 @@ module LatticeSymmetries.FFI
     mkCindex_kernel,
     Cstate_info_kernel,
     Cis_representative_kernel,
+    Cpermutation_group (..),
+    symmetriesIncRefCount,
+    symmetriesDecRefCount,
+    symmetriesPeekPayload,
+    symmetriesPokePayload,
     Cbasis (..),
     basisIncRefCount,
     basisPeekParticleType,
@@ -34,7 +39,6 @@ module LatticeSymmetries.FFI
     Cexternal_array (..),
     emptyExternalArray,
     -- ls_hs_internal_destroy_external_array,
-    Cpermutation_group (..),
     Cchpl_kernels (..),
     Cyaml_config (..),
     -- ls_hs_internal_get_chpl_kernels,
@@ -364,16 +368,34 @@ instance Storable Cexternal_array where
 -- foreign import ccall unsafe "&ls_hs_internal_destroy_external_array"
 --   ls_hs_internal_destroy_external_array :: FunPtr (Ptr Cexternal_array -> IO ())
 
-data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_permutation_group" #-} Cpermutation_group = Cpermutation_group
-  { cpermutation_group_refcount :: {-# UNPACK #-} !CInt,
-    cpermutation_group_number_bits :: {-# UNPACK #-} !CInt,
-    cpermutation_group_number_shifts :: {-# UNPACK #-} !CInt,
-    cpermutation_group_number_masks :: {-# UNPACK #-} !CInt,
-    cpermutation_group_masks :: {-# UNPACK #-} !(Ptr Word64),
-    cpermutation_group_shifts :: {-# UNPACK #-} !(Ptr Word64),
-    cpermutation_group_eigvals_re :: {-# UNPACK #-} !(Ptr CDouble),
-    cpermutation_group_eigvals_im :: {-# UNPACK #-} !(Ptr CDouble)
-  }
+data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_permutation_group" #-} Cpermutation_group =
+  Cpermutation_group
+    { cpermutation_group_refcount :: {-# UNPACK #-} !CInt,
+      cpermutation_group_number_bits :: {-# UNPACK #-} !CInt,
+      cpermutation_group_number_shifts :: {-# UNPACK #-} !CInt,
+      cpermutation_group_number_masks :: {-# UNPACK #-} !CInt,
+      cpermutation_group_masks :: {-# UNPACK #-} !(Ptr Word64),
+      cpermutation_group_shifts :: {-# UNPACK #-} !(Ptr Word64),
+      cpermutation_group_eigvals_re :: {-# UNPACK #-} !(Ptr CDouble),
+      cpermutation_group_eigvals_im :: {-# UNPACK #-} !(Ptr CDouble),
+      cpermutation_group_haskell_payload :: {-# UNPACK #-} !(Ptr ())
+    }
+
+symmetriesIncRefCount :: Ptr Cpermutation_group -> IO CInt
+symmetriesIncRefCount p = incRefCount (p `plusPtr` #{offset ls_hs_permutation_group, refcount})
+{-# INLINE symmetriesIncRefCount #-}
+
+symmetriesDecRefCount :: Ptr Cpermutation_group -> IO CInt
+symmetriesDecRefCount p = decRefCount (p `plusPtr` #{offset ls_hs_permutation_group, refcount})
+{-# INLINE symmetriesDecRefCount #-}
+
+symmetriesPeekPayload :: Ptr Cpermutation_group -> IO (StablePtr a)
+symmetriesPeekPayload p = #{peek ls_hs_permutation_group, haskell_payload} p
+{-# INLINE symmetriesPeekPayload #-}
+
+symmetriesPokePayload :: Ptr Cpermutation_group -> StablePtr a -> IO ()
+symmetriesPokePayload p x = #{poke ls_hs_permutation_group, haskell_payload} p x
+{-# INLINE symmetriesPokePayload #-}
 
 instance Storable Cpermutation_group where
   sizeOf _ = #{size ls_hs_permutation_group}
@@ -390,16 +412,18 @@ instance Storable Cpermutation_group where
       <*> #{peek ls_hs_permutation_group, shifts} p
       <*> #{peek ls_hs_permutation_group, eigvals_re} p
       <*> #{peek ls_hs_permutation_group, eigvals_im} p
+      <*> #{peek ls_hs_permutation_group, haskell_payload} p
   {-# INLINE peek #-}
   poke p x = do
     _ <- pokeRefCount (p `plusPtr` #{offset ls_hs_permutation_group, refcount}) (cpermutation_group_refcount x)
-    #{poke ls_hs_permutation_group, number_bits}   p (cpermutation_group_number_bits x)
-    #{poke ls_hs_permutation_group, number_shifts} p (cpermutation_group_number_shifts x)
-    #{poke ls_hs_permutation_group, number_masks}  p (cpermutation_group_number_masks x)
-    #{poke ls_hs_permutation_group, masks}         p (cpermutation_group_masks x)
-    #{poke ls_hs_permutation_group, shifts}        p (cpermutation_group_shifts x)
-    #{poke ls_hs_permutation_group, eigvals_re}    p (cpermutation_group_eigvals_re x)
-    #{poke ls_hs_permutation_group, eigvals_im}    p (cpermutation_group_eigvals_im x)
+    #{poke ls_hs_permutation_group, number_bits}     p (cpermutation_group_number_bits x)
+    #{poke ls_hs_permutation_group, number_shifts}   p (cpermutation_group_number_shifts x)
+    #{poke ls_hs_permutation_group, number_masks}    p (cpermutation_group_number_masks x)
+    #{poke ls_hs_permutation_group, masks}           p (cpermutation_group_masks x)
+    #{poke ls_hs_permutation_group, shifts}          p (cpermutation_group_shifts x)
+    #{poke ls_hs_permutation_group, eigvals_re}      p (cpermutation_group_eigvals_re x)
+    #{poke ls_hs_permutation_group, eigvals_im}      p (cpermutation_group_eigvals_im x)
+    #{poke ls_hs_permutation_group, haskell_payload} p (cpermutation_group_haskell_payload x)
   {-# INLINE poke #-}
 
 data {-# CTYPE "lattice_symmetries_haskell.h" "ls_chpl_kernels" #-} Cchpl_kernels = Cchpl_kernels

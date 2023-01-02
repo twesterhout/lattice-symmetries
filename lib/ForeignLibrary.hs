@@ -22,6 +22,7 @@ import LatticeSymmetries.BitString
 import LatticeSymmetries.ComplexRational (ComplexRational, fromComplexDouble)
 import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
+import LatticeSymmetries.Group
 import LatticeSymmetries.Operator
 import LatticeSymmetries.Parser
 import LatticeSymmetries.Utils
@@ -77,6 +78,25 @@ foreign export ccall "ls_hs_hdf5_get_dataset_shape"
 
 -- foreign export ccall "ls_hs_create_basis"
 --   ls_hs_create_basis :: Cparticle_type -> CInt -> CInt -> CInt -> IO (Ptr Cbasis)
+
+-- ls_hs_permutation_group * ls_hs_symmetries_from_json (const char * json_string)
+-- void ls_hs_destroy_symmetries (ls_hs_permutation_group *)
+
+foreign export ccall "ls_hs_symmetries_from_json"
+  ls_hs_symmetries_from_json :: CString -> IO (Ptr Cpermutation_group)
+
+ls_hs_symmetries_from_json cStr =
+  handleAny (propagateErrorToC nullPtr) $
+    borrowCsymmetries =<< decodeCString cStr
+
+foreign export ccall "ls_hs_destroy_symmetries"
+  ls_hs_destroy_symmetries :: Ptr Cpermutation_group -> IO ()
+
+ls_hs_destroy_symmetries p = do
+  refcount <- symmetriesDecRefCount p
+  when (refcount == 0) $ do
+    freeStablePtr =<< symmetriesPeekPayload p
+    free p
 
 foreign export ccall "ls_hs_clone_basis"
   ls_hs_clone_basis :: Ptr Cbasis -> IO (Ptr Cbasis)

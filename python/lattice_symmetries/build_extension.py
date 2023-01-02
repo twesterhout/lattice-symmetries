@@ -46,6 +46,7 @@ ffibuilder.cdef(
     void ls_hs_set_exception_handler(void (*handler)(char const* message));
     void ls_hs_error(char const* message);
 
+    typedef struct ls_hs_permutation_group { ...; } ls_hs_permutation_group;
     typedef struct ls_hs_basis { ...; } ls_hs_basis;
     typedef struct ls_hs_operator { ...; } ls_hs_operator;
     typedef struct ls_hs_scalar { double real; double imag; } ls_hs_scalar;
@@ -71,6 +72,9 @@ ffibuilder.cdef(
     } ls_chpl_kernels;
     ls_chpl_kernels const *ls_hs_internal_get_chpl_kernels();
 
+    ls_hs_permutation_group *ls_hs_symmetries_from_json(const char *json_string);
+    void ls_hs_destroy_symmetries(ls_hs_permutation_group *);
+
     ls_hs_basis *ls_hs_clone_basis(ls_hs_basis const *);
     void ls_hs_destroy_basis_v2(ls_hs_basis *);
     uint64_t ls_hs_max_state_estimate(ls_hs_basis const *);
@@ -88,6 +92,11 @@ ffibuilder.cdef(
 
     ptrdiff_t ls_hs_basis_number_states(ls_hs_basis const* basis);
     uint64_t const* ls_hs_basis_states(ls_hs_basis const* basis);
+
+    void ls_hs_state_info(ls_hs_basis const *basis, ptrdiff_t batch_size,
+                          uint64_t const *alphas, ptrdiff_t alphas_stride,
+                          uint64_t *betas, ptrdiff_t betas_stride,
+                          ls_hs_scalar *characters, double *norms);
 
     typedef enum ls_hs_particle_type {
       LS_HS_SPIN,

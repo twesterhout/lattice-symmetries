@@ -92,7 +92,7 @@ identityPermutation size
 mkPermutation :: HasCallStack => U.Vector Int -> Permutation
 mkPermutation p
   | Set.toAscList (Set.fromList (G.toList p)) == [0 .. G.length p - 1] = Permutation p
-  | otherwise = error $ "invalid permutation: " <> show p
+  | otherwise = withFrozenCallStack $ error $ "invalid permutation: " <> show p
 
 instance Semigroup Permutation where
   (<>) x (Permutation ys) = Permutation $ permuteVector x ys
@@ -104,12 +104,12 @@ randomShuffle xs g₀ = runST $ do
   buffer <- GM.new n
   let go !i !g
         | i < n = do
-          let (j, g') = uniformR (i, n - 1) g
-          vᵢ <- GM.read v i
-          vⱼ <- GM.read v j
-          GM.write v j vᵢ
-          GM.write buffer i vⱼ
-          go (i + 1) g'
+            let (j, g') = uniformR (i, n - 1) g
+            vᵢ <- GM.read v i
+            vⱼ <- GM.read v j
+            GM.write v j vᵢ
+            GM.write buffer i vⱼ
+            go (i + 1) g'
         | otherwise = pure g
   g' <- go 0 g₀
   xs' <- G.unsafeFreeze buffer
@@ -204,8 +204,8 @@ solveCycle edges = go [] edges
       | otherwise = error "unsolvable cycle"
     go acc (e₀ : e₁ : es)
       | shouldSwap e₀ e₁ =
-        let (Edge loc₁ pᵢ@(Point i _) pⱼ@(Point j _)) = e₁
-         in go (Swap loc₁ i j : acc) (Edge loc₁ pⱼ pᵢ : es)
+          let (Edge loc₁ pᵢ@(Point i _) pⱼ@(Point j _)) = e₁
+           in go (Swap loc₁ i j : acc) (Edge loc₁ pⱼ pᵢ : es)
       | otherwise = go acc (e₁ : es)
     go _ _ = error "should not have happened"
 
@@ -255,8 +255,8 @@ stageCycles s = cycles Set.empty (initialEdges s)
     cycles _ [] = []
     cycles !visited (!e : es)
       | Set.notMember e visited =
-        let cycle = getCycle (ssDelta s) (ssSource s) (ssTarget s) e
-         in cycle : cycles (visited `Set.union` Set.fromList cycle) es
+          let cycle = getCycle (ssDelta s) (ssSource s) (ssTarget s) e
+           in cycle : cycles (visited `Set.union` Set.fromList cycle) es
       | otherwise = cycles visited es
 
 solveStage :: SolverState -> (Integer, Integer, SolverState)
@@ -280,8 +280,8 @@ solve src tgt = unpack $ go s₀
     s₀ = SolverState src tgt 1
     go !s
       | 2 * ssDelta s <= n =
-        let (a, b, s') = solveStage s
-         in (a, b, ssDelta s) : go s'
+          let (a, b, s') = solveStage s
+           in (a, b, ssDelta s) : go s'
       | otherwise = []
 
 data BenesNetwork = BenesNetwork {bnMasks :: !(B.Vector Integer), bnShifts :: !(U.Vector Int)}
@@ -291,9 +291,9 @@ mkBenesNetwork :: [Integer] -> [Integer] -> [Int] -> BenesNetwork
 mkBenesNetwork srcMasks tgtMasks δs
   | null δs = BenesNetwork G.empty G.empty
   | isOkay =
-    BenesNetwork
-      (G.fromList $ L.init srcMasks <> reverse tgtMasks)
-      (G.fromList $ δs <> drop 1 (reverse δs))
+      BenesNetwork
+        (G.fromList $ L.init srcMasks <> reverse tgtMasks)
+        (G.fromList $ δs <> drop 1 (reverse δs))
   | otherwise = error $ "invalid backward masks: " <> show srcMasks <> ", " <> show tgtMasks <> ", " <> show δs
   where
     isOkay = case srcMasks of
@@ -335,8 +335,8 @@ permuteBits' (Permutation p) x = go 0 zeroBits
   where
     go !i !y
       | i < G.length p =
-        let y' = if testBit x (p ! i) then setBit y i else y
-         in go (i + 1) y'
+          let y' = if testBit x (p ! i) then setBit y i else y
+           in go (i + 1) y'
       | otherwise = y
 
 data BatchedBenesNetwork = BatchedBenesNetwork
@@ -352,15 +352,15 @@ mkBatchedBenesNetwork :: B.Vector BenesNetwork -> BatchedBenesNetwork
 mkBatchedBenesNetwork networks
   | G.null networks = BatchedBenesNetwork (DenseMatrix 0 0 G.empty) G.empty
   | sameShifts = unsafePerformIO $ do
-    masks <- GM.new (numberShifts * numberMasks * numberWords)
-    SM.unsafeWith masks $ \masksPtr ->
-      loopM 0 (< numberShifts) (+ 1) $ \i ->
-        writeManyBitStrings
-          numberWords
-          (P.advancePtr masksPtr (i * numberMasks * numberWords))
-          (getBitStrings i)
-    masks' <- DenseMatrix numberShifts (numberMasks * numberWords) <$> G.unsafeFreeze masks
-    pure $ BatchedBenesNetwork masks' (G.convert (G.map fromIntegral shifts))
+      masks <- GM.new (numberShifts * numberMasks * numberWords)
+      SM.unsafeWith masks $ \masksPtr ->
+        loopM 0 (< numberShifts) (+ 1) $ \i ->
+          writeManyBitStrings
+            numberWords
+            (P.advancePtr masksPtr (i * numberMasks * numberWords))
+            (getBitStrings i)
+      masks' <- DenseMatrix numberShifts (numberMasks * numberWords) <$> G.unsafeFreeze masks
+      pure $ BatchedBenesNetwork masks' (G.convert (G.map fromIntegral shifts))
   | otherwise = error "networks have different shifts"
   where
     getBitStrings i = G.toList $ G.map (\n -> BitString ((bnMasks n) ! i)) networks

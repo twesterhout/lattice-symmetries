@@ -16,6 +16,8 @@ module LatticeSymmetries.Group
     emptySymmetries,
     symmetriesGetNumberBits,
     symmetriesFromSpec,
+    borrowCsymmetries,
+    withReconstructedSymmetries,
   )
 where
 
@@ -30,8 +32,10 @@ import qualified Data.Vector.Storable as S
 import Foreign.C.Types (CDouble)
 import Foreign.ForeignPtr
 import Foreign.Ptr
+import Foreign.StablePtr
 import Foreign.Storable
 import GHC.Exts (IsList (..))
+import GHC.ForeignPtr (unsafeForeignPtrToPtr)
 import LatticeSymmetries.Benes
 import LatticeSymmetries.Dense
 import LatticeSymmetries.FFI
@@ -110,7 +114,10 @@ getNumberBits (SymmetriesHeader (PermutationGroup gs) _ _ _)
 emptySymmetriesHeader :: SymmetriesHeader
 emptySymmetriesHeader = SymmetriesHeader (PermutationGroup G.empty) emptyBatchedBenesNetwork G.empty G.empty
 
-data Symmetries = Symmetries {symmetriesHeader :: !SymmetriesHeader, symmetriesContents :: !(ForeignPtr Cpermutation_group)}
+data Symmetries = Symmetries
+  { symmetriesHeader :: !SymmetriesHeader,
+    symmetriesContents :: !(ForeignPtr Cpermutation_group)
+  }
   deriving stock (Show)
 
 instance Eq Symmetries where
@@ -216,7 +223,8 @@ symmetriesFromHeader x = unsafePerformIO $ do
                   cpermutation_group_masks = masksPtr,
                   cpermutation_group_shifts = shiftsPtr,
                   cpermutation_group_eigvals_re = (castPtr :: Ptr Double -> Ptr CDouble) eigvalsRealPtr,
-                  cpermutation_group_eigvals_im = (castPtr :: Ptr Double -> Ptr CDouble) eigvalsImagPtr
+                  cpermutation_group_eigvals_im = (castPtr :: Ptr Double -> Ptr CDouble) eigvalsImagPtr,
+                  cpermutation_group_haskell_payload = nullPtr
                 }
   pure $ Symmetries x fp
 {-# NOINLINE symmetriesFromHeader #-}
@@ -227,3 +235,14 @@ symmetryFromSpec (SymmetrySpec p k) =
 
 symmetriesFromSpec :: [SymmetrySpec] -> Symmetries
 symmetriesFromSpec = mkSymmetries . fmap symmetryFromSpec
+
+borrowCsymmetries :: Symmetries -> IO (Ptr Cpermutation_group)
+borrowCsymmetries symm = do
+  withForeignPtr (symmetriesContents symm) $ \ptr -> do
+    _ <- symmetriesIncRefCount ptr
+    symmetriesPokePayload ptr =<< newStablePtr symm
+  pure $ unsafeForeignPtrToPtr (symmetriesContents symm)
+
+withReconstructedSymmetries :: Ptr Cpermutation_group -> (Symmetries -> IO a) -> IO a
+withReconstructedSymmetries p action =
+  action =<< deRefStablePtr =<< symmetriesPeekPayload p

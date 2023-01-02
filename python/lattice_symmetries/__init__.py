@@ -60,6 +60,37 @@ class _RuntimeInitializer:
 _runtime_init = _RuntimeInitializer()
 
 
+class Symmetry:
+    permutation: List[int]
+    sector: int
+
+    def __init__(self, permutation: ArrayLike, sector: int = 0):
+        self.permutation = np.asarray(permutation, dtype=np.int32, order="C").tolist()
+        self.sector = sector
+
+    def json_object(self):
+        return {"permutation": self.permutation, "sector": self.sector}
+
+
+class Symmetries:
+    _payload: ffi.CData
+    _finalizer: weakref.finalize
+    _generators: List[Symmetry]
+
+    def __init__(self, generators: List[Symmetry] = []):
+        json_string = json.dumps([g.json_object() for g in generators]).encode("utf-8")
+        self._payload = lib.ls_hs_symmetries_from_json(json_string)
+        self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_symmetries, self._payload)
+        self._generators = generators
+
+    @property
+    def generators(self) -> List[Symmetry]:
+        return self._generators
+
+    def json_object(self):
+        return [g.json_object() for g in self.generators]
+
+
 def _basis_state_to_array(state: int, number_words: int) -> ffi.CData:
     state = int(state)
     arr = ffi.new("uint64_t[]", number_words)
@@ -144,6 +175,41 @@ class Basis:
         lib.ls_hs_destroy_string(c_str)
         return s
 
+    def state_info(self, x):
+        assert self.number_bits <= 64
+        is_scalar = isinstance(x, int)
+        if is_scalar:
+            x = np.array([x], dtype=np.uint64)
+        else:
+            x = np.asarray(x, dtype=np.uint64, order="C")
+
+        count = x.shape[0]
+        betas = np.zeros_like(x)
+        characters = np.zeros(count, dtype=np.complex128)
+        norms = np.zeros(count, dtype=np.float64)
+
+        x_ptr = ffi.from_buffer("uint64_t[]", x, require_writable=False)
+        betas_ptr = ffi.from_buffer("uint64_t[]", betas, require_writable=True)
+        characters_ptr = ffi.from_buffer("ls_hs_scalar[]", characters, require_writable=True)
+        norms_ptr = ffi.from_buffer("double[]", norms, require_writable=True)
+        lib.ls_hs_state_info(self._payload, count, x_ptr, 1, betas_ptr, 1, characters_ptr, norms_ptr)
+
+        if is_scalar:
+            return (int(betas[0]), complex(characters[0]), float(norms[0]))
+        else:
+            return (betas, characters, norms)
+
+    @staticmethod
+    def from_json(json_string: str) -> "Expr":
+        _assert_subtype(json_string, str)
+        return Basis(**json.loads(json_string))
+
+    def to_json(self) -> str:
+        c_str = lib.ls_hs_basis_to_json(self._payload)
+        s = ffi.string(c_str).decode("utf-8")
+        lib.ls_hs_destroy_string(c_str)
+        return s
+
 
 class SpinBasis(Basis):
     def __init__(
@@ -151,6 +217,7 @@ class SpinBasis(Basis):
         number_spins: int,
         hamming_weight: Optional[int] = None,
         spin_inversion: Optional[int] = None,
+        symmetries: Optional[Symmetries] = None,
     ):
         """Create a Hilbert space basis for `number_spins` spin-1/2 particles."""
         super().__init__(
@@ -158,6 +225,7 @@ class SpinBasis(Basis):
             number_spins=number_spins,
             hamming_weight=hamming_weight,
             spin_inversion=spin_inversion,
+            symmetries=symmetries.json_object() if symmetries is not None else []
         )
 
     @property
