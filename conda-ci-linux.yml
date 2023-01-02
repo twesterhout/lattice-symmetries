@@ -9,3 +9,5 @@ dependencies:
   - libffi
   - numactl-devel-cos7-x86_64
   - zlib
+  - conda-build
+  - anaconda-client

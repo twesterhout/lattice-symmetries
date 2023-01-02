@@ -29,32 +29,35 @@
 from ._ls_hs import ffi, lib
 
 import json
+import threading
+from typing import overload, Any, List, Optional, Tuple, Union
+import weakref
+
+from loguru import logger
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 import scipy.sparse.linalg
 from scipy.sparse.linalg import LinearOperator
-import threading
-from typing import overload, Any, List, Optional, Tuple, Union
-import weakref
 
 __version__ = "2.0.0"
 
 class _RuntimeInitializer:
     def __init__(self):
-        print("Initializing Haskell runtime...")
+        logger.debug("Initializing Haskell runtime...")
         lib.ls_hs_init()
-        print("Initializing Chapel runtime...")
+        logger.debug("Initializing Chapel runtime...")
         lib.ls_chpl_init()
+        logger.debug("Setting Python exception handler...")
+        lib.set_python_exception_handler()
 
     def __del__(self):
-        print("Deinitializing Chapel runtime...")
+        logger.debug("Deinitializing Chapel runtime...")
         lib.ls_chpl_finalize()
-        print("Deinitializing Haskell runtime...")
+        logger.debug("Deinitializing Haskell runtime...")
         lib.ls_hs_exit()
 
 
 _runtime_init = _RuntimeInitializer()
-lib.set_python_exception_handler()
 
 
 def _basis_state_to_array(state: int, number_words: int) -> ffi.CData:
@@ -133,6 +136,8 @@ class Basis:
         return lib.ls_hs_basis_number_words(self._payload)
 
     def state_to_string(self, state: int) -> str:
+        """Pretty-print a basis state.
+        """
         arr = _basis_state_to_array(state, self.number_words)
         c_str = lib.ls_hs_basis_state_to_string(self._payload, arr)
         s = ffi.string(c_str).decode("utf-8")
@@ -299,7 +304,7 @@ class Expr(object):
         return s
 
     def __str__(self):
-        """Get the string representation of the underlying expression"""
+        """Get the string representation of the underlying expression."""
         c_str = lib.ls_hs_expr_to_string(self._payload)
         s = ffi.string(c_str).decode("utf-8")
         lib.ls_hs_destroy_string(c_str)
