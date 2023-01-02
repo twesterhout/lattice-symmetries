@@ -86,11 +86,11 @@ jobs:
     - name: Build 
       run: |
         if [[ $(uname) != "Linux" ]]; then
-          wget -q https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.3.sdk.tar.xz
+          wget https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.3.sdk.tar.xz
           sudo tar xf MacOSX11.3.sdk.tar.xz -C /opt
           echo "" >> conda/conda_build_config.yaml
           echo "CONDA_BUILD_SYSROOT:" >> conda/conda_build_config.yaml
           echo "  - /opt/MacOSX11.3.sdk        # [osx]" >> conda/conda_build_config.yaml
         fi
         mkdir conda_output
-        conda build conda --output-folder=$PWD/conda_output
+        conda build -c conda-forge conda --output-folder=$PWD/conda_output
