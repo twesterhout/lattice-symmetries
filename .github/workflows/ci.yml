@@ -13,7 +13,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-18.04
+          - os: ubuntu-20.04
             cabal: latest
             ghc: "8.10.7"
           - os: macos-latest
@@ -92,7 +92,7 @@ jobs:
         #   run: |
         #     mkdir -p third_party
         #     cp -r third_party/hdf5 ~/
-    - name: Build C code
+    - name: Build Halide kernels
       run: |
         make kernels
     - name: Build Haskell code
@@ -100,8 +100,8 @@ jobs:
         make haskell
     - name: Test
       run: |
-        export LD_LIBRARY_PATH=$PWD/kernels/build:$LD_LIBRARY_PATH
-        export DYLD_LIBRARY_PATH=$PWD/kernels/build:$DYLD_LIBRARY_PATH
+        # export LD_LIBRARY_PATH=$PWD/kernels/build:$LD_LIBRARY_PATH
+        # export DYLD_LIBRARY_PATH=$PWD/kernels/build:$DYLD_LIBRARY_PATH
         cabal v2-test --test-show-details=direct
     - name: Package
       run: |
@@ -140,7 +140,7 @@ jobs:
   release:
     name: Creating a release
     needs: [build]
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v2

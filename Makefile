@@ -1,7 +1,7 @@
 .POSIX:
 .SUFFIXES:
 
-CC = cc
+# CC = cc
 # HDF5_CFLAGS = -fPIC
 # HDF5_MAJOR = 1
 # HDF5_MINOR = 12
@@ -11,10 +11,10 @@ CC = cc
 
 UNAME = $(shell uname)
 ifeq ($(UNAME), Darwin)
-  NPROC = $(shell sysctl -n hw.ncpu)
+  # NPROC = $(shell sysctl -n hw.ncpu)
   SHARED_EXT = dylib
 else
-  NPROC = $(shell nproc --all)
+  # NPROC = $(shell nproc --all)
   SHARED_EXT = so
 endif
 
@@ -31,7 +31,7 @@ release: haskell
 	mkdir -p $(DIST)/include
 	mkdir -p $(DIST)/lib
 	install -m644 -C cbits/lattice_symmetries_haskell.h $(DIST)/include/
-	install -m644 -C kernels/build/liblattice_symmetries_core.$(SHARED_EXT) $(DIST)/lib/
+	# install -m644 -C kernels/build/liblattice_symmetries_core.$(SHARED_EXT) $(DIST)/lib/
 	find dist-newstyle -name "liblattice_symmetries_haskell.$(SHARED_EXT)" \
 	  -exec install -m644 -C {} $(DIST)/lib/ \;
 ifeq ($(UNAME), Linux)
@@ -49,14 +49,19 @@ endif
 
 .PHONY: haskell
 haskell: kernels
-	@PKG_CONFIG_PATH=$(HDF5_PREFIX)/lib/pkgconfig cabal v2-build
+	cabal v2-build
 
 .PHONY: kernels
-kernels: kernels/build/liblattice_symmetries_core.$(SHARED_EXT)
+kernels: cabal.project.local
+# kernels/build/liblattice_symmetries_core.$(SHARED_EXT)
 
-kernels/build/liblattice_symmetries_core.$(SHARED_EXT): kernels/generator.cpp kernels/*.c cbits/lattice_symmetries_haskell.h
+cabal.project.local: kernels/generator.cpp
 	cd kernels && $(MAKE) Halide
 	cd kernels && $(MAKE)
+
+# kernels/build/liblattice_symmetries_core.$(SHARED_EXT): kernels/generator.cpp kernels/*.c cbits/lattice_symmetries_haskell.h
+# 	cd kernels && $(MAKE) Halide
+# 	cd kernels && $(MAKE)
 
 # .PHONY: hdf5
 # hdf5: $(HDF5_PREFIX) $(HDF5_PREFIX)/lib/pkgconfig/hdf5.pc
