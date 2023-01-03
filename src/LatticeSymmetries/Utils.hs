@@ -1,3 +1,4 @@
+{-# LANGUAGE ImplicitParams #-}
 {-# LANGUAGE RankNTypes #-}
 
 module LatticeSymmetries.Utils
@@ -29,6 +30,7 @@ import Foreign.Marshal.Alloc (mallocBytes)
 import Foreign.Marshal.Utils (copyBytes)
 import Foreign.Ptr (Ptr, castPtr)
 import Foreign.Storable (Storable (..))
+import GHC.Stack (freezeCallStack, popCallStack)
 import Prettyprinter (Doc, Pretty (..))
 import qualified Prettyprinter as Pretty
 import Prettyprinter.Render.Text (renderStrict)
@@ -51,7 +53,7 @@ iFoldM i₀ cond inc x₀ action = go x₀ i₀
 {-# INLINE iFoldM #-}
 
 defaultLogAction :: LogAction IO Message
-defaultLogAction = cmap fmtMessage logTextStderr
+defaultLogAction = filterBySeverity Info msgSeverity $ cmap fmtMessage logTextStderr
 
 currentLogAction :: IORef (LogAction IO Message)
 currentLogAction = unsafePerformIO $ newIORef defaultLogAction
@@ -62,22 +64,27 @@ withDefaultLogger f = withFrozenCallStack $ do
   logAction <- readIORef currentLogAction
   usingLoggerT logAction f
 
+withFrozenPoppedCallStack :: HasCallStack => (HasCallStack => a) -> a
+withFrozenPoppedCallStack do_this =
+  let ?callStack = freezeCallStack . popCallStack . popCallStack $ callStack
+   in do_this
+
 logDebug' :: HasCallStack => Text -> IO ()
-logDebug' t = withFrozenCallStack $ withDefaultLogger (logDebug t)
+logDebug' t = withFrozenPoppedCallStack $ withDefaultLogger (logDebug t)
 
 logInfo' :: HasCallStack => Text -> IO ()
-logInfo' t = withFrozenCallStack $ withDefaultLogger (logInfo t)
+logInfo' t = withFrozenPoppedCallStack $ withDefaultLogger (logInfo t)
 
 logWarning' :: HasCallStack => Text -> IO ()
-logWarning' t = withFrozenCallStack $ withDefaultLogger (logWarning t)
+logWarning' t = withFrozenPoppedCallStack $ withDefaultLogger (logWarning t)
 
 logError' :: HasCallStack => Text -> IO ()
-logError' t = withFrozenCallStack $ withDefaultLogger (logError t)
+logError' t = withFrozenPoppedCallStack $ withDefaultLogger (logError t)
 
 foreign import ccall unsafe "ls_hs_error"
   ls_hs_error :: CString -> IO ()
 
-throwC :: a -> Text -> IO a
+throwC :: HasCallStack => a -> Text -> IO a
 throwC x₀ msg = do
   logError' "Throwing error to C ..."
   useAsCString (encodeUtf8 msg) ls_hs_error

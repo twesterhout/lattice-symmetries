@@ -16,7 +16,7 @@ void ls_hs_init(void) {
   conf.rts_opts = "-N1 --install-signal-handlers=no";
   hs_init_ghc(&argc, &pargv, conf);
 
-  ls_hs_internal_set_free_stable_ptr(&hs_free_stable_ptr);
+  // ls_hs_internal_set_free_stable_ptr(&hs_free_stable_ptr);
 }
 
 void ls_hs_exit(void) {

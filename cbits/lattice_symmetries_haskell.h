@@ -55,12 +55,24 @@ void ls_hs_error(char const *message);
 #define LS_CHECK(cond, msg)                                                    \
   ((cond) ? ((void)0) : ls_hs_fatal_error(__func__, __LINE__, msg))
 
-void ls_hs_internal_set_free_stable_ptr(void (*f)(void *));
+// void ls_hs_internal_set_free_stable_ptr(void (*f)(void *));
 
-void ls_hs_free_stable_ptr(void *);
+// void ls_hs_free_stable_ptr(void *);
 // }}}
 
 void ls_hs_destroy_external_array(chpl_external_array *arr);
+
+// {{{ Symmetry
+typedef struct ls_hs_symmetry ls_hs_symmetry;
+ls_hs_symmetry *ls_hs_symmetry_from_json(const char *json_string);
+void ls_hs_destroy_symmetry(ls_hs_symmetry *);
+// }}}
+
+// {{{ Symmetries
+typedef struct ls_hs_symmetries ls_hs_symmetries;
+ls_hs_symmetries *ls_hs_symmetries_from_json(const char *json_string);
+void ls_hs_destroy_symmetries(ls_hs_symmetries *);
+// }}}
 
 // {{{ Basis
 typedef enum ls_hs_particle_type {
@@ -103,9 +115,6 @@ typedef struct ls_hs_permutation_group {
   void *haskell_payload;
 } ls_hs_permutation_group;
 
-ls_hs_permutation_group *ls_hs_symmetries_from_json(const char *json_string);
-void ls_hs_destroy_symmetries(ls_hs_permutation_group *);
-
 typedef struct ls_hs_basis {
   _Atomic int refcount;
   int number_sites;
@@ -119,21 +128,23 @@ typedef struct ls_hs_basis {
   void *haskell_payload;
 } ls_hs_basis;
 
-// ls_hs_basis *ls_hs_create_basis(ls_hs_particle_type, int, int, int);
+ls_hs_basis *ls_hs_basis_from_json(char const *json_string);
 ls_hs_basis *ls_hs_clone_basis(ls_hs_basis const *);
 void ls_hs_destroy_basis(ls_hs_basis *);
 uint64_t ls_hs_max_state_estimate(ls_hs_basis const *);
 uint64_t ls_hs_min_state_estimate(ls_hs_basis const *);
 int ls_hs_basis_number_bits(ls_hs_basis const *basis);
 int ls_hs_basis_number_words(ls_hs_basis const *basis);
+bool ls_hs_basis_has_fixed_hamming_weight(ls_hs_basis const *);
 
-ls_hs_basis *ls_hs_basis_from_json(char const *json_string);
+ptrdiff_t ls_hs_fixed_hamming_state_to_index(uint64_t basis_state);
+uint64_t ls_hs_fixed_hamming_index_to_state(ptrdiff_t index,
+                                            int hamming_weight);
+
 char const *ls_hs_basis_to_json(ls_hs_basis const *);
 void ls_hs_destroy_string(char const *);
 
 void ls_hs_basis_build(ls_hs_basis *basis);
-
-bool ls_hs_basis_has_fixed_hamming_weight(ls_hs_basis const *);
 
 char const *ls_hs_basis_state_to_string(ls_hs_basis const *,
                                         uint64_t const *state);
@@ -141,6 +152,15 @@ char const *ls_hs_basis_state_to_string(ls_hs_basis const *,
 void ls_hs_state_index(ls_hs_basis const *basis, ptrdiff_t batch_size,
                        uint64_t const *spins, ptrdiff_t spins_stride,
                        ptrdiff_t *indices, ptrdiff_t indices_stride);
+
+void ls_hs_is_representative(ls_hs_basis const *basis, ptrdiff_t batch_size,
+                             uint64_t const *alphas, ptrdiff_t alphas_stride,
+                             uint8_t *are_representatives, double *norms);
+
+void ls_hs_state_info(ls_hs_basis const *basis, ptrdiff_t batch_size,
+                      uint64_t const *alphas, ptrdiff_t alphas_stride,
+                      uint64_t *betas, ptrdiff_t betas_stride,
+                      ls_hs_scalar *characters, double *norms);
 
 void ls_hs_build_representatives(ls_hs_basis *basis, uint64_t lower,
                                  uint64_t upper);
@@ -151,12 +171,17 @@ void ls_hs_unchecked_set_representatives(ls_hs_basis *basis,
 
 // {{{ Expr
 
-typedef struct ls_hs_expr {
-  _Atomic int refcount;
-  void *haskell_payload;
-} ls_hs_expr;
+typedef struct ls_hs_expr ls_hs_expr;
+// typedef struct ls_hs_expr {
+//   _Atomic int refcount;
+//   void *haskell_payload;
+// } ls_hs_expr;
 
-ls_hs_expr *ls_hs_create_expr(char const *expression);
+// ls_hs_expr *ls_hs_create_expr(char const *expression);
+ls_hs_expr *ls_hs_expr_from_json(char const *json_string);
+void ls_hs_destroy_expr(ls_hs_expr *expr);
+
+char const *ls_hs_expr_to_json(ls_hs_expr const *expr);
 
 typedef void (*ls_hs_index_replacement_type)(int spin, int site, int *new_spin,
                                              int *new_site);
@@ -164,11 +189,6 @@ ls_hs_expr *ls_hs_replace_indices(ls_hs_expr const *expr,
                                   ls_hs_index_replacement_type callback);
 
 char const *ls_hs_expr_to_string(ls_hs_expr const *expr);
-
-char const *ls_hs_expr_to_json(ls_hs_expr const *expr);
-ls_hs_expr *ls_hs_expr_from_json(char const *json_string);
-
-void ls_hs_destroy_expr(ls_hs_expr *expr);
 
 ls_hs_expr *ls_hs_expr_plus(ls_hs_expr const *a, ls_hs_expr const *b);
 ls_hs_expr *ls_hs_expr_minus(ls_hs_expr const *a, ls_hs_expr const *b);
@@ -198,14 +218,15 @@ typedef struct ls_hs_operator {
   ls_hs_basis const *basis;
   ls_hs_nonbranching_terms const *off_diag_terms;
   ls_hs_nonbranching_terms const *diag_terms;
-  ls_internal_operator_kernel_data const *apply_off_diag_cxt;
-  ls_internal_operator_kernel_data const *apply_diag_cxt;
+  // ls_internal_operator_kernel_data const *apply_off_diag_cxt;
+  // ls_internal_operator_kernel_data const *apply_diag_cxt;
   void *haskell_payload;
 } ls_hs_operator;
 
 ls_hs_operator *ls_hs_create_operator(ls_hs_basis const *basis,
                                       ls_hs_expr const *expr);
 ls_hs_operator *ls_hs_clone_operator(ls_hs_operator const *);
+void ls_hs_destroy_operator(ls_hs_operator *);
 // ls_hs_operator *ls_hs_create_operator(ls_hs_basis const *basis,
 //                                       char const *expression, int
 //                                       number_tuples, int tuple_size, int
@@ -215,27 +236,25 @@ ls_hs_operator *ls_hs_clone_operator(ls_hs_operator const *);
 // *json_string,
 //                                          ls_hs_basis const *basis);
 
-ls_hs_operator *ls_hs_operator_plus(ls_hs_operator const *,
-                                    ls_hs_operator const *);
-ls_hs_operator *ls_hs_operator_minus(ls_hs_operator const *,
-                                     ls_hs_operator const *);
-ls_hs_operator *ls_hs_operator_times(ls_hs_operator const *,
-                                     ls_hs_operator const *);
-ls_hs_operator *ls_hs_operator_scale(ls_hs_scalar const *,
-                                     ls_hs_operator const *);
-ls_hs_operator *ls_hs_operator_hermitian_conjugate(ls_hs_operator const *);
+// ls_hs_operator *ls_hs_operator_plus(ls_hs_operator const *,
+//                                     ls_hs_operator const *);
+// ls_hs_operator *ls_hs_operator_minus(ls_hs_operator const *,
+//                                      ls_hs_operator const *);
+// ls_hs_operator *ls_hs_operator_times(ls_hs_operator const *,
+//                                      ls_hs_operator const *);
+// ls_hs_operator *ls_hs_operator_scale(ls_hs_scalar const *,
+//                                      ls_hs_operator const *);
+// ls_hs_operator *ls_hs_operator_hermitian_conjugate(ls_hs_operator const *);
 
-bool ls_hs_operator_is_hermitian(ls_hs_operator const *);
-bool ls_hs_operator_is_identity(ls_hs_operator const *);
-bool ls_hs_operator_is_real(ls_hs_operator const *);
+// bool ls_hs_operator_is_hermitian(ls_hs_operator const *);
+// bool ls_hs_operator_is_identity(ls_hs_operator const *);
+// bool ls_hs_operator_is_real(ls_hs_operator const *);
 
 int ls_hs_operator_max_number_off_diag(ls_hs_operator const *);
 
 ls_hs_expr const *ls_hs_operator_get_expr(ls_hs_operator const *);
 
-char const *ls_hs_operator_pretty_terms(ls_hs_operator const *);
-
-void ls_hs_destroy_operator(ls_hs_operator *);
+// char const *ls_hs_operator_pretty_terms(ls_hs_operator const *);
 
 // ls_hs_operator *ls_hs_load_hamiltonian_from_yaml(char const *);
 
@@ -249,31 +268,32 @@ typedef struct ls_hs_yaml_config {
 ls_hs_yaml_config *ls_hs_load_yaml_config(char const *);
 void ls_hs_destroy_yaml_config(ls_hs_yaml_config *);
 
-ls_internal_operator_kernel_data *ls_internal_create_apply_diag_kernel_data(
-    ls_hs_nonbranching_terms const *diag_terms);
-ls_internal_operator_kernel_data *ls_internal_create_apply_off_diag_kernel_data(
-    ls_hs_nonbranching_terms const *off_diag_terms);
-void ls_internal_destroy_operator_kernel_data(
-    ls_internal_operator_kernel_data *p);
+// ls_internal_operator_kernel_data *ls_internal_create_apply_diag_kernel_data(
+//     ls_hs_nonbranching_terms const *diag_terms);
+// ls_internal_operator_kernel_data
+// *ls_internal_create_apply_off_diag_kernel_data(
+//     ls_hs_nonbranching_terms const *off_diag_terms);
+// void ls_internal_destroy_operator_kernel_data(
+//     ls_internal_operator_kernel_data *p);
 
-void ls_internal_operator_apply_off_diag(
-    ptrdiff_t batch_size, uint64_t const *alphas, ptrdiff_t alphas_stride,
-    uint64_t *betas, ptrdiff_t betas_stride, ls_hs_scalar *coeffs,
-    ls_internal_operator_kernel_data const *cxt);
-void ls_internal_operator_apply_diag(
-    ptrdiff_t batch_size, uint64_t const *alphas, ptrdiff_t alphas_stride,
-    ls_hs_scalar *coeffs, ls_internal_operator_kernel_data const *cxt);
+// void ls_internal_operator_apply_off_diag(
+//     ptrdiff_t batch_size, uint64_t const *alphas, ptrdiff_t alphas_stride,
+//     uint64_t *betas, ptrdiff_t betas_stride, ls_hs_scalar *coeffs,
+//     ls_internal_operator_kernel_data const *cxt);
+// void ls_internal_operator_apply_diag(
+//     ptrdiff_t batch_size, uint64_t const *alphas, ptrdiff_t alphas_stride,
+//     ls_hs_scalar *coeffs, ls_internal_operator_kernel_data const *cxt);
 
-void ls_hs_operator_apply_diag_kernel(ls_hs_operator const *op,
-                                      ptrdiff_t batch_size,
-                                      uint64_t const *alphas,
-                                      ptrdiff_t alphas_stride,
-                                      ls_hs_scalar *coeffs);
+// void ls_hs_operator_apply_diag_kernel(ls_hs_operator const *op,
+//                                       ptrdiff_t batch_size,
+//                                       uint64_t const *alphas,
+//                                       ptrdiff_t alphas_stride,
+//                                       ls_hs_scalar *coeffs);
 
-void ls_hs_operator_apply_off_diag_kernel(
-    ls_hs_operator const *op, ptrdiff_t batch_size, uint64_t const *alphas,
-    ptrdiff_t alphas_stride, uint64_t *betas, ptrdiff_t betas_stride,
-    ls_hs_scalar *coeffs);
+// void ls_hs_operator_apply_off_diag_kernel(
+//     ls_hs_operator const *op, ptrdiff_t batch_size, uint64_t const *alphas,
+//     ptrdiff_t alphas_stride, uint64_t *betas, ptrdiff_t betas_stride,
+//     ls_hs_scalar *coeffs);
 
 void ls_internal_operator_apply_off_diag_x1(
     ls_hs_operator const *op, ptrdiff_t batch_size, uint64_t const *alphas,
@@ -285,49 +305,45 @@ void ls_internal_operator_apply_diag_x1(ls_hs_operator const *op,
                                         double const *xs);
 
 // {{{ Binomials
-typedef struct {
-  int dimension;
-  bool is_per_sector;
-  uint64_t *coefficients; // array of shape [dimension, dimension]
-                          // stored in row-major order
-  // coefficients[n, k] corresponds to binomial(n, k)
-} ls_hs_combinadics_kernel_data;
+// typedef struct {
+//   int dimension;
+//   bool is_per_sector;
+//   uint64_t *coefficients; // array of shape [dimension, dimension]
+//                           // stored in row-major order
+//   // coefficients[n, k] corresponds to binomial(n, k)
+// } ls_hs_combinadics_kernel_data;
+//
+// ls_hs_combinadics_kernel_data *
+// ls_hs_internal_create_combinadics_kernel_data(int number_bits,
+//                                               bool is_per_sector);
+// void ls_hs_internal_destroy_combinadics_kernel_data(
+//     ls_hs_combinadics_kernel_data *p);
 
-ls_hs_combinadics_kernel_data *
-ls_hs_internal_create_combinadics_kernel_data(int number_bits,
-                                              bool is_per_sector);
-void ls_hs_internal_destroy_combinadics_kernel_data(
-    ls_hs_combinadics_kernel_data *p);
-
-ptrdiff_t ls_hs_fixed_hamming_state_to_index(uint64_t basis_state);
-uint64_t ls_hs_fixed_hamming_index_to_state(ptrdiff_t index,
-                                            int hamming_weight);
-
-void ls_hs_state_index_combinadics_kernel(ptrdiff_t batch_size,
-                                          uint64_t const *spins,
-                                          ptrdiff_t spins_stride,
-                                          ptrdiff_t *indices,
-                                          ptrdiff_t indices_stride,
-                                          void const *private_kernel_data);
+// void ls_hs_state_index_combinadics_kernel(ptrdiff_t batch_size,
+//                                           uint64_t const *spins,
+//                                           ptrdiff_t spins_stride,
+//                                           ptrdiff_t *indices,
+//                                           ptrdiff_t indices_stride,
+//                                           void const *private_kernel_data);
 // }}}
 
-void ls_hs_state_index_identity_kernel(ptrdiff_t batch_size,
-                                       uint64_t const *spins,
-                                       ptrdiff_t spins_stride,
-                                       ptrdiff_t *indices,
-                                       ptrdiff_t indices_stride,
-                                       void const *private_kernel_data);
-
+// void ls_hs_state_index_identity_kernel(ptrdiff_t batch_size,
+//                                        uint64_t const *spins,
+//                                        ptrdiff_t spins_stride,
+//                                        ptrdiff_t *indices,
+//                                        ptrdiff_t indices_stride,
+//                                        void const *private_kernel_data);
+//
 // {{{ Indexing
 
-typedef struct ls_hs_internal_lookup_cache {
-  int number_prefix_bits;
-  int bit_shift;
-  ptrdiff_t number_representatives;
-  ptrdiff_t number_ranges;
-  uint64_t *representatives;
-  ptrdiff_t *ranges;
-} ls_hs_internal_lookup_cache;
+// typedef struct ls_hs_internal_lookup_cache {
+//   int number_prefix_bits;
+//   int bit_shift;
+//   ptrdiff_t number_representatives;
+//   ptrdiff_t number_ranges;
+//   uint64_t *representatives;
+//   ptrdiff_t *ranges;
+// } ls_hs_internal_lookup_cache;
 
 void ls_hs_state_index_binary_search_kernel(ptrdiff_t batch_size,
                                             uint64_t const *spins,
@@ -356,15 +372,6 @@ void ls_hs_state_info_halide_kernel(ptrdiff_t batch_size,
                                     ptrdiff_t betas_stride,
                                     ls_hs_scalar *characters, double *norms,
                                     void const *private_data);
-
-void ls_hs_is_representative(ls_hs_basis const *basis, ptrdiff_t batch_size,
-                             uint64_t const *alphas, ptrdiff_t alphas_stride,
-                             uint8_t *are_representatives, double *norms);
-
-void ls_hs_state_info(ls_hs_basis const *basis, ptrdiff_t batch_size,
-                      uint64_t const *alphas, ptrdiff_t alphas_stride,
-                      uint64_t *betas, ptrdiff_t betas_stride,
-                      ls_hs_scalar *characters, double *norms);
 
 // void ls_hs_evaluate_wavefunction_via_statevector(
 //     ls_hs_basis const *basis, ptrdiff_t batch_size, uint64_t const *alphas,

@@ -47,6 +47,9 @@ module LatticeSymmetries.Algebra
     mapCoeffs,
     simplifyExpr,
     replicateSiteIndices,
+
+    -- ** FFI helpers
+    Cexpr (..),
   )
 where
 
@@ -68,6 +71,8 @@ import qualified Data.Vector.Generic as G
 import Foreign.C.Types (CInt (..))
 import Foreign.Marshal.Array (peekArray)
 import Foreign.Ptr (Ptr)
+import Foreign.StablePtr
+import Foreign.Storable
 import GHC.Exts (IsList (..))
 import LatticeSymmetries.ComplexRational
 import LatticeSymmetries.Dense
@@ -779,3 +784,9 @@ groupTerms i₀ = step4 . step3 . step2 . step1
 --     productToMatrix (Product v) = csrKronMany $ csrMatrixFromDense @Vector . matrixRepresentation <$> G.toList v
 --     scaledToMatrix (Scaled c p) = csrScale (toComplexDouble c) (productToMatrix p)
 --     sumToMatrix (Sum v) = G.foldl1' (+) (G.map scaledToMatrix v)
+
+newtype {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_expr" #-} Cexpr = Cexpr
+  { unCexpr :: StablePtr SomeExpr
+  }
+  deriving stock (Eq)
+  deriving newtype (Storable)

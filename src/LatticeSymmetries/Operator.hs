@@ -3,18 +3,33 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module LatticeSymmetries.Operator where
+module LatticeSymmetries.Operator
+  ( Operator (..),
+    mkOperator,
+    SomeOperator (..),
+    withSomeOperator,
+    foldSomeOperator,
+    maxNumberOffDiag,
+
+    -- ** Helpers for FFI
+    newCoperator,
+    cloneCoperator,
+    destroyCoperator,
+    withCoperator,
+  )
+where
 
 import qualified Data.Primitive.Ptr as P
 import qualified Data.Set as Set
 import Data.Vector (Vector)
 import qualified Data.Vector.Generic as G
 import Foreign.ForeignPtr
-import Foreign.Marshal.Alloc
+import Foreign.Marshal
 import Foreign.Ptr
 import Foreign.StablePtr
 import Foreign.Storable
 import GHC.ForeignPtr
+import qualified GHC.Show
 import LatticeSymmetries.Algebra
 import LatticeSymmetries.Basis
 import LatticeSymmetries.BitString
@@ -22,11 +37,11 @@ import LatticeSymmetries.ComplexRational
 import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
 import LatticeSymmetries.NonbranchingTerm
-import LatticeSymmetries.Utils (loopM)
+import LatticeSymmetries.Utils
 import System.IO.Unsafe (unsafePerformIO)
 import Prelude hiding (Product, Sum)
 
-data OperatorHeader (t :: ParticleTy) = OperatorHeader
+data Operator (t :: ParticleTy) = Operator
   { opBasis :: !(Basis t),
     opTerms :: !(Expr t)
     -- Polynomial ComplexRational (Generator (IndexType t) (GeneratorType t)))
@@ -34,63 +49,65 @@ data OperatorHeader (t :: ParticleTy) = OperatorHeader
 
 deriving stock instance
   (Show (Basis t), Show (IndexType t), Show (GeneratorType t)) =>
-  Show (OperatorHeader t)
+  Show (Operator t)
 
-data Operator (t :: ParticleTy) = Operator
-  { opHeader :: !(OperatorHeader t),
-    opContents :: !(ForeignPtr Coperator)
-  }
+-- data Operator (t :: ParticleTy) = Operator
+--   { opHeader :: !(OperatorHeader t),
+--     opContents :: !(ForeignPtr Coperator)
+--   }
 
-deriving stock instance (Show (OperatorHeader t)) => Show (Operator t)
+-- deriving stock instance (Show (OperatorHeader t)) => Show (Operator t)
 
 data SomeOperator where
-  SomeOperator :: IsBasis t => Operator t -> SomeOperator
+  SomeOperator :: IsBasis t => ParticleTag t -> Operator t -> SomeOperator
+
+instance Show SomeOperator where
+  show (SomeOperator SpinTag x) = show x
+  show (SomeOperator SpinlessFermionTag x) = show x
+  show (SomeOperator SpinfulFermionTag x) = show x
 
 withSomeOperator :: SomeOperator -> (forall t. IsBasis t => Operator t -> a) -> a
 withSomeOperator x f = case x of
-  SomeOperator operator -> f operator
+  SomeOperator _ operator -> f operator
 {-# INLINE withSomeOperator #-}
 
 foldSomeOperator :: (forall t. IsBasis t => Operator t -> a) -> SomeOperator -> a
 foldSomeOperator f x = case x of
-  SomeOperator operator -> f operator
+  SomeOperator _ operator -> f operator
 {-# INLINE foldSomeOperator #-}
 
-opTermsFlat :: OperatorHeader t -> Polynomial ComplexRational (Generator Int (GeneratorType t))
-opTermsFlat (OperatorHeader basis terms) =
-  fmap (fmap (fmap (\(Generator i g) -> Generator (flattenIndex basis i) g))) (unExpr terms)
+-- withSameBasis :: IsBasis t => OperatorHeader t -> OperatorHeader t -> (Basis t -> a) -> a
+-- withSameBasis a b f
+--   | opBasis a == opBasis b = f (opBasis a)
+--   | otherwise = error "expected operators defined on the same basis"
 
-withSameBasis :: IsBasis t => OperatorHeader t -> OperatorHeader t -> (Basis t -> a) -> a
-withSameBasis a b f
-  | opBasis a == opBasis b = f (opBasis a)
-  | otherwise = error "expected operators defined on the same basis"
+-- instance IsBasis t => Num (OperatorHeader t) where
+--   (+) a b = withSameBasis a b $ \basis -> OperatorHeader basis (opTerms a + opTerms b)
+--   (-) a b = withSameBasis a b $ \basis -> OperatorHeader basis (opTerms a - opTerms b)
+--   (*) a b = withSameBasis a b $ \basis -> OperatorHeader basis (opTerms a * opTerms b)
+--   negate a = OperatorHeader (opBasis a) (negate (opTerms a))
+--   abs a = OperatorHeader (opBasis a) (abs (opTerms a))
+--   signum a = OperatorHeader (opBasis a) (signum (opTerms a))
+--   fromInteger _ = error "Num instance of OperatorHeader does not implement fromInteger"
 
-instance IsBasis t => Num (OperatorHeader t) where
-  (+) a b = withSameBasis a b $ \basis -> OperatorHeader basis (opTerms a + opTerms b)
-  (-) a b = withSameBasis a b $ \basis -> OperatorHeader basis (opTerms a - opTerms b)
-  (*) a b = withSameBasis a b $ \basis -> OperatorHeader basis (opTerms a * opTerms b)
-  negate a = OperatorHeader (opBasis a) (negate (opTerms a))
-  abs a = OperatorHeader (opBasis a) (abs (opTerms a))
-  signum a = OperatorHeader (opBasis a) (signum (opTerms a))
-  fromInteger _ = error "Num instance of OperatorHeader does not implement fromInteger"
+-- instance IsBasis t => CanScale ComplexRational (OperatorHeader t) where
+--   scale c a = OperatorHeader (opBasis a) (c `scale` opTerms a)
 
-instance IsBasis t => CanScale ComplexRational (OperatorHeader t) where
-  scale c a = OperatorHeader (opBasis a) (c `scale` opTerms a)
+-- instance IsBasis t => Num (Operator t) where
+--   (+) a b = operatorFromHeader $ opHeader a + opHeader b
+--   (-) a b = operatorFromHeader $ opHeader a - opHeader b
+--   (*) a b = operatorFromHeader $ opHeader a * opHeader b
+--   negate a = operatorFromHeader $ negate (opHeader a)
+--   abs a = operatorFromHeader $ abs (opHeader a)
+--   signum a = operatorFromHeader $ signum (opHeader a)
+--   fromInteger n = operatorFromHeader $ fromInteger n
 
-instance IsBasis t => Num (Operator t) where
-  (+) a b = operatorFromHeader $ opHeader a + opHeader b
-  (-) a b = operatorFromHeader $ opHeader a - opHeader b
-  (*) a b = operatorFromHeader $ opHeader a * opHeader b
-  negate a = operatorFromHeader $ negate (opHeader a)
-  abs a = operatorFromHeader $ abs (opHeader a)
-  signum a = operatorFromHeader $ signum (opHeader a)
-  fromInteger n = operatorFromHeader $ fromInteger n
-
-instance IsBasis t => CanScale ComplexRational (Operator t) where
-  scale c a = operatorFromHeader $ scale c (opHeader a)
+-- instance IsBasis t => CanScale ComplexRational (Operator t) where
+--   scale c a = operatorFromHeader $ scale c (opHeader a)
 
 mkOperator :: IsBasis t => Basis t -> Expr t -> Operator t
-mkOperator basis expr = operatorFromHeader $ OperatorHeader basis expr
+mkOperator basis expr = Operator basis expr
+{-# NOINLINE mkOperator #-}
 
 -- getNumberTerms :: Operator c basis -> Int
 -- getNumberTerms operator = let (Sum v) = opTerms operator in G.length v
@@ -122,11 +139,15 @@ mkOperator basis expr = operatorFromHeader $ OperatorHeader basis expr
 
 getNonbranchingTerms ::
   HasNonbranchingRepresentation (Generator Int (GeneratorType t)) =>
-  OperatorHeader t ->
+  Operator t ->
   Vector NonbranchingTerm
 getNonbranchingTerms operator =
   case nonbranchingRepresentation <$> opTermsFlat operator of
     (Sum v) -> v
+  where
+    opTermsFlat :: Operator t -> Polynomial ComplexRational (Generator Int (GeneratorType t))
+    opTermsFlat (Operator basis terms) =
+      fmap (fmap (fmap (\(Generator i g) -> Generator (flattenIndex basis i) g))) (unExpr terms)
 
 -- typedef struct ls_hs_nonbranching_terms {
 --   int number_terms;
@@ -214,61 +235,120 @@ destroyCnonbranching_terms p
 -- foreign import ccall safe "ls_hs_destroy_basis_v2"
 --   ls_hs_destroy_basis :: Ptr Cbasis -> IO ()
 
-foreign import ccall unsafe "ls_internal_create_apply_off_diag_kernel_data"
-  ls_internal_create_apply_off_diag_kernel_data :: Ptr Cnonbranching_terms -> IO (Ptr Coperator_kernel_data)
+-- foreign import ccall unsafe "ls_internal_create_apply_off_diag_kernel_data"
+--   ls_internal_create_apply_off_diag_kernel_data :: Ptr Cnonbranching_terms -> IO (Ptr Coperator_kernel_data)
 
-foreign import ccall unsafe "ls_internal_create_apply_diag_kernel_data"
-  ls_internal_create_apply_diag_kernel_data :: Ptr Cnonbranching_terms -> IO (Ptr Coperator_kernel_data)
+-- foreign import ccall unsafe "ls_internal_create_apply_diag_kernel_data"
+--   ls_internal_create_apply_diag_kernel_data :: Ptr Cnonbranching_terms -> IO (Ptr Coperator_kernel_data)
 
-foreign import ccall unsafe "ls_internal_destroy_operator_kernel_data"
-  ls_internal_destroy_operator_kernel_data :: Ptr Coperator_kernel_data -> IO ()
+-- foreign import ccall unsafe "ls_internal_destroy_operator_kernel_data"
+--   ls_internal_destroy_operator_kernel_data :: Ptr Coperator_kernel_data -> IO ()
 
-operatorFromHeader ::
-  HasNonbranchingRepresentation (Generator Int (GeneratorType t)) =>
-  OperatorHeader t ->
-  Operator t
-operatorFromHeader x = unsafePerformIO $ do
+newCoperator :: (IsBasis t, HasCallStack) => Operator t -> IO (Ptr Coperator)
+newCoperator x = do
+  -- logDebug' $ "newCoperator"
   let (diag, offDiag) = G.partition nbtIsDiagonal (getNonbranchingTerms x)
       numberBits = getNumberBits . basisHeader . opBasis $ x
   diag_terms <- createCnonbranching_terms numberBits diag
   off_diag_terms <- createCnonbranching_terms numberBits offDiag
-  apply_diag_cxt <- ls_internal_create_apply_diag_kernel_data diag_terms
-  apply_off_diag_cxt <- ls_internal_create_apply_off_diag_kernel_data off_diag_terms
-  basis <- borrowCbasis (opBasis x)
-
-  fp <- mallocForeignPtr
-  addForeignPtrConcFinalizer fp (destroyCbasis basis)
-  addForeignPtrConcFinalizer fp (ls_internal_destroy_operator_kernel_data apply_off_diag_cxt)
-  addForeignPtrConcFinalizer fp (ls_internal_destroy_operator_kernel_data apply_diag_cxt)
-  addForeignPtrConcFinalizer fp (destroyCnonbranching_terms off_diag_terms)
-  addForeignPtrConcFinalizer fp (destroyCnonbranching_terms diag_terms)
-  withForeignPtr fp $ \ptr ->
-    poke ptr $
+  basis <- withForeignPtr (basisContents (opBasis x)) cloneCbasis
+  -- logDebug' $ "basis is " <> show basis
+  -- borrowCbasis (opBasis x)
+  payload <- newStablePtr (SomeOperator (getParticleTag . basisHeader . opBasis $ x) x)
+  r <-
+    new $
       Coperator
-        { coperator_refcount = 0,
+        { coperator_refcount = 1,
           coperator_basis = basis,
           coperator_off_diag_terms = off_diag_terms,
           coperator_diag_terms = diag_terms,
-          coperator_apply_off_diag_cxt = apply_off_diag_cxt,
-          coperator_apply_diag_cxt = apply_diag_cxt,
-          coperator_haskell_payload = nullPtr
+          -- coperator_apply_off_diag_cxt = nullPtr,
+          -- coperator_apply_diag_cxt = nullPtr,
+          coperator_haskell_payload = castStablePtrToPtr payload
         }
-  pure $ Operator x fp
-{-# NOINLINE operatorFromHeader #-}
+  logDebug' $ "newCoperator " <> show r <> ", basis was " <> show basis
+  pure r
 
-borrowCoperator :: Operator t -> IO (Ptr Coperator)
-borrowCoperator operator = do
-  payload <- newStablePtr operator
-  withForeignPtr (opContents operator) $ \ptr -> do
-    _ <- operatorIncRefCount ptr
-    operatorPokePayload ptr payload
-  pure $ unsafeForeignPtrToPtr (opContents operator)
+withCoperator :: Ptr Coperator -> (SomeOperator -> IO a) -> IO a
+withCoperator p f = f =<< (deRefStablePtr . castPtrToStablePtr . coperator_haskell_payload) =<< peek p
 
-destroyCoperator :: Ptr Coperator -> IO ()
-destroyCoperator ptr = do
-  refcount <- operatorDecRefCount ptr
-  when (refcount == 1) $
-    freeStablePtr =<< operatorPeekPayload ptr
+cloneCoperator :: HasCallStack => Ptr Coperator -> IO (Ptr Coperator)
+cloneCoperator p = do
+  basis <- coperator_basis <$> peek p
+  logDebug' $ "cloneCoperator " <> show p <> ", basis=" <> show basis
+  _ <- operatorIncRefCount p
+  -- payload <- newStablePtr =<< deRefStablePtr (castPtrToStablePtr . coperator_haskell_payload $ x)
+  -- new $ x {coperator_haskell_payload = castStablePtrToPtr payload}
+  pure p
+
+destroyCoperator :: HasCallStack => Ptr Coperator -> IO ()
+destroyCoperator p = do
+  logDebug' $ "destroyCoperator " <> show p
+  refcount <- operatorDecRefCount p
+  when (refcount == 1) $ do
+    logDebug' $ "fully destroying " <> show p
+    x <- peek p
+    logDebug' $ "destroying basis " <> show (coperator_basis x)
+    destroyCbasis (coperator_basis x)
+    -- logDebug' $ "destroying off-diag terms ..."
+    destroyCnonbranching_terms (coperator_off_diag_terms x)
+    -- logDebug' $ "destroying diag terms ..."
+    destroyCnonbranching_terms (coperator_diag_terms x)
+    -- logDebug' $ "freeing stable ptr ..."
+    freeStablePtr . castPtrToStablePtr $ coperator_haskell_payload x
+    -- logDebug' $ "freeing ptr ..."
+    free p
+
+-- addForeignPtrConcFinalizer fp (ls_internal_destroy_operator_kernel_data apply_off_diag_cxt)
+-- addForeignPtrConcFinalizer fp (ls_internal_destroy_operator_kernel_data apply_diag_cxt)
+-- pure $ Operator x fp
+
+-- operatorFromHeader ::
+--   HasNonbranchingRepresentation (Generator Int (GeneratorType t)) =>
+--   OperatorHeader t ->
+--   Operator t
+-- operatorFromHeader x = unsafePerformIO $ do
+--   let (diag, offDiag) = G.partition nbtIsDiagonal (getNonbranchingTerms x)
+--       numberBits = getNumberBits . basisHeader . opBasis $ x
+--   diag_terms <- createCnonbranching_terms numberBits diag
+--   off_diag_terms <- createCnonbranching_terms numberBits offDiag
+--   -- apply_diag_cxt <- ls_internal_create_apply_diag_kernel_data diag_terms
+--   -- apply_off_diag_cxt <- ls_internal_create_apply_off_diag_kernel_data off_diag_terms
+--   basis <- borrowCbasis (opBasis x)
+--
+--   fp <- mallocForeignPtr
+--   addForeignPtrConcFinalizer fp (destroyCbasis basis)
+--   -- addForeignPtrConcFinalizer fp (ls_internal_destroy_operator_kernel_data apply_off_diag_cxt)
+--   -- addForeignPtrConcFinalizer fp (ls_internal_destroy_operator_kernel_data apply_diag_cxt)
+--   addForeignPtrConcFinalizer fp (destroyCnonbranching_terms off_diag_terms)
+--   addForeignPtrConcFinalizer fp (destroyCnonbranching_terms diag_terms)
+--   withForeignPtr fp $ \ptr ->
+--     poke ptr $
+--       Coperator
+--         { coperator_refcount = 0,
+--           coperator_basis = basis,
+--           coperator_off_diag_terms = off_diag_terms,
+--           coperator_diag_terms = diag_terms,
+--           coperator_apply_off_diag_cxt = nullPtr,
+--           coperator_apply_diag_cxt = nullPtr,
+--           coperator_haskell_payload = nullPtr
+--         }
+--   pure $ Operator x fp
+-- {-# NOINLINE operatorFromHeader #-}
+
+-- borrowCoperator :: Operator t -> IO (Ptr Coperator)
+-- borrowCoperator operator = do
+--   payload <- newStablePtr operator
+--   withForeignPtr (opContents operator) $ \ptr -> do
+--     _ <- operatorIncRefCount ptr
+--     operatorPokePayload ptr payload
+--   pure $ unsafeForeignPtrToPtr (opContents operator)
+
+-- destroyCoperator :: Ptr Coperator -> IO ()
+-- destroyCoperator ptr = do
+--   refcount <- operatorDecRefCount ptr
+--   when (refcount == 1) $
+--     freeStablePtr =<< operatorPeekPayload ptr
 
 --
 -- createCoperator ::
@@ -309,37 +389,37 @@ destroyCoperator ptr = do
 --     free p
 --   | otherwise = error "should not happen"
 
-withReconstructedOperator ::
-  forall a.
-  Ptr Coperator ->
-  (forall (t :: ParticleTy). IsBasis t => Operator t -> IO a) ->
-  IO a
-withReconstructedOperator p action = do
-  let run :: forall (t :: ParticleTy). IsBasis t => Proxy t -> IO a
-      run _ = (action :: Operator t -> IO a) =<< deRefStablePtr =<< operatorPeekPayload p
-  tp <- operatorPeekParticleType p
-  withParticleType tp run
+-- withReconstructedOperator ::
+--   forall a.
+--   Ptr Coperator ->
+--   (forall (t :: ParticleTy). IsBasis t => Operator t -> IO a) ->
+--   IO a
+-- withReconstructedOperator p action = do
+--   let run :: forall (t :: ParticleTy). IsBasis t => Proxy t -> IO a
+--       run _ = (action :: Operator t -> IO a) =<< deRefStablePtr =<< operatorPeekPayload p
+--   tp <- operatorPeekParticleType p
+--   withParticleType tp run
 
-withSameTypeAs ::
-  forall t a.
-  HasCallStack =>
-  Operator t ->
-  ((forall t'. Operator t' -> a) -> a) ->
-  (Operator t -> a) ->
-  a
-withSameTypeAs a _with _action = _with f
-  where
-    f :: forall t'. Operator t' -> a
-    f b = case (basisHeader . opBasis . opHeader $ a, basisHeader . opBasis . opHeader $ b) of
-      ((SpinHeader _ _ _ _), (SpinHeader _ _ _ _)) -> _action b
-      ((SpinfulFermionHeader _ _), (SpinfulFermionHeader _ _)) -> _action b
-      ((SpinlessFermionHeader _ _), (SpinlessFermionHeader _ _)) -> _action b
-      _ -> error "operators have different types"
+-- withSameTypeAs ::
+--   forall t a.
+--   HasCallStack =>
+--   Operator t ->
+--   ((forall t'. Operator t' -> a) -> a) ->
+--   (Operator t -> a) ->
+--   a
+-- withSameTypeAs a _with _action = _with f
+--   where
+--     f :: forall t'. Operator t' -> a
+--     f b = case (basisHeader . opBasis . opHeader $ a, basisHeader . opBasis . opHeader $ b) of
+--       ((SpinHeader _ _ _ _), (SpinHeader _ _ _ _)) -> _action b
+--       ((SpinfulFermionHeader _ _), (SpinfulFermionHeader _ _)) -> _action b
+--       ((SpinlessFermionHeader _ _), (SpinlessFermionHeader _ _)) -> _action b
+--       _ -> error "operators have different types"
 
 maxNumberOffDiag :: IsBasis t => Operator t -> Int
 maxNumberOffDiag op = Set.size $ Set.fromList . G.toList . G.map nbtX $ offDiag
   where
-    (_, offDiag) = G.partition nbtIsDiagonal (getNonbranchingTerms (opHeader op))
+    (_, offDiag) = G.partition nbtIsDiagonal (getNonbranchingTerms op)
 
 -- applyOperator ::
 --   forall t.

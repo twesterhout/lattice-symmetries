@@ -127,7 +127,12 @@ library
                        kernels/kernels.c
   include-dirs:        cbits
   cc-options:          -fPIC -O3 -DNDEBUG
-                       -Wall -Wextra -Wpedantic -Wconversion -Wdouble-promotion -Wformat=2 -Wformat-overflow=2 -Winit-self -Wimplicit-fallthrough -Wunused -Wuninitialized -Wstrict-overflow=2 -Wduplicated-branches -Wfloat-equal -Wshadow -Wunused-macros -Wmissing-field-initializers
+                       -Wall -Wextra -Wpedantic -Wconversion -Wdouble-promotion
+                       -Wformat=2 -Wformat-overflow=2 -Winit-self
+                       -Wimplicit-fallthrough -Wunused -Wuninitialized
+                       -Wstrict-overflow=2 -Wduplicated-branches -Wfloat-equal
+                       -Wshadow -Wunused-macros -Wmissing-field-initializers
+                       -Wno-variadic-macros
 
 foreign-library lattice_symmetries_haskell
   import:              common-options

@@ -8,7 +8,8 @@ import Data.List.Split (chunksOf)
 import qualified Data.Text as Text
 import qualified Data.Vector.Generic as G
 import Foreign.C.String (CString)
-import Foreign.C.Types (CBool (..), CInt (..), CUInt (..))
+import Foreign.C.Types (CBool (..), CInt (..), CPtrdiff (..), CUInt (..))
+import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc (alloca, free, malloc)
 import Foreign.Marshal.Array (newArray, peekArray)
 import Foreign.Marshal.Utils (fromBool, new)
@@ -82,27 +83,48 @@ foreign export ccall "ls_hs_hdf5_get_dataset_shape"
 -- ls_hs_permutation_group * ls_hs_symmetries_from_json (const char * json_string)
 -- void ls_hs_destroy_symmetries (ls_hs_permutation_group *)
 
+-- {{{ Symmetry
+-- typedef struct ls_hs_symmetry ls_hs_symmetry;
+-- ls_hs_symmetry *ls_hs_symmetry_from_json(const char *json_string);
+-- void ls_hs_destroy_symmetry(ls_hs_symmetry *);
+
+foreign export ccall "ls_hs_symmetry_from_json"
+  ls_hs_symmetry_from_json :: CString -> IO (Ptr Csymmetry)
+
+ls_hs_symmetry_from_json cStr =
+  handleAny (propagateErrorToC nullPtr) $
+    newCsymmetry =<< decodeCString cStr
+
+foreign export ccall "ls_hs_destroy_symmetry"
+  ls_hs_destroy_symmetry :: Ptr Csymmetry -> IO ()
+
+ls_hs_destroy_symmetry = destroyCsymmetry
+
+-- }}}
+
+-- {{{ Symmetries
+-- typedef struct ls_hs_symmetries ls_hs_symmetries;
+-- ls_hs_symmetries *ls_hs_symmetries_from_json(const char *json_string);
+-- void ls_hs_destroy_symmetries(ls_hs_symmetries *);
+
 foreign export ccall "ls_hs_symmetries_from_json"
-  ls_hs_symmetries_from_json :: CString -> IO (Ptr Cpermutation_group)
+  ls_hs_symmetries_from_json :: CString -> IO (Ptr Csymmetries)
 
 ls_hs_symmetries_from_json cStr =
   handleAny (propagateErrorToC nullPtr) $
-    borrowCsymmetries =<< decodeCString cStr
+    newCsymmetries =<< decodeCString cStr
 
 foreign export ccall "ls_hs_destroy_symmetries"
-  ls_hs_destroy_symmetries :: Ptr Cpermutation_group -> IO ()
+  ls_hs_destroy_symmetries :: Ptr Csymmetries -> IO ()
 
-ls_hs_destroy_symmetries p = do
-  refcount <- symmetriesDecRefCount p
-  when (refcount == 1) $ do
-    freeStablePtr =<< symmetriesPeekPayload p
+ls_hs_destroy_symmetries = destroyCsymmetries
+
+-- }}}
 
 foreign export ccall "ls_hs_clone_basis"
   ls_hs_clone_basis :: Ptr Cbasis -> IO (Ptr Cbasis)
 
-ls_hs_clone_basis ptr = do
-  _ <- basisIncRefCount ptr
-  pure ptr
+ls_hs_clone_basis = cloneCbasis
 
 foreign export ccall "ls_hs_destroy_basis"
   destroyCbasis :: Ptr Cbasis -> IO ()
@@ -122,14 +144,17 @@ foreign export ccall "ls_hs_destroy_basis"
 foreign export ccall "ls_hs_basis_to_json"
   ls_hs_basis_to_json :: Ptr Cbasis -> IO CString
 
-ls_hs_basis_to_json cBasis =
-  withReconstructedBasis cBasis $ \basis ->
+ls_hs_basis_to_json cBasis = do
+  logDebug' $ "ls_hs_basis_to_json " <> show cBasis
+  withReconstructedBasis cBasis $ \basis -> do
+    -- print basis
     newCString $ toStrict (Data.Aeson.encode basis)
 
 foreign export ccall "ls_hs_basis_from_json"
   ls_hs_basis_from_json :: CString -> IO (Ptr Cbasis)
 
 ls_hs_basis_from_json cStr = handleAny (propagateErrorToC nullPtr) $ do
+  logDebug' $ "ls_hs_basis_from_json ..."
   (basis :: SomeBasis) <- decodeCString cStr
   foldSomeBasis borrowCbasis basis
 
@@ -208,17 +233,37 @@ ls_hs_basis_state_to_string basisPtr statePtr =
     state <- BasisState @t numberBits <$> readBitString numberWords statePtr
     newCString . encodeUtf8 . toPrettyText $ state
 
+foreign export ccall "ls_hs_fixed_hamming_state_to_index"
+  ls_hs_fixed_hamming_state_to_index :: Word64 -> CPtrdiff
+
+ls_hs_fixed_hamming_state_to_index = fromIntegral . fixedHammingStateToIndex
+
+foreign export ccall "ls_hs_fixed_hamming_index_to_state"
+  ls_hs_fixed_hamming_index_to_state :: CPtrdiff -> CInt -> Word64
+
+ls_hs_fixed_hamming_index_to_state index hammingWeight =
+  fixedHammingIndexToState (fromIntegral hammingWeight) (fromIntegral index)
+
+-- ptrdiff_t ls_hs_fixed_hamming_state_to_index(uint64_t const basis_state) {
+--   int const number_bits = 64 - __builtin_clzl(basis_state);
+--   ls_hs_combinadics_kernel_data *const cache =
+--       ls_hs_internal_create_combinadics_kernel_data(number_bits, false);
+--   ptrdiff_t const index = ls_hs_combinadics_state_to_index(basis_state, cache);
+--   ls_hs_internal_destroy_combinadics_kernel_data(cache);
+--   return index;
+-- }
+--
+-- uint64_t ls_hs_fixed_hamming_index_to_state(ptrdiff_t const index,
+--                                             int const hamming_weight) {
+
 newCexpr :: SomeExpr -> IO (Ptr Cexpr)
-newCexpr !expr = do
-  cExpr <- (new . Cexpr 1 . castStablePtrToPtr) =<< newStablePtr expr
-  pure cExpr
+newCexpr expr = (new . Cexpr) =<< newStablePtr expr
 
 withCexpr :: Ptr Cexpr -> (SomeExpr -> IO a) -> IO a
-withCexpr !p f =
-  f =<< deRefStablePtr =<< exprPeekPayload p
+withCexpr p f = f =<< deRefStablePtr . unCexpr =<< peek p
 
 withCexpr2 :: Ptr Cexpr -> Ptr Cexpr -> (SomeExpr -> SomeExpr -> a) -> IO a
-withCexpr2 !p1 !p2 f =
+withCexpr2 p1 p2 f =
   withCexpr p1 $ \x1 ->
     withCexpr p2 $ \x2 ->
       pure (f x1 x2)
@@ -226,29 +271,29 @@ withCexpr2 !p1 !p2 f =
 forCexpr :: (SomeExpr -> IO a) -> Ptr Cexpr -> IO a
 forCexpr f p = withCexpr p f
 
-foreign export ccall "ls_hs_create_expr"
-  ls_hs_create_expr :: CString -> IO (Ptr Cexpr)
+-- foreign export ccall "ls_hs_create_expr"
+--   ls_hs_create_expr :: CString -> IO (Ptr Cexpr)
 
-ls_hs_create_expr cStr =
-  handleAnyDeep (propagateErrorToC nullPtr) $ do
-    s <- peekUtf8 cStr
-    let create :: forall t. ParticleTag t -> IO (Ptr Cexpr)
-        create tag = newCexpr . SomeExpr tag $ mkExpr tag s
-        result :: IO (Ptr Cexpr)
-        result
-          | isJust $ Text.find (\c -> c == 'σ' || c == 'S') s = create SpinTag
-          | isJust $ Text.find (\c -> c == '↑' || c == '↓') s = create SpinfulFermionTag
-          | otherwise = create SpinlessFermionTag
-    result
+-- ls_hs_create_expr cStr =
+--   handleAnyDeep (propagateErrorToC nullPtr) $ do
+--     s <- peekUtf8 cStr
+--     let create :: forall t. ParticleTag t -> IO (Ptr Cexpr)
+--         create tag = newCexpr . SomeExpr tag $ mkExpr tag s
+--         result :: IO (Ptr Cexpr)
+--         result
+--           | isJust $ Text.find (\c -> c == 'σ' || c == 'S') s = create SpinTag
+--           | isJust $ Text.find (\c -> c == '↑' || c == '↓') s = create SpinfulFermionTag
+--           | otherwise = create SpinlessFermionTag
+--     result
 
 foreign export ccall "ls_hs_destroy_expr"
   ls_hs_destroy_expr :: Ptr Cexpr -> IO ()
 
 ls_hs_destroy_expr p = do
-  refcount <- exprDecRefCount p
-  when (refcount == 1) $ do
-    freeStablePtr =<< exprPeekPayload p
-    free p
+  -- refcount <- exprDecRefCount p
+  -- when (refcount == 1) $ do
+  freeStablePtr . unCexpr =<< peek p
+  free p
 
 foreign export ccall "ls_hs_expr_to_string"
   ls_hs_expr_to_string :: Ptr Cexpr -> IO CString
@@ -325,111 +370,114 @@ ls_hs_expr_from_json cStr = handleAny (propagateErrorToC nullPtr) $ do
 foreign export ccall "ls_hs_create_operator"
   ls_hs_create_operator :: Ptr Cbasis -> Ptr Cexpr -> IO (Ptr Coperator)
 
-foreign export ccall "ls_hs_clone_operator"
-  ls_hs_clone_operator :: Ptr Coperator -> IO (Ptr Coperator)
-
-ls_hs_clone_operator ptr = do
-  _ <- operatorIncRefCount ptr
-  pure ptr
-
-foreign export ccall "ls_hs_destroy_operator"
-  destroyCoperator :: Ptr Coperator -> IO ()
-
 ls_hs_create_operator :: Ptr Cbasis -> Ptr Cexpr -> IO (Ptr Coperator)
 ls_hs_create_operator basisPtr exprPtr =
-  handleAny (propagateErrorToC nullPtr) $
+  handleAny (propagateErrorToC nullPtr) $ do
+    logDebug' $ "ls_hs_create_operator " <> show basisPtr <> ", " <> show exprPtr
     withReconstructedBasis basisPtr $ \basis ->
       withCexpr exprPtr $ \someExpr ->
         withSomeExpr @IsBasis someExpr $ \expr ->
           case matchParticleType2 basis expr of
-            Just HRefl -> borrowCoperator (mkOperator basis expr)
+            Just HRefl -> newCoperator (mkOperator basis expr)
             Nothing -> error "basis and expression have different particle types"
 
-operatorBinaryFunction ::
-  (forall t. IsBasis t => Operator t -> Operator t -> Operator t) ->
-  Ptr Coperator ->
-  Ptr Coperator ->
-  IO (Ptr Coperator)
-operatorBinaryFunction f aPtr bPtr =
-  handleAny (propagateErrorToC nullPtr) $
-    withReconstructedOperator aPtr $ \a ->
-      withReconstructedOperator bPtr $ \b ->
-        case matchParticleType2 a b of
-          Just HRefl -> borrowCoperator (f a b)
-          Nothing -> error "operators have different particle types"
+foreign export ccall "ls_hs_clone_operator"
+  ls_hs_clone_operator :: Ptr Coperator -> IO (Ptr Coperator)
 
-ls_hs_operator_plus :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
-ls_hs_operator_plus = operatorBinaryFunction (+)
+ls_hs_clone_operator = cloneCoperator
 
-ls_hs_operator_minus :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
-ls_hs_operator_minus = operatorBinaryFunction (-)
+foreign export ccall "ls_hs_destroy_operator"
+  destroyCoperator :: Ptr Coperator -> IO ()
 
-ls_hs_operator_times :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
-ls_hs_operator_times = operatorBinaryFunction (*)
+-- operatorBinaryFunction ::
+--   (forall t. IsBasis t => Operator t -> Operator t -> Operator t) ->
+--   Ptr Coperator ->
+--   Ptr Coperator ->
+--   IO (Ptr Coperator)
+-- operatorBinaryFunction f aPtr bPtr =
+--   handleAny (propagateErrorToC nullPtr) $
+--     withReconstructedOperator aPtr $ \a ->
+--       withReconstructedOperator bPtr $ \b ->
+--         case matchParticleType2 a b of
+--           Just HRefl -> borrowCoperator (f a b)
+--           Nothing -> error "operators have different particle types"
 
-ls_hs_operator_scale :: Ptr Cscalar -> Ptr Coperator -> IO (Ptr Coperator)
-ls_hs_operator_scale cPtr opPtr =
-  handleAny (propagateErrorToC nullPtr) $
-    withReconstructedOperator opPtr $ \op -> do
-      (c :: ComplexRational) <- fromComplexDouble <$> peek cPtr
-      borrowCoperator $ scale c op
+-- ls_hs_operator_plus :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
+-- ls_hs_operator_plus = operatorBinaryFunction (+)
 
-foreign export ccall "ls_hs_operator_plus"
-  ls_hs_operator_plus :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
+-- ls_hs_operator_minus :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
+-- ls_hs_operator_minus = operatorBinaryFunction (-)
 
-foreign export ccall "ls_hs_operator_minus"
-  ls_hs_operator_minus :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
+-- ls_hs_operator_times :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
+-- ls_hs_operator_times = operatorBinaryFunction (*)
 
-foreign export ccall "ls_hs_operator_times"
-  ls_hs_operator_times :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
+-- ls_hs_operator_scale :: Ptr Cscalar -> Ptr Coperator -> IO (Ptr Coperator)
+-- ls_hs_operator_scale cPtr opPtr =
+--   handleAny (propagateErrorToC nullPtr) $
+--     withReconstructedOperator opPtr $ \op -> do
+--       (c :: ComplexRational) <- fromComplexDouble <$> peek cPtr
+--       borrowCoperator $ scale c op
 
-foreign export ccall "ls_hs_operator_scale"
-  ls_hs_operator_scale :: Ptr Cscalar -> Ptr Coperator -> IO (Ptr Coperator)
+-- foreign export ccall "ls_hs_operator_plus"
+--   ls_hs_operator_plus :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
 
-foreign export ccall "ls_hs_operator_hermitian_conjugate"
-  ls_hs_operator_hermitian_conjugate :: Ptr Coperator -> IO (Ptr Coperator)
+-- foreign export ccall "ls_hs_operator_minus"
+--   ls_hs_operator_minus :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
 
-ls_hs_operator_hermitian_conjugate opPtr =
-  withReconstructedOperator opPtr $ \(Operator (OperatorHeader basis terms) _) ->
-    borrowCoperator $
-      operatorFromHeader (OperatorHeader basis (conjugateExpr terms))
+-- foreign export ccall "ls_hs_operator_times"
+--   ls_hs_operator_times :: Ptr Coperator -> Ptr Coperator -> IO (Ptr Coperator)
 
-foreign export ccall "ls_hs_operator_is_hermitian"
-  ls_hs_operator_is_hermitian :: Ptr Coperator -> IO CBool
+-- foreign export ccall "ls_hs_operator_scale"
+--   ls_hs_operator_scale :: Ptr Cscalar -> Ptr Coperator -> IO (Ptr Coperator)
 
-ls_hs_operator_is_hermitian opPtr =
-  fromBool <$> withReconstructedOperator opPtr (pure . isHermitianExpr . opTerms . opHeader)
+-- foreign export ccall "ls_hs_operator_hermitian_conjugate"
+--   ls_hs_operator_hermitian_conjugate :: Ptr Coperator -> IO (Ptr Coperator)
 
-foreign export ccall "ls_hs_operator_is_real"
-  ls_hs_operator_is_real :: Ptr Coperator -> IO CBool
+-- ls_hs_operator_hermitian_conjugate opPtr =
+--   withReconstructedOperator opPtr $ \(Operator (OperatorHeader basis terms) _) ->
+--     borrowCoperator $
+--       operatorFromHeader (OperatorHeader basis (conjugateExpr terms))
 
-ls_hs_operator_is_real opPtr =
-  withReconstructedOperator opPtr $ \op ->
-    pure . fromBool $
-      (isRealExpr . opTerms . opHeader $ op)
-        && (isBasisReal . basisHeader . opBasis . opHeader $ op)
+-- foreign export ccall "ls_hs_operator_is_hermitian"
+--   ls_hs_operator_is_hermitian :: Ptr Coperator -> IO CBool
 
-foreign export ccall "ls_hs_operator_is_identity"
-  ls_hs_operator_is_identity :: Ptr Coperator -> IO CBool
+-- ls_hs_operator_is_hermitian opPtr =
+--   fromBool <$> withReconstructedOperator opPtr (pure . isHermitianExpr . opTerms . opHeader)
 
-ls_hs_operator_is_identity opPtr =
-  fromBool <$> withReconstructedOperator opPtr (pure . isIdentityExpr . opTerms . opHeader)
+-- foreign export ccall "ls_hs_operator_is_real"
+--   ls_hs_operator_is_real :: Ptr Coperator -> IO CBool
+
+-- ls_hs_operator_is_real opPtr =
+--   withReconstructedOperator opPtr $ \op ->
+--     pure . fromBool $
+--       (isRealExpr . opTerms . opHeader $ op)
+--         && (isBasisReal . basisHeader . opBasis . opHeader $ op)
+
+-- foreign export ccall "ls_hs_operator_is_identity"
+--   ls_hs_operator_is_identity :: Ptr Coperator -> IO CBool
+
+-- ls_hs_operator_is_identity opPtr =
+--   fromBool <$> withReconstructedOperator opPtr (pure . isIdentityExpr . opTerms . opHeader)
 
 foreign export ccall "ls_hs_operator_max_number_off_diag"
   ls_hs_operator_max_number_off_diag :: Ptr Coperator -> IO CInt
 
 ls_hs_operator_max_number_off_diag opPtr =
-  fromIntegral <$> withReconstructedOperator opPtr (pure . maxNumberOffDiag)
+  fmap fromIntegral $
+    withCoperator opPtr $ \someOp ->
+      withSomeOperator someOp $ \op ->
+        pure $ maxNumberOffDiag op
 
 foreign export ccall "ls_hs_operator_get_expr"
   ls_hs_operator_get_expr :: Ptr Coperator -> IO (Ptr Cexpr)
 
 ls_hs_operator_get_expr opPtr =
-  withReconstructedOperator opPtr $ \op ->
-    newCexpr $
-      SomeExpr
-        (getParticleTag . basisHeader . opBasis . opHeader $ op)
-        (opTerms . opHeader $ op)
+  withCoperator opPtr $ \someOp ->
+    withSomeOperator someOp $ \op ->
+      newCexpr $
+        SomeExpr
+          (getParticleTag . basisHeader . opBasis $ op)
+          (opTerms op)
 
 -- foreign export ccall "ls_hs_load_hamiltonian_from_yaml"
 --   ls_hs_load_hamiltonian_from_yaml :: CString -> IO (Ptr Coperator)
@@ -446,13 +494,22 @@ ls_hs_operator_get_expr opPtr =
 toCyaml_config :: ConfigSpec -> IO (Ptr Cyaml_config)
 toCyaml_config (ConfigSpec basis maybeHamiltonian observables) = do
   p <- malloc
+  -- print basis
   basisPtr <- withSomeBasis basis borrowCbasis
+  -- withSomeBasis basis $ \b ->
+  --   withForeignPtr (basisContents b) $ \ptr -> do
+  --     _ <- basisIncRefCount ptr
+  --     pure ptr
+  -- print "1)"
+  -- borrowCbasis
   hamiltonianPtr <- case maybeHamiltonian of
-    Just h -> withSomeOperator h borrowCoperator
+    Just h -> withSomeOperator h newCoperator
     Nothing -> pure nullPtr
+  -- print "2)"
   observablesPtr <-
     (newArray =<<) $
-      G.toList <$> G.mapM (foldSomeOperator borrowCoperator) observables
+      G.toList <$> G.mapM (foldSomeOperator newCoperator) observables
+  -- print "3)"
   poke p $
     Cyaml_config basisPtr hamiltonianPtr (fromIntegral (G.length observables)) observablesPtr
   pure p
@@ -469,26 +526,33 @@ foreign export ccall "ls_hs_destroy_yaml_config"
 ls_hs_destroy_yaml_config p
   | p == nullPtr = pure ()
   | otherwise = do
+      logDebug' "ls_hs_destroy_yaml_config ..."
       (Cyaml_config basisPtr hamiltonianPtr numberObservables observablesPtr) <- peek p
+      -- logDebug' "ls_hs_destroy_yaml_config 1) ..."
       forM_ [0 .. fromIntegral numberObservables - 1] $ \i ->
         destroyCoperator =<< peekElemOff observablesPtr i
+      -- logDebug' "ls_hs_destroy_yaml_config 2) ..."
       when (observablesPtr /= nullPtr) $ free observablesPtr
+      -- logDebug' "ls_hs_destroy_yaml_config 3) ..."
       when (hamiltonianPtr /= nullPtr) $ destroyCoperator hamiltonianPtr
+      -- logDebug' "ls_hs_destroy_yaml_config 4) ..."
       destroyCbasis basisPtr
+      -- logDebug' "ls_hs_destroy_yaml_config 5) ..."
       free p
+      logDebug' "ls_hs_destroy_yaml_config done!"
 
-ls_hs_operator_pretty_terms :: Ptr Coperator -> IO CString
-ls_hs_operator_pretty_terms p =
-  withReconstructedOperator p $ \op ->
-    newCString
-      . encodeUtf8
-      . renderStrict
-      . Pretty.layoutPretty (Pretty.LayoutOptions Pretty.Unbounded)
-      . pretty
-      $ opTerms (opHeader op)
+-- ls_hs_operator_pretty_terms :: Ptr Coperator -> IO CString
+-- ls_hs_operator_pretty_terms p =
+--   withReconstructedOperator p $ \op ->
+--     newCString
+--       . encodeUtf8
+--       . renderStrict
+--       . Pretty.layoutPretty (Pretty.LayoutOptions Pretty.Unbounded)
+--       . pretty
+--       $ opTerms (opHeader op)
 
-foreign export ccall "ls_hs_operator_pretty_terms"
-  ls_hs_operator_pretty_terms :: Ptr Coperator -> IO CString
+-- foreign export ccall "ls_hs_operator_pretty_terms"
+--   ls_hs_operator_pretty_terms :: Ptr Coperator -> IO CString
 
 -- foreign export ccall "ls_hs_fatal_error"
 --   ls_hs_fatal_error :: CString -> CString -> IO ()

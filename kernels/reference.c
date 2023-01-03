@@ -10,12 +10,12 @@
 
 typedef uint64_t ls_hs_bits;
 
-typedef void (*free_stable_ptr_type)(void *);
-static free_stable_ptr_type ls_hs_internal_free_stable_ptr;
+// typedef void (*free_stable_ptr_type)(void *);
+// static free_stable_ptr_type ls_hs_internal_free_stable_ptr;
 
-void ls_hs_internal_set_free_stable_ptr(free_stable_ptr_type f) {
-  ls_hs_internal_free_stable_ptr = f;
-}
+// void ls_hs_internal_set_free_stable_ptr(free_stable_ptr_type f) {
+//   ls_hs_internal_free_stable_ptr = f;
+// }
 
 typedef void (*ls_hs_internal_chpl_free_func)(void *);
 
@@ -224,6 +224,7 @@ void ls_hs_operator_apply_diag_kernel(ls_hs_operator const *op,
   // free(temp);
 }
 
+#if 0
 #define BATCH_BLOCK_SIZE 8
 #define TERM_BLOCK_SIZE 8
 
@@ -248,7 +249,6 @@ void ls_hs_operator_apply_diag_kernel(ls_hs_operator const *op,
 
 #define min(a, b) (((a) < (b)) ? a : b)
 
-#if 0
 void ls_internal_operator_apply_off_diag_x1_v1(
     ls_hs_operator const *op, ptrdiff_t batch_size, uint64_t const *alphas,
     uint64_t *betas, ls_hs_scalar *coeffs) {
@@ -417,6 +417,7 @@ void ls_hs_operator_apply_off_diag_kernel(
   // free(temp);
 }
 
+/*
 static void compute_binomials(int dim, uint64_t *coeff) {
   coeff[0 * dim + 0] = 1;
   for (int k = 1; k < dim; ++k) {
@@ -433,7 +434,9 @@ static void compute_binomials(int dim, uint64_t *coeff) {
     }
   }
 }
+*/
 
+/*
 ls_hs_combinadics_kernel_data *
 ls_hs_internal_create_combinadics_kernel_data(int const number_bits,
                                               bool const is_per_sector) {
@@ -510,7 +513,9 @@ ls_hs_combinadics_index_to_state(ptrdiff_t index, int const hamming_weight,
   }
   return state;
 }
+*/
 
+#if 0
 ptrdiff_t ls_hs_fixed_hamming_state_to_index(uint64_t const basis_state) {
   int const number_bits = 64 - __builtin_clzl(basis_state);
   ls_hs_combinadics_kernel_data *const cache =
@@ -564,7 +569,9 @@ void ls_hs_state_index_combinadics_kernel(ptrdiff_t const batch_size,
     indices[batch_idx * indices_stride] = index;
   }
 }
+#endif
 
+/*
 void ls_hs_state_index_identity_kernel(ptrdiff_t const batch_size,
                                        uint64_t const *spins,
                                        ptrdiff_t const spins_stride,
@@ -577,6 +584,7 @@ void ls_hs_state_index_identity_kernel(ptrdiff_t const batch_size,
         (ptrdiff_t)spins[batch_idx * spins_stride];
   }
 }
+*/
 
 void ls_hs_state_index(ls_hs_basis const *const basis,
                        ptrdiff_t const batch_size,
@@ -591,6 +599,7 @@ void ls_hs_state_index(ls_hs_basis const *const basis,
                                         basis->kernels->state_index_data);
 }
 
+/*
 void ls_hs_evaluate_wavefunction_via_statevector(
     ls_hs_basis_kernels const *const kernels, ptrdiff_t const batch_size,
     uint64_t const *const restrict alphas, ptrdiff_t const alphas_stride,
@@ -611,6 +620,7 @@ void ls_hs_evaluate_wavefunction_via_statevector(
 
   free(indices);
 }
+*/
 
 void ls_hs_is_representative(ls_hs_basis const *basis, ptrdiff_t batch_size,
                              uint64_t const *alphas, ptrdiff_t alphas_stride,
@@ -635,18 +645,18 @@ void ls_hs_state_info(ls_hs_basis const *basis, ptrdiff_t batch_size,
                                        basis->kernels->state_info_data);
 }
 
-int get_number_bits(ls_hs_basis const *basis) {
-  switch (basis->particle_type) {
-  case LS_HS_SPIN:
-    return basis->number_sites;
-  case LS_HS_SPINFUL_FERMION:
-    return 2 * basis->number_sites;
-  case LS_HS_SPINLESS_FERMION:
-    return basis->number_sites;
-  default:
-    LS_CHECK(false, "should never happen: invalid particle type");
-  }
-}
+// int get_number_bits(ls_hs_basis const *basis) {
+//   switch (basis->particle_type) {
+//   case LS_HS_SPIN:
+//     return basis->number_sites;
+//   case LS_HS_SPINFUL_FERMION:
+//     return 2 * basis->number_sites;
+//   case LS_HS_SPINLESS_FERMION:
+//     return basis->number_sites;
+//   default:
+//     LS_CHECK(false, "should never happen: invalid particle type");
+//   }
+// }
 
 void ls_hs_build_representatives(ls_hs_basis *basis, uint64_t const lower,
                                  uint64_t const upper) {
@@ -659,27 +669,26 @@ void ls_hs_build_representatives(ls_hs_basis *basis, uint64_t const lower,
     return;
   }
   (*kernels->enumerate_states)(basis, lower, upper, &basis->representatives);
-  if (basis->kernels->state_index_kernel == NULL) {
 
-    basis->kernels->state_index_data =
-        ls_hs_create_state_index_binary_search_kernel_data(
-            &basis->representatives, get_number_bits(basis));
-    basis->kernels->state_index_kernel =
-        &ls_hs_state_index_binary_search_kernel;
-  }
+  // if (basis->kernels->state_index_kernel == NULL) {
+  basis->kernels->state_index_data =
+      ls_hs_create_state_index_binary_search_kernel_data(
+          &basis->representatives, ls_hs_basis_number_bits(basis));
+  basis->kernels->state_index_kernel = &ls_hs_state_index_binary_search_kernel;
+  // }
 }
 
 void ls_hs_unchecked_set_representatives(ls_hs_basis *basis,
                                          chpl_external_array const *states) {
   LS_CHECK(basis->representatives.num_elts == 0,
            "representatives have already been set");
+  LS_CHECK(basis->kernels != NULL, "basis->kernels not set");
+  LS_CHECK(basis->kernels->state_index_kernel == NULL,
+           "state_index_kernel has already been set");
   basis->representatives = *states;
-  if (basis->kernels->state_index_kernel != NULL) {
-    // TODO: this is leaking memory...
-  }
   basis->kernels->state_index_data =
       ls_hs_create_state_index_binary_search_kernel_data(
-          &basis->representatives, get_number_bits(basis));
+          &basis->representatives, ls_hs_basis_number_bits(basis));
   basis->kernels->state_index_kernel = &ls_hs_state_index_binary_search_kernel;
 }
 

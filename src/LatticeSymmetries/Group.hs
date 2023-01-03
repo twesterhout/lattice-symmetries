@@ -14,10 +14,23 @@ module LatticeSymmetries.Group
     areSymmetriesReal,
     nullSymmetries,
     emptySymmetries,
+    emptySymmetriesHeader,
     symmetriesGetNumberBits,
     -- symmetriesFromSpec,
-    borrowCsymmetries,
-    withReconstructedSymmetries,
+    -- borrowCsymmetries,
+    -- withReconstructedSymmetries,
+
+    -- ** Low-level interface for FFI
+    Csymmetry (..),
+    newCsymmetry,
+    destroyCsymmetry,
+    withCsymmetry,
+    Csymmetries (..),
+    newCsymmetries,
+    destroyCsymmetries,
+    withCsymmetries,
+    borrowCpermutation_group,
+    releaseCpermutation_group,
   )
 where
 
@@ -107,8 +120,8 @@ data SymmetriesHeader = SymmetriesHeader
   }
   deriving stock (Show, Eq)
 
-getNumberBits :: SymmetriesHeader -> Int
-getNumberBits (SymmetriesHeader (PermutationGroup gs) _ _ _)
+symmetriesGetNumberBits :: SymmetriesHeader -> Int
+symmetriesGetNumberBits (SymmetriesHeader (PermutationGroup gs) _ _ _)
   | G.null gs = 0
   | otherwise = G.length . unPermutation . G.head $ gs
 
@@ -124,17 +137,27 @@ data Symmetries = Symmetries
 instance Eq Symmetries where
   (==) a b = symmetriesHeader a == symmetriesHeader b
 
+instance FromJSON SymmetriesHeader where
+  parseJSON xs = do
+    gs <- parseJSON xs
+    case mkSymmetriesHeader gs of
+      Just s -> pure s
+      Nothing -> fail "incompatible symmetries"
+
+instance ToJSON SymmetriesHeader where
+  toJSON symmetries = toJSON (toSymmetryList symmetries)
+
 instance FromJSON Symmetries where
   parseJSON xs = mkSymmetries <$> parseJSON xs
 
 instance ToJSON Symmetries where
-  toJSON symmetries = toJSON (toSymmetryList symmetries)
+  toJSON symmetries = toJSON (toSymmetryList (symmetriesHeader symmetries))
 
-areSymmetriesReal :: Symmetries -> Bool
-areSymmetriesReal = G.all (== 0) . symmHeaderCharactersImag . symmetriesHeader
+areSymmetriesReal :: SymmetriesHeader -> Bool
+areSymmetriesReal = G.all (== 0) . symmHeaderCharactersImag
 
-toSymmetryList :: Symmetries -> [Symmetry]
-toSymmetryList (Symmetries (SymmetriesHeader (PermutationGroup gs) _ λsRe λsIm) _) =
+toSymmetryList :: SymmetriesHeader -> [Symmetry]
+toSymmetryList (SymmetriesHeader (PermutationGroup gs) _ λsRe λsIm) =
   Data.List.zipWith3 _toSymmetry (G.toList gs) (G.toList λsRe) (G.toList λsIm)
   where
     _toSymmetry :: Permutation -> Double -> Double -> Symmetry
@@ -163,14 +186,14 @@ fromGenerators identity gs = go Set.empty (Set.singleton identity)
         interior' = interior `Set.union` boundary
         boundary' = Set.fromList [h <> g | h <- Set.toList boundary, g <- gs] Set.\\ interior'
 
-nullSymmetries :: Symmetries -> Bool
-nullSymmetries = nullPermutationGroup . symmHeaderGroup . symmetriesHeader
+nullSymmetries :: SymmetriesHeader -> Bool
+nullSymmetries = nullPermutationGroup . symmHeaderGroup
 
 emptySymmetries :: Symmetries
 emptySymmetries = symmetriesFromHeader emptySymmetriesHeader
 
-symmetriesGetNumberBits :: Symmetries -> Int
-symmetriesGetNumberBits = getNumberBits . symmetriesHeader
+-- symmetriesGetNumberBits :: Symmetries -> Int
+-- symmetriesGetNumberBits = getNumberBits . symmetriesHeader
 
 mkSymmetries :: [Symmetry] -> Symmetries
 mkSymmetries gs = case symmetriesFromHeader <$> mkSymmetriesHeader gs of
@@ -209,7 +232,7 @@ symmetriesFromHeader x = unsafePerformIO $ do
   fp <- mallocForeignPtr
   let (DenseMatrix numberShifts numberMasks masks) = bbnMasks $ symmHeaderNetwork x
       shifts = bbnShifts $ symmHeaderNetwork x
-      numberBits = getNumberBits x
+      numberBits = symmetriesGetNumberBits x
   withForeignPtr fp $ \ptr ->
     S.unsafeWith masks $ \masksPtr ->
       S.unsafeWith shifts $ \shiftsPtr ->
@@ -237,24 +260,42 @@ symmetriesFromHeader x = unsafePerformIO $ do
 -- symmetriesFromSpec :: [SymmetrySpec] -> Symmetries
 -- symmetriesFromSpec = mkSymmetries . fmap symmetryFromSpec
 
-borrowCsymmetries :: Symmetries -> IO (Ptr Cpermutation_group)
-borrowCsymmetries symm = do
-  withForeignPtr (symmetriesContents symm) $ \ptr -> do
-    _ <- symmetriesIncRefCount ptr
-    symmetriesPokePayload ptr =<< newStablePtr symm
-  pure $ unsafeForeignPtrToPtr (symmetriesContents symm)
+-- borrowCsymmetries :: Symmetries -> IO (Ptr Cpermutation_group)
+-- borrowCsymmetries symm = do
+--   withForeignPtr (symmetriesContents symm) $ \ptr -> do
+--     _ <- symmetriesIncRefCount ptr
+--     symmetriesPokePayload ptr =<< newStablePtr symm
+--   pure $ unsafeForeignPtrToPtr (symmetriesContents symm)
 
-withReconstructedSymmetries :: Ptr Cpermutation_group -> (Symmetries -> IO a) -> IO a
-withReconstructedSymmetries p action =
-  action =<< deRefStablePtr =<< symmetriesPeekPayload p
+-- withReconstructedSymmetries :: Ptr Cpermutation_group -> (Symmetries -> IO a) -> IO a
+-- withReconstructedSymmetries p action =
+--   action =<< deRefStablePtr =<< symmetriesPeekPayload p
 
-newtype {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_symmetries" #-} Csymmetries = Csymmetries
-  { unCsymmetries :: StablePtr Symmetries
+newtype {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_symmetry" #-} Csymmetry = Csymmetry
+  { unCsymmetry :: StablePtr Symmetry
   }
   deriving stock (Eq)
   deriving newtype (Storable)
 
-newCsymmetries :: Symmetries -> IO (Ptr Csymmetries)
+newCsymmetry :: Symmetry -> IO (Ptr Csymmetry)
+newCsymmetry symm = do
+  new =<< Csymmetry <$> newStablePtr symm
+
+destroyCsymmetry :: Ptr Csymmetry -> IO ()
+destroyCsymmetry p = do
+  freeStablePtr =<< (unCsymmetry <$> peek p)
+  free p
+
+withCsymmetry :: Ptr Csymmetry -> (Symmetry -> IO a) -> IO a
+withCsymmetry p f = f =<< deRefStablePtr . unCsymmetry =<< peek p
+
+newtype {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_symmetries" #-} Csymmetries = Csymmetries
+  { unCsymmetries :: StablePtr SymmetriesHeader
+  }
+  deriving stock (Eq)
+  deriving newtype (Storable)
+
+newCsymmetries :: SymmetriesHeader -> IO (Ptr Csymmetries)
 newCsymmetries symm = new =<< Csymmetries <$> newStablePtr symm
 
 destroyCsymmetries :: Ptr Csymmetries -> IO ()
@@ -262,11 +303,31 @@ destroyCsymmetries p = do
   freeStablePtr =<< (unCsymmetries <$> peek p)
   free p
 
-withCsymmetries :: Ptr Csymmetries -> (Symmetries -> IO a) -> IO a
-withCsymmetries = undefined
+withCsymmetries :: Ptr Csymmetries -> (SymmetriesHeader -> IO a) -> IO a
+withCsymmetries p f = f =<< deRefStablePtr . unCsymmetries =<< peek p
 
-borrowCpermutation_group :: Ptr Csymmetries -> IO (Ptr Cpermutation_group)
-borrowCpermutation_group = undefined
+borrowCpermutation_group :: SymmetriesHeader -> IO (Ptr Cpermutation_group)
+borrowCpermutation_group x =
+  let (DenseMatrix numberShifts numberMasks masks) = bbnMasks $ symmHeaderNetwork x
+      shifts = bbnShifts $ symmHeaderNetwork x
+      numberBits = symmetriesGetNumberBits x
+   in (new =<<) $
+        S.unsafeWith masks $ \masksPtr ->
+          S.unsafeWith shifts $ \shiftsPtr ->
+            S.unsafeWith (symmHeaderCharactersReal x) $ \eigvalsRealPtr ->
+              S.unsafeWith (symmHeaderCharactersImag x) $ \eigvalsImagPtr ->
+                pure $
+                  Cpermutation_group
+                    { cpermutation_group_refcount = 0,
+                      cpermutation_group_number_bits = fromIntegral numberBits,
+                      cpermutation_group_number_shifts = fromIntegral numberShifts,
+                      cpermutation_group_number_masks = fromIntegral numberMasks,
+                      cpermutation_group_masks = masksPtr,
+                      cpermutation_group_shifts = shiftsPtr,
+                      cpermutation_group_eigvals_re = (castPtr :: Ptr Double -> Ptr CDouble) eigvalsRealPtr,
+                      cpermutation_group_eigvals_im = (castPtr :: Ptr Double -> Ptr CDouble) eigvalsImagPtr,
+                      cpermutation_group_haskell_payload = nullPtr
+                    }
 
 releaseCpermutation_group :: Ptr Cpermutation_group -> IO ()
-releaseCpermutation_group = undefined
+releaseCpermutation_group = free

@@ -6,14 +6,14 @@ module LatticeSymmetries.FFI
     c_LS_HS_SPINLESS_FERMION,
     Cbasis_kernels (..),
     Cindex_kernel,
-    mkCindex_kernel,
+    -- mkCindex_kernel,
     Cstate_info_kernel,
     Cis_representative_kernel,
     Cpermutation_group (..),
-    symmetriesIncRefCount,
-    symmetriesDecRefCount,
-    symmetriesPeekPayload,
-    symmetriesPokePayload,
+    -- symmetriesIncRefCount,
+    -- symmetriesDecRefCount,
+    -- symmetriesPeekPayload,
+    -- symmetriesPokePayload,
     Cbasis (..),
     basisIncRefCount,
     basisDecRefCount,
@@ -22,23 +22,23 @@ module LatticeSymmetries.FFI
     basisPeekRepresentatives,
     basisPeekPayload,
     basisPokePayload,
-    Cexpr (..),
+    -- Cexpr (..),
     Creplace_index,
     mkCreplace_index,
-    exprIncRefCount,
-    exprDecRefCount,
-    exprPeekPayload,
-    exprPokePayload,
-    Coperator_kernel_data,
+    -- exprIncRefCount,
+    -- exprDecRefCount,
+    -- exprPeekPayload,
+    -- exprPokePayload,
+    -- Coperator_kernel_data,
     Cnonbranching_terms (..),
     Coperator (..),
     Cscalar,
     operatorIncRefCount,
     operatorDecRefCount,
-    operatorPeekParticleType,
-    operatorPeekNumberOffDiagTerms,
-    operatorPeekPayload,
-    operatorPokePayload,
+    -- operatorPeekParticleType,
+    -- operatorPeekNumberOffDiagTerms,
+    -- operatorPeekPayload,
+    -- operatorPokePayload,
     Cexternal_array (..),
     emptyExternalArray,
     -- ls_hs_internal_destroy_external_array,
@@ -68,8 +68,8 @@ c_LS_HS_SPINLESS_FERMION = Cparticle_type 2
 
 type Cindex_kernel = CPtrdiff -> Ptr Word64 -> CPtrdiff -> Ptr CPtrdiff -> CPtrdiff -> Ptr () -> IO ()
 
-foreign import ccall "dynamic"
-  mkCindex_kernel :: FunPtr Cindex_kernel -> Cindex_kernel
+-- foreign import ccall "dynamic"
+--   mkCindex_kernel :: FunPtr Cindex_kernel -> Cindex_kernel
 
 type Cstate_info_kernel = CPtrdiff -> Ptr Word64 -> CPtrdiff ->
                                       Ptr Word64 -> CPtrdiff ->
@@ -207,41 +207,41 @@ instance Storable Cbasis where
     #{poke ls_hs_basis, haskell_payload}         p (cbasis_haskell_payload x)
   {-# INLINE poke #-}
 
-data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_expr" #-} Cexpr = Cexpr
-  { cexpr_refcount :: {-# UNPACK #-} !CInt,
-    cexpr_haskell_payload :: {-# UNPACK #-} !(Ptr ())
-  }
-
-exprIncRefCount :: Ptr Cexpr -> IO CInt
-exprIncRefCount p = incRefCount (p `plusPtr` #{offset ls_hs_expr, refcount})
-{-# INLINE exprIncRefCount #-}
-
-exprDecRefCount :: Ptr Cexpr -> IO CInt
-exprDecRefCount p = decRefCount (p `plusPtr` #{offset ls_hs_expr, refcount})
-{-# INLINE exprDecRefCount #-}
-
-exprPeekPayload :: Ptr Cexpr -> IO (StablePtr a)
-exprPeekPayload p = #{peek ls_hs_expr, haskell_payload} p
-{-# INLINE exprPeekPayload #-}
-
-exprPokePayload :: Ptr Cexpr -> StablePtr a -> IO ()
-exprPokePayload p x = #{poke ls_hs_expr, haskell_payload} p x
-{-# INLINE exprPokePayload #-}
-
-instance Storable Cexpr where
-  sizeOf _ = #{size ls_hs_expr}
-  {-# INLINE sizeOf #-}
-  alignment _ = #{alignment ls_hs_expr}
-  {-# INLINE alignment #-}
-  peek p =
-    Cexpr
-      <$> peekRefCount (p `plusPtr` #{offset ls_hs_expr, refcount})
-      <*> #{peek ls_hs_expr, haskell_payload} p
-  {-# INLINE peek #-}
-  poke p x = do
-    _ <- pokeRefCount (p `plusPtr` #{offset ls_hs_expr, refcount}) (cexpr_refcount x)
-    #{poke ls_hs_expr, haskell_payload} p (cexpr_haskell_payload x)
-  {-# INLINE poke #-}
+-- data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_expr" #-} Cexpr = Cexpr
+--   { cexpr_refcount :: {-# UNPACK #-} !CInt,
+--     cexpr_haskell_payload :: {-# UNPACK #-} !(Ptr ())
+--   }
+-- 
+-- exprIncRefCount :: Ptr Cexpr -> IO CInt
+-- exprIncRefCount p = incRefCount (p `plusPtr` #{offset ls_hs_expr, refcount})
+-- {-# INLINE exprIncRefCount #-}
+-- 
+-- exprDecRefCount :: Ptr Cexpr -> IO CInt
+-- exprDecRefCount p = decRefCount (p `plusPtr` #{offset ls_hs_expr, refcount})
+-- {-# INLINE exprDecRefCount #-}
+-- 
+-- exprPeekPayload :: Ptr Cexpr -> IO (StablePtr a)
+-- exprPeekPayload p = #{peek ls_hs_expr, haskell_payload} p
+-- {-# INLINE exprPeekPayload #-}
+-- 
+-- exprPokePayload :: Ptr Cexpr -> StablePtr a -> IO ()
+-- exprPokePayload p x = #{poke ls_hs_expr, haskell_payload} p x
+-- {-# INLINE exprPokePayload #-}
+-- 
+-- instance Storable Cexpr where
+--   sizeOf _ = #{size ls_hs_expr}
+--   {-# INLINE sizeOf #-}
+--   alignment _ = #{alignment ls_hs_expr}
+--   {-# INLINE alignment #-}
+--   peek p =
+--     Cexpr
+--       <$> peekRefCount (p `plusPtr` #{offset ls_hs_expr, refcount})
+--       <*> #{peek ls_hs_expr, haskell_payload} p
+--   {-# INLINE peek #-}
+--   poke p x = do
+--     _ <- pokeRefCount (p `plusPtr` #{offset ls_hs_expr, refcount}) (cexpr_refcount x)
+--     #{poke ls_hs_expr, haskell_payload} p (cexpr_haskell_payload x)
+--   {-# INLINE poke #-}
 
 type Creplace_index = CInt -> CInt -> Ptr CInt -> Ptr CInt -> IO ()
 
@@ -288,16 +288,17 @@ instance Storable Cnonbranching_terms where
     #{poke ls_hs_nonbranching_terms, s} p (cnonbranching_terms_s x)
   {-# INLINE poke #-}
 
-data {-# CTYPE "lattice_symmetries_haskell.h" "ls_internal_operator_kernel_data" #-}
-  Coperator_kernel_data
+-- data {-# CTYPE "lattice_symmetries_haskell.h" "ls_internal_operator_kernel_data" #-}
+--   Coperator_kernel_data
 
 data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_operator" #-} Coperator = Coperator
-  { coperator_refcount :: {-# UNPACK #-} !CInt,
+  {
+    coperator_refcount :: {-# UNPACK #-} !CInt,
     coperator_basis :: {-# UNPACK #-} !(Ptr Cbasis),
     coperator_off_diag_terms :: {-# UNPACK #-} !(Ptr Cnonbranching_terms),
     coperator_diag_terms :: {-# UNPACK #-} !(Ptr Cnonbranching_terms),
-    coperator_apply_off_diag_cxt :: {-# UNPACK #-} !(Ptr Coperator_kernel_data),
-    coperator_apply_diag_cxt :: {-# UNPACK #-} !(Ptr Coperator_kernel_data),
+    -- coperator_apply_off_diag_cxt :: {-# UNPACK #-} !(Ptr Coperator_kernel_data),
+    -- coperator_apply_diag_cxt :: {-# UNPACK #-} !(Ptr Coperator_kernel_data),
     coperator_haskell_payload :: {-# UNPACK #-} !(Ptr ())
   }
 
@@ -309,25 +310,25 @@ operatorDecRefCount :: Ptr Coperator -> IO CInt
 operatorDecRefCount p = decRefCount (p `plusPtr` #{offset ls_hs_operator, refcount})
 {-# INLINE operatorDecRefCount #-}
 
-operatorPeekParticleType :: Ptr Coperator -> IO Cparticle_type
-operatorPeekParticleType p = #{peek ls_hs_operator, basis} p >>= basisPeekParticleType
-{-# INLINE operatorPeekParticleType #-}
+-- operatorPeekParticleType :: Ptr Coperator -> IO Cparticle_type
+-- operatorPeekParticleType p = #{peek ls_hs_operator, basis} p >>= basisPeekParticleType
+-- {-# INLINE operatorPeekParticleType #-}
 
-operatorPeekPayload :: Ptr Coperator -> IO (StablePtr a)
-operatorPeekPayload p = #{peek ls_hs_operator, haskell_payload} p
-{-# INLINE operatorPeekPayload #-}
+-- operatorPeekPayload :: Ptr Coperator -> IO (StablePtr a)
+-- operatorPeekPayload p = #{peek ls_hs_operator, haskell_payload} p
+-- {-# INLINE operatorPeekPayload #-}
 
-operatorPokePayload :: Ptr Coperator -> StablePtr a -> IO ()
-operatorPokePayload p x = #{poke ls_hs_operator, haskell_payload} p x
-{-# INLINE operatorPokePayload #-}
+-- operatorPokePayload :: Ptr Coperator -> StablePtr a -> IO ()
+-- operatorPokePayload p x = #{poke ls_hs_operator, haskell_payload} p x
+-- {-# INLINE operatorPokePayload #-}
 
-operatorPeekNumberOffDiagTerms :: Ptr Coperator -> IO Int
-operatorPeekNumberOffDiagTerms p = do
-  termsPtr <- #{peek ls_hs_operator, off_diag_terms} p
-  if termsPtr == nullPtr
-    then pure 0
-    else #{peek ls_hs_nonbranching_terms, number_terms} termsPtr
-{-# INLINE operatorPeekNumberOffDiagTerms #-}
+-- operatorPeekNumberOffDiagTerms :: Ptr Coperator -> IO Int
+-- operatorPeekNumberOffDiagTerms p = do
+--   termsPtr <- #{peek ls_hs_operator, off_diag_terms} p
+--   if termsPtr == nullPtr
+--     then pure 0
+--     else #{peek ls_hs_nonbranching_terms, number_terms} termsPtr
+-- {-# INLINE operatorPeekNumberOffDiagTerms #-}
 
 instance Storable Coperator where
   sizeOf _ = #{size ls_hs_operator}
@@ -340,8 +341,8 @@ instance Storable Coperator where
       <*> #{peek ls_hs_operator, basis} p
       <*> #{peek ls_hs_operator, off_diag_terms} p
       <*> #{peek ls_hs_operator, diag_terms} p
-      <*> #{peek ls_hs_operator, apply_off_diag_cxt} p
-      <*> #{peek ls_hs_operator, apply_diag_cxt} p
+      -- <*> #{peek ls_hs_operator, apply_off_diag_cxt} p
+      -- <*> #{peek ls_hs_operator, apply_diag_cxt} p
       <*> #{peek ls_hs_operator, haskell_payload} p
   {-# INLINE peek #-}
   poke p x = do
@@ -349,8 +350,8 @@ instance Storable Coperator where
     #{poke ls_hs_operator, basis}               p (coperator_basis x)
     #{poke ls_hs_operator, off_diag_terms}      p (coperator_off_diag_terms x)
     #{poke ls_hs_operator, diag_terms}          p (coperator_diag_terms x)
-    #{poke ls_hs_operator, apply_off_diag_cxt}  p (coperator_apply_off_diag_cxt x)
-    #{poke ls_hs_operator, apply_diag_cxt}      p (coperator_apply_diag_cxt x)
+    -- #{poke ls_hs_operator, apply_off_diag_cxt}  p (coperator_apply_off_diag_cxt x)
+    -- #{poke ls_hs_operator, apply_diag_cxt}      p (coperator_apply_diag_cxt x)
     #{poke ls_hs_operator, haskell_payload}     p (coperator_haskell_payload x)
   {-# INLINE poke #-}
 
@@ -396,21 +397,21 @@ data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_permutation_group" #-} Cper
       cpermutation_group_haskell_payload :: {-# UNPACK #-} !(Ptr ())
     }
 
-symmetriesIncRefCount :: Ptr Cpermutation_group -> IO CInt
-symmetriesIncRefCount p = incRefCount (p `plusPtr` #{offset ls_hs_permutation_group, refcount})
-{-# INLINE symmetriesIncRefCount #-}
-
-symmetriesDecRefCount :: Ptr Cpermutation_group -> IO CInt
-symmetriesDecRefCount p = decRefCount (p `plusPtr` #{offset ls_hs_permutation_group, refcount})
-{-# INLINE symmetriesDecRefCount #-}
-
-symmetriesPeekPayload :: Ptr Cpermutation_group -> IO (StablePtr a)
-symmetriesPeekPayload p = #{peek ls_hs_permutation_group, haskell_payload} p
-{-# INLINE symmetriesPeekPayload #-}
-
-symmetriesPokePayload :: Ptr Cpermutation_group -> StablePtr a -> IO ()
-symmetriesPokePayload p x = #{poke ls_hs_permutation_group, haskell_payload} p x
-{-# INLINE symmetriesPokePayload #-}
+-- symmetriesIncRefCount :: Ptr Cpermutation_group -> IO CInt
+-- symmetriesIncRefCount p = incRefCount (p `plusPtr` #{offset ls_hs_permutation_group, refcount})
+-- {-# INLINE symmetriesIncRefCount #-}
+-- 
+-- symmetriesDecRefCount :: Ptr Cpermutation_group -> IO CInt
+-- symmetriesDecRefCount p = decRefCount (p `plusPtr` #{offset ls_hs_permutation_group, refcount})
+-- {-# INLINE symmetriesDecRefCount #-}
+-- 
+-- symmetriesPeekPayload :: Ptr Cpermutation_group -> IO (StablePtr a)
+-- symmetriesPeekPayload p = #{peek ls_hs_permutation_group, haskell_payload} p
+-- {-# INLINE symmetriesPeekPayload #-}
+-- 
+-- symmetriesPokePayload :: Ptr Cpermutation_group -> StablePtr a -> IO ()
+-- symmetriesPokePayload p x = #{poke ls_hs_permutation_group, haskell_payload} p x
+-- {-# INLINE symmetriesPokePayload #-}
 
 instance Storable Cpermutation_group where
   sizeOf _ = #{size ls_hs_permutation_group}

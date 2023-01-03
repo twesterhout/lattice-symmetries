@@ -513,14 +513,16 @@ instance FromJSON ConfigSpec where
     maybeHamiltonian <-
       withSomeBasis someBasis $ \basis ->
         case Data.Aeson.KeyMap.lookup (Data.Aeson.Key.fromString "hamiltonian") v of
-          Just h -> Just . SomeOperator <$> operatorFromJSON basis h
+          Just h ->
+            Just . SomeOperator (getParticleTag $ basisHeader basis)
+              <$> operatorFromJSON basis h
           Nothing -> pure Nothing
     observables <-
       withSomeBasis someBasis $ \basis ->
         case Data.Aeson.KeyMap.lookup (Data.Aeson.Key.fromString "observables") v of
           Just h ->
             flip (withArray "Observables") h $
-              G.mapM (fmap SomeOperator . operatorFromJSON basis)
+              G.mapM (fmap (SomeOperator (getParticleTag $ basisHeader basis)) . operatorFromJSON basis)
           Nothing -> pure G.empty
     pure $ ConfigSpec someBasis maybeHamiltonian observables
 
@@ -552,7 +554,7 @@ configFromYAML path = objectFromYAML "config" path
 operatorFromJSON :: IsBasis t => Basis t -> Value -> Parser (Operator t)
 operatorFromJSON basis = withObject "Operator" $ \v -> do
   ((t :| ts) :: NonEmpty (Expr t)) <- v .: "terms"
-  pure $ operatorFromHeader . OperatorHeader basis $ foldl' (+) t ts
+  pure $ mkOperator basis (foldl' (+) t ts)
 
 -- newtype BasisAndHamiltonianConfig = BasisAndHamiltonianConfig SomeOperator
 --
