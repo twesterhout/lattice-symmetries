@@ -31,6 +31,7 @@ import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Storable as S
 import Foreign.C.Types (CDouble)
 import Foreign.ForeignPtr
+import Foreign.Marshal (free, new)
 import Foreign.Ptr
 import Foreign.StablePtr
 import Foreign.Storable
@@ -246,3 +247,26 @@ borrowCsymmetries symm = do
 withReconstructedSymmetries :: Ptr Cpermutation_group -> (Symmetries -> IO a) -> IO a
 withReconstructedSymmetries p action =
   action =<< deRefStablePtr =<< symmetriesPeekPayload p
+
+newtype {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_symmetries" #-} Csymmetries = Csymmetries
+  { unCsymmetries :: StablePtr Symmetries
+  }
+  deriving stock (Eq)
+  deriving newtype (Storable)
+
+newCsymmetries :: Symmetries -> IO (Ptr Csymmetries)
+newCsymmetries symm = new =<< Csymmetries <$> newStablePtr symm
+
+destroyCsymmetries :: Ptr Csymmetries -> IO ()
+destroyCsymmetries p = do
+  freeStablePtr =<< (unCsymmetries <$> peek p)
+  free p
+
+withCsymmetries :: Ptr Csymmetries -> (Symmetries -> IO a) -> IO a
+withCsymmetries = undefined
+
+borrowCpermutation_group :: Ptr Csymmetries -> IO (Ptr Cpermutation_group)
+borrowCpermutation_group = undefined
+
+releaseCpermutation_group :: Ptr Cpermutation_group -> IO ()
+releaseCpermutation_group = undefined

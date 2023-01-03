@@ -51,23 +51,22 @@ else #-------------------------------
 endif #------------------------------
 HL_ALL_TARGETS += $(HL_BASE_TARGET)
 
-CC = cc
+# CC = cc
 CXX = c++
-CFLAGS = -O3 -DNDEBUG 
-ifeq ($(UNAME_M),x86_64)
-  CFLAGS += -march=nehalem -mtune=haswell
-endif
-SHELL = bash
+# CFLAGS = -O3 -DNDEBUG 
+# ifeq ($(UNAME_M),x86_64)
+#   CFLAGS += -march=nehalem -mtune=haswell
+# endif
+# SHELL = bash
 BIN_DIR ?= build
-SANITIZER_FLAGS ?=
 GENERATOR_OUTPUTS ?= static_library,c_header,stmt_html,assembly
 
 LDFLAGS =
 ifeq ($(UNAME), Linux)
   LDFLAGS += -ldl -lpthread
 endif
-CFLAGS += -I ../cbits -isystem $(HALIDE_DISTRIB_PATH)/include/ -isystem $(HALIDE_DISTRIB_PATH)/share/Halide/tools/ -Wall -Wextra -Wpedantic -Wconversion -Wdouble-promotion -Wformat=2 -Wformat-overflow=2 -Winit-self -Wimplicit-fallthrough -Wunused -Wuninitialized -Wstrict-overflow=2 -Wduplicated-branches -Wfloat-equal -Wshadow -Wundef -Wunused-macros -Wmissing-field-initializers
-CXXFLAGS += -std=c++17 -I $(HALIDE_DISTRIB_PATH)/include/ -I $(HALIDE_DISTRIB_PATH)/share/Halide/tools/ $(SANITIZER_FLAGS) -Wall -Wno-unused-function -Wcast-qual -Wignored-qualifiers -Wno-comment -Wsign-compare -Wno-unknown-warning-option -Wno-psabi
+# CFLAGS += -I ../cbits -isystem $(HALIDE_DISTRIB_PATH)/include/ -isystem $(HALIDE_DISTRIB_PATH)/share/Halide/tools/ -Wall -Wextra -Wpedantic -Wconversion -Wdouble-promotion -Wformat=2 -Wformat-overflow=2 -Winit-self -Wimplicit-fallthrough -Wunused -Wuninitialized -Wstrict-overflow=2 -Wduplicated-branches -Wfloat-equal -Wshadow -Wundef -Wunused-macros -Wmissing-field-initializers
+CXXFLAGS += -std=c++17 -I $(HALIDE_DISTRIB_PATH)/include/ -I $(HALIDE_DISTRIB_PATH)/share/Halide/tools/ -Wall -Wno-unused-function -Wcast-qual -Wignored-qualifiers -Wno-comment -Wsign-compare -Wno-unknown-warning-option -Wno-psabi
 
 ifeq ($(UNAME), Darwin)
   CXXFLAGS += -fvisibility=hidden
@@ -79,32 +78,37 @@ else
   SHARED_EXT = so
 endif
 
-ifeq ($(UNAME), Darwin)
-  SHARED_FLAG = -dynamiclib
-else
-  SHARED_FLAG = -shared
-endif
+# ifeq ($(UNAME), Darwin)
+#   SHARED_FLAG = -dynamiclib
+# else
+#   SHARED_FLAG = -shared
+# endif
 
 
 LIB_HALIDE_STATIC = $(HALIDE_DISTRIB_PATH)/lib/libHalide.a
 LIB_HALIDE = $(HALIDE_DISTRIB_PATH)/lib/libHalide.$(SHARED_EXT)
 
-GENERATOR_DEPS ?= $(LIB_AUTOSCHEDULER) $(LIB_HALIDE) $(HALIDE_DISTRIB_PATH)/include/Halide.h $(HALIDE_DISTRIB_PATH)/share/Halide/tools/GenGen.cpp
-GENERATOR_DEPS_STATIC ?= $(LIB_HALIDE_STATIC) $(HALIDE_DISTRIB_PATH)/include/Halide.h $(HALIDE_DISTRIB_PATH)/share/Halide/tools/GenGen.cpp
+GENERATOR_DEPS ?= $(LIB_AUTOSCHEDULER) \
+		  $(LIB_HALIDE) \
+		  $(HALIDE_DISTRIB_PATH)/include/Halide.h \
+		  $(HALIDE_DISTRIB_PATH)/share/Halide/tools/GenGen.cpp
+GENERATOR_DEPS_STATIC ?= $(LIB_HALIDE_STATIC) \
+			 $(HALIDE_DISTRIB_PATH)/include/Halide.h \
+			 $(HALIDE_DISTRIB_PATH)/share/Halide/tools/GenGen.cpp
 
 # Generators which use autoscheduler plugin need to specify the linker where to find libHalide.so required by the plugin.
 LIBHALIDE_LDFLAGS ?= -Wl,-rpath,$(dir $(LIB_HALIDE)) -L $(dir $(LIB_HALIDE)) -lHalide -lz $(LDFLAGS)
 LIBHALIDE_LDFLAGS_STATIC ?= $(LIB_HALIDE_STATIC) -lz $(LDFLAGS)
 
-# Autoschedulers. Mullapudi2016 is currently the default, because it's fast.
+# Autoschedulers.
 AUTOSCHEDULER ?= adams2019
 ifneq ($(AUTOSCHEDULER),)
   LIB_AUTOSCHEDULER ?= $(HALIDE_DISTRIB_PATH)/lib/libautoschedule_$(AUTOSCHEDULER).$(SHARED_EXT)
-ifeq ($(UNAME), Darwin)
-  LIBHALIDE_LDFLAGS += -Wl,-force_load $(HALIDE_DISTRIB_PATH)/lib/libautoschedule_$(AUTOSCHEDULER).$(SHARED_EXT)
-else
-  LIBHALIDE_LDFLAGS += -Wl,--no-as-needed -lautoschedule_$(AUTOSCHEDULER) -Wl,--as-needed
-endif
+  ifeq ($(UNAME), Darwin)
+    LIBHALIDE_LDFLAGS += -Wl,-force_load $(HALIDE_DISTRIB_PATH)/lib/libautoschedule_$(AUTOSCHEDULER).$(SHARED_EXT)
+  else
+    LIBHALIDE_LDFLAGS += -Wl,--no-as-needed -lautoschedule_$(AUTOSCHEDULER) -Wl,--as-needed
+  endif
 endif
 
 
@@ -119,38 +123,48 @@ OPS = $(addsuffix /state_info_symmetric.a,$(addprefix $(BIN_DIR)/,$(HL_ALL_TARGE
 # all: $(BIN_DIR)/kernels.o
 # $(OPS) $(BIN_DIR)/runtime.a $(BIN_DIR)/kernels.h
 
-all: $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) ../cabal.project.local
+all: ../cabal.project.local
+# $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) 
 
-../cabal.project.local:
-	cd .. && \
-	echo "-- DO NOT MODIFY (Generated automatically by kernels/Makefile)" >>cabal.project.local && \
-	echo "package lattice-symmetries-haskell" >>cabal.project.local && \
-	echo "  extra-lib-dirs: $(realpath $(BIN_DIR))" >>cabal.project.local && \
-	echo "                  $(CONDA_PREFIX)/lib" >>cabal.project.local && \
-	echo "  ghc-options: -pgmP $(CONDA_CC) -pgmc $(CONDA_CC) -pgma $(CONDA_CC) -pgml $(CONDA_CC)" >>cabal.project.local
+HS_OBJECT_FILES = $(OPS) $(BIN_DIR)/runtime.a
+HS_LINK_FLAGS = $(foreach obj,$(HS_OBJECT_FILES),$(realpath $(obj)))
+HS_INCLUDES = $(realpath $(BIN_DIR)) \
+              $(HALIDE_DISTRIB_PATH)/include \
+              $(HALIDE_DISTRIB_PATH)/share/Halide/tools
 
-$(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT): $(BIN_DIR)/reference.o $(BIN_DIR)/indexing.o $(BIN_DIR)/kernels.o $(OPS) $(BIN_DIR)/runtime.a 
-	@mkdir -p $(@D)
-	$(CONDA_CC) $(SHARED_FLAG) -o $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) $^ $(LDFLAGS)
-ifeq ($(UNAME), Darwin)
-	install_name_tool -id $(CURDIR)/$(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT)
+../cabal.project.local: $(OPS) $(BIN_DIR)/runtime.a
+	@echo "Creating cabal.project.local ..."
+	@echo "-- DO NOT MODIFY (Generated automatically by kernels/Makefile)" >$@
+	@echo "package lattice-symmetries-haskell" >>$@
+	@echo "  extra-include-dirs: $(HS_INCLUDES)" >>$@
+	@echo "  ld-options: $(HS_LINK_FLAGS)" >>$@
+ifneq ($(CONDA_PREFIX),)
+	@echo "  extra-lib-dirs: $(CONDA_PREFIX)/lib" >>$@
+	@echo "  ghc-options: -pgmP $(CONDA_CC) -pgmc $(CONDA_CC) -pgma $(CONDA_CC) -pgml $(CONDA_CC)" >>$@
 endif
+	 
+# $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT): $(BIN_DIR)/reference.o $(BIN_DIR)/indexing.o $(BIN_DIR)/kernels.o $(OPS) $(BIN_DIR)/runtime.a 
+# 	@mkdir -p $(@D)
+# 	$(CONDA_CC) $(SHARED_FLAG) -o $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) $^ $(LDFLAGS)
+# ifeq ($(UNAME), Darwin)
+# 	install_name_tool -id $(CURDIR)/$(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT) $(BIN_DIR)/liblattice_symmetries_core.$(SHARED_EXT)
+# endif
 
-$(BIN_DIR)/reference.o: reference.c ../cbits/lattice_symmetries_haskell.h
-	@mkdir -p $(@D)
-	$(CC) -fPIC $(CFLAGS) -I$(PWD)/../cbits -o $@ -c $<
+# $(BIN_DIR)/reference.o: reference.c ../cbits/lattice_symmetries_haskell.h
+# 	@mkdir -p $(@D)
+# 	$(CC) -fPIC $(CFLAGS) -I$(PWD)/../cbits -o $@ -c $<
 
-$(BIN_DIR)/indexing.o: indexing.c ../cbits/lattice_symmetries_haskell.h
-	@mkdir -p $(@D)
-	$(CC) -fPIC $(CFLAGS) -I$(PWD)/../cbits -o $@ -c $<
+# $(BIN_DIR)/indexing.o: indexing.c ../cbits/lattice_symmetries_haskell.h
+# 	@mkdir -p $(@D)
+# 	$(CC) -fPIC $(CFLAGS) -I$(PWD)/../cbits -o $@ -c $<
 
 # $(BIN_DIR)/binary_search.o: binary_search.c ../cbits/lattice_symmetries_haskell.h
 # 	@mkdir -p $(@D)
 # 	$(CC) -fPIC $(CFLAGS) -I$(PWD)/../cbits -o $@ -c $<
 
-$(BIN_DIR)/kernels.o: kernels.c $(BIN_DIR)/kernels.h ../cbits/lattice_symmetries_haskell.h
-	@mkdir -p $(@D)
-	$(CC) -fPIC $(CFLAGS) -I$(PWD)/../cbits -I$(BIN_DIR) -o $@ -c $< 
+# $(BIN_DIR)/kernels.o: kernels.c $(BIN_DIR)/kernels.h ../cbits/lattice_symmetries_haskell.h
+# 	@mkdir -p $(@D)
+# 	$(CC) -fPIC $(CFLAGS) -I$(PWD)/../cbits -I$(BIN_DIR) -o $@ -c $< 
 
 $(BIN_DIR)/kernels.h: $(OPS)
 	@mkdir -p $(@D)
@@ -241,6 +255,7 @@ $(BIN_DIR)/generator: generator.cpp $(GENERATOR_DEPS_STATIC)
 	$(CXX) $(CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LIBHALIDE_LDFLAGS_STATIC)
 
 $(PWD)/../third_party/Halide-$(HL_VERSION)-$(HL_ARCH)-$(HL_BITS)-$(HL_OS)-$(HL_HASH).$(HL_ARCHIVE):
+	@echo Downloading Halide ...
 	@mkdir -p $(@D)
 	cd ../third_party && wget -q https://github.com/halide/Halide/releases/download/v$(HL_VERSION)/Halide-$(HL_VERSION)-$(HL_ARCH)-$(HL_BITS)-$(HL_OS)-$(HL_HASH).$(HL_ARCHIVE)
 
