@@ -97,6 +97,7 @@ jobs:
         make kernels
     - name: Build Haskell code
       run: |
+        cat cabal.project.local
         make haskell
     - name: Test
       run: |

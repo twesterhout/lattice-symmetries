@@ -132,7 +132,7 @@ HS_INCLUDES = $(realpath $(BIN_DIR)) \
               $(HALIDE_DISTRIB_PATH)/include \
               $(HALIDE_DISTRIB_PATH)/share/Halide/tools
 
-../cabal.project.local: $(OPS) $(BIN_DIR)/runtime.a
+../cabal.project.local: $(OPS) $(BIN_DIR)/runtime.a $(BIN_DIR)/kernels.h
 	@echo "Creating cabal.project.local ..."
 	@echo "-- DO NOT MODIFY (Generated automatically by kernels/Makefile)" >$@
 	@echo "package lattice-symmetries-haskell" >>$@
