@@ -1,6 +1,6 @@
 cabal-version:         3.0
 name:                  lattice-symmetries-haskell
-version:               0.1.0.0
+version:               2.0.0
 synopsis:              See README for more info
 description:           See README for more info
 license:               BSD-3-Clause
@@ -198,6 +198,8 @@ test-suite lattice-symmetries-haskell-test
                        LatticeSymmetries.DenseSpec
                        LatticeSymmetries.BenesSpec
                        LatticeSymmetries.NonbranchingTermSpec
+                       LatticeSymmetries.GeneratorSpec
+                       LatticeSymmetries.ParserSpec
   build-depends:       lattice-symmetries-haskell
                      , hspec
                      , QuickCheck

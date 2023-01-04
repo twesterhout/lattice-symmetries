@@ -13,6 +13,14 @@ import Test.QuickCheck
 
 spec :: Spec
 spec = do
+  -- describe "mkSymmetries" $ do
+  --   it "should build symmetry groups" $ do
+  --     print $
+  --       mkSymmetries
+  --         [ mkSymmetry (mkPermutation [1, 2, 3, 0]) 0,
+  --           mkSymmetry (mkPermutation [3, 2, 1, 0]) 1
+  --         ]
+  --     True `shouldBe` True
   describe "FromJSON Symmetry" $ do
     it "parses Symmetry" $ do
       Aeson.decode "{\"permutation\": [1, 2, 3, 0], \"sector\": 2}" `shouldBe` Just (mkSymmetry [1, 2, 3, 0] 2)
