@@ -6,15 +6,8 @@
 module LatticeSymmetries.Dense
   ( DenseMatrix (..),
     dmShape,
-    -- denseMatrixFromList,
-    -- denseMatrixToList,
-    -- indexDenseMatrix,
-    -- denseDot,
-    -- denseMatMul,
-    -- denseEye,
-    -- denseIsDiagonal,
-    -- extractDiagonal,
-    -- countOffDiagNonZero,
+    denseMatrixFromList,
+    denseMatrixToList,
   )
 where
 
@@ -42,14 +35,13 @@ dmShape :: DenseMatrix v a -> (Int, Int)
 dmShape m = (dmRows m, dmCols m)
 
 -- | Element-wise operations
-instance (G.Vector v a, Num a) => Num (DenseMatrix v a) where
-  (+) a b = DenseMatrix (dmRows a) (dmCols a) $ G.zipWith (+) (dmData a) (dmData b)
-  (-) a b = DenseMatrix (dmRows a) (dmCols a) $ G.zipWith (-) (dmData a) (dmData b)
-  (*) a b = DenseMatrix (dmRows a) (dmCols a) $ G.zipWith (*) (dmData a) (dmData b)
-  abs a = DenseMatrix (dmRows a) (dmCols a) $ G.map abs (dmData a)
-  signum a = DenseMatrix (dmRows a) (dmCols a) $ G.map signum (dmData a)
-  fromInteger _ = error "Num instance of DenseMatrix does not implement fromInteger"
-
+-- instance (G.Vector v a, Num a) => Num (DenseMatrix v a) where
+--   (+) a b = DenseMatrix (dmRows a) (dmCols a) $ G.zipWith (+) (dmData a) (dmData b)
+--   (-) a b = DenseMatrix (dmRows a) (dmCols a) $ G.zipWith (-) (dmData a) (dmData b)
+--   (*) a b = DenseMatrix (dmRows a) (dmCols a) $ G.zipWith (*) (dmData a) (dmData b)
+--   abs a = DenseMatrix (dmRows a) (dmCols a) $ G.map abs (dmData a)
+--   signum a = DenseMatrix (dmRows a) (dmCols a) $ G.map signum (dmData a)
+--   fromInteger _ = error "Num instance of DenseMatrix does not implement fromInteger"
 denseMatrixFromList :: (HasCallStack, G.Vector v a) => [[a]] -> DenseMatrix v a
 denseMatrixFromList rs
   | G.length elements == nRows * nCols = DenseMatrix nRows nCols elements
@@ -62,11 +54,11 @@ denseMatrixFromList rs
     elements = G.fromListN (nRows * nCols) $ mconcat rs
 
 denseMatrixToList :: G.Vector v a => DenseMatrix v a -> [[a]]
-denseMatrixToList (DenseMatrix _ nCols v) = go (G.toList v)
+denseMatrixToList (DenseMatrix nRows nCols v) = go 0 (G.toList v)
   where
-    go elements = case splitAt nCols elements of
-      (row, []) -> [row]
-      (row, rest) -> row : go rest
+    go !i elements
+      | i < nRows = let (row, rest) = splitAt nCols elements in row : go (i + 1) rest
+      | otherwise = []
 
 instance (G.Vector v a) => GHC.IsList (DenseMatrix v a) where
   type Item (DenseMatrix v a) = [a]

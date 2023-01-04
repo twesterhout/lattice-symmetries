@@ -70,6 +70,10 @@ data ParticleTag (t :: ParticleTy) where
   SpinfulFermionTag :: ParticleTag 'SpinfulFermionTy
   SpinlessFermionTag :: ParticleTag 'SpinlessFermionTy
 
+instance Show (ParticleTag t)
+
+instance Eq (ParticleTag t)
+
 -- | Get the runtime representation of the particle type.
 particleTagToType :: ParticleTag t -> ParticleTy
 particleTagToType x = case x of

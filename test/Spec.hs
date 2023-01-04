@@ -14,24 +14,19 @@ import qualified Data.Vector.Storable as S
 import qualified Data.Vector.Unboxed as U
 import Foreign.Storable
 import GHC.Exts (IsList (..))
--- import LatticeSymmetries
 import LatticeSymmetries.Algebra
 import LatticeSymmetries.Basis
 import LatticeSymmetries.Benes
--- import qualified LatticeSymmetries.CSR as CSR
-
--- import LatticeSymmetries.IO
-
--- import LatticeSymmetries.Sparse
--- import LatticeSymmetries.Types
-
+import qualified LatticeSymmetries.BenesSpec
 import qualified LatticeSymmetries.BitStringSpec
 import LatticeSymmetries.ComplexRational
 import qualified LatticeSymmetries.ComplexRationalSpec
 import LatticeSymmetries.Dense
+import qualified LatticeSymmetries.DenseSpec
 import LatticeSymmetries.Generator
 import LatticeSymmetries.Group
 import LatticeSymmetries.NonbranchingTerm
+import qualified LatticeSymmetries.NonbranchingTermSpec
 import LatticeSymmetries.Operator
 import LatticeSymmetries.Parser
 import Prettyprinter (Pretty (..))
@@ -57,40 +52,24 @@ import Prelude hiding (Product, Sum, toList)
 --   Just x -> x `shouldBe` y
 --   Nothing -> s `shouldSatisfy` isJust
 
-type SpinPolynomial =
-  Sum (Scaled ComplexRational (Product (Generator Int SpinGeneratorType)))
-
-type FermionicPolynomial =
-  Sum (Scaled ComplexRational (Product (Generator Int FermionGeneratorType)))
+-- type SpinPolynomial =
+--   Sum (Scaled ComplexRational (Product (Generator Int SpinGeneratorType)))
+--
+-- type FermionicPolynomial =
+--   Sum (Scaled ComplexRational (Product (Generator Int FermionGeneratorType)))
 
 main :: IO ()
 main = hspec $ do
   describe "BitString" LatticeSymmetries.BitStringSpec.spec
   describe "ComplexRational" LatticeSymmetries.ComplexRationalSpec.spec
+  describe "DenseMatrix" LatticeSymmetries.DenseSpec.spec
+  describe "NonbranchingTerm" LatticeSymmetries.NonbranchingTermSpec.spec
+  describe "Benes" LatticeSymmetries.BenesSpec.spec
   describe "ToJSON/FromJSON" $ do
-    it "parses Permutation" $ do
-      Aeson.decode "[3, 0, 2, 1]" `shouldBe` Just (mkPermutation [3, 0, 2, 1])
-      Aeson.decode "[3, 0, 2, 1, 4, 5, 6]" `shouldBe` Just (mkPermutation [3, 0, 2, 1, 4, 5, 6])
-      Aeson.decode "[]" `shouldBe` Just (mkPermutation [])
-      Aeson.decode "{ \"oops\": [2, 1, 0] }" `shouldBe` (Nothing :: Maybe Permutation)
-    it "encodes Permutation" $ do
-      Aeson.encode (mkPermutation [0, 1, 2, 3]) `shouldBe` "[0,1,2,3]"
-      Aeson.encode (mkPermutation []) `shouldBe` "[]"
-      Aeson.encode (mkPermutation [3, 5, 0, 1, 2, 4]) `shouldBe` "[3,5,0,1,2,4]"
-    it "parses Symmetry" $ do
-      Aeson.decode "{ \"permutation\": [1, 2, 3, 0], \"sector\": 2 }" `shouldBe` Just (mkSymmetry [1, 2, 3, 0] 2)
-      Aeson.decode "{ \"permutation\": [0, 1], \"sector\": 0 }" `shouldBe` Just (mkSymmetry [0, 1] 0)
-      Aeson.decode "{ \"permutation\": [], \"sector\": 0 }" `shouldBe` Just (mkSymmetry [] 0)
     -- it "encodes Symmetry" $ do
     --   Aeson.encode (mkSymmetry [0, 1, 2, 3, 4] 0) `shouldBe` "{\"sector\":0,\"permutation\":[0,1,2,3,4]}"
     --   Aeson.encode (mkSymmetry [] 0) `shouldBe` "{\"sector\":0,\"permutation\":[]}"
     --   Aeson.encode (mkSymmetry [1, 2, 0] 2) `shouldBe` "{\"sector\":2,\"permutation\":[1,2,0]}"
-    it "parses Symmetries" $ do
-      Aeson.decode "[{\"permutation\": [1, 2, 0], \"sector\": 1}]" `shouldBe` Just (mkSymmetries [mkSymmetry [1, 2, 0] 1])
-      Aeson.decode
-        "[{\"permutation\": [1, 2, 3, 0], \"sector\": 0}, \
-        \ {\"permutation\": [3, 2, 1, 0], \"sector\": 0}]"
-        `shouldBe` Just (mkSymmetries [mkSymmetry [1, 2, 3, 0] 0, mkSymmetry [3, 2, 1, 0] 0])
     -- it "encodes Symmetries" $ do
     --   Aeson.encode (mkSymmetries [mkSymmetry [1, 2, 0] 1])
     --     `shouldBe` "[{\"sector\":0,\"permutation\":[0,1,2]},{\"sector\":2,\"permutation\":[1,2,0]},{\"sector\":1,\"permutation\":[2,0,1]}]"

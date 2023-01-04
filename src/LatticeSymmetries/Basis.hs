@@ -15,6 +15,11 @@ module LatticeSymmetries.Basis
     SpinfulOccupation (..),
     SomeBasis (..),
     -- basisBuild,
+    IndexType,
+    GeneratorType,
+    IsBasis,
+    withSomeBasis,
+    foldSomeBasis,
 
     -- ** Creating bases
 
@@ -38,12 +43,7 @@ module LatticeSymmetries.Basis
     Cbasis (..),
     -- basisFromYAML,
     -- objectFromYAML,
-    withSomeBasis,
-    foldSomeBasis,
     -- Factor,
-    IndexType,
-    GeneratorType,
-    IsBasis,
     -- borrowCbasis,
     newCbasis,
     cloneCbasis,
@@ -192,7 +192,7 @@ instance IsBasis 'SpinlessFermionTy
 --     pretty (BasisState n bits :: BasisState 'SpinTy)
 
 data Basis (t :: ParticleTy) where
-  SpinBasis :: !Int -> !(Maybe Int) -> !(Maybe Int) -> !SymmetriesHeader -> Basis 'SpinTy
+  SpinBasis :: !Int -> !(Maybe Int) -> !(Maybe Int) -> !Symmetries -> Basis 'SpinTy
   SpinfulFermionBasis :: !Int -> !SpinfulOccupation -> Basis 'SpinfulFermionTy
   SpinlessFermionBasis :: !Int -> !(Maybe Int) -> Basis 'SpinlessFermionTy
 
@@ -296,7 +296,7 @@ basisHeaderFromJSON = withObject "Basis" $ \v -> do
           <$> (v .: "number_spins")
           <*> (v .:? "hamming_weight")
           <*> (v .:? "spin_inversion")
-          <*> (v .:! "symmetries" .!= emptySymmetriesHeader)
+          <*> (v .:! "symmetries" .!= emptySymmetries)
     SpinlessFermionTy ->
       fmap SomeBasis $
         SpinlessFermionBasis <$> (v .: "number_sites") <*> (v .:? "number_particles")
@@ -313,7 +313,7 @@ mkSpinHeader ::
   -- | Spin inversion
   Maybe Int ->
   -- | Lattice symmetries
-  SymmetriesHeader ->
+  Symmetries ->
   m (Basis 'SpinTy)
 mkSpinHeader n _ _ _
   | n <= 0 = fail $ "invalid number of spins: " <> show n
@@ -694,7 +694,7 @@ maxStateEstimate x = case x of
      in BasisState (2 * n) $ (minUp `shiftL` n) .|. minDown
   SpinlessFermionBasis n p ->
     unsafeCastBasisState $
-      maxStateEstimate (SpinBasis n p Nothing emptySymmetriesHeader)
+      maxStateEstimate (SpinBasis n p Nothing emptySymmetries)
 
 minStateEstimate :: Basis t -> BasisState t
 minStateEstimate x = case x of
@@ -713,7 +713,7 @@ minStateEstimate x = case x of
      in BasisState (2 * n) $ (minUp `shiftL` n) .|. minDown
   SpinlessFermionBasis n p ->
     unsafeCastBasisState $
-      minStateEstimate (SpinBasis n p Nothing emptySymmetriesHeader)
+      minStateEstimate (SpinBasis n p Nothing emptySymmetries)
 
 isBasisReal :: Basis t -> Bool
 isBasisReal x = case x of
@@ -872,7 +872,7 @@ setStateInfoKernel :: Basis t -> Cbasis_kernels -> IO Cbasis_kernels
 setStateInfoKernel (SpinBasis n _ i g) k
   | n <= 64 = do
       kernelData <-
-        bracket (borrowCpermutation_group g) releaseCpermutation_group $ \gPtr ->
+        bracket (newCpermutation_group g) destroyCpermutation_group $ \gPtr ->
           -- withForeignPtr (symmetriesContents g) $ \gPtr ->
           ls_internal_create_halide_kernel_data gPtr (maybe 0 fromIntegral i)
       pure $

@@ -193,6 +193,11 @@ test-suite lattice-symmetries-haskell-test
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test
   main-is:             Spec.hs
+  other-modules:       LatticeSymmetries.BitStringSpec
+                       LatticeSymmetries.ComplexRationalSpec
+                       LatticeSymmetries.DenseSpec
+                       LatticeSymmetries.BenesSpec
+                       LatticeSymmetries.NonbranchingTermSpec
   build-depends:       lattice-symmetries-haskell
                      , hspec
                      , QuickCheck
