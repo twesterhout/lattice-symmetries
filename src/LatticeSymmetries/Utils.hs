@@ -90,7 +90,7 @@ throwC x₀ msg = do
   useAsCString (encodeUtf8 msg) ls_hs_error
   pure x₀
 
-propagateErrorToC :: a -> SomeException -> IO a
+propagateErrorToC :: HasCallStack => a -> SomeException -> IO a
 propagateErrorToC x₀ = \e -> throwC x₀ (show e)
 
 -- ls_hs_fatal_error :: HasCallStack => CString -> CString -> IO ()

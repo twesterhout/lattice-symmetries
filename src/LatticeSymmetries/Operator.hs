@@ -248,13 +248,13 @@ newCoperator :: (IsBasis t, HasCallStack) => Operator t -> IO (Ptr Coperator)
 newCoperator x = do
   -- logDebug' $ "newCoperator"
   let (diag, offDiag) = G.partition nbtIsDiagonal (getNonbranchingTerms x)
-      numberBits = getNumberBits . basisHeader . opBasis $ x
+      numberBits = getNumberBits . opBasis $ x
   diag_terms <- createCnonbranching_terms numberBits diag
   off_diag_terms <- createCnonbranching_terms numberBits offDiag
-  basis <- withForeignPtr (basisContents (opBasis x)) cloneCbasis
+  basis <- newCbasis (opBasis x)
   -- logDebug' $ "basis is " <> show basis
   -- borrowCbasis (opBasis x)
-  payload <- newStablePtr (SomeOperator (getParticleTag . basisHeader . opBasis $ x) x)
+  payload <- newStablePtr (SomeOperator (getParticleTag . opBasis $ x) x)
   r <-
     new $
       Coperator

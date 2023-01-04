@@ -592,14 +592,14 @@ main = hspec $ do
   --     binomialCoefficient 10 0 `shouldBe` 1
   --     binomialCoefficient 10 24 `shouldBe` 0
   --     binomialCoefficient 4 1 `shouldBe` 4
-  describe "stateIndex" $ do
-    it "computes indices of representatives" $ do
-      -- isStateIndexIdentity (basisHeader (mkSpinBasis 10 Nothing)) `shouldBe` True
-      -- isStateIndexIdentity (basisHeader (mkSpinBasis 10 (Just 8))) `shouldBe` False
-      -- stateIndex (mkSpinBasis 10 Nothing) "|0000000101⟩" `shouldBe` Just 5
-      -- stateIndex (mkSpinBasis 10 (Just 2)) "|0000000101⟩" `shouldBe` Just 1
-      stateIndex (mkSpinfulFermionicBasis 3 (SpinfulPerSector 2 1)) "|001101⟩" `shouldBe` Just 1
-      stateIndex (mkSpinfulFermionicBasis 3 (SpinfulPerSector 2 1)) "|100101⟩" `shouldBe` Just 7
+  -- describe "stateIndex" $ do
+  --   it "computes indices of representatives" $ do
+  --     -- isStateIndexIdentity (basisHeader (mkSpinBasis 10 Nothing)) `shouldBe` True
+  --     -- isStateIndexIdentity (basisHeader (mkSpinBasis 10 (Just 8))) `shouldBe` False
+  --     -- stateIndex (mkSpinBasis 10 Nothing) "|0000000101⟩" `shouldBe` Just 5
+  --     -- stateIndex (mkSpinBasis 10 (Just 2)) "|0000000101⟩" `shouldBe` Just 1
+  --     stateIndex (mkSpinfulFermionicBasis 3 (SpinfulPerSector 2 1)) "|001101⟩" `shouldBe` Just 1
+  --     stateIndex (mkSpinfulFermionicBasis 3 (SpinfulPerSector 2 1)) "|100101⟩" `shouldBe` Just 7
   describe "BenesNetwork" $ do
     it "should permute bits" $ do
       let p₁ = toBenesNetwork (mkPermutation [0, 1, 2])

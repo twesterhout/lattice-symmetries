@@ -146,7 +146,7 @@ foreign export ccall "ls_hs_basis_to_json"
 
 ls_hs_basis_to_json cBasis = do
   logDebug' $ "ls_hs_basis_to_json " <> show cBasis
-  withReconstructedBasis cBasis $ \basis -> do
+  withCbasis cBasis $ \basis -> do
     -- print basis
     newCString $ toStrict (Data.Aeson.encode basis)
 
@@ -155,8 +155,7 @@ foreign export ccall "ls_hs_basis_from_json"
 
 ls_hs_basis_from_json cStr = handleAny (propagateErrorToC nullPtr) $ do
   logDebug' $ "ls_hs_basis_from_json ..."
-  (basis :: SomeBasis) <- decodeCString cStr
-  foldSomeBasis borrowCbasis basis
+  foldSomeBasis newCbasis =<< decodeCString cStr
 
 foreign export ccall "ls_hs_destroy_string"
   ls_hs_destroy_string :: CString -> IO ()
@@ -179,29 +178,50 @@ foreign export ccall "ls_hs_min_state_estimate"
   ls_hs_min_state_estimate :: Ptr Cbasis -> IO Word64
 
 ls_hs_min_state_estimate p =
-  withReconstructedBasis p $ \basis ->
-    let (BasisState n (BitString x)) = minStateEstimate (basisHeader basis)
-     in if n > 64
-          then throwC 0 "minimal state is not representable as a 64-bit integer"
-          else pure $ fromIntegral x
+  withCbasis p $ \someBasis ->
+    withSomeBasis someBasis $ \basis ->
+      let (BasisState n (BitString x)) = minStateEstimate basis
+       in if n > 64
+            then throwC 0 "minimal state is not representable as a 64-bit integer"
+            else pure $ fromIntegral x
 
 foreign export ccall "ls_hs_max_state_estimate"
   ls_hs_max_state_estimate :: Ptr Cbasis -> IO Word64
 
 ls_hs_max_state_estimate p =
-  withReconstructedBasis p $ \basis ->
-    let (BasisState n (BitString x)) = maxStateEstimate (basisHeader basis)
-     in if n > 64
-          then throwC (-1) "maximal state is not representable as a 64-bit integer"
-          else pure $ fromIntegral x
+  withCbasis p $ \someBasis ->
+    withSomeBasis someBasis $ \basis ->
+      let (BasisState n (BitString x)) = maxStateEstimate basis
+       in if n > 64
+            then throwC (-1) "maximal state is not representable as a 64-bit integer"
+            else pure $ fromIntegral x
 
 ls_hs_basis_has_fixed_hamming_weight :: Ptr Cbasis -> IO CBool
 ls_hs_basis_has_fixed_hamming_weight basis =
-  fromBool
-    <$> withReconstructedBasis basis (pure . hasFixedHammingWeight . basisHeader)
+  fromBool <$> withCbasis basis (foldSomeBasis (pure . hasFixedHammingWeight))
+
+foreign import ccall safe "ls_hs_build_representatives"
+  ls_hs_build_representatives :: Ptr Cbasis -> Word64 -> Word64 -> IO ()
 
 ls_hs_basis_build :: Ptr Cbasis -> IO ()
-ls_hs_basis_build basis = withReconstructedBasis basis basisBuild
+ls_hs_basis_build p = do
+  withCbasis p $ \someBasis ->
+    withSomeBasis someBasis $ \basis ->
+      if getNumberBits basis <= 64
+        then do
+          let (BasisState _ (BitString lower)) = minStateEstimate basis
+              (BasisState _ (BitString upper)) = maxStateEstimate basis
+          ls_hs_build_representatives p (fromIntegral lower) (fromIntegral upper)
+        else throwC () "too many bits"
+
+-- basisBuild :: HasCallStack => Basis t -> IO ()
+-- basisBuild basis
+--   | getNumberBits (basisHeader basis) <= 64 =
+--       withForeignPtr (basisContents basis) $ \basisPtr -> do
+--         let (BasisState _ (BitString lower)) = minStateEstimate (basisHeader basis)
+--             (BasisState _ (BitString upper)) = maxStateEstimate (basisHeader basis)
+--         ls_hs_build_representatives basisPtr (fromIntegral lower) (fromIntegral upper)
+--   | otherwise = withFrozenCallStack $ error "Too many bits"
 
 foreign export ccall "ls_hs_basis_build"
   ls_hs_basis_build :: Ptr Cbasis -> IO ()
@@ -209,29 +229,22 @@ foreign export ccall "ls_hs_basis_build"
 foreign export ccall "ls_hs_basis_has_fixed_hamming_weight"
   ls_hs_basis_has_fixed_hamming_weight :: Ptr Cbasis -> IO CBool
 
-foreign export ccall "ls_hs_basis_number_bits"
-  ls_hs_basis_number_bits :: Ptr Cbasis -> IO CInt
-
-ls_hs_basis_number_bits basisPtr =
-  fromIntegral
-    <$> withReconstructedBasis basisPtr (pure . getNumberBits . basisHeader)
-
 foreign export ccall "ls_hs_basis_number_words"
   ls_hs_basis_number_words :: Ptr Cbasis -> IO CInt
 
 ls_hs_basis_number_words basisPtr =
-  fromIntegral
-    <$> withReconstructedBasis basisPtr (pure . getNumberWords . basisHeader)
+  fromIntegral <$> withCbasis basisPtr (foldSomeBasis (pure . getNumberWords))
 
 foreign export ccall "ls_hs_basis_state_to_string"
   ls_hs_basis_state_to_string :: Ptr Cbasis -> Ptr Word64 -> IO CString
 
 ls_hs_basis_state_to_string basisPtr statePtr =
-  withReconstructedBasis basisPtr $ \(basis :: Basis t) -> do
-    let numberBits = getNumberBits (basisHeader basis)
-        numberWords = getNumberWords (basisHeader basis)
-    state <- BasisState @t numberBits <$> readBitString numberWords statePtr
-    newCString . encodeUtf8 . toPrettyText $ state
+  withCbasis basisPtr $ \someBasis ->
+    withSomeBasis someBasis $ \(basis :: Basis t) -> do
+      let numberBits = getNumberBits basis
+          numberWords = getNumberWords basis
+      state <- BasisState @t numberBits <$> readBitString numberWords statePtr
+      newCString . encodeUtf8 . toPrettyText $ state
 
 foreign export ccall "ls_hs_fixed_hamming_state_to_index"
   ls_hs_fixed_hamming_state_to_index :: Word64 -> CPtrdiff
@@ -374,12 +387,13 @@ ls_hs_create_operator :: Ptr Cbasis -> Ptr Cexpr -> IO (Ptr Coperator)
 ls_hs_create_operator basisPtr exprPtr =
   handleAny (propagateErrorToC nullPtr) $ do
     logDebug' $ "ls_hs_create_operator " <> show basisPtr <> ", " <> show exprPtr
-    withReconstructedBasis basisPtr $ \basis ->
-      withCexpr exprPtr $ \someExpr ->
-        withSomeExpr @IsBasis someExpr $ \expr ->
-          case matchParticleType2 basis expr of
-            Just HRefl -> newCoperator (mkOperator basis expr)
-            Nothing -> error "basis and expression have different particle types"
+    withCbasis basisPtr $ \someBasis ->
+      withSomeBasis someBasis $ \basis ->
+        withCexpr exprPtr $ \someExpr ->
+          withSomeExpr @IsBasis someExpr $ \expr ->
+            case matchParticleType2 basis expr of
+              Just HRefl -> newCoperator (mkOperator basis expr)
+              Nothing -> error "basis and expression have different particle types"
 
 foreign export ccall "ls_hs_clone_operator"
   ls_hs_clone_operator :: Ptr Coperator -> IO (Ptr Coperator)
@@ -476,7 +490,7 @@ ls_hs_operator_get_expr opPtr =
     withSomeOperator someOp $ \op ->
       newCexpr $
         SomeExpr
-          (getParticleTag . basisHeader . opBasis $ op)
+          (getParticleTag . opBasis $ op)
           (opTerms op)
 
 -- foreign export ccall "ls_hs_load_hamiltonian_from_yaml"
@@ -495,7 +509,7 @@ toCyaml_config :: ConfigSpec -> IO (Ptr Cyaml_config)
 toCyaml_config (ConfigSpec basis maybeHamiltonian observables) = do
   p <- malloc
   -- print basis
-  basisPtr <- withSomeBasis basis borrowCbasis
+  basisPtr <- withSomeBasis basis newCbasis
   -- withSomeBasis basis $ \b ->
   --   withForeignPtr (basisContents b) $ \ptr -> do
   --     _ <- basisIncRefCount ptr

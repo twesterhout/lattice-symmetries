@@ -514,7 +514,7 @@ instance FromJSON ConfigSpec where
       withSomeBasis someBasis $ \basis ->
         case Data.Aeson.KeyMap.lookup (Data.Aeson.Key.fromString "hamiltonian") v of
           Just h ->
-            Just . SomeOperator (getParticleTag $ basisHeader basis)
+            Just . SomeOperator (getParticleTag basis)
               <$> operatorFromJSON basis h
           Nothing -> pure Nothing
     observables <-
@@ -522,7 +522,7 @@ instance FromJSON ConfigSpec where
         case Data.Aeson.KeyMap.lookup (Data.Aeson.Key.fromString "observables") v of
           Just h ->
             flip (withArray "Observables") h $
-              G.mapM (fmap (SomeOperator (getParticleTag $ basisHeader basis)) . operatorFromJSON basis)
+              G.mapM (fmap (SomeOperator (getParticleTag basis)) . operatorFromJSON basis)
           Nothing -> pure G.empty
     pure $ ConfigSpec someBasis maybeHamiltonian observables
 
