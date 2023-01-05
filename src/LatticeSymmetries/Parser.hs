@@ -44,6 +44,7 @@ import LatticeSymmetries.Algebra
 import LatticeSymmetries.Basis
 import LatticeSymmetries.BitString
 import LatticeSymmetries.ComplexRational
+import LatticeSymmetries.Expr
 import LatticeSymmetries.Generator
 import LatticeSymmetries.Operator
 import LatticeSymmetries.Utils
@@ -310,7 +311,7 @@ exprFromJSON f expand = withObject "Expr" $ \v -> do
     Left e -> parserThrowError [Key "expression"] (toString e)
     Right x -> pure x
 
-instance (IsBasis t, HasSiteIndex (IndexType t)) => FromJSON (Expr t) where
+instance IsBasis t => FromJSON (Expr t) where
   parseJSON = exprFromJSON (exprParserConcrete (particleDispatch @t)) replicateSiteIndices
     where
       exprParserConcrete :: ParticleTag t -> Maybe ParticleTy -> Text -> Either Text (Expr t)

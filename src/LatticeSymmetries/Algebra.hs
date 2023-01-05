@@ -14,11 +14,7 @@ module LatticeSymmetries.Algebra
     Product (..),
     Sum (..),
     Polynomial,
-    Expr (..),
-    SomeExpr (..),
-    withSomeExpr,
-    forSomeExpr,
-    mapSomeExpr,
+    CanScale (..),
 
     -- * Fermionic and spin (bosonic) algebra
     CommutatorType (..),
@@ -31,25 +27,6 @@ module LatticeSymmetries.Algebra
     simplifyProduct,
     simplifyPolynomial,
     conjugatePolynomial,
-    CanScale (..),
-    forSiteIndices,
-    HasSiteIndex,
-
-    -- * Expressions
-    conjugateExpr,
-    isHermitianExpr,
-    isRealExpr,
-    isIdentityExpr,
-    mapGenerators,
-    mapGeneratorsM,
-    mapIndices,
-    mapIndicesM,
-    mapCoeffs,
-    simplifyExpr,
-    replicateSiteIndices,
-
-    -- ** FFI helpers
-    Cexpr (..),
   )
 where
 
@@ -89,6 +66,12 @@ import Prelude hiding (Product, Sum, identity, toList)
 data Scaled c g = Scaled !c !g
   deriving stock (Eq, Ord, Show, Generic)
 
+instance Functor (Scaled c) where
+  fmap f (Scaled c g) = Scaled c (f g)
+
+instance (Pretty c, Pretty g) => Pretty (Scaled c g) where
+  pretty (Scaled c g) = pretty c <> " × " <> pretty g
+
 -- | A product of @g@s.
 newtype Product g = Product {unProduct :: Vector g}
   deriving stock (Eq, Ord, Show, Generic)
@@ -101,15 +84,6 @@ newtype Sum g = Sum {unSum :: Vector g}
 
 -- | A polynomial in variable @g@ over a field @c@.
 type Polynomial c g = Sum (Scaled c (Product g))
-
-newtype Expr t = Expr
-  { unExpr :: Polynomial ComplexRational (Generator (IndexType t) (GeneratorType t))
-  }
-  deriving stock (Generic)
-
-deriving instance (Eq (IndexType t), Eq (GeneratorType t)) => Eq (Expr t)
-
-deriving instance (Show (IndexType t), Show (GeneratorType t)) => Show (Expr t)
 
 -- | Specifies the type of commutator to use for an algebra.
 data CommutatorType
@@ -177,12 +151,6 @@ combineNeighborsImpl equal combine (Stream step s₀) = Stream step' (CombineNei
 combineNeighbors :: G.Vector v a => (a -> a -> Bool) -> (a -> a -> a) -> v a -> v a
 combineNeighbors equal combine =
   G.unstream . Bundle.inplace (combineNeighborsImpl equal combine) toMax . G.stream
-
-instance Functor (Scaled c) where
-  fmap f (Scaled c g) = Scaled c (f g)
-
-instance (Pretty c, Pretty g) => Pretty (Scaled c g) where
-  pretty (Scaled c g) = pretty c <> " × " <> pretty g
 
 instance
   HasNonbranchingRepresentation g =>
@@ -433,18 +401,18 @@ reorderTerms (Sum v) = Sum $ sortVectorBy ordering v
   where
     ordering (Scaled _ a) (Scaled _ b) = compare a b
 
-collectIdentities ::
-  forall c g i.
-  (Eq c, Fractional c, Algebra g, Ord i) =>
-  Polynomial c (Generator i g) ->
-  Polynomial c (Generator i g)
-collectIdentities (Sum terms)
-  | G.null identities = Sum $ otherTerms
-  | otherwise = Sum $ otherTerms `G.snoc` megaIdentity
-  where
-    isId (Scaled _ (Product p)) = G.length p == 1 && isIdentity (G.head p)
-    (identities, otherTerms) = G.partition isId terms
-    megaIdentity = G.foldl1' (\(Scaled c g) (Scaled c' _) -> (Scaled (c + c') g)) identities
+-- collectIdentities ::
+--   forall c g i.
+--   (Eq c, Fractional c, Algebra g, Ord i) =>
+--   Polynomial c (Generator i g) ->
+--   Polynomial c (Generator i g)
+-- collectIdentities (Sum terms)
+--   | G.null identities = Sum $ otherTerms
+--   | otherwise = Sum $ otherTerms `G.snoc` megaIdentity
+--   where
+--     isId (Scaled _ (Product p)) = G.length p == 1 && isIdentity (G.head p)
+--     (identities, otherTerms) = G.partition isId terms
+--     megaIdentity = G.foldl1' (\(Scaled c g) (Scaled c' _) -> (Scaled (c + c') g)) identities
 
 simplifyPolynomial ::
   forall c g i.
@@ -454,7 +422,7 @@ simplifyPolynomial ::
 simplifyPolynomial =
   collectTerms
     . reorderTerms
-    . collectIdentities
+    -- . collectIdentities
     . termsToCanonical
 
 termsToCanonical ::
@@ -488,216 +456,6 @@ conjugatePolynomial = simplifyPolynomial . fmap conjugateScaled
     conjugateProduct = Product . G.reverse . G.map conjugateGenerator . unProduct
     conjugateScaled = fmap conjugateProduct
 
-collectIndices :: Ord i => Polynomial c (Generator i g) -> [i]
-collectIndices = List.nub . List.sort . collectSum
-  where
-    collectSum (Sum v) = concatMap collectScaled (G.toList v)
-    collectScaled (Scaled _ p) = collectProduct p
-    collectProduct (Product v) = (\(Generator i _) -> i) <$> (G.toList v)
-
-mapGenerators :: (g -> g) -> Polynomial c g -> Polynomial c g
-mapGenerators f = fmap (fmap (fmap f))
-
-mapGeneratorsM :: Monad m => (g -> m g) -> Polynomial c g -> m (Polynomial c g)
-mapGeneratorsM f =
-  fmap Sum
-    . G.mapM (\(Scaled c p) -> Scaled c . Product <$> G.mapM f (unProduct p))
-    . unSum
-
-foldlGenerators' :: (a -> g -> a) -> a -> Polynomial c g -> a
-foldlGenerators' combine x₀ (Sum s) =
-  G.foldl' (\ !x (Scaled _ (Product p)) -> G.foldl' combine x p) x₀ s
-
-mapIndices :: (IndexType t -> IndexType t) -> Expr t -> Expr t
-mapIndices f = Expr . mapGenerators (\(Generator i g) -> Generator (f i) g) . unExpr
-
-mapIndicesM :: Monad m => (IndexType t -> m (IndexType t)) -> Expr t -> m (Expr t)
-mapIndicesM f = fmap Expr . mapGeneratorsM (\(Generator i g) -> Generator <$> (f i) <*> pure g) . unExpr
-
-mapCoeffs :: (ComplexRational -> ComplexRational) -> Expr t -> Expr t
-mapCoeffs f = Expr . fmap (\(Scaled c p) -> Scaled (f c) p) . unExpr
-
-foldlCoeffs' :: (a -> c -> a) -> a -> Polynomial c g -> a
-foldlCoeffs' combine x₀ (Sum s) =
-  G.foldl' (\ !x (Scaled c _) -> combine x c) x₀ s
-
-simplifyExpr :: (Algebra (GeneratorType t), Ord (IndexType t)) => Expr t -> Expr t
-simplifyExpr = Expr . simplifyPolynomial . unExpr
-
-conjugateExpr :: (Algebra (GeneratorType t), Ord (IndexType t)) => Expr t -> Expr t
-conjugateExpr = simplifyExpr . Expr . mapGenerators conjugateGenerator . unExpr . mapCoeffs conjugate
-
-isIdentityExpr :: Algebra (GeneratorType t) => Expr t -> Bool
-isIdentityExpr = isIdentitySum . unExpr
-  where
-    isIdentitySum (Sum terms) = G.length terms == 1 && isIdentityScaled (G.head terms)
-    isIdentityScaled (Scaled _ (Product p)) = G.length p == 1 && isIdentityGenerator (G.head p)
-    isIdentityGenerator (Generator _ g) = isIdentity g
-
-isHermitianExpr :: (Ord (IndexType t), Eq (GeneratorType t), Algebra (GeneratorType t)) => Expr t -> Bool
-isHermitianExpr terms = terms == conjugateExpr terms
-
-isRealExpr :: Expr t -> Bool
-isRealExpr = foldlCoeffs' (\f c -> f && imagPart c == 0) True . unExpr
-
-instance (Algebra (GeneratorType t), Ord (IndexType t)) => Num (Expr t) where
-  (+) a b = simplifyExpr . Expr $ unExpr a + unExpr b
-  (-) a b = simplifyExpr . Expr $ unExpr a - unExpr b
-  (*) a b = simplifyExpr . Expr $ unExpr a * unExpr b
-  negate = Expr . negate . unExpr
-  abs = Expr . abs . unExpr
-  signum = Expr . signum . unExpr
-  fromInteger _ =
-    error $
-      "Num instance of Expr does not implement fromInteger; "
-        <> "consider constructing an explicit identity 𝟙₀ and then scaling it"
-
-instance CanScale ComplexRational (Expr t) where
-  scale c a
-    | c == 0 = Expr []
-    | otherwise = Expr $ c `scale` (unExpr a)
-
-instance Pretty (Generator (IndexType t) (GeneratorType t)) => Pretty (Expr t) where
-  pretty (Expr terms) = pretty terms
-
-instance Pretty SomeExpr where
-  pretty (SomeExpr SpinTag expr) = pretty expr
-  pretty (SomeExpr SpinlessFermionTag expr) = pretty expr
-  pretty (SomeExpr SpinfulFermionTag expr) = pretty expr
-
-data SomeExpr where
-  SomeExpr :: !(ParticleTag t) -> !(Expr t) -> SomeExpr
-
-withSomeExpr ::
-  forall c a.
-  (c 'SpinTy, c 'SpinlessFermionTy, c 'SpinfulFermionTy) =>
-  SomeExpr ->
-  (forall t. c t => Expr t -> a) ->
-  a
-withSomeExpr (SomeExpr SpinTag a) f = f a
-withSomeExpr (SomeExpr SpinfulFermionTag a) f = f a
-withSomeExpr (SomeExpr SpinlessFermionTag a) f = f a
-
-forSomeExpr ::
-  forall c a.
-  (c 'SpinTy, c 'SpinlessFermionTy, c 'SpinfulFermionTy) =>
-  (forall t. c t => Expr t -> a) ->
-  SomeExpr ->
-  a
-forSomeExpr f expr = withSomeExpr @c expr f
-
-mapSomeExpr ::
-  forall c a.
-  (c 'SpinTy, c 'SpinlessFermionTy, c 'SpinfulFermionTy) =>
-  (forall t. c t => Expr t -> Expr t) ->
-  SomeExpr ->
-  SomeExpr
-mapSomeExpr f expr = case expr of
-  SomeExpr SpinTag x -> SomeExpr SpinTag (f x)
-  SomeExpr SpinfulFermionTag x -> SomeExpr SpinfulFermionTag (f x)
-  SomeExpr SpinlessFermionTag x -> SomeExpr SpinlessFermionTag (f x)
-
-binaryOp ::
-  (forall t. (Algebra (GeneratorType t), Ord (IndexType t)) => Expr t -> Expr t -> Expr t) ->
-  SomeExpr ->
-  SomeExpr ->
-  SomeExpr
-binaryOp op (SomeExpr tag@SpinTag a) (SomeExpr SpinTag b) = SomeExpr tag $ op a b
-binaryOp op (SomeExpr tag@SpinlessFermionTag a) (SomeExpr SpinlessFermionTag b) = SomeExpr tag $ op a b
-binaryOp op (SomeExpr tag@SpinfulFermionTag a) (SomeExpr SpinfulFermionTag b) = SomeExpr tag $ op a b
-binaryOp op (SomeExpr t₁ _) (SomeExpr t₂ _) =
-  error $
-    "Expressions are defined for different particle types: "
-      <> show (particleTagToType t₁)
-      <> " and "
-      <> show (particleTagToType t₂)
-
-class Num (Expr t) => ProvidesNum t
-
-instance Num (Expr t) => ProvidesNum t
-
-instance Num SomeExpr where
-  (+) = binaryOp (+)
-  (-) = binaryOp (-)
-  (*) = binaryOp (*)
-  negate = mapSomeExpr @ProvidesNum negate
-  abs = mapSomeExpr @ProvidesNum abs
-  signum = mapSomeExpr @ProvidesNum signum
-  fromInteger _ =
-    error $
-      "Num instance of SomeExpr does not implement fromInteger; "
-        <> "consider constructing an explicit identity 𝟙₀ and then scaling it"
-
-class CanScale ComplexRational (Expr t) => ProvidesCanScale t
-
-instance CanScale ComplexRational (Expr t) => ProvidesCanScale t
-
-instance CanScale ComplexRational SomeExpr where
-  scale z = mapSomeExpr @ProvidesCanScale (scale z)
-
-class Pretty (Expr t) => ProvidesPretty t
-
-instance Pretty (Expr t) => ProvidesPretty t
-
-instance ToJSON SomeExpr where
-  toJSON x@(SomeExpr tag _) =
-    object $
-      [ "particle" .= particleTagToType tag,
-        "expression" .= withSomeExpr @ProvidesPretty x toPrettyText
-      ]
-
-tableFromLowLevelMapping ::
-  (i ~ IndexType t, Ord i) =>
-  ParticleTag t ->
-  Int ->
-  Ptr CInt ->
-  Ptr CInt ->
-  IO (Map i i)
-tableFromLowLevelMapping tag count fromPtr toPtr =
-  Map.fromList
-    <$> case tag of
-      SpinTag ->
-        zip
-          <$> (fmap fromIntegral <$> peekArray count fromPtr)
-          <*> (fmap fromIntegral <$> peekArray count toPtr)
-      SpinlessFermionTag ->
-        zip
-          <$> (fmap fromIntegral <$> peekArray count fromPtr)
-          <*> (fmap fromIntegral <$> peekArray count toPtr)
-      SpinfulFermionTag ->
-        zip
-          <$> (toSpinfulIndex <$> peekArray (2 * count) fromPtr)
-          <*> (toSpinfulIndex <$> peekArray (2 * count) toPtr)
-  where
-    toSpinfulIndex :: [CInt] -> [(SpinIndex, Int)]
-    toSpinfulIndex [] = []
-    toSpinfulIndex (s : i : rest) = (toEnum (fromIntegral s), fromIntegral i) : toSpinfulIndex rest
-    toSpinfulIndex _ = error "this cannot happen by construction"
-
-collectSiteIndices :: (Ord (IndexType t), HasSiteIndex (IndexType t)) => Expr t -> [Int]
-collectSiteIndices expr@(Expr poly) =
-  Set.toList . Set.fromList . fmap getSiteIndex $ collectIndices poly
-
-replicateSiteIndices ::
-  (Ord (IndexType t), HasSiteIndex (IndexType t), Algebra (GeneratorType t)) =>
-  [[Int]] ->
-  Expr t ->
-  Expr t
-replicateSiteIndices newIndices expr@(Expr poly) =
-  case newIndices of
-    [] -> Expr []
-    (i : is) -> foldl' (+) (replace i) $ fmap replace is
-  where
-    oldSiteIndices = collectSiteIndices expr
-    k = length oldSiteIndices
-    replace siteIndices
-      | Map.size mapping == k = mapIndices (mapSiteIndex (mapping Map.!)) expr
-      | otherwise =
-          error $
-            "wrong number of site indices: " <> show (length siteIndices) <> "; expected " <> show k
-      where
-        mapping = Map.fromList (zip oldSiteIndices siteIndices)
-
 -- collectIndices :: Ord (IndexType t) => Expr t -> Set (IndexType i)
 -- collectIndices (Expr p) =
 --   foldlGenerators' (\ !s (Generator i _) -> Set.insert i s) Set.empty p
@@ -723,24 +481,24 @@ forIndices poly indices = mconcat (fmap processOne indices)
     symbols = collectIndices poly
 -}
 
-replaceSiteIndices :: HasSiteIndex i => Polynomial c (Generator i g) -> [(Int, Int)] -> Polynomial c (Generator i g)
-replaceSiteIndices poly indexMap = replaceSum poly
-  where
-    replaceSum = fmap replaceScaled
-    replaceScaled = fmap replaceProduct
-    replaceProduct = fmap replaceGenerator
-    replaceGenerator (Generator i g) = Generator (mapSiteIndex f i) g
-      where
-        f i' = case [to | (from, to) <- indexMap, from == getSiteIndex i'] of
-          [to] -> to
-          [] -> error "index missing in mapping"
-          _ -> error "multiple indices found in mapping"
+-- replaceSiteIndices :: HasSiteIndex i => Polynomial c (Generator i g) -> [(Int, Int)] -> Polynomial c (Generator i g)
+-- replaceSiteIndices poly indexMap = replaceSum poly
+--   where
+--     replaceSum = fmap replaceScaled
+--     replaceScaled = fmap replaceProduct
+--     replaceProduct = fmap replaceGenerator
+--     replaceGenerator (Generator i g) = Generator (mapSiteIndex f i) g
+--       where
+--         f i' = case [to | (from, to) <- indexMap, from == getSiteIndex i'] of
+--           [to] -> to
+--           [] -> error "index missing in mapping"
+--           _ -> error "multiple indices found in mapping"
 
-forSiteIndices :: (Ord i, HasSiteIndex i) => Polynomial c (Generator i g) -> [[Int]] -> Polynomial c (Generator i g)
-forSiteIndices poly indices = mconcat (fmap processOne indices)
-  where
-    processOne newIndices = replaceSiteIndices poly (zipWith (,) symbols newIndices)
-    symbols = fmap getSiteIndex $ collectIndices poly
+-- forSiteIndices :: (Ord i, HasSiteIndex i) => Polynomial c (Generator i g) -> [[Int]] -> Polynomial c (Generator i g)
+-- forSiteIndices poly indices = mconcat (fmap processOne indices)
+--   where
+--     processOne newIndices = replaceSiteIndices poly (zipWith (,) symbols newIndices)
+--     symbols = fmap getSiteIndex $ collectIndices poly
 
 {-
 groupTerms ::
@@ -784,9 +542,3 @@ groupTerms i₀ = step4 . step3 . step2 . step1
 --     productToMatrix (Product v) = csrKronMany $ csrMatrixFromDense @Vector . matrixRepresentation <$> G.toList v
 --     scaledToMatrix (Scaled c p) = csrScale (toComplexDouble c) (productToMatrix p)
 --     sumToMatrix (Sum v) = G.foldl1' (+) (G.map scaledToMatrix v)
-
-newtype {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_expr" #-} Cexpr = Cexpr
-  { unCexpr :: StablePtr SomeExpr
-  }
-  deriving stock (Eq)
-  deriving newtype (Storable)

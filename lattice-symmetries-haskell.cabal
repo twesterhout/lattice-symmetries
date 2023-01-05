@@ -72,6 +72,7 @@ library
                        LatticeSymmetries.BitString
                        LatticeSymmetries.ComplexRational
                        LatticeSymmetries.Dense
+                       LatticeSymmetries.Expr
                        LatticeSymmetries.FFI
                        -- LatticeSymmetries.IO
                        LatticeSymmetries.Generator
@@ -104,6 +105,7 @@ library
                      , aeson >= 2
                      , scientific
                      , co-log
+                     , constraints
                      -- , co-log-core
                      -- , vector-algorithms
                      -- , deepseq
@@ -209,7 +211,8 @@ test-suite lattice-symmetries-haskell-test
                      , parsec
                      , prettyprinter
                      -- , mwc-random
-  ghc-options:         -threaded
+  ghc-options:         -Wno-orphans
+                       -threaded
                        -rtsopts
                        -with-rtsopts=-N
   buildable: True

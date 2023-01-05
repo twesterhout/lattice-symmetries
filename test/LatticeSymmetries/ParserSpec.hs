@@ -5,6 +5,7 @@ module LatticeSymmetries.ParserSpec (spec) where
 import Data.Ratio ((%))
 import LatticeSymmetries.Algebra
 import LatticeSymmetries.ComplexRational
+import LatticeSymmetries.Expr
 import LatticeSymmetries.Generator
 import LatticeSymmetries.Parser
 import Test.Hspec

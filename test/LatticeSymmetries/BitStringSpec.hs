@@ -2,12 +2,12 @@ module LatticeSymmetries.BitStringSpec (spec) where
 
 import qualified Data.Vector.Storable as S
 import qualified Data.Vector.Storable.Mutable as SM
-import Foreign.Storable
 import LatticeSymmetries.BitString
 import System.IO.Unsafe (unsafePerformIO)
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck (Arbitrary (..))
+import Prelude hiding (words)
 
 log2 :: Integer -> Int
 log2 !n

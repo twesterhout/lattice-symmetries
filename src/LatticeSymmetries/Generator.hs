@@ -1,5 +1,8 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- |
 -- Module      : LatticeSymmetries.Generator
@@ -17,7 +20,14 @@ module LatticeSymmetries.Generator
     particleDispatch,
     IndexType (..),
     GeneratorType (..),
-    HasSiteIndex (..),
+    IsIndexType,
+    HasProperIndexType,
+    IsGeneratorType,
+    HasProperGeneratorType,
+    withConstraint,
+    -- HasSiteIndex (..),
+    getSiteIndex,
+    mapSiteIndex,
     -- HasMatrixRepresentation (..),
   )
 where
@@ -25,6 +35,9 @@ where
 import Data.Aeson
 import Data.Aeson.Types (Pair)
 import Data.Bits
+import Data.Constraint
+import Data.Constraint.Deferrable
+import Data.Constraint.Unsafe
 import qualified Data.Text as Text
 import qualified Data.Vector.Generic as G
 import LatticeSymmetries.BitString
@@ -88,6 +101,21 @@ particleDispatch
   | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinfulFermionTy) = SpinfulFermionTag
   | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinlessFermionTy) = SpinlessFermionTag
   | otherwise = error "this should never happen by construction"
+
+withConstraint ::
+  forall (c :: ParticleTy -> Constraint) (t :: ParticleTy) a.
+  (HasCallStack, Typeable t, c 'SpinTy, c 'SpinfulFermionTy, c 'SpinlessFermionTy) =>
+  (c t => a) ->
+  a
+withConstraint f =
+  case particleDispatch @t of
+    SpinTag -> f
+    SpinfulFermionTag -> f
+    SpinlessFermionTag -> f
+
+-- case unsafeCoerceConstraint :: (c 'SpinTy, c 'SpinfulFermionTy, c 'SpinlessFermionTy) :- (c t) of
+--   Sub x@Dict -> f
+-- {-# NOINLINE proveConstraint #-}
 
 -- | Index for the spin sector.
 --
@@ -158,9 +186,17 @@ type family GeneratorType (t :: ParticleTy) where
   GeneratorType 'SpinfulFermionTy = FermionGeneratorType
   GeneratorType 'SpinlessFermionTy = FermionGeneratorType
 
-type IsGeneratorType g = (Eq g, Ord g, Pretty g)
+class IsGeneratorType (GeneratorType t) => HasProperGeneratorType t
 
-type IsIndexType i = (Eq i, Ord i, Pretty i)
+instance IsGeneratorType (GeneratorType t) => HasProperGeneratorType t
+
+class IsIndexType (IndexType t) => HasProperIndexType t
+
+instance IsIndexType (IndexType t) => HasProperIndexType t
+
+type IsGeneratorType g = (Eq g, Ord g, Pretty g, HasNonbranchingRepresentation (Generator Int g))
+
+type IsIndexType i = (Eq i, Ord i, HasSiteIndex i, Pretty i)
 
 -- | A generator (either spin or fermionic) which is not associated with an index @i@. The index
 -- could be the site index or a tuple of spin and site indices.

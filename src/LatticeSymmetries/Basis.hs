@@ -115,23 +115,34 @@ matchParticleType2 _ _ = case eqTypeRep (typeRep @t1) (typeRep @t2) of
   Just HRefl -> Just HRefl
   Nothing -> Nothing
 
-instance Pretty (BasisState 'SpinTy) where
-  pretty (BasisState n bits) = "|" <> prettyBitString n (unBitString bits) <> "⟩"
+instance Typeable t => Pretty (BasisState t) where
+  pretty x =
+    case particleDispatch @t of
+      SpinTag -> prettySpin x
+      SpinfulFermionTag -> prettyFermion x
+      SpinlessFermionTag ->
+        let (BasisState n bits) = x
+         in prettySpin (BasisState n bits :: BasisState 'SpinTy)
+    where
+      prettySpin (BasisState n bits) = "|" <> prettyBitString n (unBitString bits) <> "⟩"
+      prettyFermion (BasisState n bits) =
+        let up = unBitString bits `shiftR` (n `div` 2)
+         in mconcat
+              [ "|",
+                prettyBitString (n `div` 2) up,
+                "⟩",
+                "|",
+                prettyBitString (n `div` 2) (unBitString bits),
+                "⟩"
+              ]
 
-instance Pretty (BasisState 'SpinfulFermionTy) where
-  pretty (BasisState n bits) =
-    let up = unBitString bits `shiftR` (n `div` 2)
-     in mconcat
-          [ "|",
-            prettyBitString (n `div` 2) up,
-            "⟩",
-            "|",
-            prettyBitString (n `div` 2) (unBitString bits),
-            "⟩"
-          ]
-
-instance Pretty (BasisState 'SpinlessFermionTy) where
-  pretty (BasisState n bits) = pretty (BasisState n bits :: BasisState 'SpinTy)
+-- instance Pretty (BasisState 'SpinTy) where
+--   pretty (BasisState n bits) = "|" <> prettyBitString n (unBitString bits) <> "⟩"
+--
+-- instance Pretty (BasisState 'SpinfulFermionTy)
+--
+-- instance Pretty (BasisState 'SpinlessFermionTy) where
+--   pretty (BasisState n bits) = pretty (BasisState n bits :: BasisState 'SpinTy)
 
 -- instance Typeable t => Pretty (BasisState t) where
 --   pretty (BasisState n bits)
@@ -152,19 +163,21 @@ instance Pretty (BasisState 'SpinlessFermionTy) where
 --     | otherwise = error "this cannot happen by construction"
 
 class
-  ( Enum (GeneratorType t),
-    Bounded (GeneratorType t),
+  ( -- Enum (GeneratorType t),
+    -- Bounded (GeneratorType t),
     -- HasMatrixRepresentation (GeneratorType t),
-    HasNonbranchingRepresentation (Generator Int (GeneratorType t)),
+    -- HasNonbranchingRepresentation (Generator Int (GeneratorType t)),
+    Typeable t,
     Algebra (GeneratorType t),
-    Ord (IndexType t),
-    HasSiteIndex (IndexType t),
-    Pretty (IndexType t),
-    Pretty (GeneratorType t),
-    Pretty (Generator (IndexType t) (GeneratorType t)),
-    Pretty (BasisState t),
-    HasSiteIndex (IndexType t),
-    Typeable t
+    HasProperGeneratorType t,
+    HasProperIndexType t
+    -- Ord (IndexType t),
+    -- HasSiteIndex (IndexType t),
+    -- Pretty (IndexType t),
+    -- Pretty (GeneratorType t),
+    -- Pretty (Generator (IndexType t) (GeneratorType t)),
+    -- Pretty (BasisState t),
+    -- HasSiteIndex (IndexType t),
   ) =>
   IsBasis t
 

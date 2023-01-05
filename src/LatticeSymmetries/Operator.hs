@@ -34,6 +34,7 @@ import LatticeSymmetries.Algebra
 import LatticeSymmetries.Basis
 import LatticeSymmetries.BitString
 import LatticeSymmetries.ComplexRational
+import LatticeSymmetries.Expr
 import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
 import LatticeSymmetries.NonbranchingTerm
