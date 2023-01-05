@@ -44,12 +44,14 @@ ffibuilder.cdef(
     void ls_hs_exit(void);
 
     void ls_hs_set_exception_handler(void (*handler)(char const* message));
-    void ls_hs_error(char const* message);
+    void ls_hs_error(char const *message);
+    void ls_hs_destroy_string(char *str);
 
-    typedef struct ls_hs_permutation_group { ...; } ls_hs_permutation_group;
-    typedef struct ls_hs_basis { ...; } ls_hs_basis;
-    typedef struct ls_hs_operator { ...; } ls_hs_operator;
     typedef struct ls_hs_scalar { double real; double imag; } ls_hs_scalar;
+    typedef struct ls_hs_symmetries ls_hs_symmetries;
+    typedef struct ls_hs_basis { ...; } ls_hs_basis;
+    typedef struct ls_hs_expr ls_hs_expr;
+    typedef struct ls_hs_operator { ...; } ls_hs_operator;
 
     typedef struct {
       void *elts;
@@ -72,26 +74,40 @@ ffibuilder.cdef(
     } ls_chpl_kernels;
     ls_chpl_kernels const *ls_hs_internal_get_chpl_kernels();
 
-    ls_hs_permutation_group *ls_hs_symmetries_from_json(const char *json_string);
-    void ls_hs_destroy_symmetries(ls_hs_permutation_group *);
+    typedef struct ls_hs_symmetry ls_hs_symmetry;
+    ls_hs_symmetry *ls_hs_symmetry_from_json(const char *json_string);
+    void ls_hs_destroy_symmetry(ls_hs_symmetry *);
 
+    int ls_hs_symmetry_sector(ls_hs_symmetry const *);
+    int ls_hs_symmetry_length(ls_hs_symmetry const *);
+    int *ls_hs_symmetry_permutation(ls_hs_symmetry const *);
+    void ls_hs_destroy_permutation(int *);
+
+    ls_hs_symmetries *ls_hs_symmetries_from_json(const char *json_string);
+    void ls_hs_destroy_symmetries(ls_hs_symmetries *);
+
+    ls_hs_basis *ls_hs_basis_from_json(char const *json_string);
     ls_hs_basis *ls_hs_clone_basis(ls_hs_basis const *);
     void ls_hs_destroy_basis(ls_hs_basis *);
+    char const *ls_hs_basis_to_json(ls_hs_basis const *);
+
     uint64_t ls_hs_max_state_estimate(ls_hs_basis const *);
     uint64_t ls_hs_min_state_estimate(ls_hs_basis const *);
-    ls_hs_basis *ls_hs_basis_from_json(char const *json_string);
-    char const *ls_hs_basis_to_json(ls_hs_basis const *);
-    void ls_hs_basis_build(ls_hs_basis *basis);
-    bool ls_hs_basis_has_fixed_hamming_weight(ls_hs_basis const *);
-    void ls_hs_state_index(ls_hs_basis const *basis, ptrdiff_t batch_size,
-                           uint64_t const *spins, ptrdiff_t spins_stride,
-                           ptrdiff_t *indices, ptrdiff_t indices_stride);
-
     int ls_hs_basis_number_bits(ls_hs_basis const* basis);
     int ls_hs_basis_number_words(ls_hs_basis const* basis);
+    bool ls_hs_basis_has_fixed_hamming_weight(ls_hs_basis const *);
+    char const *ls_hs_basis_state_to_string(ls_hs_basis const *,
+                                            uint64_t const *state);
+
+    void ls_hs_basis_build(ls_hs_basis *basis);
+    bool ls_hs_basis_is_built(ls_hs_basis const *basis);
 
     ptrdiff_t ls_hs_basis_number_states(ls_hs_basis const* basis);
     uint64_t const* ls_hs_basis_states(ls_hs_basis const* basis);
+
+    void ls_hs_state_index(ls_hs_basis const *basis, ptrdiff_t batch_size,
+                           uint64_t const *spins, ptrdiff_t spins_stride,
+                           ptrdiff_t *indices, ptrdiff_t indices_stride);
 
     void ls_hs_state_info(ls_hs_basis const *basis, ptrdiff_t batch_size,
                           uint64_t const *alphas, ptrdiff_t alphas_stride,
@@ -104,20 +120,17 @@ ffibuilder.cdef(
       LS_HS_SPINLESS_FERMION
     } ls_hs_particle_type;
 
-    typedef struct ls_hs_expr { ...; } ls_hs_expr;
     typedef void (*ls_hs_index_replacement_type)(int spin, int site, int *new_spin,
                                                  int *new_site);
 
     extern "Python" void python_replace_indices(int, int, int*, int*);
 
-    ls_hs_expr *ls_hs_create_expr(char const *expression);
+    char const *ls_hs_expr_to_json(ls_hs_expr const *expr);
+    ls_hs_expr *ls_hs_expr_from_json(char const *json_string);
     ls_hs_expr *ls_hs_replace_indices(ls_hs_expr const *expr,
                                       ls_hs_index_replacement_type callback);
     char const *ls_hs_expr_to_string(ls_hs_expr const *expr);
     void ls_hs_destroy_expr(ls_hs_expr *expr);
-
-    char const *ls_hs_expr_to_json(ls_hs_expr const *expr);
-    ls_hs_expr *ls_hs_expr_from_json(char const *json_string);
 
     ls_hs_expr *ls_hs_expr_plus(ls_hs_expr const *a, ls_hs_expr const *b);
     ls_hs_expr *ls_hs_expr_minus(ls_hs_expr const *a, ls_hs_expr const *b);
@@ -125,23 +138,20 @@ ffibuilder.cdef(
     ls_hs_expr *ls_hs_expr_scale(ls_hs_scalar const *z, ls_hs_expr const *a);
 
     ls_hs_operator *ls_hs_create_operator(ls_hs_basis const *, ls_hs_expr const *);
+    ls_hs_operator *ls_hs_clone_operator(ls_hs_operator const *);
     void ls_hs_destroy_operator(ls_hs_operator *);
+    ls_hs_expr const *ls_hs_operator_get_expr(ls_hs_operator const *);
+    ls_hs_basis const *ls_hs_operator_get_basis(ls_hs_operator const *);
 
-    ls_hs_operator *ls_hs_operator_plus(ls_hs_operator const *, ls_hs_operator const *);
-    ls_hs_operator *ls_hs_operator_minus(ls_hs_operator const *, ls_hs_operator const *);
-    ls_hs_operator *ls_hs_operator_times(ls_hs_operator const *, ls_hs_operator const *);
-    ls_hs_operator *ls_hs_operator_scale(ls_hs_scalar const *, ls_hs_operator const *);
-    ls_hs_operator *ls_hs_operator_hermitian_conjugate(ls_hs_operator const *);
+    typedef struct ls_hs_yaml_config {
+      ls_hs_basis const *basis;
+      ls_hs_operator const *hamiltonian;
+      int number_observables;
+      ls_hs_operator const *const *observables;
+    } ls_hs_yaml_config;
 
-    bool ls_hs_operator_is_hermitian(ls_hs_operator const *);
-    bool ls_hs_operator_is_identity(ls_hs_operator const *);
-
-    char const *ls_hs_operator_pretty_terms(ls_hs_operator const *);
-    void ls_hs_destroy_string(char const *);
-
-
-    char const *ls_hs_basis_state_to_string(ls_hs_basis const *,
-                                            uint64_t const *state);
+    ls_hs_yaml_config *ls_hs_load_yaml_config(char const *);
+    void ls_hs_destroy_yaml_config(ls_hs_yaml_config *);
 
     void ls_chpl_init(void);
     void ls_chpl_finalize(void);
@@ -180,7 +190,7 @@ ffibuilder.set_source(
     # [# "../cbits", "/home/tom/src/distributed-matvec/lib/lattice_symmetries_chapel.h"],
     #               "/home/tom/src/distributed-matvec/third_party/include"],
     extra_compile_args=["-Wall", "-Wextra"],
-    libraries=["lattice_symmetries_chapel", "lattice_symmetries_haskell", "lattice_symmetries_core"],
+    libraries=["lattice_symmetries_chapel", "lattice_symmetries_haskell"],
     library_dirs=get_library_dirs(),
     extra_link_args=["-Wl,-rpath,{}".format(d) for d in get_runtime_dirs()],
     # [

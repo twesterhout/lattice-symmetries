@@ -28,6 +28,8 @@
 
 from ._ls_hs import ffi, lib
 
+from collections import namedtuple
+from functools import singledispatchmethod
 import json
 import threading
 from typing import overload, Any, List, Optional, Tuple, Union
@@ -40,6 +42,7 @@ import scipy.sparse.linalg
 from scipy.sparse.linalg import LinearOperator
 
 __version__ = "2.0.0"
+
 
 class _RuntimeInitializer:
     def __init__(self):
@@ -61,15 +64,50 @@ _runtime_init = _RuntimeInitializer()
 
 
 class Symmetry:
-    permutation: List[int]
-    sector: int
+    """Symmetry operator.
 
+    >>> # Lattice momentum with eigenvalue -ⅈ for a chain of 4 spins.
+    >>> p = lattice_symmetries.Symmetry([1, 2, 3, 0], sector=1)
+    >>> p.sector
+    1
+    >>> p.permutation
+    [1, 2, 3, 0]
+    """
+
+    _payload: ffi.CData
+    _finalizer: weakref.finalize
+
+    @singledispatchmethod
     def __init__(self, permutation: ArrayLike, sector: int = 0):
-        self.permutation = np.asarray(permutation, dtype=np.int32, order="C").tolist()
-        self.sector = sector
+        permutation = np.asarray(permutation, dtype=int).tolist()
+        sector = int(sector)
+        json_object = {"permutation": permutation, "sector": sector}
+        self._payload = lib.ls_hs_symmetry_from_json(json.dumps(json_object).encode("utf-8"))
+        assert self._payload != 0
+        self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_symmetry, self._payload)
+
+    @__init__.register
+    def _(self, payload: ffi.CData, finalizer: weakref.finalize):
+        self._payload = payload
+        self._finalizer = finalizer
+
+    @property
+    def sector(self) -> int:
+        return lib.ls_hs_symmetry_sector(self._payload)
+
+    def __len__(self) -> int:
+        return lib.ls_hs_symmetry_length(self._payload)
+
+    @property
+    def permutation(self) -> NDArray[np.int32]:
+        p = lib.ls_hs_symmetry_permutation(self._payload)
+        buffer = ffi.buffer(p, len(self) * ffi.sizeof("int"))
+        array = np.copy(np.frombuffer(buffer, dtype=np.int32))
+        lib.ls_hs_destroy_permutation(p)
+        return array
 
     def json_object(self):
-        return {"permutation": self.permutation, "sector": self.sector}
+        return {"permutation": self.permutation.tolist(), "sector": self.sector}
 
 
 class Symmetries:
@@ -80,6 +118,7 @@ class Symmetries:
     def __init__(self, generators: List[Symmetry] = []):
         json_string = json.dumps([g.json_object() for g in generators]).encode("utf-8")
         self._payload = lib.ls_hs_symmetries_from_json(json_string)
+        assert self._payload != 0
         self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_symmetries, self._payload)
         self._generators = generators
 
@@ -103,17 +142,45 @@ def _basis_state_to_array(state: int, number_words: int) -> ffi.CData:
 class Basis:
     _payload: ffi.CData
     _finalizer: weakref.finalize
-    _representatives: Optional[NDArray[np.uint64]]
 
-    def __init__(self, **kwargs):
-        json_string = json.dumps(kwargs).encode("utf-8")
-        self._payload = lib.ls_hs_basis_from_json(json_string)
+    @singledispatchmethod
+    def __init__(self, arg, *args, **kwargs):
+        raise NotImplementedError("Invalid argument type: {}".format(type(arg)))
+
+    @__init__.register
+    def _(self, payload: ffi.CData, owner: bool = True):
+        self._payload = payload
+        if owner:
+            self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_basis, self._payload)
+        else:
+            self._finalizer = None
+
+    @__init__.register
+    def _(self, json_string: str):
+        self._payload = lib.ls_hs_basis_from_json(json_string.encode("utf-8"))
+        assert self._payload != 0
         self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_basis, self._payload)
-        self._representatives = None
+
+    # @__init__.register
+    # def _(self, json_object: dict):
+    #     self.__init__(json.dumps(json_object))
+
+    # def __init__(self, **kwargs):
+    #     json_string = json.dumps(kwargs).encode("utf-8")
+    #     self._payload = lib.ls_hs_basis_from_json(json_string)
+    #     self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_basis, self._payload)
+    #     self._representatives = None
 
     @property
     def is_built(self) -> bool:
-        return self._representatives is not None
+        return lib.ls_hs_basis_is_built(self._payload)
+
+    def check_is_built(self):
+        if not self.is_built:
+            raise ValueError(
+                "basis states have not been built yet; "
+                "if you wish to do so, use the basis.build() function"
+            )
 
     def build(self) -> None:
         """Generate a list of representatives.
@@ -121,34 +188,20 @@ class Basis:
         These can later be accessed using the `number_states` and `states` attributes.
         """
         if not self.is_built:
-            # The actual compute-intensive part
             lib.ls_hs_basis_build(self._payload)
-            # Create a buffer
-            n = self.number_states
-            p = lib.ls_hs_basis_states(self._payload)
-            buffer = ffi.buffer(p, n * ffi.sizeof("uint64_t"))
-            # Create an array
-            self._representatives = np.frombuffer(buffer, dtype=np.uint64)
         assert self.is_built
 
     @property
     def number_states(self) -> int:
-        n = lib.ls_hs_basis_number_states(self._payload)
-        if n == -1:
-            raise ValueError(
-                "basis states have not been built yet; "
-                "if you wish to do so, use the basis.build() function"
-            )
-        return n
+        self.check_is_built()
+        return lib.ls_hs_basis_number_states(self._payload)
 
     @property
     def states(self) -> NDArray[np.uint64]:
-        if self._representatives is None:
-            raise ValueError(
-                "basis states have not been built yet; "
-                "if you wish to do so, use the basis.build() function"
-            )
-        return self._representatives
+        n = self.number_states
+        p = lib.ls_hs_basis_states(self._payload)
+        buffer = ffi.buffer(p, n * ffi.sizeof("uint64_t"))
+        return np.frombuffer(buffer, dtype=np.uint64)
 
     @property
     def min_state_estimate(self) -> int:
@@ -167,8 +220,7 @@ class Basis:
         return lib.ls_hs_basis_number_words(self._payload)
 
     def state_to_string(self, state: int) -> str:
-        """Pretty-print a basis state.
-        """
+        """Pretty-print a basis state."""
         arr = _basis_state_to_array(state, self.number_words)
         c_str = lib.ls_hs_basis_state_to_string(self._payload, arr)
         s = ffi.string(c_str).decode("utf-8")
@@ -192,7 +244,9 @@ class Basis:
         betas_ptr = ffi.from_buffer("uint64_t[]", betas, require_writable=True)
         characters_ptr = ffi.from_buffer("ls_hs_scalar[]", characters, require_writable=True)
         norms_ptr = ffi.from_buffer("double[]", norms, require_writable=True)
-        lib.ls_hs_state_info(self._payload, count, x_ptr, 1, betas_ptr, 1, characters_ptr, norms_ptr)
+        lib.ls_hs_state_info(
+            self._payload, count, x_ptr, 1, betas_ptr, 1, characters_ptr, norms_ptr
+        )
 
         if is_scalar:
             return (int(betas[0]), complex(characters[0]), float(norms[0]))
@@ -200,7 +254,7 @@ class Basis:
             return (betas, characters, norms)
 
     @staticmethod
-    def from_json(json_string: str) -> "Expr":
+    def from_json(json_string: str) -> "Basis":
         _assert_subtype(json_string, str)
         return Basis(**json.loads(json_string))
 
@@ -221,11 +275,15 @@ class SpinBasis(Basis):
     ):
         """Create a Hilbert space basis for `number_spins` spin-1/2 particles."""
         super().__init__(
-            particle="spin-1/2",
-            number_spins=number_spins,
-            hamming_weight=hamming_weight,
-            spin_inversion=spin_inversion,
-            symmetries=symmetries.json_object() if symmetries is not None else []
+            json.dumps(
+                {
+                    "particle": "spin-1/2",
+                    "number_spins": number_spins,
+                    "hamming_weight": hamming_weight,
+                    "spin_inversion": spin_inversion,
+                    "symmetries": symmetries.json_object() if symmetries is not None else [],
+                }
+            )
         )
 
     @property
@@ -243,9 +301,13 @@ class SpinlessFermionBasis(Basis):
         `number_sites` sites. The number of fermions may be optionally specified by the
         `number_particles` argument."""
         super().__init__(
-            particle="spinless-fermion",
-            number_sites=number_sites,
-            number_particles=number_particles,
+            json.dumps(
+                {
+                    "particle": "spinless-fermion",
+                    "number_sites": number_sites,
+                    "number_particles": number_particles,
+                }
+            )
         )
 
 
@@ -261,9 +323,13 @@ class SpinfulFermionBasis(Basis):
         down can be specified separately by setting `number_particles` to a tuple
         `(N_up, N_down)`."""
         super().__init__(
-            particle="spinful-fermion",
-            number_sites=number_sites,
-            number_particles=number_particles,
+            json.dumps(
+                {
+                    "particle": "spinful-fermion",
+                    "number_sites": number_sites,
+                    "number_particles": number_particles,
+                }
+            )
         )
 
 
@@ -341,29 +407,21 @@ class Expr(object):
     _payload: ffi.CData
     _finalizer: weakref.finalize
 
-    def _make_from_payload(self, payload: ffi.CData):
+    @singledispatchmethod
+    def __init__(self, expression: str, sites: Optional[List[List[int]]] = None):
+        json_object = {"expression": expression}
+        json_object |= {"sites": sites} if sites is not None else dict()
+        self._payload = lib.ls_hs_expr_from_json(json.dumps(json_object).encode("utf-8"))
+        assert self._payload != 0
+        self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_expr, self._payload)
+
+    @__init__.register
+    def _(self, payload: ffi.CData, owner: bool = True):
         self._payload = payload
-        assert self._payload != 0
-        self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_expr, self._payload)
-
-    def _make_from_expression(self, expression: str):
-        _assert_subtype(expression, str)
-        c_expression = expression.encode("utf-8")
-        self._payload = lib.ls_hs_create_expr(c_expression)
-        assert self._payload != 0
-        self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_expr, self._payload)
-
-    def __init__(self, *args, **kwargs):
-        if len(args) == 0 and len(kwargs) == 1 and "payload" in kwargs:
-            self._make_from_payload(*args, **kwargs)
+        if owner:
+            self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_expr, self._payload)
         else:
-            self._make_from_expression(*args, **kwargs)
-
-    @staticmethod
-    def from_json(json_string: str) -> "Expr":
-        _assert_subtype(json_string, str)
-        c_str = json_string.encode("utf-8")
-        return Expr(payload=lib.ls_hs_expr_from_json(c_str))
+            self._finalizer = None
 
     def to_json(self) -> str:
         c_str = lib.ls_hs_expr_to_json(self._payload)
@@ -419,9 +477,7 @@ class Expr(object):
             with replace_indices_impl_lock:
                 global replace_indices_impl
                 replace_indices_impl = f
-                r = Expr(
-                    payload=lib.ls_hs_replace_indices(self._payload, lib.python_replace_indices)
-                )
+                r = Expr(lib.ls_hs_replace_indices(self._payload, lib.python_replace_indices))
                 replace_indices_impl = None
                 return r
 
@@ -430,20 +486,20 @@ class Expr(object):
 
     def __add__(self, other):
         _assert_subtype(other, Expr)
-        return Expr(payload=lib.ls_hs_expr_plus(self._payload, other._payload))
+        return Expr(lib.ls_hs_expr_plus(self._payload, other._payload))
 
     def __sub__(self, other):
         _assert_subtype(other, Expr)
-        return Expr(payload=lib.ls_hs_expr_minus(self._payload, other._payload))
+        return Expr(lib.ls_hs_expr_minus(self._payload, other._payload))
 
     def scale(self, coeff: complex) -> "Expr":
         coeff = complex(coeff)
         c_coeff = ffi.new("ls_hs_scalar const*", [coeff.real, coeff.imag])
-        return Expr(payload=lib.ls_hs_expr_scale(c_coeff, self._payload))
+        return Expr(lib.ls_hs_expr_scale(c_coeff, self._payload))
 
     def __mul__(self, other):
         _assert_subtype(other, Expr)
-        return Expr(payload=lib.ls_hs_expr_times(self._payload, other._payload))
+        return Expr(lib.ls_hs_expr_times(self._payload, other._payload))
 
     def __rmul__(self, other: complex):
         if np.isscalar(other):
@@ -493,54 +549,57 @@ class Operator(LinearOperator):
     #     self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_operator_v2, self._payload)
     #     self.basis = basis
 
+    @singledispatchmethod
     def __init__(self, basis: Basis, expression: Expr):
         _assert_subtype(basis, Basis)
         _assert_subtype(expression, Expr)
         self._payload = lib.ls_hs_create_operator(basis._payload, expression._payload)
         self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_operator, self._payload)
-        self.basis = basis
-        self.expression = expression
 
-    # def __init__(self, basis: Basis, *args, **kwargs):
-    #     _assert_subtype(basis, Basis)
-
-    #     if len(args) == 1 and len(kwargs) == 0:
-    #         self._make_from_payload(basis, *args, **kwargs)
-    #     elif len(args) == 0 and len(kwargs) == 1 and "payload" in kwargs:
-    #         self._make_from_payload(basis, *args, **kwargs)
-    #     else:
-    #         self._make_from_expression(basis, *args, **kwargs)
-
-    def adjoint(self):
-        return Operator(self.basis, lib.ls_hs_operator_hermitian_conjugate(self._payload))
+    @__init__.register
+    def _(self, payload: ffi.CData, owner: bool = True):
+        self._payload = payload
+        if owner:
+            self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_operator, self._payload)
+        else:
+            self._finalizer = None
 
     @property
-    def is_identity(self) -> bool:
-        return lib.ls_hs_operator_is_identity(self._payload)
+    def basis(self):
+        return Basis(lib.ls_hs_operator_get_basis(self._payload))
 
     @property
-    def is_hermitian(self) -> bool:
-        return lib.ls_hs_operator_is_hermitian(self._payload)
+    def expression(self):
+        return Expr(lib.ls_hs_operator_get_expr(self._payload))
+
+    # def adjoint(self):
+    #     return Operator(self.basis, lib.ls_hs_operator_hermitian_conjugate(self._payload))
+
+    # @property
+    # def is_identity(self) -> bool:
+    #     return lib.ls_hs_operator_is_identity(self._payload)
+
+    # @property
+    # def is_hermitian(self) -> bool:
+    #     return lib.ls_hs_operator_is_hermitian(self._payload)
 
     def __add__(self, other):
         """Add two operators."""
         _assert_subtype(other, Operator)
-        return Operator(self.basis, lib.ls_hs_operator_plus(self._payload, other._payload))
+        return Operator(self.basis, self.expression + other.expression)
 
     def __sub__(self, other):
         """Subtract `other` Operator from `self`."""
         _assert_subtype(other, Operator)
-        return Operator(self.basis, lib.ls_hs_operator_minus(self._payload, other._payload))
+        return Operator(self.basis, self.expression - other.expression)
 
     def scale(self, coeff: complex) -> "Operator":
-        coeff = complex(coeff)
-        c_coeff = ffi.new("ls_hs_scalar const*", [coeff.real, coeff.imag])
-        return Operator(self.basis, lib.ls_hs_operator_scale(c_coeff, self._payload))
+        return Operator(self.basis, self.expression.scale(coeff))
 
     def __mul__(self, other):
         """Multiply `self` by `other` Operator."""
         if isinstance(other, Operator):
-            return Operator(self.basis, lib.ls_hs_operator_times(self._payload, other._payload))
+            return Operator(self.basis, self.expression * other.expression)
         else:
             NotImplemented
 
@@ -625,6 +684,18 @@ class Operator(LinearOperator):
     def _matvec(self, x):
         return self.apply_to_state_vector(x)
 
+
+def load_yaml_config(filename: str):
+    config = lib.ls_hs_load_yaml_config(filename.encode("utf-8"))
+    basis = Basis(lib.ls_hs_clone_basis(config.basis))
+    hamiltonian = None
+    if config.hamiltonian != 0:
+        hamiltonian = Operator(lib.ls_hs_clone_operator(config.hamiltonian))
+    if config.observables != 0:
+        NotImplemented
+    lib.ls_hs_destroy_yaml_config(config)
+    Config = namedtuple("Config", ["basis", "hamiltonian", "observables"], defaults=[None, None])
+    return Config(basis, hamiltonian)
 
 def test_01():
     basis = SpinBasis(2)
