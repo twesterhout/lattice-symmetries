@@ -12,7 +12,7 @@ module LatticeSymmetries.Expr
   ( Expr (..),
     SomeExpr (..),
     withSomeExpr,
-    forSomeExpr,
+    foldSomeExpr,
     mapSomeExpr,
     conjugateExpr,
     isHermitianExpr,
@@ -28,6 +28,10 @@ module LatticeSymmetries.Expr
 
     -- ** FFI helpers
     Cexpr (..),
+    newCexpr,
+    destroyCexpr,
+    withCexpr,
+    withCexpr2,
   )
 where
 
@@ -47,7 +51,7 @@ import Data.Vector.Fusion.Stream.Monadic (Step (..), Stream (..))
 import Data.Vector.Generic ((!))
 import qualified Data.Vector.Generic as G
 import Foreign.C.Types (CInt (..))
-import Foreign.Marshal.Array (peekArray)
+import Foreign.Marshal (free, new, peekArray)
 import Foreign.Ptr (Ptr)
 import Foreign.StablePtr
 import Foreign.Storable
@@ -156,30 +160,24 @@ instance Pretty SomeExpr where
   pretty (SomeExpr SpinfulFermionTag expr) = pretty expr
 
 data SomeExpr where
-  SomeExpr :: !(ParticleTag t) -> !(Expr t) -> SomeExpr
+  SomeExpr :: IsBasis t => !(ParticleTag t) -> !(Expr t) -> SomeExpr
 
 withSomeExpr ::
-  forall c a.
-  (c 'SpinTy, c 'SpinlessFermionTy, c 'SpinfulFermionTy) =>
   SomeExpr ->
-  (forall t. c t => Expr t -> a) ->
+  (forall t. IsBasis t => Expr t -> a) ->
   a
 withSomeExpr (SomeExpr SpinTag a) f = f a
 withSomeExpr (SomeExpr SpinfulFermionTag a) f = f a
 withSomeExpr (SomeExpr SpinlessFermionTag a) f = f a
 
-forSomeExpr ::
-  forall c a.
-  (c 'SpinTy, c 'SpinlessFermionTy, c 'SpinfulFermionTy) =>
-  (forall t. c t => Expr t -> a) ->
+foldSomeExpr ::
+  (forall t. IsBasis t => Expr t -> a) ->
   SomeExpr ->
   a
-forSomeExpr f expr = withSomeExpr @c expr f
+foldSomeExpr f expr = withSomeExpr expr f
 
 mapSomeExpr ::
-  forall c a.
-  (c 'SpinTy, c 'SpinlessFermionTy, c 'SpinfulFermionTy) =>
-  (forall t. c t => Expr t -> Expr t) ->
+  (forall t. IsBasis t => Expr t -> Expr t) ->
   SomeExpr ->
   SomeExpr
 mapSomeExpr f expr = case expr of
@@ -202,38 +200,26 @@ binaryOp op (SomeExpr t₁ _) (SomeExpr t₂ _) =
       <> " and "
       <> show (particleTagToType t₂)
 
-class Num (Expr t) => ProvidesNum t
-
-instance Num (Expr t) => ProvidesNum t
-
 instance Num SomeExpr where
   (+) = binaryOp (+)
   (-) = binaryOp (-)
   (*) = binaryOp (*)
-  negate = mapSomeExpr @ProvidesNum negate
-  abs = mapSomeExpr @ProvidesNum abs
-  signum = mapSomeExpr @ProvidesNum signum
+  negate = mapSomeExpr negate
+  abs = mapSomeExpr abs
+  signum = mapSomeExpr signum
   fromInteger _ =
     error $
       "Num instance of SomeExpr does not implement fromInteger; "
         <> "consider constructing an explicit identity 𝟙₀ and then scaling it"
 
-class CanScale ComplexRational (Expr t) => ProvidesCanScale t
-
-instance CanScale ComplexRational (Expr t) => ProvidesCanScale t
-
 instance CanScale ComplexRational SomeExpr where
-  scale z = mapSomeExpr @ProvidesCanScale (scale z)
-
-class Pretty (Expr t) => ProvidesPretty t
-
-instance Pretty (Expr t) => ProvidesPretty t
+  scale z = mapSomeExpr (scale z)
 
 instance ToJSON SomeExpr where
   toJSON x@(SomeExpr tag _) =
     object $
       [ "particle" .= particleTagToType tag,
-        "expression" .= withSomeExpr @ProvidesPretty x toPrettyText
+        "expression" .= withSomeExpr x toPrettyText
       ]
 
 tableFromLowLevelMapping ::
@@ -293,3 +279,20 @@ newtype {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_expr" #-} Cexpr = Cexpr
   }
   deriving stock (Eq)
   deriving newtype (Storable)
+
+newCexpr :: SomeExpr -> IO (Ptr Cexpr)
+newCexpr expr = (new . Cexpr) =<< newStablePtr expr
+
+destroyCexpr :: Ptr Cexpr -> IO ()
+destroyCexpr p = do
+  freeStablePtr . unCexpr =<< peek p
+  free p
+
+withCexpr :: Ptr Cexpr -> (SomeExpr -> IO a) -> IO a
+withCexpr p f = f =<< deRefStablePtr . unCexpr =<< peek p
+
+withCexpr2 :: Ptr Cexpr -> Ptr Cexpr -> (SomeExpr -> SomeExpr -> a) -> IO a
+withCexpr2 p1 p2 f =
+  withCexpr p1 $ \x1 ->
+    withCexpr p2 $ \x2 ->
+      pure (f x1 x2)

@@ -293,7 +293,7 @@ mkSomeExpr' tp s
   | isJust $ Text.find (\c -> c == '↑' || c == '↓') s = make SpinfulFermionTag
   | otherwise = make SpinlessFermionTag
   where
-    make :: ParticleTag t -> Either Text SomeExpr
+    make :: IsBasis t => ParticleTag t -> Either Text SomeExpr
     make tag = fmap (SomeExpr tag) $ mkExpr' tag s
 
 mkSomeExpr :: HasCallStack => Maybe ParticleTy -> Text -> SomeExpr
@@ -324,7 +324,7 @@ instance FromJSON SomeExpr where
   parseJSON = exprFromJSON mkSomeExpr' expandSomeExpr
     where
       expandSomeExpr :: [[Int]] -> SomeExpr -> SomeExpr
-      expandSomeExpr indices = mapSomeExpr @IsBasis (replicateSiteIndices indices)
+      expandSomeExpr indices = mapSomeExpr (replicateSiteIndices indices)
 
 -- instance FromJSON SomeExpr where
 --   parseJSON = withObject "SomeExpr" $ \v -> do

@@ -169,13 +169,13 @@ class
     -- HasNonbranchingRepresentation (Generator Int (GeneratorType t)),
     Typeable t,
     Algebra (GeneratorType t),
+    Pretty (Generator (IndexType t) (GeneratorType t)),
     HasProperGeneratorType t,
     HasProperIndexType t
     -- Ord (IndexType t),
     -- HasSiteIndex (IndexType t),
     -- Pretty (IndexType t),
     -- Pretty (GeneratorType t),
-    -- Pretty (Generator (IndexType t) (GeneratorType t)),
     -- Pretty (BasisState t),
     -- HasSiteIndex (IndexType t),
   ) =>
