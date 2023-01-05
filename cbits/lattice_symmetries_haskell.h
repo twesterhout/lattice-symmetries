@@ -66,6 +66,11 @@ void ls_hs_destroy_external_array(chpl_external_array *arr);
 typedef struct ls_hs_symmetry ls_hs_symmetry;
 ls_hs_symmetry *ls_hs_symmetry_from_json(const char *json_string);
 void ls_hs_destroy_symmetry(ls_hs_symmetry *);
+
+int ls_hs_symmetry_sector(ls_hs_symmetry const *);
+int ls_hs_symmetry_length(ls_hs_symmetry const *);
+int *ls_hs_symmetry_permutation(ls_hs_symmetry const *);
+void ls_hs_destroy_permutation(int *);
 // }}}
 
 // {{{ Symmetries
@@ -145,6 +150,7 @@ char const *ls_hs_basis_to_json(ls_hs_basis const *);
 void ls_hs_destroy_string(char const *);
 
 void ls_hs_basis_build(ls_hs_basis *basis);
+bool ls_hs_basis_is_built(ls_hs_basis const *basis);
 
 char const *ls_hs_basis_state_to_string(ls_hs_basis const *,
                                         uint64_t const *state);
@@ -227,6 +233,10 @@ ls_hs_operator *ls_hs_create_operator(ls_hs_basis const *basis,
                                       ls_hs_expr const *expr);
 ls_hs_operator *ls_hs_clone_operator(ls_hs_operator const *);
 void ls_hs_destroy_operator(ls_hs_operator *);
+int ls_hs_operator_max_number_off_diag(ls_hs_operator const *);
+ls_hs_expr const *ls_hs_operator_get_expr(ls_hs_operator const *);
+ls_hs_basis const *ls_hs_operator_get_basis(ls_hs_operator const *);
+
 // ls_hs_operator *ls_hs_create_operator(ls_hs_basis const *basis,
 //                                       char const *expression, int
 //                                       number_tuples, int tuple_size, int
@@ -249,10 +259,6 @@ void ls_hs_destroy_operator(ls_hs_operator *);
 // bool ls_hs_operator_is_hermitian(ls_hs_operator const *);
 // bool ls_hs_operator_is_identity(ls_hs_operator const *);
 // bool ls_hs_operator_is_real(ls_hs_operator const *);
-
-int ls_hs_operator_max_number_off_diag(ls_hs_operator const *);
-
-ls_hs_expr const *ls_hs_operator_get_expr(ls_hs_operator const *);
 
 // char const *ls_hs_operator_pretty_terms(ls_hs_operator const *);
 
@@ -418,7 +424,11 @@ typedef struct ls_chpl_kernels {
                                 double *);
 } ls_chpl_kernels;
 
-ls_chpl_kernels const *ls_hs_internal_get_chpl_kernels();
+ls_chpl_kernels const *ls_hs_internal_get_chpl_kernels(void);
+
+void ls_chpl_init(void);
+void ls_chpl_finalize(void);
+
 void ls_hs_internal_set_chpl_kernels(ls_chpl_kernels const *kernels);
 
 #ifdef __cplusplus

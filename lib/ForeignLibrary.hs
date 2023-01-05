@@ -16,11 +16,14 @@ import Foreign.Marshal.Utils (fromBool, new)
 import Foreign.Ptr (FunPtr, Ptr, nullPtr)
 import Foreign.StablePtr
 import Foreign.Storable (Storable (..))
+import GHC.Exts (IsList (..))
 import LatticeSymmetries
 import LatticeSymmetries.Algebra
 import LatticeSymmetries.Basis
+import LatticeSymmetries.Benes
 import LatticeSymmetries.BitString
 import LatticeSymmetries.ComplexRational (ComplexRational, fromComplexDouble)
+import LatticeSymmetries.Expr
 import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
 import LatticeSymmetries.Group
@@ -31,7 +34,7 @@ import Prettyprinter (Pretty (..))
 import qualified Prettyprinter as Pretty
 import Prettyprinter.Render.Text (renderStrict)
 import Type.Reflection
-import Prelude hiding (state)
+import Prelude hiding (state, toList)
 
 {-
 foreign export ccall "ls_hs_hdf5_create_dataset_u64"
@@ -87,6 +90,9 @@ foreign export ccall "ls_hs_hdf5_get_dataset_shape"
 -- typedef struct ls_hs_symmetry ls_hs_symmetry;
 -- ls_hs_symmetry *ls_hs_symmetry_from_json(const char *json_string);
 -- void ls_hs_destroy_symmetry(ls_hs_symmetry *);
+-- int ls_hs_symmetry_sector(ls_hs_symmetry const *);
+-- int *ls_hs_symmetry_permutation(ls_hs_symmetry const *);
+-- void ls_hs_destroy_permutation(int *);
 
 foreign export ccall "ls_hs_symmetry_from_json"
   ls_hs_symmetry_from_json :: CString -> IO (Ptr Csymmetry)
@@ -99,6 +105,30 @@ foreign export ccall "ls_hs_destroy_symmetry"
   ls_hs_destroy_symmetry :: Ptr Csymmetry -> IO ()
 
 ls_hs_destroy_symmetry = destroyCsymmetry
+
+foreign export ccall "ls_hs_symmetry_sector"
+  ls_hs_symmetry_sector :: Ptr Csymmetry -> IO CInt
+
+ls_hs_symmetry_sector = flip withCsymmetry (pure . fromIntegral . symmetrySector)
+
+foreign export ccall "ls_hs_symmetry_length"
+  ls_hs_symmetry_length :: Ptr Csymmetry -> IO CInt
+
+ls_hs_symmetry_length =
+  flip withCsymmetry $
+    pure . fromIntegral . permutationLength . symmetryPermutation
+
+foreign export ccall "ls_hs_symmetry_permutation"
+  ls_hs_symmetry_permutation :: Ptr Csymmetry -> IO (Ptr CInt)
+
+ls_hs_symmetry_permutation =
+  flip withCsymmetry $
+    newArray . fmap fromIntegral . toList . symmetryPermutation
+
+foreign export ccall "ls_hs_destroy_permutation"
+  ls_hs_destroy_permutation :: Ptr CInt -> IO ()
+
+ls_hs_destroy_permutation = free
 
 -- }}}
 
@@ -225,6 +255,12 @@ ls_hs_basis_build p = do
 
 foreign export ccall "ls_hs_basis_build"
   ls_hs_basis_build :: Ptr Cbasis -> IO ()
+
+foreign export ccall "ls_hs_basis_is_built"
+  ls_hs_basis_is_built :: Ptr Cbasis -> IO CBool
+
+ls_hs_basis_is_built =
+  pure . fromBool . (/= nullPtr) . external_array_elts . cbasis_representatives <=< peek
 
 foreign export ccall "ls_hs_basis_has_fixed_hamming_weight"
   ls_hs_basis_has_fixed_hamming_weight :: Ptr Cbasis -> IO CBool
@@ -354,17 +390,16 @@ ls_hs_replace_indices exprPtr fPtr =
                 (,)
                   <$> (fromIntegral <$> peek spinPtr)
                   <*> (fromIntegral <$> peek sitePtr)
-      newCexpr
-        =<< case expr of
-          SomeExpr SpinTag terms ->
-            SomeExpr SpinTag <$> mapIndicesM (\i -> snd <$> f 0 i) terms
-          SomeExpr SpinlessFermionTag terms ->
-            SomeExpr SpinlessFermionTag <$> mapIndicesM (\i -> snd <$> f 0 i) terms
-          SomeExpr SpinfulFermionTag terms ->
-            let f' (s, i) = do
-                  (s', i') <- f (fromEnum s) i
-                  pure (toEnum s', i')
-             in SomeExpr SpinfulFermionTag <$> mapIndicesM f' terms
+      newCexpr =<< case expr of
+        SomeExpr SpinTag terms ->
+          SomeExpr SpinTag . simplifyExpr <$> mapIndicesM (\i -> snd <$> f 0 i) terms
+        SomeExpr SpinlessFermionTag terms ->
+          SomeExpr SpinlessFermionTag . simplifyExpr <$> mapIndicesM (\i -> snd <$> f 0 i) terms
+        SomeExpr SpinfulFermionTag terms ->
+          let f' (s, i) = do
+                (s', i') <- f (fromEnum s) i
+                pure (toEnum s', i')
+           in SomeExpr SpinfulFermionTag . simplifyExpr <$> mapIndicesM f' terms
 
 foreign export ccall "ls_hs_expr_to_json"
   ls_hs_expr_to_json :: Ptr Cexpr -> IO CString
@@ -392,7 +427,7 @@ ls_hs_create_operator basisPtr exprPtr =
         withCexpr exprPtr $ \someExpr ->
           withSomeExpr @IsBasis someExpr $ \expr ->
             case matchParticleType2 basis expr of
-              Just HRefl -> newCoperator (mkOperator basis expr)
+              Just HRefl -> newCoperator (Just basisPtr) (mkOperator basis expr)
               Nothing -> error "basis and expression have different particle types"
 
 foreign export ccall "ls_hs_clone_operator"
@@ -493,6 +528,11 @@ ls_hs_operator_get_expr opPtr =
           (getParticleTag . opBasis $ op)
           (opTerms op)
 
+foreign export ccall "ls_hs_operator_get_basis"
+  ls_hs_operator_get_basis :: Ptr Coperator -> IO (Ptr Cbasis)
+
+ls_hs_operator_get_basis = ls_hs_clone_basis . coperator_basis <=< peek
+
 -- foreign export ccall "ls_hs_load_hamiltonian_from_yaml"
 --   ls_hs_load_hamiltonian_from_yaml :: CString -> IO (Ptr Coperator)
 --
@@ -517,12 +557,12 @@ toCyaml_config (ConfigSpec basis maybeHamiltonian observables) = do
   -- print "1)"
   -- borrowCbasis
   hamiltonianPtr <- case maybeHamiltonian of
-    Just h -> withSomeOperator h newCoperator
+    Just h -> withSomeOperator h (newCoperator (Just basisPtr))
     Nothing -> pure nullPtr
   -- print "2)"
   observablesPtr <-
     (newArray =<<) $
-      G.toList <$> G.mapM (foldSomeOperator newCoperator) observables
+      G.toList <$> G.mapM (foldSomeOperator (newCoperator (Just basisPtr))) observables
   -- print "3)"
   poke p $
     Cyaml_config basisPtr hamiltonianPtr (fromIntegral (G.length observables)) observablesPtr

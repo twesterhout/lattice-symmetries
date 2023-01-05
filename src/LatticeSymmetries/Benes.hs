@@ -4,6 +4,7 @@ module LatticeSymmetries.Benes
     mkPermutation,
     permuteVector,
     identityPermutation,
+    permutationLength,
     -- randomPermutation,
     BenesNetwork (..),
     toBenesNetwork,

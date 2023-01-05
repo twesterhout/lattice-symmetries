@@ -245,14 +245,16 @@ destroyCnonbranching_terms p
 -- foreign import ccall unsafe "ls_internal_destroy_operator_kernel_data"
 --   ls_internal_destroy_operator_kernel_data :: Ptr Coperator_kernel_data -> IO ()
 
-newCoperator :: (IsBasis t, HasCallStack) => Operator t -> IO (Ptr Coperator)
-newCoperator x = do
+newCoperator :: (IsBasis t, HasCallStack) => Maybe (Ptr Cbasis) -> Operator t -> IO (Ptr Coperator)
+newCoperator maybeBasisPtr x = do
   -- logDebug' $ "newCoperator"
   let (diag, offDiag) = G.partition nbtIsDiagonal (getNonbranchingTerms x)
       numberBits = getNumberBits . opBasis $ x
   diag_terms <- createCnonbranching_terms numberBits diag
   off_diag_terms <- createCnonbranching_terms numberBits offDiag
-  basis <- newCbasis (opBasis x)
+  basis <- case maybeBasisPtr of
+    Just p -> cloneCbasis p
+    Nothing -> newCbasis (opBasis x)
   -- logDebug' $ "basis is " <> show basis
   -- borrowCbasis (opBasis x)
   payload <- newStablePtr (SomeOperator (getParticleTag . opBasis $ x) x)
