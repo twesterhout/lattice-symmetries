@@ -1,18 +1,11 @@
 MAKEFLAGS += --no-builtin-rules
 .SUFFIXES:
 
-ifeq ($(UNAME), Linux)
-CONDA_CC ?= $(shell conda run -n ci_devel bash -c "which \$${CC}")
-CONDA_PREFIX ?= $(shell conda run -n ci_devel bash -c "echo \$${CONDA_PREFIX}")
-else
-CONDA_CC = $(CC)
-CONDA_PREFIX = 
-endif
+UNAME = $(shell uname)
+UNAME_M = $(shell uname -m)
 
 HL_ARCH ?= x86
 HL_BITS ?= 64
-
-UNAME = $(shell uname)
 ifeq ($(UNAME), Linux)
 HL_OS = linux
 HL_ARCHIVE = tar.gz
@@ -28,20 +21,11 @@ endif
 
 HL_VERSION = 14.0.0
 HL_HASH = 6b9ed2afd1d6d0badf04986602c943e287d44e46
-
-
-
 HALIDE_DISTRIB_PATH ?= $(PWD)/../third_party/Halide-$(HL_VERSION)-$(HL_ARCH)-$(HL_BITS)-$(HL_OS)
-# $(realpath ../third_party/Halide-13.0.4-$(HL_ARCH)-$(HL_BITS)-$(HL_OS))
-# ifeq (,$(HALIDE_DISTRIB_PATH))
-# $(error Could not find a Halide distribution. Before building, set HALIDE_DISTRIB_PATH to the root of an existing Halide distribution)
-# endif
-
 HL_TARGET_SUFFIX ?= -no_asserts-no_bounds_query-no_runtime
 # HL_TARGET_SUFFIX ?= -no_runtime
 HL_BASE_TARGET ?= $(HL_OS)-$(HL_ARCH)-$(HL_BITS)$(HL_TARGET_SUFFIX)
 
-UNAME_M = $(shell uname -m)
 ifeq ($(UNAME_M),x86_64) #-----------
   HL_ALL_TARGETS ?= $(HL_OS)-x86-64-sse41$(HL_TARGET_SUFFIX) \
                     $(HL_OS)-x86-64-avx$(HL_TARGET_SUFFIX) \
@@ -50,6 +34,16 @@ else #-------------------------------
   HL_ALL_TARGETS ?= host$(HL_TARGET_SUFFIX)
 endif #------------------------------
 HL_ALL_TARGETS += $(HL_BASE_TARGET)
+
+ifeq ($(UNAME), Linux)
+CONDA_CC ?= $(shell conda run -n ci_devel bash -c "which \$${CC}")
+CONDA_PREFIX ?= $(shell conda run -n ci_devel bash -c "echo \$${CONDA_PREFIX}")
+$(info CONDA_CC=$(CONDA_CC))
+$(info CONDA_PREFIX=$(CONDA_PREFIX))
+else
+CONDA_CC = $(CC)
+CONDA_PREFIX = 
+endif
 
 # CC = cc
 CXX = c++
