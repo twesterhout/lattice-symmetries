@@ -61,7 +61,6 @@ jobs:
         miniforge-version: latest
         channels: conda-forge,defaults
         channel-priority: true
-        environment-file: conda-ci-linux.yml
 
         # - uses: actions/cache@v3
         #   name: Cache ~/hdf5
@@ -86,6 +85,7 @@ jobs:
     - name: Test Conda installation
       if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
       run: |
+        mamba env create -f conda-ci-linux.yml
         conda env list
         conda list
         conda run -n ci_devel bash -c "which \${CC}"
