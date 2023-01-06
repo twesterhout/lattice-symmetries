@@ -83,12 +83,17 @@ jobs:
         #   run: |
         #     mkdir -p third_party
         #     cp -r third_party/hdf5 ~/
+    - name: Test Conda installation
+      if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
+      run: |
+        conda env list
+        conda list
+        conda run -n ci_devel bash -c "which \${CC}"
+        conda run -n ci_devel bash -c "echo \${CONDA_PREFIX}"
 
     - name: Build Halide kernels
       run: |
         make kernels
-        conda run -n ci_devel bash -c "which \${CC}"
-        conda run -n ci_devel bash -c "echo \${CONDA_PREFIX}"
     - name: Build Haskell code
       run: |
         cat cabal.project.local
