@@ -61,6 +61,7 @@ jobs:
         miniforge-version: latest
         channels: conda-forge,defaults
         channel-priority: true
+        auto-activate-base: false
 
         # - uses: actions/cache@v3
         #   name: Cache ~/hdf5
@@ -86,8 +87,8 @@ jobs:
       if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
       run: |
         mamba env create -f conda-ci-linux.yml
+        conda info
         conda env list
-        conda list
         conda run -n ci_devel bash -c "which \${CC}"
         conda run -n ci_devel bash -c "echo \${CONDA_PREFIX}"
 
