@@ -59,6 +59,11 @@ cabal.project.local: kernels/generator.cpp
 	cd kernels && $(MAKE) Halide
 	cd kernels && $(MAKE)
 
+LS_HS_PATH = $(dir $(shell find dist-newstyle -name liblattice_symmetries_haskell.$(SHARED_EXT)))
+
+test_01: test/test_01.c cbits/lattice_symmetries_haskell.h
+	$(CC) -I cbits -o $@ $< -L $(LS_HS_PATH) -Wl,-rpath=$(LS_HS_PATH) -llattice_symmetries_haskell
+
 # kernels/build/liblattice_symmetries_core.$(SHARED_EXT): kernels/generator.cpp kernels/*.c cbits/lattice_symmetries_haskell.h
 # 	cd kernels && $(MAKE) Halide
 # 	cd kernels && $(MAKE)

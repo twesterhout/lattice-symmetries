@@ -58,19 +58,10 @@ jobs:
       if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
       with:
         mamba-version: "*"
+        miniforge-version: latest
         channels: conda-forge,defaults
         channel-priority: true
-        auto-activate-base: false
-    - name: Create Conda environment
-      if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
-      run: |
-        if [[ ${{ matrix.os }} == "macos-latest" ]]; then
-          mamba env create -f conda-ci-osx.yml
-        else
-          mamba env create -f conda-ci-linux.yml
-        fi
-        # conda info
-        # conda env list
+        environment-file: conda-ci-linux.yml
 
         # - uses: actions/cache@v3
         #   name: Cache ~/hdf5
@@ -92,9 +83,12 @@ jobs:
         #   run: |
         #     mkdir -p third_party
         #     cp -r third_party/hdf5 ~/
+
     - name: Build Halide kernels
       run: |
         make kernels
+        conda run -n ci_devel bash -c "which \${CC}"
+        conda run -n ci_devel bash -c "echo \${CONDA_PREFIX}"
     - name: Build Haskell code
       run: |
         cat cabal.project.local
