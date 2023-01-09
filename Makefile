@@ -35,8 +35,8 @@ release: haskell
 	find dist-newstyle -name "liblattice_symmetries_haskell.$(SHARED_EXT)" \
 	  -exec install -m644 -C {} $(DIST)/lib/ \;
 ifeq ($(UNAME), Linux)
-	patchelf --set-rpath '$$ORIGIN' $(DIST)/lib/liblattice_symmetries_haskell.$(SHARED_EXT)
 	LIBFFI=`ldd $(DIST)/lib/liblattice_symmetries_haskell.$(SHARED_EXT) | grep libffi | sed -E 's:.*=>\s+(.*/libffi.$(SHARED_EXT).[6-8]).*:\1:'`; cp -d $$LIBFFI* $(DIST)/lib/
+	patchelf --set-rpath '$$ORIGIN' $(DIST)/lib/liblattice_symmetries_haskell.$(SHARED_EXT)
 endif
 	tar -cf $(DIST).tar $(DIST)
 	bzip2 $(DIST).tar
