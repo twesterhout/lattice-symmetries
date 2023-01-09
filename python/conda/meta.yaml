@@ -7,10 +7,10 @@ package:
 source:
   # git_url: https://github.com/twesterhout/nqs-playground
   # git_rev: develop
-  path: ../
+  - path: ../
 
 build:
-  number: 1
+  number: 2
  
 requirements:
   build:
@@ -26,14 +26,17 @@ requirements:
     - cffi>=1.15
     - numpy
     - scipy
+    - loguru
 
   run:
     - cffi>=1.15
     - numpy
     - scipy
+    - loguru
     # Runtime libraries needed by C, Haskell, and Chapel code
     - gmp
     - libffi
     - libzlib
     - numactl-libs-cos7-x86_64 # [linux]
     - sysroot_linux-64 # [linux]
+    - libstdcxx-ng # [linux]

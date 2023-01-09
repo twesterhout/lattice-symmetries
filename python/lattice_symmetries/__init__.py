@@ -41,7 +41,7 @@ from numpy.typing import ArrayLike, NDArray
 import scipy.sparse.linalg
 from scipy.sparse.linalg import LinearOperator
 
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 
 
 class _RuntimeInitializer:
@@ -82,9 +82,13 @@ class Symmetry:
         permutation = np.asarray(permutation, dtype=int).tolist()
         sector = int(sector)
         json_object = {"permutation": permutation, "sector": sector}
-        self._payload = lib.ls_hs_symmetry_from_json(json.dumps(json_object).encode("utf-8"))
+        self._payload = lib.ls_hs_symmetry_from_json(
+            json.dumps(json_object).encode("utf-8")
+        )
         assert self._payload != 0
-        self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_symmetry, self._payload)
+        self._finalizer = weakref.finalize(
+            self, lib.ls_hs_destroy_symmetry, self._payload
+        )
 
     @__init__.register
     def _(self, payload: ffi.CData, finalizer: weakref.finalize):
@@ -119,7 +123,9 @@ class Symmetries:
         json_string = json.dumps([g.json_object() for g in generators]).encode("utf-8")
         self._payload = lib.ls_hs_symmetries_from_json(json_string)
         assert self._payload != 0
-        self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_symmetries, self._payload)
+        self._finalizer = weakref.finalize(
+            self, lib.ls_hs_destroy_symmetries, self._payload
+        )
         self._generators = generators
 
     @property
@@ -151,7 +157,9 @@ class Basis:
     def _(self, payload: ffi.CData, owner: bool = True):
         self._payload = payload
         if owner:
-            self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_basis, self._payload)
+            self._finalizer = weakref.finalize(
+                self, lib.ls_hs_destroy_basis, self._payload
+            )
         else:
             self._finalizer = None
 
@@ -242,7 +250,9 @@ class Basis:
 
         x_ptr = ffi.from_buffer("uint64_t[]", x, require_writable=False)
         betas_ptr = ffi.from_buffer("uint64_t[]", betas, require_writable=True)
-        characters_ptr = ffi.from_buffer("ls_hs_scalar[]", characters, require_writable=True)
+        characters_ptr = ffi.from_buffer(
+            "ls_hs_scalar[]", characters, require_writable=True
+        )
         norms_ptr = ffi.from_buffer("double[]", norms, require_writable=True)
         lib.ls_hs_state_info(
             self._payload, count, x_ptr, 1, betas_ptr, 1, characters_ptr, norms_ptr
@@ -281,7 +291,9 @@ class SpinBasis(Basis):
                     "number_spins": number_spins,
                     "hamming_weight": hamming_weight,
                     "spin_inversion": spin_inversion,
-                    "symmetries": symmetries.json_object() if symmetries is not None else [],
+                    "symmetries": symmetries.json_object()
+                    if symmetries is not None
+                    else [],
                 }
             )
         )
@@ -344,7 +356,9 @@ def _normalize_site_indices(sites):
 
 def _assert_subtype(variable, required_type):
     if not isinstance(variable, required_type):
-        raise TypeError("expected a '{}', but got '{}'".format(required_type, type(variable)))
+        raise TypeError(
+            "expected a '{}', but got '{}'".format(required_type, type(variable))
+        )
 
 
 def _chpl_external_array_as_ndarray(arr: ffi.CData, dtype) -> NDArray[Any]:
@@ -411,7 +425,9 @@ class Expr(object):
     def __init__(self, expression: str, sites: Optional[List[List[int]]] = None):
         json_object = {"expression": expression}
         json_object |= {"sites": sites} if sites is not None else dict()
-        self._payload = lib.ls_hs_expr_from_json(json.dumps(json_object).encode("utf-8"))
+        self._payload = lib.ls_hs_expr_from_json(
+            json.dumps(json_object).encode("utf-8")
+        )
         assert self._payload != 0
         self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_expr, self._payload)
 
@@ -419,7 +435,9 @@ class Expr(object):
     def _(self, payload: ffi.CData, owner: bool = True):
         self._payload = payload
         if owner:
-            self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_expr, self._payload)
+            self._finalizer = weakref.finalize(
+                self, lib.ls_hs_destroy_expr, self._payload
+            )
         else:
             self._finalizer = None
 
@@ -477,7 +495,9 @@ class Expr(object):
             with replace_indices_impl_lock:
                 global replace_indices_impl
                 replace_indices_impl = f
-                r = Expr(lib.ls_hs_replace_indices(self._payload, lib.python_replace_indices))
+                r = Expr(
+                    lib.ls_hs_replace_indices(self._payload, lib.python_replace_indices)
+                )
                 replace_indices_impl = None
                 return r
 
@@ -515,8 +535,6 @@ class Expr(object):
 class Operator(LinearOperator):
     _payload: ffi.CData
     _finalizer: weakref.finalize
-    basis: Basis
-    expression: Expr
 
     # def _make_from_payload(self, basis: Basis, expression: Expr, payload: ffi.CData):
     #     """
@@ -554,13 +572,17 @@ class Operator(LinearOperator):
         _assert_subtype(basis, Basis)
         _assert_subtype(expression, Expr)
         self._payload = lib.ls_hs_create_operator(basis._payload, expression._payload)
-        self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_operator, self._payload)
+        self._finalizer = weakref.finalize(
+            self, lib.ls_hs_destroy_operator, self._payload
+        )
 
     @__init__.register
     def _(self, payload: ffi.CData, owner: bool = True):
         self._payload = payload
         if owner:
-            self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_operator, self._payload)
+            self._finalizer = weakref.finalize(
+                self, lib.ls_hs_destroy_operator, self._payload
+            )
         else:
             self._finalizer = None
 
@@ -638,11 +660,15 @@ class Operator(LinearOperator):
         coeffs = ffi.new("chpl_external_array *")
         offsets = ffi.new("chpl_external_array *")
         kernels = lib.ls_hs_internal_get_chpl_kernels()
-        kernels.operator_apply_off_diag(self._payload, 1, arr, betas, coeffs, offsets, 0)
+        kernels.operator_apply_off_diag(
+            self._payload, 1, arr, betas, coeffs, offsets, 0
+        )
 
         offsets_arr = _chpl_external_array_as_ndarray(offsets, np.int64)
         betas_arr = _chpl_external_array_as_ndarray(betas, np.uint64)[: offsets_arr[1]]
-        coeffs_arr = _chpl_external_array_as_ndarray(coeffs, np.complex128)[: offsets_arr[1]]
+        coeffs_arr = _chpl_external_array_as_ndarray(coeffs, np.complex128)[
+            : offsets_arr[1]
+        ]
         return list(zip(coeffs_arr, betas_arr))
 
     def apply_to_state_vector(self, vector: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -694,8 +720,11 @@ def load_yaml_config(filename: str):
     if config.observables != 0:
         NotImplemented
     lib.ls_hs_destroy_yaml_config(config)
-    Config = namedtuple("Config", ["basis", "hamiltonian", "observables"], defaults=[None, None])
+    Config = namedtuple(
+        "Config", ["basis", "hamiltonian", "observables"], defaults=[None, None]
+    )
     return Config(basis, hamiltonian)
+
 
 def test_01():
     basis = SpinBasis(2)
