@@ -49,7 +49,7 @@ ffibuilder.cdef(
 
     typedef struct ls_hs_scalar { double real; double imag; } ls_hs_scalar;
     typedef struct ls_hs_symmetries ls_hs_symmetries;
-    typedef struct ls_hs_basis ls_hs_basis;
+    typedef struct ls_hs_basis { int spin_inversion; ...; } ls_hs_basis;
     typedef struct ls_hs_expr ls_hs_expr;
     typedef struct ls_hs_operator ls_hs_operator;
 
@@ -96,6 +96,10 @@ ffibuilder.cdef(
     int ls_hs_basis_number_bits(ls_hs_basis const* basis);
     int ls_hs_basis_number_words(ls_hs_basis const* basis);
     bool ls_hs_basis_has_fixed_hamming_weight(ls_hs_basis const *);
+    bool ls_hs_basis_has_spin_inversion_symmetry(ls_hs_basis const *);
+    bool ls_hs_basis_has_permutation_symmetries(ls_hs_basis const *);
+    bool ls_hs_basis_requires_projection(ls_hs_basis const *);
+
     char const *ls_hs_basis_state_to_string(ls_hs_basis const *,
                                             uint64_t const *state);
 

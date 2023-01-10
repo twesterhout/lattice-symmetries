@@ -222,6 +222,18 @@ class Basis:
     def number_words(self) -> int:
         return lib.ls_hs_basis_number_words(self._payload)
 
+    @property
+    def has_spin_inversion_symmetry(self) -> bool:
+        return lib.ls_hs_basis_has_spin_inversion_symmetry(self._payload) != 0
+
+    @property
+    def has_permutation_symmetries(self) -> bool:
+        return lib.ls_hs_basis_has_permutation_symmetries(self._payload) != 0
+
+    @property
+    def requires_projection(self) -> bool:
+        return lib.ls_hs_basis_requires_projection(self._payload) != 0
+
     def state_to_string(self, state: int) -> str:
         """Pretty-print a basis state."""
         arr = _basis_state_to_array(state, self.number_words)
@@ -239,22 +251,60 @@ class Basis:
             x = np.asarray(x, dtype=np.uint64, order="C")
 
         count = x.shape[0]
-        betas = np.zeros_like(x)
-        characters = np.zeros(count, dtype=np.complex128)
-        norms = np.zeros(count, dtype=np.float64)
+        betas: NDArray[np.uint64]
+        characters: NDArray[np.complex128]
+        norms: NDArray[np.float64]
+        if self.has_permutation_symmetries:
+            betas = np.zeros_like(x)
+            characters = np.zeros(count, dtype=np.complex128)
+            norms = np.zeros(count, dtype=np.float64)
 
-        x_ptr = ffi.from_buffer("uint64_t[]", x, require_writable=False)
-        betas_ptr = ffi.from_buffer("uint64_t[]", betas, require_writable=True)
-        characters_ptr = ffi.from_buffer("ls_hs_scalar[]", characters, require_writable=True)
-        norms_ptr = ffi.from_buffer("double[]", norms, require_writable=True)
-        lib.ls_hs_state_info(
-            self._payload, count, x_ptr, 1, betas_ptr, 1, characters_ptr, norms_ptr
-        )
+            x_ptr = ffi.from_buffer("uint64_t[]", x, require_writable=False)
+            betas_ptr = ffi.from_buffer("uint64_t[]", betas, require_writable=True)
+            characters_ptr = ffi.from_buffer("ls_hs_scalar[]", characters, require_writable=True)
+            norms_ptr = ffi.from_buffer("double[]", norms, require_writable=True)
+            lib.ls_hs_state_info(
+                self._payload, count, x_ptr, 1, betas_ptr, 1, characters_ptr, norms_ptr
+            )
+        elif self.has_spin_inversion_symmetry:
+            mask = (1 << self.number_bits) - 1
+            betas = np.bitwise_xor(x, np.uint64(mask))
+            when = betas < x
+
+            betas = np.where(when, betas, x)
+            characters = np.where(when, float(self.spin_inversion), 1.0)
+            norms = np.ones(count, dtype=np.float64)
+        else:
+            assert not self.requires_projection
+            betas = x
+            characters = np.ones(count, dtype=np.complex128)
+            norms = np.ones(count, dtype=np.float64)
 
         if is_scalar:
             return (int(betas[0]), complex(characters[0]), float(norms[0]))
         else:
             return (betas, characters, norms)
+
+    def index(self, x: Union[int, NDArray[np.uint64]]) -> Union[int, NDArray[np.int64]]:
+        """Return the index of a basis state."""
+        assert self.number_bits <= 64
+        is_scalar = isinstance(x, int)
+        if is_scalar:
+            x = np.array([x], dtype=np.uint64)
+        else:
+            x = np.asarray(x, dtype=np.uint64, order="C")
+
+        count = x.shape[0]
+        indices = np.zeros(count, dtype=np.int64)
+
+        x_ptr = ffi.from_buffer("uint64_t const[]", x, require_writable=False)
+        indices_ptr = ffi.from_buffer("int64_t[]", indices, require_writable=True)
+        lib.ls_hs_state_index(self._payload, count, x_ptr, 1, indices_ptr, 1)
+
+        if is_scalar:
+            return int(indices[0])
+        else:
+            return indices
 
     @staticmethod
     def from_json(json_string: str) -> "Basis":
@@ -292,6 +342,11 @@ class SpinBasis(Basis):
     @property
     def has_fixed_hamming_weight(self) -> bool:
         return lib.ls_hs_basis_has_fixed_hamming_weight(self._payload)
+
+    @property
+    def spin_inversion(self) -> Optional[int]:
+        i = self._payload.spin_inversion
+        return int(i) if i != 0 else None
 
 
 class SpinlessFermionBasis(Basis):
@@ -492,7 +547,7 @@ class Expr(object):
 
     def __eq__(self, other: object) -> bool:
         _assert_subtype(other, Expr)
-        return lib.ls_hs_expr_equal(self._payload, other._payload) != 0 
+        return lib.ls_hs_expr_equal(self._payload, other._payload) != 0
 
     def __add__(self, other):
         _assert_subtype(other, Expr)

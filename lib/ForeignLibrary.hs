@@ -217,6 +217,12 @@ foreign export ccall "ls_hs_basis_has_permutation_symmetries"
 ls_hs_basis_has_permutation_symmetries basis =
   fromBool <$> withCbasis basis (foldSomeBasis (pure . hasPermutationSymmetries))
 
+foreign export ccall "ls_hs_basis_requires_projection"
+  ls_hs_basis_requires_projection :: Ptr Cbasis -> IO CBool
+
+ls_hs_basis_requires_projection basis =
+  fromBool <$> withCbasis basis (foldSomeBasis (pure . requiresProjection))
+
 foreign import ccall safe "ls_hs_build_representatives"
   ls_hs_build_representatives :: Ptr Cbasis -> Word64 -> Word64 -> IO ()
 

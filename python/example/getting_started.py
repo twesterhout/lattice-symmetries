@@ -44,6 +44,7 @@ def main():
     # Construct the Hamiltonian
     hamiltonian = ls.Operator(basis, expr)
 
+
     # Diagonalize the Hamiltonian using ARPACK
     eigenvalues, eigenstates = scipy.sparse.linalg.eigsh(hamiltonian, k=1, which="SA")
     print("Ground state energy is {}".format(eigenvalues[0]))
