@@ -205,6 +205,18 @@ foreign export ccall "ls_hs_basis_has_fixed_hamming_weight"
 ls_hs_basis_has_fixed_hamming_weight basis =
   fromBool <$> withCbasis basis (foldSomeBasis (pure . hasFixedHammingWeight))
 
+foreign export ccall "ls_hs_basis_has_spin_inversion_symmetry"
+  ls_hs_basis_has_spin_inversion_symmetry :: Ptr Cbasis -> IO CBool
+
+ls_hs_basis_has_spin_inversion_symmetry basis =
+  fromBool <$> withCbasis basis (foldSomeBasis (pure . hasSpinInversionSymmetry))
+
+foreign export ccall "ls_hs_basis_has_permutation_symmetries"
+  ls_hs_basis_has_permutation_symmetries :: Ptr Cbasis -> IO CBool
+
+ls_hs_basis_has_permutation_symmetries basis =
+  fromBool <$> withCbasis basis (foldSomeBasis (pure . hasPermutationSymmetries))
+
 foreign import ccall safe "ls_hs_build_representatives"
   ls_hs_build_representatives :: Ptr Cbasis -> Word64 -> Word64 -> IO ()
 

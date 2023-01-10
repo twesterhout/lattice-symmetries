@@ -125,6 +125,7 @@ data {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_basis" #-} Cbasis = Cbasis
     cbasis_number_particles :: {-# UNPACK #-} !CInt,
     cbasis_number_up :: {-# UNPACK #-} !CInt,
     cbasis_particle_type :: {-# UNPACK #-} !Cparticle_type,
+    cbasis_spin_inversion :: {-# UNPACK #-} !CInt,
     cbasis_state_index_is_identity :: {-# UNPACK #-} !CBool,
     cbasis_requires_projection :: {-# UNPACK #-} !CBool,
     cbasis_kernels :: {-# UNPACK #-} !(Ptr Cbasis_kernels),
@@ -188,6 +189,7 @@ instance Storable Cbasis where
       <*> #{peek ls_hs_basis, number_particles} p
       <*> #{peek ls_hs_basis, number_up} p
       <*> #{peek ls_hs_basis, particle_type} p
+      <*> #{peek ls_hs_basis, spin_inversion} p
       <*> #{peek ls_hs_basis, state_index_is_identity} p
       <*> #{peek ls_hs_basis, requires_projection} p
       <*> #{peek ls_hs_basis, kernels} p
@@ -200,6 +202,7 @@ instance Storable Cbasis where
     #{poke ls_hs_basis, number_particles}        p (cbasis_number_particles x)
     #{poke ls_hs_basis, number_up}               p (cbasis_number_up x)
     #{poke ls_hs_basis, particle_type}           p (cbasis_particle_type x)
+    #{poke ls_hs_basis, spin_inversion}          p (cbasis_spin_inversion x)
     #{poke ls_hs_basis, state_index_is_identity} p (cbasis_state_index_is_identity x)
     #{poke ls_hs_basis, requires_projection}     p (cbasis_requires_projection x)
     #{poke ls_hs_basis, kernels}                 p (cbasis_kernels x)

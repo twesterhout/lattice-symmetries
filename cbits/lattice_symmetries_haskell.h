@@ -124,6 +124,7 @@ typedef struct ls_hs_basis {
   int number_particles;
   int number_up;
   ls_hs_particle_type particle_type;
+  int spin_inversion;
   bool state_index_is_identity;
   bool requires_projection;
   ls_hs_basis_kernels *kernels;
@@ -140,6 +141,9 @@ uint64_t ls_hs_min_state_estimate(ls_hs_basis const *);
 int ls_hs_basis_number_bits(ls_hs_basis const *basis);
 int ls_hs_basis_number_words(ls_hs_basis const *basis);
 bool ls_hs_basis_has_fixed_hamming_weight(ls_hs_basis const *);
+bool ls_hs_basis_has_spin_inversion_symmetry(ls_hs_basis const *);
+bool ls_hs_basis_has_permutation_symmetries(ls_hs_basis const *);
+bool ls_hs_basis_requires_projection(ls_hs_basis const *);
 
 ptrdiff_t ls_hs_fixed_hamming_state_to_index(uint64_t basis_state);
 uint64_t ls_hs_fixed_hamming_index_to_state(ptrdiff_t index,

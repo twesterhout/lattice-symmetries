@@ -34,6 +34,9 @@ module LatticeSymmetries.Basis
     maxStateEstimate,
     isStateIndexIdentity,
     hasFixedHammingWeight,
+    hasSpinInversionSymmetry,
+    hasPermutationSymmetries,
+    requiresProjection,
     getParticleTag,
     isBasisReal,
     fixedHammingStateToIndex,
@@ -285,19 +288,19 @@ encodeSpinfulOccupation (SpinfulPerSector up down) =
 basisHeaderToJSON :: Basis t -> Value
 basisHeaderToJSON x
   | (SpinBasis n h i g) <- x =
-      object
-        [ "particle" .= SpinTy,
-          "number_spins" .= n,
-          "hamming_weight" .= h,
-          "spin_inversion" .= i,
-          "symmetries" .= g
-        ]
+    object
+      [ "particle" .= SpinTy,
+        "number_spins" .= n,
+        "hamming_weight" .= h,
+        "spin_inversion" .= i,
+        "symmetries" .= g
+      ]
   | (SpinfulFermionBasis n o) <- x =
-      object $
-        ["particle" .= SpinfulFermionTy, "number_sites" .= n] <> encodeSpinfulOccupation o
+    object $
+      ["particle" .= SpinfulFermionTy, "number_sites" .= n] <> encodeSpinfulOccupation o
   | (SpinlessFermionBasis n o) <- x =
-      object $
-        ["particle" .= SpinlessFermionTy, "number_sites" .= n, "number_particles" .= o]
+    object $
+      ["particle" .= SpinlessFermionTy, "number_sites" .= n, "number_particles" .= o]
 
 basisHeaderFromJSON :: Value -> Parser SomeBasis
 basisHeaderFromJSON = withObject "Basis" $ \v -> do
@@ -493,10 +496,10 @@ fixedHammingStateToIndex = go 0 1
   where
     go !i !k !α
       | α /= 0 =
-          let c = countTrailingZeros α
-              α' = α .&. (α - 1)
-              i' = i + Data.Maybe.fromJust (binomial c k)
-           in go i' (k + 1) α'
+        let c = countTrailingZeros α
+            α' = α .&. (α - 1)
+            i' = i + Data.Maybe.fromJust (binomial c k)
+         in go i' (k + 1) α'
       | otherwise = i
 
 fixedHammingIndexToState :: Int -> Int -> Word64
@@ -513,9 +516,9 @@ fixedHammingIndexToState hammingWeight = go hammingWeight 0
     inner !index !i !c !contribution
       | c >= numberBits = (c, contribution)
       | otherwise =
-          if contribution' > index
-            then (c, contribution)
-            else inner index i c' contribution'
+        if contribution' > index
+          then (c, contribution)
+          else inner index i c' contribution'
       where
         numberBits = 64
         c' = c + 1
@@ -656,6 +659,13 @@ getParticleType x = case x of
   SpinlessFermionBasis _ _ -> c_LS_HS_SPINLESS_FERMION
 {-# INLINE getParticleType #-}
 
+getSpinInversion :: Basis t -> Maybe Int
+getSpinInversion x = case x of
+  SpinBasis _ _ i _ -> i
+  SpinfulFermionBasis _ _ -> Nothing
+  SpinlessFermionBasis _ _ -> Nothing
+{-# INLINE getSpinInversion #-}
+
 getParticleTag :: Basis t -> ParticleTag t
 getParticleTag x = case x of
   SpinBasis _ _ _ _ -> SpinTag
@@ -672,11 +682,22 @@ isStateIndexIdentity x = case x of
 {-# INLINE isStateIndexIdentity #-}
 
 requiresProjection :: Basis t -> Bool
-requiresProjection x = case x of
-  SpinBasis _ _ i g -> not (nullSymmetries g) || isJust i
+requiresProjection x = hasPermutationSymmetries x || hasSpinInversionSymmetry x
+{-# INLINE requiresProjection #-}
+
+hasSpinInversionSymmetry :: Basis t -> Bool
+hasSpinInversionSymmetry x = case x of
+  SpinBasis _ _ i _ -> isJust i
   SpinfulFermionBasis _ _ -> False
   SpinlessFermionBasis _ _ -> False
-{-# INLINE requiresProjection #-}
+{-# INLINE hasSpinInversionSymmetry #-}
+
+hasPermutationSymmetries :: Basis t -> Bool
+hasPermutationSymmetries x = case x of
+  SpinBasis _ _ _ g -> not (nullSymmetries g)
+  SpinfulFermionBasis _ _ -> False
+  SpinlessFermionBasis _ _ -> False
+{-# INLINE hasPermutationSymmetries #-}
 
 hasFixedHammingWeight :: Basis t -> Bool
 hasFixedHammingWeight x = case x of
@@ -756,6 +777,7 @@ newCbasis x = do
         cbasis_number_particles = optionalNatural (getNumberParticles x),
         cbasis_number_up = optionalNatural (getNumberUp x),
         cbasis_particle_type = getParticleType x,
+        cbasis_spin_inversion = maybe 0 fromIntegral (getSpinInversion x),
         cbasis_state_index_is_identity = fromBool (isStateIndexIdentity x),
         cbasis_requires_projection = fromBool (requiresProjection x),
         cbasis_kernels = kernels,
@@ -884,17 +906,17 @@ foreign import ccall safe "lattice_symmetries_haskell.h &ls_hs_state_info_halide
 setStateInfoKernel :: Basis t -> Cbasis_kernels -> IO Cbasis_kernels
 setStateInfoKernel (SpinBasis n _ i g) k
   | n <= 64 = do
-      kernelData <-
-        bracket (newCpermutation_group g) destroyCpermutation_group $ \gPtr ->
-          -- withForeignPtr (symmetriesContents g) $ \gPtr ->
-          ls_internal_create_halide_kernel_data gPtr (maybe 0 fromIntegral i)
-      pure $
-        k
-          { cbasis_state_info_kernel = ls_hs_state_info_halide_kernel,
-            cbasis_state_info_data = castPtr kernelData,
-            cbasis_is_representative_kernel = ls_hs_is_representative_halide_kernel,
-            cbasis_is_representative_data = castPtr kernelData
-          }
+    kernelData <-
+      bracket (newCpermutation_group g) destroyCpermutation_group $ \gPtr ->
+        -- withForeignPtr (symmetriesContents g) $ \gPtr ->
+        ls_internal_create_halide_kernel_data gPtr (maybe 0 fromIntegral i)
+    pure $
+      k
+        { cbasis_state_info_kernel = ls_hs_state_info_halide_kernel,
+          cbasis_state_info_data = castPtr kernelData,
+          cbasis_is_representative_kernel = ls_hs_is_representative_halide_kernel,
+          cbasis_is_representative_data = castPtr kernelData
+        }
 setStateInfoKernel _ k =
   pure $
     k
@@ -968,15 +990,15 @@ destroyCstate_info_kernel :: HasCallStack => Cbasis_kernels -> IO ()
 destroyCstate_info_kernel p
   | cbasis_state_info_kernel p == ls_hs_state_info_halide_kernel
       && cbasis_is_representative_kernel p == ls_hs_is_representative_halide_kernel =
-      do
-        ls_internal_destroy_halide_kernel_data (castPtr (cbasis_state_info_data p))
-        when (cbasis_state_info_data p /= cbasis_is_representative_data p) $
-          ls_internal_destroy_halide_kernel_data (castPtr (cbasis_is_representative_data p))
+    do
+      ls_internal_destroy_halide_kernel_data (castPtr (cbasis_state_info_data p))
+      when (cbasis_state_info_data p /= cbasis_is_representative_data p) $
+        ls_internal_destroy_halide_kernel_data (castPtr (cbasis_is_representative_data p))
   | cbasis_state_info_kernel p == nullFunPtr
       && cbasis_state_info_data p == nullPtr
       && cbasis_is_representative_kernel p == nullFunPtr
       && cbasis_is_representative_data p == nullPtr =
-      pure ()
+    pure ()
   | otherwise = error "failed to automatically deallocate state_info and is_representative kernels"
 
 destroyCbasis_kernels :: HasCallStack => Ptr Cbasis_kernels -> IO ()
