@@ -2,3 +2,7 @@ build/
 dist-newstyle/
 main
 init.o
+third_party/
+*.egg-info/
+*.so
+*.pyc

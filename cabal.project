@@ -9,7 +9,8 @@ package *
 
 package lattice-symmetries-haskell
   flags: +use-standalone
-  optimization: 0
+  optimization: 2
+  ghc-options: -fPIC -fexpose-all-unfoldings -fspecialise-aggressively
   -- documentation: true
   -- haddock-html-location: https://hackage.haskell.org/package/$pkg-$version/docs
   -- haddock-hyperlink-source: true
