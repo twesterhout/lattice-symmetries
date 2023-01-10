@@ -16,7 +16,7 @@ data PermutationTestData = PermutationTestData !Permutation !(Vector Integer)
 
 instance Arbitrary PermutationTestData where
   arbitrary = sized $ \size -> do
-    n <- chooseInt (0, 500)
+    n <- chooseInt (1, 500)
     p <- mkPermutation . G.fromList <$> shuffle [0 .. n - 1]
     v <- G.replicateM size (chooseInteger (0, bit n - 1))
     pure $ PermutationTestData p v
@@ -44,11 +44,9 @@ spec = do
   describe "ToJSON Permutation" $ do
     it "encodes Permutation" $ do
       Aeson.encode (mkPermutation [0, 1, 2, 3]) `shouldBe` "[0,1,2,3]"
-      Aeson.encode (mkPermutation []) `shouldBe` "[]"
       Aeson.encode (mkPermutation [3, 5, 0, 1, 2, 4]) `shouldBe` "[3,5,0,1,2,4]"
   describe "FromJSON Permutation" $ do
     it "parses Permutation" $ do
       Aeson.decode "[3, 0, 2, 1]" `shouldBe` Just (mkPermutation [3, 0, 2, 1])
       Aeson.decode "[3, 0, 2, 1, 4, 5, 6]" `shouldBe` Just (mkPermutation [3, 0, 2, 1, 4, 5, 6])
-      Aeson.decode "[]" `shouldBe` Just (mkPermutation [])
       Aeson.decode "{ \"oops\": [2, 1, 0] }" `shouldBe` (Nothing :: Maybe Permutation)

@@ -493,12 +493,12 @@ computeBinomials :: IO (DenseMatrix U.Vector Word64)
 computeBinomials = do
   coeff <- GM.replicate (dim * dim) 0
   GM.write coeff 0 1
-  loopM 1 (< dim) (+1) $ \n -> do
+  loopM 1 (< dim) (+ 1) $ \n -> do
     GM.write coeff (n * dim) 1
-    loopM 1 (<= n) (+1) $ \k ->
-      GM.write coeff (n * dim + k) =<<
-        (+) <$> GM.read coeff ((n - 1) * dim + k - 1)
-            <*> GM.read coeff ((n - 1) * dim + k)
+    loopM 1 (<= n) (+ 1) $ \k ->
+      GM.write coeff (n * dim + k)
+        =<< (+) <$> GM.read coeff ((n - 1) * dim + k - 1)
+        <*> GM.read coeff ((n - 1) * dim + k)
   DenseMatrix dim dim <$> G.unsafeFreeze coeff
   where
     dim = 64
