@@ -341,6 +341,9 @@ mkSpinHeader n (Just h) (Just _) _
   | n /= 2 * h = fail $ "invalid spin inversion: " <> show n <> " spins, but Hamming weight is " <> show h
 mkSpinHeader n _ _ g
   | not (nullSymmetries g) && symmetriesGetNumberBits g /= n = fail "invalid symmetries"
+-- If the user didn't specify a Hamming weight, but did specify spin inversion,
+-- we know that Hamming weight is actually n / 2
+mkSpinHeader n Nothing (Just i) g = mkSpinHeader n (Just (n `div` 2)) (Just i) g
 mkSpinHeader n h i g = pure $ SpinBasis n h i g
 
 -- instance IsBasis t => FromJSON (Basis t) where

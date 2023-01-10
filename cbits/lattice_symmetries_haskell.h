@@ -189,7 +189,9 @@ ls_hs_expr *ls_hs_expr_plus(ls_hs_expr const *a, ls_hs_expr const *b);
 ls_hs_expr *ls_hs_expr_minus(ls_hs_expr const *a, ls_hs_expr const *b);
 ls_hs_expr *ls_hs_expr_times(ls_hs_expr const *a, ls_hs_expr const *b);
 ls_hs_expr *ls_hs_expr_scale(ls_hs_scalar const *z, ls_hs_expr const *a);
+ls_hs_expr *ls_hs_expr_adjoint(ls_hs_expr const *);
 
+bool ls_hs_expr_equal(ls_hs_expr const *a, ls_hs_expr const *b);
 bool ls_hs_expr_is_hermitian(ls_hs_expr const *);
 bool ls_hs_expr_is_real(ls_hs_expr const *);
 bool ls_hs_expr_is_identity(ls_hs_expr const *);

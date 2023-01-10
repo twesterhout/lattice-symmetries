@@ -49,9 +49,9 @@ ffibuilder.cdef(
 
     typedef struct ls_hs_scalar { double real; double imag; } ls_hs_scalar;
     typedef struct ls_hs_symmetries ls_hs_symmetries;
-    typedef struct ls_hs_basis { ...; } ls_hs_basis;
+    typedef struct ls_hs_basis ls_hs_basis;
     typedef struct ls_hs_expr ls_hs_expr;
-    typedef struct ls_hs_operator { ...; } ls_hs_operator;
+    typedef struct ls_hs_operator ls_hs_operator;
 
     typedef struct {
       void *elts;
@@ -136,6 +136,12 @@ ffibuilder.cdef(
     ls_hs_expr *ls_hs_expr_minus(ls_hs_expr const *a, ls_hs_expr const *b);
     ls_hs_expr *ls_hs_expr_times(ls_hs_expr const *a, ls_hs_expr const *b);
     ls_hs_expr *ls_hs_expr_scale(ls_hs_scalar const *z, ls_hs_expr const *a);
+    ls_hs_expr *ls_hs_expr_adjoint(ls_hs_expr const *);
+
+    bool ls_hs_expr_equal(ls_hs_expr const *a, ls_hs_expr const *b);
+    bool ls_hs_expr_is_hermitian(ls_hs_expr const *);
+    bool ls_hs_expr_is_real(ls_hs_expr const *);
+    bool ls_hs_expr_is_identity(ls_hs_expr const *);
 
     ls_hs_operator *ls_hs_create_operator(ls_hs_basis const *, ls_hs_expr const *);
     ls_hs_operator *ls_hs_clone_operator(ls_hs_operator const *);

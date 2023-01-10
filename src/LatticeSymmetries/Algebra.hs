@@ -284,8 +284,9 @@ instance Pretty g => Pretty (Product g) where
     Pretty.encloseSep mempty mempty " " (G.toList $ fmap pretty v)
 
 instance Pretty g => Pretty (Sum g) where
-  pretty (Sum v) =
-    Pretty.encloseSep mempty mempty " + " (G.toList $ fmap pretty v)
+  pretty (Sum v)
+    | not (G.null v) = Pretty.encloseSep mempty mempty " + " (G.toList $ fmap pretty v)
+    | otherwise = pretty (0 :: Int)
 
 instance CanScale c g => CanScale c (Sum g) where
   scale c (Sum v) = Sum $ G.map (scale c) v

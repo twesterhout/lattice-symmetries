@@ -185,6 +185,12 @@ mapSomeExpr f expr = case expr of
   SomeExpr SpinfulFermionTag x -> SomeExpr SpinfulFermionTag (f x)
   SomeExpr SpinlessFermionTag x -> SomeExpr SpinlessFermionTag (f x)
 
+instance Eq SomeExpr where
+  (==) (SomeExpr SpinTag a) (SomeExpr SpinTag b) = a == b
+  (==) (SomeExpr SpinlessFermionTag a) (SomeExpr SpinlessFermionTag b) = a == b
+  (==) (SomeExpr SpinfulFermionTag a) (SomeExpr SpinfulFermionTag b) = a == b
+  (==) _ _ = False
+
 binaryOp ::
   (forall t. (Algebra (GeneratorType t), Ord (IndexType t)) => Expr t -> Expr t -> Expr t) ->
   SomeExpr ->

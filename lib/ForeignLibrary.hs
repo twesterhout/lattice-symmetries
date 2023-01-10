@@ -347,6 +347,14 @@ ls_hs_replace_indices exprPtr fPtr =
                 pure (toEnum s', i')
            in SomeExpr SpinfulFermionTag . simplifyExpr <$> mapIndicesM f' terms
 
+foreign export ccall "ls_hs_expr_equal"
+  ls_hs_expr_equal :: Ptr Cexpr -> Ptr Cexpr -> IO CBool
+
+ls_hs_expr_equal aPtr bPtr =
+  withCexpr aPtr $ \a ->
+    withCexpr bPtr $ \b ->
+      pure $ fromBool (a == b)
+
 foreign export ccall "ls_hs_expr_adjoint"
   ls_hs_expr_adjoint :: Ptr Cexpr -> IO (Ptr Cexpr)
 
