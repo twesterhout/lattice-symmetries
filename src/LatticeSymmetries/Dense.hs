@@ -8,6 +8,7 @@ module LatticeSymmetries.Dense
     dmShape,
     denseMatrixFromList,
     denseMatrixToList,
+    indexDenseMatrix,
   )
 where
 
@@ -79,10 +80,10 @@ instance (G.Vector v a) => GHC.IsList (DenseMatrix v a) where
 --       | i < nRows = let acc' = go2 i 0 acc in go1 (i + 1) acc'
 --       | otherwise = acc
 
--- indexDenseMatrix :: (HasCallStack, G.Vector v a) => DenseMatrix v a -> (Int, Int) -> a
--- indexDenseMatrix (DenseMatrix nRows nCols v) (i, j)
---   | i < nRows && j < nCols = v ! (nCols * i + j)
---   | otherwise = error $ "invalid index " <> show (i, j) <> " for a matrix of shape " <> show (nRows, nCols)
+indexDenseMatrix :: (HasCallStack, G.Vector v a) => DenseMatrix v a -> (Int, Int) -> a
+indexDenseMatrix (DenseMatrix nRows nCols v) (i, j)
+  | i < nRows && j < nCols = v ! (nCols * i + j)
+  | otherwise = error $ "invalid index " <> show (i, j) <> " for a matrix of shape " <> show (nRows, nCols)
 
 -- extractDiagonal :: (HasCallStack, G.Vector v a, G.Vector v Int) => DenseMatrix v a -> v a
 -- extractDiagonal m@(DenseMatrix nRows nCols _)

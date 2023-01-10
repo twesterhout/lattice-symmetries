@@ -71,6 +71,9 @@ import Data.Bits
 import Data.ByteString (packCString, useAsCString)
 import Data.ByteString.Internal (ByteString (..))
 import qualified Data.Maybe (fromJust)
+import qualified Data.Vector.Generic as G
+import qualified Data.Vector.Generic.Mutable as GM
+import qualified Data.Vector.Unboxed as U
 import Data.Yaml.Aeson
 import Foreign.C.String (CString)
 import Foreign.C.Types
@@ -83,10 +86,10 @@ import Foreign.Storable
 import GHC.ForeignPtr
 import LatticeSymmetries.Algebra (Algebra (..))
 import LatticeSymmetries.BitString
+import LatticeSymmetries.Dense
 import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
 import LatticeSymmetries.Group
--- import LatticeSymmetries.IO
 import LatticeSymmetries.NonbranchingTerm
 import LatticeSymmetries.Utils
 import Prettyprinter (Doc, Pretty (..))
@@ -486,13 +489,36 @@ data SpinfulOccupation
 
 -- data Representatives = Representatives {rStates :: !ChapelArray}
 
+computeBinomials :: IO (DenseMatrix U.Vector Word64)
+computeBinomials = do
+  coeff <- GM.replicate (dim * dim) 0
+  GM.write coeff 0 1
+  loopM 1 (< dim) (+1) $ \n -> do
+    GM.write coeff (n * dim) 1
+    loopM 1 (<= n) (+1) $ \k ->
+      GM.write coeff (n * dim + k) =<<
+        (+) <$> GM.read coeff ((n - 1) * dim + k - 1)
+            <*> GM.read coeff ((n - 1) * dim + k)
+  DenseMatrix dim dim <$> G.unsafeFreeze coeff
+  where
+    dim = 64
+
+binomialsCache :: DenseMatrix U.Vector Word64
+binomialsCache = unsafePerformIO computeBinomials
+{-# NOINLINE binomialsCache #-}
+
 binomial :: Int -> Int -> Maybe Int
 binomial n k
   | n <= 0 || k > n = Just 0
-  | otherwise = toIntegralSized $ factorial n `div` factorial (n - k) `div` factorial k
-  where
-    factorial :: Int -> Integer
-    factorial x = product ([1 .. fromIntegral x] :: [Integer])
+  | otherwise = toIntegralSized $ indexDenseMatrix binomialsCache (n, k)
+
+-- binomial :: Int -> Int -> Maybe Int
+-- binomial n k
+--   | n <= 0 || k > n = Just 0
+--   | otherwise = toIntegralSized $ factorial n `div` factorial (n - k) `div` factorial k
+--   where
+--     factorial :: Int -> Integer
+--     factorial x = product ([1 .. fromIntegral x] :: [Integer])
 
 fixedHammingStateToIndex :: Word64 -> Int
 fixedHammingStateToIndex = go 0 1
