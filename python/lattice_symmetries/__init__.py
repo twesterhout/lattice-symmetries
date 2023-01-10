@@ -26,20 +26,20 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from ._ls_hs import ffi, lib
-
-from collections import namedtuple
-from functools import singledispatchmethod
 import json
 import threading
-from typing import overload, Any, List, Optional, Tuple, Union
 import weakref
+from collections import namedtuple
+from functools import singledispatchmethod
+from typing import Any, List, Optional, Tuple, Union, overload
 
-from loguru import logger
 import numpy as np
-from numpy.typing import ArrayLike, NDArray
 import scipy.sparse.linalg
+from loguru import logger
+from numpy.typing import ArrayLike, NDArray
 from scipy.sparse.linalg import LinearOperator
+
+from ._ls_hs import ffi, lib
 
 __version__ = "2.0.2"
 
@@ -540,7 +540,7 @@ class Expr(object):
                 return r
 
         else:
-            NotImplemented
+            raise NotImplementedError
 
     def adjoint(self) -> "Expr":
         return Expr(lib.ls_hs_expr_adjoint(self._payload))
@@ -570,7 +570,7 @@ class Expr(object):
         if np.isscalar(other):
             return self.scale(other)
         else:
-            NotImplemented
+            return NotImplemented
 
 
 # str(ls.Expr("5 σ⁺₀ σ⁻₁ + (8 + 3im) σ⁻₁"))
@@ -664,14 +664,14 @@ class Operator(LinearOperator):
         if isinstance(other, Operator):
             return Operator(self.basis, self.expression * other.expression)
         else:
-            NotImplemented
+            return NotImplemented
 
     def __rmul__(self, other: complex):
         """Scale `self` by a scalar `other`."""
         if np.isscalar(other):
             return self.scale(other)
         else:
-            NotImplemented
+            return NotImplemented
 
     def __matmul__(self, other: NDArray[Any]) -> NDArray[Any]:
         return self.apply_to_state_vector(other)
@@ -755,7 +755,7 @@ def load_yaml_config(filename: str):
     if config.hamiltonian != 0:
         hamiltonian = Operator(lib.ls_hs_clone_operator(config.hamiltonian))
     if config.observables != 0:
-        NotImplemented
+        raise NotImplementedError
     lib.ls_hs_destroy_yaml_config(config)
     Config = namedtuple("Config", ["basis", "hamiltonian", "observables"], defaults=[None, None])
     return Config(basis, hamiltonian)
