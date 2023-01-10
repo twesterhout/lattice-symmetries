@@ -41,7 +41,7 @@ from numpy.typing import ArrayLike, NDArray
 import scipy.sparse.linalg
 from scipy.sparse.linalg import LinearOperator
 
-__version__ = "2.0.1"
+__version__ = "2.0.2"
 
 
 class _RuntimeInitializer:
