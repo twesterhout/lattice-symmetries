@@ -41,7 +41,7 @@ from numpy.typing import ArrayLike, NDArray
 import scipy.sparse.linalg
 from scipy.sparse.linalg import LinearOperator
 
-__version__ = "2.0.2"
+__version__ = "2.0.3"
 
 
 class _RuntimeInitializer:
@@ -288,17 +288,17 @@ class Basis:
     def index(self, x: Union[int, NDArray[np.uint64]]) -> Union[int, NDArray[np.int64]]:
         """Return the index of a basis state."""
         assert self.number_bits <= 64
-        is_scalar = isinstance(x, int)
-        if is_scalar:
-            x = np.array([x], dtype=np.uint64)
-        else:
-            x = np.asarray(x, dtype=np.uint64, order="C")
+        is_scalar = False
+        x = np.asarray(x, dtype=np.uint64, order="C")
+        if x.ndim == 0:
+            is_scalar = True
+            x = np.expand_dims(x, axis=0)
 
         count = x.shape[0]
         indices = np.zeros(count, dtype=np.int64)
 
-        x_ptr = ffi.from_buffer("uint64_t const[]", x, require_writable=False)
-        indices_ptr = ffi.from_buffer("int64_t[]", indices, require_writable=True)
+        x_ptr = ffi.from_buffer("uint64_t const*", x, require_writable=False)
+        indices_ptr = ffi.from_buffer("ptrdiff_t *", indices, require_writable=True)
         lib.ls_hs_state_index(self._payload, count, x_ptr, 1, indices_ptr, 1)
 
         if is_scalar:
