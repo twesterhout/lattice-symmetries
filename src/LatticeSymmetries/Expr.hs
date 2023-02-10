@@ -199,12 +199,12 @@ binaryOp ::
 binaryOp op (SomeExpr tag@SpinTag a) (SomeExpr SpinTag b) = SomeExpr tag $ op a b
 binaryOp op (SomeExpr tag@SpinlessFermionTag a) (SomeExpr SpinlessFermionTag b) = SomeExpr tag $ op a b
 binaryOp op (SomeExpr tag@SpinfulFermionTag a) (SomeExpr SpinfulFermionTag b) = SomeExpr tag $ op a b
-binaryOp op (SomeExpr t₁ _) (SomeExpr t₂ _) =
+binaryOp op (SomeExpr t1 _) (SomeExpr t2 _) =
   error $
     "Expressions are defined for different particle types: "
-      <> show (particleTagToType t₁)
+      <> show (particleTagToType t1)
       <> " and "
-      <> show (particleTagToType t₂)
+      <> show (particleTagToType t2)
 
 instance Num SomeExpr where
   (+) = binaryOp (+)

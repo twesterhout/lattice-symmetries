@@ -122,11 +122,11 @@ library
                      -- , vector-binary-instances
                      -- , hdf5-hs
                      -- , HaskellForMaths
-  -- extra-libraries:     lattice_symmetries_core
+  extra-libraries:     kernels
   -- pkgconfig-depends:   lattice_symmetries
   c-sources:           kernels/indexing.c
                        kernels/reference.c
-                       kernels/kernels.c
+                       -- kernels/kernels.c
   include-dirs:        cbits
   cc-options:          -fPIC -O3 -DNDEBUG
                        -Wall -Wextra -Wpedantic -Wconversion -Wdouble-promotion

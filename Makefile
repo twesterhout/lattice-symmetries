@@ -9,54 +9,100 @@
 # HDF5_VERSION = $(HDF5_MAJOR).$(HDF5_MINOR).$(HDF5_PATCH)
 # HDF5_PREFIX = $(PWD)/third_party/hdf5
 
-UNAME = $(shell uname)
-ifeq ($(UNAME), Darwin)
-  # NPROC = $(shell sysctl -n hw.ncpu)
-  SHARED_EXT = dylib
-else
-  # NPROC = $(shell nproc --all)
-  SHARED_EXT = so
-endif
+# UNAME = $(shell uname)
+# ifeq ($(UNAME), Darwin)
+#   # NPROC = $(shell sysctl -n hw.ncpu)
+#   SHARED_EXT = dylib
+# else
+#   # NPROC = $(shell nproc --all)
+#   SHARED_EXT = so
+# endif
 
 .PHONY: all
 all: haskell
 
-PREFIX = $(PWD)
-PACKAGE = lattice-symmetries-haskell
-GIT_COMMIT = $(shell git rev-parse --short HEAD)
-DIST = $(PACKAGE)-$(GIT_COMMIT)
+# PREFIX = $(PWD)
+# PACKAGE = lattice-symmetries-haskell
+# GIT_COMMIT = $(shell git rev-parse --short HEAD)
+# DIST = $(PACKAGE)-$(GIT_COMMIT)
 
-.PHONY: release
-release: haskell
-	mkdir -p $(DIST)/include
-	mkdir -p $(DIST)/lib
-	install -m644 -C cbits/lattice_symmetries_haskell.h $(DIST)/include/
-	# install -m644 -C kernels/build/liblattice_symmetries_core.$(SHARED_EXT) $(DIST)/lib/
-	find dist-newstyle -name "liblattice_symmetries_haskell.$(SHARED_EXT)" \
-	  -exec install -m644 -C {} $(DIST)/lib/ \;
-ifeq ($(UNAME), Linux)
-	LIBFFI=`ldd $(DIST)/lib/liblattice_symmetries_haskell.$(SHARED_EXT) | grep libffi | sed -E 's:.*=>\s+(.*/libffi.$(SHARED_EXT).[6-8]).*:\1:'`; cp -d $$LIBFFI* $(DIST)/lib/
-	patchelf --set-rpath '$$ORIGIN' $(DIST)/lib/liblattice_symmetries_haskell.$(SHARED_EXT)
-endif
-	tar -cf $(DIST).tar $(DIST)
-	bzip2 $(DIST).tar
-ifneq ($(realpath $(PREFIX)), $(PWD))
-	install -m644 -C $(DIST).tar.bz2 $(PREFIX)
-endif
-	rm -r $(DIST)
+HALIDE_PATH ?= $(PWD)/third_party/Halide
+BIN_DIR = $(PWD)/kernels/build
 
+TRUE_HALIDE_PATH := $(realpath $(HALIDE_PATH))
+$(info $(TRUE_HALIDE_PATH))
+
+UNAME = $(shell uname)
+ifeq ($(UNAME), Darwin)
+  SHARED_EXT = dylib
+else
+  SHARED_EXT = so
+endif
 
 .PHONY: haskell
-haskell: kernels
-	cabal v2-build
+haskell: cabal.project.local kernels
+	cabal build
 
 .PHONY: kernels
-kernels: cabal.project.local
-# kernels/build/liblattice_symmetries_core.$(SHARED_EXT)
+kernels: $(BIN_DIR)/libkernels.a
 
-cabal.project.local: kernels/generator.cpp
-	cd kernels && $(MAKE) Halide
-	cd kernels && $(MAKE)
+$(BIN_DIR)/libkernels.a:
+	$(MAKE) -C kernels BIN_DIR=$(BIN_DIR) HALIDE_PATH=$(TRUE_HALIDE_PATH)
+
+cabal.project.local:
+	$(MAKE) -C kernels BIN_DIR=$(BIN_DIR) HALIDE_PATH=$(TRUE_HALIDE_PATH) ../cabal.project.local
+
+# Determine the GHC version with which the library was built
+GHC_VERSION := $(shell ghc --version | sed -e 's/[^0-9]*//')
+# Find the shared library
+LIBRARY_NAME = liblattice_symmetries_haskell.$(SHARED_EXT)
+HASKELL_LIBRARY := $(shell find dist-newstyle/ -type f -name $(LIBRARY_NAME) | grep $(GHC_VERSION))
+
+.PHONY: bindist
+bindist: haskell
+	export HASKELL_LIBRARY=$$(find dist-newstyle/ -type f -name $(LIBRARY_NAME) | grep $(GHC_VERSION)) && \
+	mkdir -p bundle/include && \
+	install -m644 cbits/lattice_symmetries_haskell.h bundle/include/ && \
+	mkdir -p bundle/lib/haskell && \
+	ldd $$HASKELL_LIBRARY | \
+		grep $(SHARED_EXT) | \
+		sed -e '/^[\^t]/d' | \
+		sed -e 's/\t//' | \
+		sed -e 's/ (0.*)//' | \
+		grep -E '(libHS|libffi)' | \
+		sed -e 's/.* => //' | \
+		xargs -I '{}' install -m 644 '{}' bundle/lib/haskell/ && \
+	install -m644 $$HASKELL_LIBRARY bundle/lib/ && \
+	patchelf --set-rpath '$$ORIGIN/haskell' bundle/lib/$(LIBRARY_NAME) && \
+	find bundle/lib/haskell -type f -exec patchelf --set-rpath '$$ORIGIN' {} \;
+
+# .PHONY: release
+# release: haskell
+# 	mkdir -p $(DIST)/include
+# 	mkdir -p $(DIST)/lib
+# 	install -m644 -C cbits/lattice_symmetries_haskell.h $(DIST)/include/
+# 	# install -m644 -C kernels/build/liblattice_symmetries_core.$(SHARED_EXT) $(DIST)/lib/
+# 	find dist-newstyle -name "liblattice_symmetries_haskell.$(SHARED_EXT)" \
+# 	  -exec install -m644 -C {} $(DIST)/lib/ \;
+# ifeq ($(UNAME), Linux)
+# 	LIBFFI=`ldd $(DIST)/lib/liblattice_symmetries_haskell.$(SHARED_EXT) | grep libffi | sed -E 's:.*=>\s+(.*/libffi.$(SHARED_EXT).[6-8]).*:\1:'`; cp -d $$LIBFFI* $(DIST)/lib/
+# 	patchelf --set-rpath '$$ORIGIN' $(DIST)/lib/liblattice_symmetries_haskell.$(SHARED_EXT)
+# endif
+# 	tar -cf $(DIST).tar $(DIST)
+# 	bzip2 $(DIST).tar
+# ifneq ($(realpath $(PREFIX)), $(PWD))
+# 	install -m644 -C $(DIST).tar.bz2 $(PREFIX)
+# endif
+# 	rm -r $(DIST)
+
+
+# .PHONY: haskell
+# haskell: kernels
+# 	cabal v2-build
+
+# .PHONY: kernels
+# kernels: cabal.project.local
+# kernels/build/liblattice_symmetries_core.$(SHARED_EXT)
 
 # LS_HS_PATH = $(dir $(shell find dist-newstyle -name liblattice_symmetries_haskell.$(SHARED_EXT)))
 
@@ -105,6 +151,4 @@ cabal.project.local: kernels/generator.cpp
 
 .PHONY: clean
 clean:
-	true
-	# rm -rf $(HDF5_PREFIX) \
-	#        third_party/hdf5-$(HDF5_VERSION)-src
+	@$(MAKE) -C kernels BIN_DIR=$(BIN_DIR) HALIDE_PATH=$(TRUE_HALIDE_PATH) clean
