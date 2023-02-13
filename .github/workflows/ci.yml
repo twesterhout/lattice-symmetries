@@ -155,7 +155,7 @@ jobs:
 
   build_for_conda:
     name: Compiling for Conda
-    needs: [build]
+    # needs: [build]
     runs-on: ubuntu-latest
     container:
       image: twesterhout/lattice-symmetries-haskell:latest
@@ -172,13 +172,12 @@ jobs:
         COMMIT=$(git rev-parse --short HEAD)
         PACKAGE=lattice-symmetries-haskell-$COMMIT
         mv bundle $PACKAGE
-        tar -cf ${PACKAGE}-${{ matrix.os }}.tar $PACKAGE/
-        bzip2 ${PACKAGE}-${{ matrix.os }}.tar
+        tar -czf ${PACKAGE}-${{ matrix.os }}.tar.gz $PACKAGE/
 
     - uses: actions/upload-artifact@v3
       with:
         name: lattice-symmetries-haskell-${{ matrix.os }}
-        path: lattice-symmetries-haskell-*-${{ matrix.os }}.tar.bz2
+        path: lattice-symmetries-haskell-*-${{ matrix.os }}.tar.gz
 
   release:
     name: Creating a release
@@ -196,4 +195,4 @@ jobs:
         run: |
           wget -q https://github.com/TheAssassin/pyuploadtool/releases/download/continuous/pyuploadtool-x86_64.AppImage
           chmod +x pyuploadtool-x86_64.AppImage
-          ./pyuploadtool-x86_64.AppImage **/lattice-symmetries-haskell-*.tar.bz2
+          ./pyuploadtool-x86_64.AppImage **/lattice-symmetries-haskell-*.tar.gz
