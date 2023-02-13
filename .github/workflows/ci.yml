@@ -167,6 +167,7 @@ jobs:
         make bundle-docker
 
     - name: Package
+      run: |
         COMMIT=$(git rev-parse --short HEAD)
         PACKAGE=lattice-symmetries-haskell-$COMMIT
         mv bundle-docker $PACKAGE
