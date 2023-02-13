@@ -3,7 +3,7 @@
 
 # NOTE: You probably want to override the following
 export HALIDE_PATH = $(PWD)/third_party/Halide
-export BIN_DIR = $(PWD)/kernel-build
+export BIN_DIR = $(PWD)/kernels-build
 
 # Command to use to run docker
 SUDO = sudo
@@ -28,6 +28,10 @@ endif
 .PHONY: haskell
 haskell: cabal.project.local kernels
 	cabal build
+
+.PHONY: check
+check: haskell
+	cabal test --test-show-details=direct
 
 .PHONY: kernels
 kernels: $(BIN_DIR)/libkernels.a
@@ -97,9 +101,9 @@ conda-package:
 
 .PHONY: clean
 clean:
-	@$(MAKE) -C kernels BIN_DIR=$(BIN_DIR) HALIDE_PATH=$(TRUE_HALIDE_PATH) clean
+	@$(MAKE) -C kernels clean
 	cabal clean
-	rm -rf dist-newstyle-docker kernel-build-docker bindist-docker
+	rm -rf dist-newstyle-docker kernel-build-docker bundle-docker
 
 # .PHONY: release
 # release: haskell

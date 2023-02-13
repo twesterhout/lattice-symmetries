@@ -112,13 +112,13 @@ jobs:
 
     - name: Build
       run: |
-        make HL_PATH=$PWD/third_party/Halide
+        make HALIDE_PATH=$PWD/third_party/Halide
 
     - name: Test
       run: |
         # export LD_LIBRARY_PATH=$PWD/kernels/build:$LD_LIBRARY_PATH
         # export DYLD_LIBRARY_PATH=$PWD/kernels/build:$DYLD_LIBRARY_PATH
-        cabal v2-test --test-show-details=direct
+        make HALIDE_PATH=$PWD/third_party/Halide check
 
     # - name: Package
     #   run: |

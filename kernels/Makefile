@@ -57,17 +57,19 @@ endif
 # GENERATOR_OUTPUTS ?= static_library,c_header,stmt_html,assembly
 
 # CFLAGS += -I ../cbits -isystem $(HALIDE_DISTRIB_PATH)/include/ -isystem $(HALIDE_DISTRIB_PATH)/share/Halide/tools/ -Wall -Wextra -Wpedantic -Wconversion -Wdouble-promotion -Wformat=2 -Wformat-overflow=2 -Winit-self -Wimplicit-fallthrough -Wunused -Wuninitialized -Wstrict-overflow=2 -Wduplicated-branches -Wfloat-equal -Wshadow -Wundef -Wunused-macros -Wmissing-field-initializers
+$(info "BIN_DIR=$(BIN_DIR)")
 
-HL_CXXFLAGS ?= -std=c++17 -I $(HALIDE_PATH)/include/ -I $(HALIDE_PATH)/share/Halide/tools/ \
+HL_LIB_PATH = $(dir $(shell find $(HALIDE_PATH) -name "libHalide.*" | head -n1))
+HL_SHARE_PATH = $(dir $(shell find $(HALIDE_PATH) -name "GenGen.cpp"))
+
+HL_CXXFLAGS ?= -std=c++17 -I $(HALIDE_PATH)/include/ -I $(HL_SHARE_PATH) \
                -Wall -Wno-unused-function -Wcast-qual -Wignored-qualifiers -Wno-comment \
                -Wsign-compare -Wno-unknown-warning-option -Wno-psabi
 ifeq ($(UNAME), Darwin)
   HL_CXXFLAGS += -fvisibility=hidden
 endif
 
-HL_LDFLAGS ?= -Wl,-rpath,$(HALIDE_PATH)/lib -L $(HALIDE_PATH)/lib \
-              -Wl,-rpath,$(HALIDE_PATH)/lib64 -L $(HALIDE_PATH)/lib64 \
-			  -lHalide
+HL_LDFLAGS ?= -Wl,-rpath,$(HL_LIB_PATH) -L $(HL_LIB_PATH) -lHalide
 ifeq ($(UNAME), Linux)
   HL_LDFLAGS += -ldl -lpthread
 endif
@@ -75,10 +77,11 @@ endif
 all: $(BIN_DIR)/libkernels.a
 
 ../cabal.project.local:
-	@echo "Creating cabal.project.local ..."
-	@echo "-- DO NOT MODIFY (Generated automatically by kernels/Makefile)" >$@
-	@echo "package lattice-symmetries-haskell" >>$@
-	@echo "  extra-lib-dirs: $(realpath $(BIN_DIR))" >>$@
+	mkdir -p $(BIN_DIR)
+	echo "Creating cabal.project.local ..."
+	echo "-- DO NOT MODIFY (Generated automatically by kernels/Makefile)" >$@
+	echo "package lattice-symmetries-haskell" >>$@
+	echo "  extra-lib-dirs: $(BIN_DIR)" >>$@
 
 # ifeq ($(UNAME), Darwin)
 #   SHARED_FLAG = -dynamiclib
@@ -171,7 +174,7 @@ all: $(BIN_DIR)/libkernels.a
 $(BIN_DIR)/generator: generator.cpp 
 	@echo Building the generator ...
 	@mkdir -p $(@D)
-	$(CXX) $(HL_CXXFLAGS) $< $(HALIDE_PATH)/share/tools/GenGen.cpp -o $@ $(HL_LDFLAGS)
+	$(CXX) $(HL_CXXFLAGS) $< $(HL_SHARE_PATH)/GenGen.cpp -o $@ $(HL_LDFLAGS)
 
 # Build common runtime
 $(BIN_DIR)/runtime.o: $(BIN_DIR)/generator
