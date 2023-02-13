@@ -164,13 +164,13 @@ jobs:
 
     - name: Build
       run: |
-        make bundle-docker
+        make HALIDE_PATH=/opt/Halide bundle
 
     - name: Package
       run: |
         COMMIT=$(git rev-parse --short HEAD)
         PACKAGE=lattice-symmetries-haskell-$COMMIT
-        mv bundle-docker $PACKAGE
+        mv bundle $PACKAGE
         tar -cf ${PACKAGE}-${{ matrix.os }}.tar $PACKAGE/
         bzip2 ${PACKAGE}-${{ matrix.os }}.tar
 
