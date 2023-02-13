@@ -12,8 +12,7 @@ else
   SHARED_EXT = so
 endif
 
-# HALIDE_PATH =
-# $(PWD)/../third_party/Halide
+# HALIDE_PATH ?= ../third_party/Halide
 # HL_VERSION = 14.0.0
 # HL_HASH = 6b9ed2afd1d6d0badf04986602c943e287d44e46
 # HALIDE_DISTRIB_PATH ?= $(PWD)/../third_party/Halide-$(HL_VERSION)-$(HL_ARCH)-$(HL_BITS)-$(HL_OS)
@@ -57,10 +56,10 @@ endif
 # GENERATOR_OUTPUTS ?= static_library,c_header,stmt_html,assembly
 
 # CFLAGS += -I ../cbits -isystem $(HALIDE_DISTRIB_PATH)/include/ -isystem $(HALIDE_DISTRIB_PATH)/share/Halide/tools/ -Wall -Wextra -Wpedantic -Wconversion -Wdouble-promotion -Wformat=2 -Wformat-overflow=2 -Winit-self -Wimplicit-fallthrough -Wunused -Wuninitialized -Wstrict-overflow=2 -Wduplicated-branches -Wfloat-equal -Wshadow -Wundef -Wunused-macros -Wmissing-field-initializers
-$(info "HALIDE_PATH=$(HALIDE_PATH)")
-$(info "HALIDE_PATH=$(realpath $(HALIDE_PATH)"))
-$(info "BIN_DIR=$(BIN_DIR)")
-$(info "find: $(shell find $(HALIDE_PATH) -name "GenGen.cpp")")
+# $(info "HALIDE_PATH=$(HALIDE_PATH)")
+# $(info "HALIDE_PATH=$(realpath $(HALIDE_PATH))")
+# $(info "BIN_DIR=$(BIN_DIR)")
+# $(info "find: $(shell find $(HALIDE_PATH) -name "GenGen.cpp")")
 
 HL_LIB_PATH = $(dir $(shell find $(HALIDE_PATH) -name "libHalide.*" | head -n1))
 HL_SHARE_PATH = $(dir $(shell find $(HALIDE_PATH) -name "GenGen.cpp"))
@@ -75,7 +74,11 @@ endif
 HL_LDFLAGS ?= -Wl,-rpath,$(HL_LIB_PATH) -L $(HL_LIB_PATH) -lHalide
 ifeq ($(UNAME), Linux)
   HL_LDFLAGS += -ldl -lpthread
+  RELOCATABLE = -relocatable
+else
+  RELOCATABLE =
 endif
+
 
 all: $(BIN_DIR)/libkernels.a
 
@@ -210,7 +213,7 @@ $(BIN_DIR)/%_symmetric.o: $(BIN_DIR)/generator
 		-f ls_internal_$*_symmetric_kernel \
 		spin_inversion=1 auto_schedule=false \
 		target=$(HL_TARGETS)
-	$(LD) -relocatable $(BIN_DIR)/$*_symmetric*.o -o $@
+	$(LD) $(RELOCATABLE) $(BIN_DIR)/$*_symmetric*.o -o $@
 
 $(BIN_DIR)/%_antisymmetric.o: $(BIN_DIR)/generator
 	$^ -g $* -o $(@D) -e object,c_header \
@@ -218,7 +221,7 @@ $(BIN_DIR)/%_antisymmetric.o: $(BIN_DIR)/generator
 		-f ls_internal_$*_antisymmetric_kernel \
 		spin_inversion=-1 auto_schedule=false \
 		target=$(HL_TARGETS)
-	$(LD) -relocatable $(BIN_DIR)/$*_antisymmetric*.o -o $@
+	$(LD) $(RELOCATABLE) $(BIN_DIR)/$*_antisymmetric*.o -o $@
 
 $(BIN_DIR)/%_general.o: $(BIN_DIR)/generator
 	$^ -g $* -o $(@D) -e object,c_header \
@@ -226,7 +229,7 @@ $(BIN_DIR)/%_general.o: $(BIN_DIR)/generator
 		-f ls_internal_$*_general_kernel \
 		spin_inversion=0 auto_schedule=false \
 		target=$(HL_TARGETS)
-	$(LD) -relocatable $(BIN_DIR)/$*_general*.o -o $@
+	$(LD) $(RELOCATABLE) $(BIN_DIR)/$*_general*.o -o $@
 
 # $(BIN_DIR)/%/apply_off_diagonal.a: $(BIN_DIR)/generator
 # 	@mkdir -p $(@D)
