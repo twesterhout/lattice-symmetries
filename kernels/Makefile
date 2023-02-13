@@ -74,9 +74,6 @@ endif
 HL_LDFLAGS ?= -Wl,-rpath,$(HL_LIB_PATH) -L $(HL_LIB_PATH) -lHalide
 ifeq ($(UNAME), Linux)
   HL_LDFLAGS += -ldl -lpthread
-  RELOCATABLE = -relocatable
-else
-  RELOCATABLE =
 endif
 
 
@@ -190,46 +187,51 @@ $(BIN_DIR)/runtime.o: $(BIN_DIR)/generator
 
 $(BIN_DIR)/libkernels.a: $(BIN_DIR)/runtime.o \
 					     $(BIN_DIR)/kernels.o \
-					     $(BIN_DIR)/state_info_symmetric.o \
-					     $(BIN_DIR)/state_info_antisymmetric.o \
-					     $(BIN_DIR)/state_info_general.o \
-					     $(BIN_DIR)/is_representative_symmetric.o \
-					     $(BIN_DIR)/is_representative_antisymmetric.o \
-					     $(BIN_DIR)/is_representative_general.o
-	$(AR) rcs $@ $^
+					     $(BIN_DIR)/state_info_symmetric_wrapper.o \
+					     $(BIN_DIR)/state_info_antisymmetric_wrapper.o \
+					     $(BIN_DIR)/state_info_general_wrapper.o \
+					     $(BIN_DIR)/is_representative_symmetric_wrapper.o \
+					     $(BIN_DIR)/is_representative_antisymmetric_wrapper.o \
+					     $(BIN_DIR)/is_representative_general_wrapper.o
+	$(AR) rcs $@ \
+		$^ \
+		$(BIN_DIR)/state_info_symmetric-*.o \
+		$(BIN_DIR)/state_info_antisymmetric-*.o \
+		$(BIN_DIR)/state_info_general-*.o \
+		$(BIN_DIR)/is_representative_symmetric-*.o \
+		$(BIN_DIR)/is_representative_antisymmetric-*.o \
+		$(BIN_DIR)/is_representative_general-*.o
 
-$(BIN_DIR)/kernels.o: kernels.c kernels.h ../cbits/lattice_symmetries_haskell.h \
-					  $(BIN_DIR)/state_info_symmetric.o \
-					  $(BIN_DIR)/state_info_antisymmetric.o \
-					  $(BIN_DIR)/state_info_general.o \
-					  $(BIN_DIR)/is_representative_symmetric.o \
-					  $(BIN_DIR)/is_representative_antisymmetric.o \
-					  $(BIN_DIR)/is_representative_general.o
+$(BIN_DIR)/kernels.o: kernels.c kernels.h ../cbits/lattice_symmetries_haskell.h
 	$(CC) -fPIC $(CFLAGS) -I../cbits -I$(BIN_DIR) -I$(HALIDE_PATH)/include -o $@ -c $<
 	
-$(BIN_DIR)/%_symmetric.o: $(BIN_DIR)/generator
-	$^ -g $* -o $(@D) -e object,c_header \
-		-n $*_symmetric \
-		-f ls_internal_$*_symmetric_kernel \
-		spin_inversion=1 auto_schedule=false \
+$(BIN_DIR)/%_wrapper.o: $(BIN_DIR)/generator
+	echo "-g $$(echo '$*' | sed -E 's/_(general|symmetric|antisymmetric)//')"
+	echo "spin_inversion=$$(echo '$*' | grep -o -E '(general|antisymmetric|symmetric)' | sed 's/general/0/;s/antisymmetric/-1/;s/symmetric/1/;')"
+	$^ -g $$(echo '$*' | sed -E 's/_(general|symmetric|antisymmetric)//') \
+		-o $(@D) -e object,c_header \
+		-n $* \
+		-f ls_internal_$*_kernel \
+		auto_schedule=false \
+		spin_inversion=$$(echo '$*' | grep -o -E '(general|antisymmetric|symmetric)' | sed 's/general/0/;s/antisymmetric/-1/;s/symmetric/1/;') \
 		target=$(HL_TARGETS)
-	$(LD) $(RELOCATABLE) $(BIN_DIR)/$*_symmetric*.o -o $@
+	# $(LD) $(RELOCATABLE) $(BIN_DIR)/$*_symmetric*.o -o $@
 
-$(BIN_DIR)/%_antisymmetric.o: $(BIN_DIR)/generator
-	$^ -g $* -o $(@D) -e object,c_header \
-		-n $*_antisymmetric \
-		-f ls_internal_$*_antisymmetric_kernel \
-		spin_inversion=-1 auto_schedule=false \
-		target=$(HL_TARGETS)
-	$(LD) $(RELOCATABLE) $(BIN_DIR)/$*_antisymmetric*.o -o $@
-
-$(BIN_DIR)/%_general.o: $(BIN_DIR)/generator
-	$^ -g $* -o $(@D) -e object,c_header \
-		-n $*_general \
-		-f ls_internal_$*_general_kernel \
-		spin_inversion=0 auto_schedule=false \
-		target=$(HL_TARGETS)
-	$(LD) $(RELOCATABLE) $(BIN_DIR)/$*_general*.o -o $@
+# $(BIN_DIR)/%_antisymmetric_wrapper.o: $(BIN_DIR)/generator
+# 	$^ -g $* -o $(@D) -e object,c_header \
+# 		-n $*_antisymmetric \
+# 		-f ls_internal_$*_antisymmetric_kernel \
+# 		spin_inversion=-1 auto_schedule=false \
+# 		target=$(HL_TARGETS)
+# 	$(LD) $(RELOCATABLE) $(BIN_DIR)/$*_antisymmetric*.o -o $@
+# 
+# $(BIN_DIR)/%_general_wrapper.o: $(BIN_DIR)/generator
+# 	$^ -g $* -o $(@D) -e object,c_header \
+# 		-n $*_general \
+# 		-f ls_internal_$*_general_kernel \
+# 		spin_inversion=0 auto_schedule=false \
+# 		target=$(HL_TARGETS)
+# 	$(LD) $(RELOCATABLE) $(BIN_DIR)/$*_general*.o -o $@
 
 # $(BIN_DIR)/%/apply_off_diagonal.a: $(BIN_DIR)/generator
 # 	@mkdir -p $(@D)
