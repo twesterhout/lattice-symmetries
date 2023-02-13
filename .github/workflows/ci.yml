@@ -108,12 +108,12 @@ jobs:
         curl -L -O https://github.com/halide/Halide/releases/download/v${HL_VERSION}/${HL_BASENAME}.tar.gz
         tar -xf ${HL_BASENAME}.tar.gz
         rm ${HL_BASENAME}.tar.gz
-        ln --symbolic Halide-${HL_VERSION}-${{ matrix.HL_ARCH }}-${HL_BITS}-${{ matrix.HL_OS }} Halide
+        mv Halide-${HL_VERSION}-${{ matrix.HL_ARCH }}-${HL_BITS}-${{ matrix.HL_OS }} Halide
         cd ..
         ls -l third_party
         ls -l third_party/Halide/include
         ls -l third_party/Halide/share
-        find third_party/Halide
+        find third_party/Halide -type f
 
     - name: Build
       run: |
