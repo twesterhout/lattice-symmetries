@@ -11,14 +11,23 @@ source:
 
 build:
   number: 2
- 
+
+test:
+  requires:
+    - pytest
+  source_files:
+    - run_tests.py
+  commands:
+    - python -m pytest run_tests.py
+
+
 requirements:
   build:
     - {{ compiler('c') }}
     - gmp
-    - libffi
-    - numactl-libs-cos7-x86_64 # [linux]
-    - libzlib
+      # - libffi
+      # - numactl-libs-cos7-x86_64 # [linux]
+      # - zlib
 
   host:
     - python
@@ -35,8 +44,8 @@ requirements:
     - loguru
     # Runtime libraries needed by C, Haskell, and Chapel code
     - gmp
-    - libffi
-    - libzlib
-    - numactl-libs-cos7-x86_64 # [linux]
+      # - libffi
+      # - zlib
+      # - numactl-libs-cos7-x86_64 # [linux]
     - sysroot_linux-64 # [linux]
-    - libstdcxx-ng # [linux]
+      # - libstdcxx-ng # [linux]

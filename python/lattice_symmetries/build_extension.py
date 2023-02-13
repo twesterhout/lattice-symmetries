@@ -5,7 +5,7 @@ import os
 def get_chapel_lib_path(prefix="lattice_symmetries"):
     print(os.getcwd())
     print(os.listdir(prefix))
-    for f in glob.glob(os.path.join(prefix, "lattice-symmetries-chapel-*")):
+    for f in glob.glob(os.path.join(prefix, "lattice-symmetries-chapel*")):
         print("get_chapel_lib_path -> {}".format(f[len(prefix) + 1:]))
         return f[len(prefix) + 1:]
     return os.environ.get("LATTICE_SYMMETRIES_PATH")

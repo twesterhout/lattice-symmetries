@@ -41,7 +41,7 @@ from scipy.sparse.linalg import LinearOperator
 
 from ._ls_hs import ffi, lib
 
-__version__ = "2.0.3"
+__version__ = "2.0.4"
 
 
 class _RuntimeInitializer:
@@ -675,13 +675,6 @@ class Operator(LinearOperator):
 
     def __matmul__(self, other: NDArray[Any]) -> NDArray[Any]:
         return self.apply_to_state_vector(other)
-
-    def __str__(self):
-        """Get the string representation of the underlying expression"""
-        c_str = lib.ls_hs_operator_pretty_terms(self._payload)
-        s = ffi.string(c_str).decode("utf-8")
-        lib.ls_hs_destroy_string(c_str)
-        return s
 
     def __repr__(self):
         return "<Operator defined on {}>".format(self.basis.__class__.__name__)

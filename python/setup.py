@@ -29,6 +29,6 @@ setup(
         "scipy>=1.8.0",
         "loguru",
     ],
-    package_data={"lattice_symmetries": ["lattice-symmetries-chapel-*/**"]},
+    package_data={"lattice_symmetries": ["lattice-symmetries-chapel*/**"]},
     zip_safe=False,
 )
