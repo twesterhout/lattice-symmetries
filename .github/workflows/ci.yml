@@ -109,6 +109,8 @@ jobs:
         tar -xf ${HL_BASENAME}.tar.gz
         rm ${HL_BASENAME}.tar.gz
         ln --symbolic ${HL_BASENAME} Halide
+        cd ..
+        ls -l third_party
 
     - name: Build
       run: |
