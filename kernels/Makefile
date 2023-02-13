@@ -59,6 +59,7 @@ endif
 # CFLAGS += -I ../cbits -isystem $(HALIDE_DISTRIB_PATH)/include/ -isystem $(HALIDE_DISTRIB_PATH)/share/Halide/tools/ -Wall -Wextra -Wpedantic -Wconversion -Wdouble-promotion -Wformat=2 -Wformat-overflow=2 -Winit-self -Wimplicit-fallthrough -Wunused -Wuninitialized -Wstrict-overflow=2 -Wduplicated-branches -Wfloat-equal -Wshadow -Wundef -Wunused-macros -Wmissing-field-initializers
 $(info "HALIDE_PATH=$(HALIDE_PATH)")
 $(info "BIN_DIR=$(BIN_DIR)")
+$(info "find: $(shell find $(HALIDE_PATH) -name "GenGen.cpp")")
 
 HL_LIB_PATH = $(dir $(shell find $(HALIDE_PATH) -name "libHalide.*" | head -n1))
 HL_SHARE_PATH = $(dir $(shell find $(HALIDE_PATH) -name "GenGen.cpp"))
