@@ -111,17 +111,19 @@ jobs:
         ln --symbolic Halide-${HL_VERSION}-${{ matrix.HL_ARCH }}-${HL_BITS}-${{ matrix.HL_OS }} Halide
         cd ..
         ls -l third_party
-        ls -l third_party/Halide
+        ls -l third_party/Halide/include
+        ls -l third_party/Halide/share
+        find third_party/Halide
 
     - name: Build
       run: |
-        make HALIDE_PATH=$PWD/third_party/Halide
+        make
 
     - name: Test
       run: |
         # export LD_LIBRARY_PATH=$PWD/kernels/build:$LD_LIBRARY_PATH
         # export DYLD_LIBRARY_PATH=$PWD/kernels/build:$DYLD_LIBRARY_PATH
-        make HALIDE_PATH=$PWD/third_party/Halide check
+        make check
 
     # - name: Package
     #   run: |
