@@ -1,36 +1,22 @@
 .POSIX:
 .SUFFIXES:
 
-# CC = cc
-# HDF5_CFLAGS = -fPIC
-# HDF5_MAJOR = 1
-# HDF5_MINOR = 12
-# HDF5_PATCH = 1
-# HDF5_VERSION = $(HDF5_MAJOR).$(HDF5_MINOR).$(HDF5_PATCH)
-# HDF5_PREFIX = $(PWD)/third_party/hdf5
+# NOTE: You probably want to override the following
+export HALIDE_PATH = $(PWD)/third_party/Halide
+export BIN_DIR = $(PWD)/kernel-build
 
-# UNAME = $(shell uname)
-# ifeq ($(UNAME), Darwin)
-#   # NPROC = $(shell sysctl -n hw.ncpu)
-#   SHARED_EXT = dylib
-# else
-#   # NPROC = $(shell nproc --all)
-#   SHARED_EXT = so
-# endif
+# Command to use to run docker
+SUDO = sudo
 
 .PHONY: all
 all: haskell
 
-# PREFIX = $(PWD)
-# PACKAGE = lattice-symmetries-haskell
-# GIT_COMMIT = $(shell git rev-parse --short HEAD)
-# DIST = $(PACKAGE)-$(GIT_COMMIT)
-
-HALIDE_PATH ?= $(PWD)/third_party/Halide
-BIN_DIR = $(PWD)/kernels/build
-
-TRUE_HALIDE_PATH := $(realpath $(HALIDE_PATH))
-$(info $(TRUE_HALIDE_PATH))
+# If HALIDE_PATH is not an absolute path, make it so, because otherwise our
+# sub-makefile will fail
+ifneq ($(HALIDE_PATH), $(realpath $(HALIDE_PATH)))
+  TRUE_HALIDE_PATH := $(realpath $(HALIDE_PATH))
+  export HALIDE_PATH = $(TRUE_HALIDE_PATH)
+endif
 
 UNAME = $(shell uname)
 ifeq ($(UNAME), Darwin)
@@ -47,10 +33,12 @@ haskell: cabal.project.local kernels
 kernels: $(BIN_DIR)/libkernels.a
 
 $(BIN_DIR)/libkernels.a:
-	$(MAKE) -C kernels BIN_DIR=$(BIN_DIR) HALIDE_PATH=$(TRUE_HALIDE_PATH)
+	$(MAKE) -C kernels
+	# $(MAKE) -C kernels BIN_DIR=$(BIN_DIR) HALIDE_PATH=$(TRUE_HALIDE_PATH)
 
 cabal.project.local:
-	$(MAKE) -C kernels BIN_DIR=$(BIN_DIR) HALIDE_PATH=$(TRUE_HALIDE_PATH) ../cabal.project.local
+	$(MAKE) -C kernels ../cabal.project.local
+	# $(MAKE) -C kernels BIN_DIR=$(BIN_DIR) HALIDE_PATH=$(TRUE_HALIDE_PATH) ../cabal.project.local
 
 # Determine the GHC version with which the library was built
 GHC_VERSION := $(shell ghc --version | sed -e 's/[^0-9]*//')
@@ -58,8 +46,8 @@ GHC_VERSION := $(shell ghc --version | sed -e 's/[^0-9]*//')
 LIBRARY_NAME = liblattice_symmetries_haskell.$(SHARED_EXT)
 HASKELL_LIBRARY := $(shell find dist-newstyle/ -type f -name $(LIBRARY_NAME) | grep $(GHC_VERSION))
 
-.PHONY: bindist
-bindist: haskell
+.PHONY: bundle
+bundle: haskell
 	export HASKELL_LIBRARY=$$(find dist-newstyle/ -type f -name $(LIBRARY_NAME) | grep $(GHC_VERSION)) && \
 	mkdir -p bundle/include && \
 	install -m644 cbits/lattice_symmetries_haskell.h bundle/include/ && \
@@ -75,6 +63,43 @@ bindist: haskell
 	install -m644 $$HASKELL_LIBRARY bundle/lib/ && \
 	patchelf --set-rpath '$$ORIGIN/haskell' bundle/lib/$(LIBRARY_NAME) && \
 	find bundle/lib/haskell -type f -exec patchelf --set-rpath '$$ORIGIN' {} \;
+
+.PHONY: bundle-docker
+bundle-docker: 
+	mkdir -p $@
+	mkdir -p kernel-build-docker
+	mkdir -p dist-newstyle-docker
+	WORKDIR=/work/lattice-symmetries-haskell && \
+	$(SUDO) docker run --rm \
+	  -v $$PWD/src:$$WORKDIR/src:ro \
+	  -v $$PWD/lib:$$WORKDIR/lib:ro \
+	  -v $$PWD/test:$$WORKDIR/test:ro \
+	  -v $$PWD/cbits:$$WORKDIR/cbits:ro \
+	  -v $$PWD/kernels:$$WORKDIR/kernels:ro \
+	  -v $$PWD/LICENSE:$$WORKDIR/LICENSE:ro \
+	  -v $$PWD/README.md:$$WORKDIR/README.md:ro \
+	  -v $$PWD/cabal.project:$$WORKDIR/cabal.project:ro \
+	  -v $$PWD/lattice-symmetries-haskell.cabal:$$WORKDIR/lattice-symmetries-haskell.cabal:ro \
+	  -v $$PWD/Makefile:$$WORKDIR/Makefile:ro \
+	  -v $$PWD/$@:$$WORKDIR/bundle:z \
+	  -v $$PWD/kernel-build-docker:$$WORKDIR/kernel-build:z \
+	  -v $$PWD/dist-newstyle-docker:$$WORKDIR/dist-newstyle:z \
+	  twesterhout/lattice-symmetries-haskell \
+	  bash -c 'make HALIDE_PATH=/opt/Halide bundle'
+	$(SUDO) chown -R $$USER:$$USER $@
+	$(SUDO) chown -R $$USER:$$USER kernel-build-docker
+	$(SUDO) chown -R $$USER:$$USER dist-newstyle-docker
+
+.PHONY: conda-package
+conda-package:
+	@rm -rf python/build python/*.egg-info python/lattice_symmetries/__pycache__ python/lattice_symmetries/*.so
+	conda build python/conda
+
+.PHONY: clean
+clean:
+	@$(MAKE) -C kernels BIN_DIR=$(BIN_DIR) HALIDE_PATH=$(TRUE_HALIDE_PATH) clean
+	cabal clean
+	rm -rf dist-newstyle-docker kernel-build-docker bindist-docker
 
 # .PHONY: release
 # release: haskell
@@ -149,6 +174,3 @@ bindist: haskell
 # 	echo "Libs: -L\$${libdir} -lhdf5_hl -lhdf5 -lz" >>hdf5.pc && \
 # 	echo "Cflags: -I\$${includedir}" >>hdf5.pc
 
-.PHONY: clean
-clean:
-	@$(MAKE) -C kernels BIN_DIR=$(BIN_DIR) HALIDE_PATH=$(TRUE_HALIDE_PATH) clean

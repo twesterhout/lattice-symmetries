@@ -6,6 +6,11 @@ on:
   push:
     branches: [main]
 
+env:
+  HL_VERSION: "14.0.0"
+  HL_HASH: "6b9ed2afd1d6d0badf04986602c943e287d44e46"
+  HL_BITS: 64
+  
 jobs:
   build:
     name: Building on ${{ matrix.os }} with ghc-${{ matrix.ghc }}
@@ -13,12 +18,16 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-18.04
+          - os: ubuntu-latest
             cabal: latest
             ghc: "8.10.7"
+            HL_ARCH: "x86"
+            HL_OS: "linux"
           - os: macos-latest
             cabal: latest
             ghc: "8.10.7"
+            HL_ARCH: "x86"
+            HL_OS: "osx"
     steps:
     - uses: actions/checkout@v2
     - uses: haskell/actions/setup@v1
@@ -26,13 +35,13 @@ jobs:
       with:
         ghc-version: ${{ matrix.ghc }}
         cabal-version: ${{ matrix.cabal }}
-    - name: Install GHC with -fPIC on Linux
-      if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
-      run: |
-        ghcup install ghc \
-          --url https://github.com/twesterhout/ghc-fpic-bindist/releases/download/v0.0.2/ghc-${{ matrix.ghc }}-x86_64-linux-ubuntu-18.04-b6241f3a.tar.xz \
-          --force \
-          ${{ matrix.ghc }}
+    # - name: Install GHC with -fPIC on Linux
+    #   if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
+    #   run: |
+    #     ghcup install ghc \
+    #       --url https://github.com/twesterhout/ghc-fpic-bindist/releases/download/v0.0.2/ghc-${{ matrix.ghc }}-x86_64-linux-ubuntu-18.04-b6241f3a.tar.xz \
+    #       --force \
+    #       ${{ matrix.ghc }}
     - uses: actions/cache@v3
       # if: matrix.os == 'macos-latest'
       name: Cache ~/.cabal/store
@@ -54,14 +63,14 @@ jobs:
       run: |
         brew install libomp
 
-    - uses: conda-incubator/setup-miniconda@v2
-      if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
-      with:
-        mamba-version: "*"
-        miniforge-version: latest
-        channels: conda-forge,defaults
-        channel-priority: true
-        auto-activate-base: false
+    # - uses: conda-incubator/setup-miniconda@v2
+    #   if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
+    #   with:
+    #     mamba-version: "*"
+    #     miniforge-version: latest
+    #     channels: conda-forge,defaults
+    #     channel-priority: true
+    #     auto-activate-base: false
 
         # - uses: actions/cache@v3
         #   name: Cache ~/hdf5
@@ -83,75 +92,82 @@ jobs:
         #   run: |
         #     mkdir -p third_party
         #     cp -r third_party/hdf5 ~/
-    - name: Test Conda installation
-      if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
+    # - name: Test Conda installation
+    #   if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
+    #   run: |
+    #     mamba env create -f conda-ci-linux.yml
+    #     conda info
+    #     conda env list
+    #     conda run -n ci_devel bash -c "which \${CC}"
+    #     conda run -n ci_devel bash -c "echo \${CONDA_PREFIX}"
+    - name: Install Halide
       run: |
-        mamba env create -f conda-ci-linux.yml
-        conda info
-        conda env list
-        conda run -n ci_devel bash -c "which \${CC}"
-        conda run -n ci_devel bash -c "echo \${CONDA_PREFIX}"
+        mkdir -p third_party && cd third_party
+        export HL_BASENAME = Halide-${HL_VERSION}-${{ matrix.HL_ARCH }}-${HL_BITS}-${{ matrix.HL_OS }}-${HL_HASH}
+        echo "HL_BASENAME=$HL_BASENAME"
+        curl -L -O https://github.com/halide/Halide/releases/download/v${HL_VERSION}/${HL_BASENAME}.tar.gz
+        tar -xf ${HL_BASENAME}.tar.gz
+        rm ${HL_BASENAME}.tar.gz
+        ln --symbolic ${HL_BASENAME} Halide
 
-    - name: Build Halide kernels
+    - name: Build
       run: |
-        make kernels
-    - name: Build Haskell code
-      run: |
-        cat cabal.project.local
-        make haskell
+        make HL_PATH=$PWD/third_party/Halide
+
     - name: Test
       run: |
         # export LD_LIBRARY_PATH=$PWD/kernels/build:$LD_LIBRARY_PATH
         # export DYLD_LIBRARY_PATH=$PWD/kernels/build:$DYLD_LIBRARY_PATH
         cabal v2-test --test-show-details=direct
-    - name: Package
-      run: |
-        make release
-        # COMMIT=$(git rev-parse --short HEAD)
-        # PREFIX=lattice-symmetries-haskell-$COMMIT
-        # mkdir $PREFIX
-        # mkdir $PREFIX/include
-        # mkdir $PREFIX/lib
-        # cp cbits/lattice_symmetries_haskell.h $PREFIX/include/
-        # if [[ ${{ matrix.os }} == "macos-latest" ]]; then
-        #   export SHARED_LIB_EXTENSION=dylib
-        # else
-        #   export SHARED_LIB_EXTENSION=so
-        # fi
-        # cp kernels/build/liblattice_symmetries_core.$SHARED_LIB_EXTENSION $PREFIX/lib/
-        # find dist-newstyle -name "liblattice_symmetries_haskell.$SHARED_LIB_EXTENSION" \
-        #                    -exec cp {} $PREFIX/lib/ \;
-        # # On Linux, bundle libffi
-        # if [[ ${{ matrix.os }} != "macos-latest" ]]; then
-        #   LIBFFI=$(ldd $PREFIX/lib/liblattice_symmetries_haskell.so | grep libffi | sed -E 's:.*=>\s+(.*/libffi.so.[6-8]).*:\1:')
-        #   cp ${LIBFFI}* $PREFIX/lib/
-        # fi
 
-        COMMIT=$(git rev-parse --short HEAD)
-        PACKAGE=lattice-symmetries-haskell-$COMMIT
-        mv -v $PACKAGE.tar.bz2 $PACKAGE-${{ matrix.os }}.tar.bz2
-        # tar -cf ${PREFIX}-${{ matrix.os }}.tar $PREFIX/
-        # bzip2 ${PREFIX}-${{ matrix.os }}.tar
+    # - name: Package
+    #   run: |
+    #     make release
+    #     # COMMIT=$(git rev-parse --short HEAD)
+    #     # PREFIX=lattice-symmetries-haskell-$COMMIT
+    #     # mkdir $PREFIX
+    #     # mkdir $PREFIX/include
+    #     # mkdir $PREFIX/lib
+    #     # cp cbits/lattice_symmetries_haskell.h $PREFIX/include/
+    #     # if [[ ${{ matrix.os }} == "macos-latest" ]]; then
+    #     #   export SHARED_LIB_EXTENSION=dylib
+    #     # else
+    #     #   export SHARED_LIB_EXTENSION=so
+    #     # fi
+    #     # cp kernels/build/liblattice_symmetries_core.$SHARED_LIB_EXTENSION $PREFIX/lib/
+    #     # find dist-newstyle -name "liblattice_symmetries_haskell.$SHARED_LIB_EXTENSION" \
+    #     #                    -exec cp {} $PREFIX/lib/ \;
+    #     # # On Linux, bundle libffi
+    #     # if [[ ${{ matrix.os }} != "macos-latest" ]]; then
+    #     #   LIBFFI=$(ldd $PREFIX/lib/liblattice_symmetries_haskell.so | grep libffi | sed -E 's:.*=>\s+(.*/libffi.so.[6-8]).*:\1:')
+    #     #   cp ${LIBFFI}* $PREFIX/lib/
+    #     # fi
 
-    - uses: actions/upload-artifact@v3
-      with:
-        name: lattice-symmetries-haskell-${{ matrix.os }}
-        path: lattice-symmetries-haskell-*-${{ matrix.os }}.tar.bz2
+    #     COMMIT=$(git rev-parse --short HEAD)
+    #     PACKAGE=lattice-symmetries-haskell-$COMMIT
+    #     mv -v $PACKAGE.tar.bz2 $PACKAGE-${{ matrix.os }}.tar.bz2
+    #     # tar -cf ${PREFIX}-${{ matrix.os }}.tar $PREFIX/
+    #     # bzip2 ${PREFIX}-${{ matrix.os }}.tar
 
-  release:
-    name: Creating a release
-    needs: [build]
-    runs-on: ubuntu-20.04
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v2
-      - name: Inspect directory after downloading artifacts
-        run: |
-          ls -alFR
-      - name: Create release and upload artifacts
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          wget -q https://github.com/TheAssassin/pyuploadtool/releases/download/continuous/pyuploadtool-x86_64.AppImage
-          chmod +x pyuploadtool-x86_64.AppImage
-          ./pyuploadtool-x86_64.AppImage **/lattice-symmetries-haskell-*.tar.bz2
+    # - uses: actions/upload-artifact@v3
+    #   with:
+    #     name: lattice-symmetries-haskell-${{ matrix.os }}
+    #     path: lattice-symmetries-haskell-*-${{ matrix.os }}.tar.bz2
+
+  # release:
+  #   name: Creating a release
+  #   needs: [build]
+  #   runs-on: ubuntu-20.04
+  #   steps:
+  #     - name: Download artifacts
+  #       uses: actions/download-artifact@v2
+  #     - name: Inspect directory after downloading artifacts
+  #       run: |
+  #         ls -alFR
+  #     - name: Create release and upload artifacts
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #       run: |
+  #         wget -q https://github.com/TheAssassin/pyuploadtool/releases/download/continuous/pyuploadtool-x86_64.AppImage
+  #         chmod +x pyuploadtool-x86_64.AppImage
+  #         ./pyuploadtool-x86_64.AppImage **/lattice-symmetries-haskell-*.tar.bz2

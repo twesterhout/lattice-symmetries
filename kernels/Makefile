@@ -66,7 +66,8 @@ ifeq ($(UNAME), Darwin)
 endif
 
 HL_LDFLAGS ?= -Wl,-rpath,$(HALIDE_PATH)/lib -L $(HALIDE_PATH)/lib \
-              -Wl,-rpath,$(HALIDE_PATH)/lib64 -L $(HALIDE_PATH)/lib64 -lHalide -lz
+              -Wl,-rpath,$(HALIDE_PATH)/lib64 -L $(HALIDE_PATH)/lib64 \
+			  -lHalide
 ifeq ($(UNAME), Linux)
   HL_LDFLAGS += -ldl -lpthread
 endif

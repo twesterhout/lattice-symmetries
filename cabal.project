@@ -14,5 +14,5 @@ package lattice-symmetries-haskell
   haddock-html-location: https://hackage.haskell.org/package/$pkg-$version/docs
   haddock-hyperlink-source: true
   ghc-options: -fexpose-all-unfoldings -fspecialise-aggressively
-  
+
 index-state: 2022-11-24T09:02:41Z
