@@ -16,13 +16,13 @@ all: haskell
 ifneq ($(HALIDE_PATH), $(realpath $(HALIDE_PATH)))
   TRUE_HALIDE_PATH := $(realpath $(HALIDE_PATH))
   export HALIDE_PATH = $(TRUE_HALIDE_PATH)
-  $(info "Setting HALIDE_PATH to $(HALIDE_PATH) ...")
+  # $(info "Setting HALIDE_PATH to $(HALIDE_PATH) ...")
 endif
 
 ifneq ($(BIN_DIR), $(abspath $(BIN_DIR)))
   TRUE_BIN_DIR := $(abspath $(BIN_DIR))
   export BIN_DIR = $(TRUE_BIN_DIR)
-  $(info "Setting BIN_DIR to $(HALIDE_PATH) ...")
+  # $(info "Setting BIN_DIR to $(HALIDE_PATH) ...")
 endif
 
 UNAME = $(shell uname)

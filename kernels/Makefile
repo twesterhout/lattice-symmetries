@@ -49,6 +49,12 @@ ifeq ($(UNAME_M),x86_64)
 else
   CFLAGS ?= -O3 -DNDEBUG
 endif
+CFLAGS += -Wall -Wextra -Wpedantic -Wconversion -Wdouble-promotion \
+          -Wformat=2 -Wformat-overflow=2 -Winit-self \
+          -Wimplicit-fallthrough -Wunused -Wuninitialized \
+          -Wstrict-overflow=2 -Wduplicated-branches -Wfloat-equal \
+          -Wshadow -Wunused-macros -Wmissing-field-initializers \
+          -Wno-variadic-macros
 
 #
 # SHELL = bash
@@ -80,11 +86,11 @@ endif
 all: $(BIN_DIR)/libkernels.a
 
 ../cabal.project.local:
-	mkdir -p $(BIN_DIR)
-	echo "Creating cabal.project.local ..."
-	echo "-- DO NOT MODIFY (Generated automatically by kernels/Makefile)" >$@
-	echo "package lattice-symmetries-haskell" >>$@
-	echo "  extra-lib-dirs: $(BIN_DIR)" >>$@
+	@mkdir -p $(BIN_DIR)
+	@echo "Creating cabal.project.local ..."
+	@echo "-- DO NOT MODIFY (Generated automatically by kernels/Makefile)" >$@
+	@echo "package lattice-symmetries-haskell" >>$@
+	@echo "  extra-lib-dirs: $(BIN_DIR)" >>$@
 
 # ifeq ($(UNAME), Darwin)
 #   SHARED_FLAG = -dynamiclib
@@ -185,16 +191,18 @@ $(BIN_DIR)/runtime.o: $(BIN_DIR)/generator
 	@mkdir -p $(@D)
 	$^ -r runtime -o $(@D) -e object target=$(HL_TARGETS)
 
-$(BIN_DIR)/libkernels.a: $(BIN_DIR)/runtime.o \
-					     $(BIN_DIR)/kernels.o \
+$(BIN_DIR)/libkernels.a: kernels.c kernels.h ../cbits/lattice_symmetries_haskell.h \
+						 $(BIN_DIR)/runtime.o \
 					     $(BIN_DIR)/state_info_symmetric_wrapper.o \
 					     $(BIN_DIR)/state_info_antisymmetric_wrapper.o \
 					     $(BIN_DIR)/state_info_general_wrapper.o \
 					     $(BIN_DIR)/is_representative_symmetric_wrapper.o \
 					     $(BIN_DIR)/is_representative_antisymmetric_wrapper.o \
 					     $(BIN_DIR)/is_representative_general_wrapper.o
+	$(CC) -fPIC $(CFLAGS) -I../cbits -I$(BIN_DIR) -I$(HALIDE_PATH)/include -o kernels.o -c $<
 	$(AR) rcs $@ \
-		$^ \
+		kernels.o \
+		$(filter %.o, $^) \
 		$(BIN_DIR)/state_info_symmetric-*.o \
 		$(BIN_DIR)/state_info_antisymmetric-*.o \
 		$(BIN_DIR)/state_info_general-*.o \
@@ -202,12 +210,7 @@ $(BIN_DIR)/libkernels.a: $(BIN_DIR)/runtime.o \
 		$(BIN_DIR)/is_representative_antisymmetric-*.o \
 		$(BIN_DIR)/is_representative_general-*.o
 
-$(BIN_DIR)/kernels.o: kernels.c kernels.h ../cbits/lattice_symmetries_haskell.h
-	$(CC) -fPIC $(CFLAGS) -I../cbits -I$(BIN_DIR) -I$(HALIDE_PATH)/include -o $@ -c $<
-	
 $(BIN_DIR)/%_wrapper.o: $(BIN_DIR)/generator
-	echo "-g $$(echo '$*' | sed -E 's/_(general|symmetric|antisymmetric)//')"
-	echo "spin_inversion=$$(echo '$*' | grep -o -E '(general|antisymmetric|symmetric)' | sed 's/general/0/;s/antisymmetric/-1/;s/symmetric/1/;')"
 	$^ -g $$(echo '$*' | sed -E 's/_(general|symmetric|antisymmetric)//') \
 		-o $(@D) -e object,c_header \
 		-n $* \
@@ -215,7 +218,6 @@ $(BIN_DIR)/%_wrapper.o: $(BIN_DIR)/generator
 		auto_schedule=false \
 		spin_inversion=$$(echo '$*' | grep -o -E '(general|antisymmetric|symmetric)' | sed 's/general/0/;s/antisymmetric/-1/;s/symmetric/1/;') \
 		target=$(HL_TARGETS)
-	# $(LD) $(RELOCATABLE) $(BIN_DIR)/$*_symmetric*.o -o $@
 
 # $(BIN_DIR)/%_antisymmetric_wrapper.o: $(BIN_DIR)/generator
 # 	$^ -g $* -o $(@D) -e object,c_header \
