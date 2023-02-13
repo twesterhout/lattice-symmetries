@@ -103,7 +103,7 @@ jobs:
     - name: Install Halide
       run: |
         mkdir -p third_party && cd third_party
-        export HL_BASENAME = Halide-${HL_VERSION}-${{ matrix.HL_ARCH }}-${HL_BITS}-${{ matrix.HL_OS }}-${HL_HASH}
+        export HL_BASENAME=Halide-${HL_VERSION}-${{ matrix.HL_ARCH }}-${HL_BITS}-${{ matrix.HL_OS }}-${HL_HASH}
         echo "HL_BASENAME=$HL_BASENAME"
         curl -L -O https://github.com/halide/Halide/releases/download/v${HL_VERSION}/${HL_BASENAME}.tar.gz
         tar -xf ${HL_BASENAME}.tar.gz
