@@ -164,6 +164,7 @@ jobs:
 
     - name: Build
       run: |
+        git config --global safe.directory '*'
         make HALIDE_PATH=/opt/Halide bundle
 
     - name: Package
