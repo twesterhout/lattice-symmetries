@@ -158,7 +158,7 @@ jobs:
     needs: [build]
     runs-on: ubuntu-latest
     container:
-      image: twesterhout/lattice-symmetries-haskell:1.29.0
+      image: twesterhout/lattice-symmetries-haskell:latest
     steps:
     - uses: actions/checkout@v2
 
