@@ -39,9 +39,10 @@ from loguru import logger
 from numpy.typing import ArrayLike, NDArray
 from scipy.sparse.linalg import LinearOperator
 
-from ._ls_hs import ffi, lib
+import lattice_symmetries
+from lattice_symmetries._ls_hs import ffi, lib
 
-__version__ = "2.0.4"
+__version__ = "2.1.0"
 
 
 class _RuntimeInitializer:

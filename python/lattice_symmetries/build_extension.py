@@ -2,37 +2,46 @@ from cffi import FFI
 import glob
 import os
 
-def get_chapel_lib_path(prefix="lattice_symmetries"):
-    print(os.getcwd())
-    print(os.listdir(prefix))
-    for f in glob.glob(os.path.join(prefix, "lattice-symmetries-chapel*")):
-        print("get_chapel_lib_path -> {}".format(f[len(prefix) + 1:]))
-        return f[len(prefix) + 1:]
-    return os.environ.get("LATTICE_SYMMETRIES_PATH")
+# def get_chapel_lib_path(prefix="lattice_symmetries"):
+#     print(os.getcwd())
+#     print(os.listdir(prefix))
+#     for f in glob.glob(os.path.join(prefix, "lattice-symmetries-chapel*")):
+#         print("get_chapel_lib_path -> {}".format(f[len(prefix) + 1:]))
+#         return f[len(prefix) + 1:]
+#     return os.environ.get("LATTICE_SYMMETRIES_PATH")
 
 def get_include_dirs():
-    prefix = get_chapel_lib_path()
-    if prefix is None:
-        assert False
-        return []
-    else:
-        return [os.path.join("lattice_symmetries", prefix, "include")]
+    return []
+    # kernels_path = os.environ.get("LS_KERNELS_PATH")
+    # if kernels_path is not None:
+    #     return [os.path.join(kernels_path, "include")]
+    # else:
+    #     return []
+
+    # prefix = get_chapel_lib_path()
+    # if prefix is None:
+    #     assert False
+    #     return []
+    # else:
+    #     return [os.path.join("lattice_symmetries", prefix, "include")]
 
 def get_library_dirs():
-    prefix = get_chapel_lib_path()
-    if prefix is None:
-        assert False
-        return []
-    else:
-        return [os.path.join("lattice_symmetries", prefix, "lib")]
+    return []
+    # prefix = get_chapel_lib_path()
+    # if prefix is None:
+    #     assert False
+    #     return []
+    # else:
+    #     return [os.path.join("lattice_symmetries", prefix, "lib")]
 
 def get_runtime_dirs():
-    prefix = get_chapel_lib_path()
-    if prefix is None:
-        assert False
-        return []
-    else:
-        return [os.path.join("$ORIGIN", prefix, "lib")]
+    return []
+    # prefix = get_chapel_lib_path()
+    # if prefix is None:
+    #     assert False
+    #     return []
+    # else:
+    #     return [os.path.join("$ORIGIN", prefix, "lib")]
 
 ffibuilder = FFI()
 

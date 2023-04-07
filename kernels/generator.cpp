@@ -271,6 +271,7 @@ public:
   }
 };
 
+#if 0
 class apply_off_diagonal_generator
     : public Halide::Generator<apply_off_diagonal_generator> {
 public:
@@ -419,6 +420,7 @@ public:
     }
   }
 };
+#endif
 
 // void ls_hs_operator_apply_off_diag_kernel(
 //     ls_hs_operator const *op, ptrdiff_t batch_size, uint64_t const *alphas,
@@ -466,4 +468,4 @@ public:
 
 HALIDE_REGISTER_GENERATOR(state_info_generator, state_info)
 HALIDE_REGISTER_GENERATOR(is_representative_generator, is_representative)
-HALIDE_REGISTER_GENERATOR(apply_off_diagonal_generator, apply_off_diagonal)
+// HALIDE_REGISTER_GENERATOR(apply_off_diagonal_generator, apply_off_diagonal)

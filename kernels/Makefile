@@ -12,6 +12,9 @@ else
   SHARED_EXT = so
 endif
 
+PREFIX ?= /usr/local
+BIN_DIR ?= build
+
 # HALIDE_PATH ?= ../third_party/Halide
 # HL_VERSION = 14.0.0
 # HL_HASH = 6b9ed2afd1d6d0badf04986602c943e287d44e46
@@ -84,6 +87,12 @@ endif
 
 
 all: $(BIN_DIR)/libkernels.a
+
+install: all
+	@mkdir -p $(PREFIX)/include
+	@mkdir -p $(PREFIX)/lib
+	install -m 644 lattice_symmetries_haskell.h $(PREFIX)/include/
+	install -m 644 $(BIN_DIR)/libkernels.a $(PREFIX)/lib/
 
 ../cabal.project.local:
 	@mkdir -p $(BIN_DIR)
@@ -191,17 +200,27 @@ $(BIN_DIR)/runtime.o: $(BIN_DIR)/generator
 	@mkdir -p $(@D)
 	$^ -r runtime -o $(@D) -e object target=$(HL_TARGETS)
 
-$(BIN_DIR)/libkernels.a: kernels.c kernels.h ../cbits/lattice_symmetries_haskell.h \
-						 $(BIN_DIR)/runtime.o \
-					     $(BIN_DIR)/state_info_symmetric_wrapper.o \
-					     $(BIN_DIR)/state_info_antisymmetric_wrapper.o \
-					     $(BIN_DIR)/state_info_general_wrapper.o \
-					     $(BIN_DIR)/is_representative_symmetric_wrapper.o \
-					     $(BIN_DIR)/is_representative_antisymmetric_wrapper.o \
-					     $(BIN_DIR)/is_representative_general_wrapper.o
-	$(CC) -fPIC $(CFLAGS) -I../cbits -I$(BIN_DIR) -I$(HALIDE_PATH)/include -o kernels.o -c $<
+$(BIN_DIR)/indexing.o: indexing.c lattice_symmetries_haskell.h
+	@mkdir -p $(@D)
+	$(CC) -fPIC $(CFLAGS) -o $@ -c $<
+
+$(BIN_DIR)/reference.o: reference.c lattice_symmetries_haskell.h
+	@mkdir -p $(@D)
+	$(CC) -fPIC $(CFLAGS) -o $@ -c $<
+
+$(BIN_DIR)/libkernels.a: kernels.c kernels.h lattice_symmetries_haskell.h \
+												 $(BIN_DIR)/reference.o \
+												 $(BIN_DIR)/indexing.o \
+												 $(BIN_DIR)/runtime.o \
+												 $(BIN_DIR)/state_info_symmetric_wrapper.o \
+												 $(BIN_DIR)/state_info_antisymmetric_wrapper.o \
+												 $(BIN_DIR)/state_info_general_wrapper.o \
+												 $(BIN_DIR)/is_representative_symmetric_wrapper.o \
+												 $(BIN_DIR)/is_representative_antisymmetric_wrapper.o \
+												 $(BIN_DIR)/is_representative_general_wrapper.o
+	$(CC) -fPIC $(CFLAGS) -I../cbits -I$(BIN_DIR) -I$(HALIDE_PATH)/include -o $(BIN_DIR)/kernels.o -c $<
 	$(AR) rcs $@ \
-		kernels.o \
+		$(BIN_DIR)/kernels.o \
 		$(filter %.o, $^) \
 		$(BIN_DIR)/state_info_symmetric-*.o \
 		$(BIN_DIR)/state_info_antisymmetric-*.o \
@@ -215,7 +234,6 @@ $(BIN_DIR)/%_wrapper.o: $(BIN_DIR)/generator
 		-o $(@D) -e object,c_header \
 		-n $* \
 		-f ls_internal_$*_kernel \
-		auto_schedule=false \
 		spin_inversion=$$(echo '$*' | grep -o -E '(general|antisymmetric|symmetric)' | sed 's/general/0/;s/antisymmetric/-1/;s/symmetric/1/;') \
 		target=$(HL_TARGETS)
 

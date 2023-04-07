@@ -48,95 +48,50 @@ typedef struct ls_internal_halide_kernels_list {
   // ls_internal_halide_apply_off_diag_kernel_type apply_off_diag;
 } ls_internal_halide_kernels_list;
 
-// #define LS_AVX2_KERNELS                                                        \
-//   (ls_internal_halide_kernels_list) {                                          \
-//     .state_info_general = &ls_internal_state_info_general_kernel_avx2_fma,     \
-//     .state_info_symmetric = &ls_internal_state_info_symmetric_kernel_avx2_fma, \
-//     .state_info_antisymmetric =                                                \
-//         &ls_internal_state_info_antisymmetric_kernel_avx2_fma,                 \
-//     .is_representative_general =                                               \
-//         &ls_internal_is_representative_general_kernel_avx2_fma,                \
-//     .is_representative_symmetric =                                             \
-//         &ls_internal_is_representative_symmetric_kernel_avx2_fma,              \
-//     .is_representative_antisymmetric =                                         \
-//         &ls_internal_is_representative_antisymmetric_kernel_avx2_fma,          \
-//     .apply_off_diag = &ls_internal_apply_off_diag_kernel_avx2_fma,             \
-//   }
-
-// #define LS_AVX_KERNELS                                                         \
-//   (ls_internal_halide_kernels_list) {                                          \
-//     .state_info_general = &ls_internal_state_info_general_kernel_avx,          \
-//     .state_info_symmetric = &ls_internal_state_info_symmetric_kernel_avx,      \
-//     .state_info_antisymmetric =                                                \
-//         &ls_internal_state_info_antisymmetric_kernel_avx,                      \
-//     .is_representative_general =                                               \
-//         &ls_internal_is_representative_general_kernel_avx,                     \
-//     .is_representative_symmetric =                                             \
-//         &ls_internal_is_representative_symmetric_kernel_avx,                   \
-//     .is_representative_antisymmetric =                                         \
-//         &ls_internal_is_representative_antisymmetric_kernel_avx,               \
-//     .apply_off_diag = &ls_internal_apply_off_diag_kernel_avx,                  \
-//   }
-
-// #define LS_SSE4_KERNELS                                                        \
-//   (ls_internal_halide_kernels_list) {                                          \
-//     .state_info_general = &ls_internal_state_info_general_kernel_sse41,        \
-//     .state_info_symmetric = &ls_internal_state_info_symmetric_kernel_sse41,    \
-//     .state_info_antisymmetric =                                                \
-//         &ls_internal_state_info_antisymmetric_kernel_sse41,                    \
-//     .is_representative_general =                                               \
-//         &ls_internal_is_representative_general_kernel_sse41,                   \
-//     .is_representative_symmetric =                                             \
-//         &ls_internal_is_representative_symmetric_kernel_sse41,                 \
-//     .is_representative_antisymmetric =                                         \
-//         &ls_internal_is_representative_antisymmetric_kernel_sse41,             \
-//     .apply_off_diag = &ls_internal_apply_off_diag_kernel_sse41,                \
-//   }
-
-static void init_kernels_list(int const number_bits,
-                              ls_internal_halide_kernels_list *list) {
-  LS_CHECK(number_bits <= 64, "too many bits");
-  *list = (ls_internal_halide_kernels_list){
-      .state_info_general = &ls_internal_state_info_general_kernel,
-      .state_info_symmetric = &ls_internal_state_info_symmetric_kernel,
-      .state_info_antisymmetric = &ls_internal_state_info_antisymmetric_kernel,
-      .is_representative_general =
-          &ls_internal_is_representative_general_kernel,
-      .is_representative_symmetric =
-          &ls_internal_is_representative_symmetric_kernel,
-      .is_representative_antisymmetric =
-          &ls_internal_is_representative_antisymmetric_kernel,
-      // .apply_off_diag = &ls_internal_apply_off_diag_kernel,
-  };
-  // #if LS_X86_64() == 1
-  //   char const *arch = getenv("LATTICE_SYMMETRIES_ARCH");
-  //   if (arch == NULL) { // strcmp will invoke undefined behavior if we pass
-  //   it a
-  //                       // NULL pointer
-  //     arch = "";
-  //   }
-  //   __builtin_cpu_init();
-  //   if (strcmp(arch, "avx2") == 0) {
-  //     *list = LS_AVX2_KERNELS;
-  //   } else if (strcmp(arch, "avx") == 0) {
-  //     *list = LS_AVX_KERNELS;
-  //   } else if (strcmp(arch, "sse4_1") == 0) {
-  //     *list = LS_SSE4_KERNELS;
-  //   } else if (strcmp(arch, "generic") == 0) {
-  //     *list = LS_GENERIC_KERNELS;
-  //   } else if (__builtin_cpu_supports("avx2") > 0) {
-  //     *list = LS_AVX2_KERNELS;
-  //   } else if (__builtin_cpu_supports("avx") > 0) {
-  //     *list = LS_AVX_KERNELS;
-  //   } else if (__builtin_cpu_supports("sse4.1") > 0) {
-  //     *list = LS_SSE4_KERNELS;
-  //   } else {
-  //     *list = LS_GENERIC_KERNELS;
-  //   }
-  // #else
-  //   *list = LS_GENERIC_KERNELS;
-  // #endif
-}
+// static void init_kernels_list(int const number_bits,
+//                               ls_internal_halide_kernels_list *list) {
+//   LS_CHECK(number_bits <= 64, "too many bits");
+//   *list = (ls_internal_halide_kernels_list){
+//       .state_info_general = &ls_internal_state_info_general_kernel,
+//       .state_info_symmetric = &ls_internal_state_info_symmetric_kernel,
+//       .state_info_antisymmetric = &ls_internal_state_info_antisymmetric_kernel,
+//       .is_representative_general =
+//           &ls_internal_is_representative_general_kernel,
+//       .is_representative_symmetric =
+//           &ls_internal_is_representative_symmetric_kernel,
+//       .is_representative_antisymmetric =
+//           &ls_internal_is_representative_antisymmetric_kernel,
+//       // .apply_off_diag = &ls_internal_apply_off_diag_kernel,
+//   };
+//   // #if LS_X86_64() == 1
+//   //   char const *arch = getenv("LATTICE_SYMMETRIES_ARCH");
+//   //   if (arch == NULL) { // strcmp will invoke undefined behavior if we pass
+//   //   it a
+//   //                       // NULL pointer
+//   //     arch = "";
+//   //   }
+//   //   __builtin_cpu_init();
+//   //   if (strcmp(arch, "avx2") == 0) {
+//   //     *list = LS_AVX2_KERNELS;
+//   //   } else if (strcmp(arch, "avx") == 0) {
+//   //     *list = LS_AVX_KERNELS;
+//   //   } else if (strcmp(arch, "sse4_1") == 0) {
+//   //     *list = LS_SSE4_KERNELS;
+//   //   } else if (strcmp(arch, "generic") == 0) {
+//   //     *list = LS_GENERIC_KERNELS;
+//   //   } else if (__builtin_cpu_supports("avx2") > 0) {
+//   //     *list = LS_AVX2_KERNELS;
+//   //   } else if (__builtin_cpu_supports("avx") > 0) {
+//   //     *list = LS_AVX_KERNELS;
+//   //   } else if (__builtin_cpu_supports("sse4.1") > 0) {
+//   //     *list = LS_SSE4_KERNELS;
+//   //   } else {
+//   //     *list = LS_GENERIC_KERNELS;
+//   //   }
+//   // #else
+//   //   *list = LS_GENERIC_KERNELS;
+//   // #endif
+// }
 
 static inline uint64_t get_flip_mask_64(unsigned const n) {
   return n == 0U ? (uint64_t)0 : ((~(uint64_t)0) >> (64U - n));
