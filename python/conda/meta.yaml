@@ -1,0 +1,51 @@
+{% set data = load_setup_py_data(setup_file='setup.py') %}
+
+package:
+  name: lattice-symmetries
+  version: {{ data.get('version') }}
+
+source:
+  # git_url: https://github.com/twesterhout/nqs-playground
+  # git_rev: develop
+  - path: ../
+
+build:
+  number: 2
+
+test:
+  requires:
+    - pytest
+  source_files:
+    - run_tests.py
+  commands:
+    - python -m pytest run_tests.py
+
+
+requirements:
+  build:
+    - {{ compiler('c') }}
+    - gmp
+      # - libffi
+      # - numactl-libs-cos7-x86_64 # [linux]
+      # - zlib
+
+  host:
+    - python
+    - pip
+    - cffi>=1.15
+    - numpy
+    - scipy
+    - loguru
+
+  run:
+    - cffi>=1.15
+    - numpy
+    - scipy
+    - loguru
+    # Runtime libraries needed by C, Haskell, and Chapel code
+    - gmp
+      # - libffi
+      # - zlib
+      # - numactl-libs-cos7-x86_64 # [linux]
+    - sysroot_linux-64 # [linux]
+      # - libstdcxx-ng # [linux]

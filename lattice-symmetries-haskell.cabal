@@ -1,0 +1,239 @@
+cabal-version:   3.0
+name:            lattice-symmetries-haskell
+version:         2.0.0
+synopsis:        See README for more info
+description:     See README for more info
+license:         BSD-3-Clause
+license-file:    LICENSE
+author:          Tom Westerhout
+maintainer:
+  Tom Westerhout <14264576+twesterhout@users.noreply.github.com>
+
+copyright:       2021-2023 Tom Westerhout
+category:        Math
+build-type:      Simple
+extra-doc-files: README.md
+
+tested-with:     GHC ==8.10.7
+
+flag use-standalone
+  description:
+    Use standalone option for foreign-library (requires GHC which was built with -fPIC support)
+
+  manual:      True
+  default:     False
+
+-- custom-setup
+--   setup-depends:       base, containers, Cabal, filepath
+
+common common-options
+  build-depends:
+    , base    >=4.13.0.0
+    , relude
+
+  mixins:
+    base hiding (Prelude),
+    relude (Relude as Prelude)
+
+  ghc-options:
+    -Wall -Wcompat -Widentities -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+
+  if impl(ghc >=8.0)
+    ghc-options: -Wredundant-constraints
+
+  if impl(ghc >=8.2)
+    ghc-options: -fhide-source-paths
+
+  if impl(ghc >=8.4)
+    ghc-options: -Wmissing-export-lists -Wpartial-fields
+
+  if impl(ghc >=8.8)
+    ghc-options: -Wmissing-deriving-strategies
+
+  default-language:   Haskell2010
+  default-extensions:
+    AllowAmbiguousTypes
+    BangPatterns
+    BinaryLiterals
+    DataKinds
+    DeriveAnyClass
+    DeriveGeneric
+    DerivingVia
+    FlexibleContexts
+    FlexibleInstances
+    GeneralizedNewtypeDeriving
+    MultiParamTypeClasses
+    OverloadedStrings
+    ScopedTypeVariables
+    StandaloneDeriving
+    TypeApplications
+    TypeFamilies
+
+library
+  import:          common-options
+  hs-source-dirs:  src
+  exposed-modules:
+    LatticeSymmetries
+    LatticeSymmetries.Algebra
+    LatticeSymmetries.Basis
+    LatticeSymmetries.Benes
+    LatticeSymmetries.BitString
+    LatticeSymmetries.ComplexRational
+    LatticeSymmetries.Dense
+    LatticeSymmetries.Expr
+    LatticeSymmetries.FFI
+    LatticeSymmetries.Generator
+    LatticeSymmetries.Group
+    LatticeSymmetries.NonbranchingTerm
+    LatticeSymmetries.Operator
+    LatticeSymmetries.Parser
+    LatticeSymmetries.Utils
+
+  -- LatticeSymmetries.IO
+  -- c-sources:           cbits/helpers.c
+  --                      cbits/csr.c
+  --                      cbits/reference.c
+  -- cc-options:          -Wall -Wextra -Wpedantic
+  include-dirs:    cbits
+
+  -- build-tool-depends:  hsc2hs:hsc2hs
+  build-depends:
+    , aeson              >=2
+    , bytestring
+    , co-log
+    , constraints
+    , containers
+    , mtl
+    , parsec
+    , prettyprinter      >=1.7
+    , primitive
+    , safe-exceptions
+    , scientific
+    , text
+    , unliftio-core
+    , vector
+    , vector-algorithms
+    , yaml
+
+  -- , binary
+  -- , vector-binary-instances
+  -- , exceptions
+  -- , co-log-core
+  -- , vector-algorithms
+  -- , deepseq
+  -- , ghc-prim
+  -- , mtl
+  -- , random >= 1.2.0
+  -- , mwc-random
+  -- , text
+  -- , ghc-dump-core
+  -- , ghc-dump-util
+  -- , template-haskell
+  -- , inline-c
+  -- , binary
+  -- , vector-binary-instances
+  -- , hdf5-hs
+  -- , HaskellForMaths
+  extra-libraries: kernels
+
+  -- pkgconfig-depends:   lattice_symmetries
+  -- c-sources:           kernels/indexing.c
+  --                      kernels/reference.c
+  -- kernels/kernels.c
+  include-dirs:    cbits
+  cc-options:
+    -fPIC -O3 -DNDEBUG -Wall -Wextra -Wpedantic -Wconversion
+    -Wdouble-promotion -Wformat=2 -Wformat-overflow=2 -Winit-self
+    -Wimplicit-fallthrough -Wunused -Wuninitialized -Wstrict-overflow=2
+    -Wduplicated-branches -Wfloat-equal -Wshadow -Wunused-macros
+    -Wmissing-field-initializers -Wno-variadic-macros
+
+foreign-library lattice_symmetries_haskell
+  import:         common-options
+  type:           native-shared
+
+  if ((os(windows) || os(osx)) || os(osx))
+    options: standalone
+
+  -- For some reason libffi is not linked properly
+  if (os(osx) || os(osx))
+    extra-libraries: ffi
+
+  if (os(linux) && flag(use-standalone))
+    options:         standalone
+
+    -- For some reason libnuma is not linked
+    extra-libraries: numa
+
+  --   mod-def-file: MyForeignLib.def
+  hs-source-dirs: lib
+  other-modules:  ForeignLibrary
+  c-sources:      cbits/init.c
+  cc-options:     -fPIC -Wall -Wextra
+  include-dirs:   cbits
+  ghc-options:    -Wno-missing-signatures -threaded
+  build-depends:
+    , aeson
+    , bytestring
+    , lattice-symmetries-haskell
+    , prettyprinter
+    , safe-exceptions
+    , split
+    , text
+    , vector
+
+  buildable:      True
+
+-- executable example01
+--   import:              common-options
+--   hs-source-dirs:      app
+--   main-is:             Example01.hs
+--   build-depends:       lattice-symmetries-haskell
+--                      , prettyprinter >= 1.7
+--   -- extra-libraries:     -- HSrts-ghc8.10.7
+--                        -- HSghc-prim-0.6.1
+--                        -- HSghc-boot-th-8.10.7
+--   ghc-options:         -threaded
+--                        -rtsopts
+--                        -with-rtsopts=-N
+--   buildable: False
+
+-- executable ising-ground-state
+--   import:              common-options
+--   hs-source-dirs:      app
+--   main-is:             Main.hs
+--   build-depends:       ising-glass-annealer
+--                      , vector
+--                      , hdf5-hs
+--   ghc-options:         -threaded
+--                        -rtsopts
+--                        -with-rtsopts=-N
+-- 
+test-suite lattice-symmetries-haskell-test
+  import:         common-options
+  type:           exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is:        Spec.hs
+  other-modules:
+    LatticeSymmetries.BenesSpec
+    LatticeSymmetries.BitStringSpec
+    LatticeSymmetries.ComplexRationalSpec
+    LatticeSymmetries.DenseSpec
+    LatticeSymmetries.GeneratorSpec
+    LatticeSymmetries.NonbranchingTermSpec
+    LatticeSymmetries.ParserSpec
+
+  build-depends:
+    , aeson
+    , hspec
+    , lattice-symmetries-haskell
+    , parsec
+    , prettyprinter
+    , QuickCheck
+    , vector
+    , yaml
+
+  -- , mwc-random
+  ghc-options:    -Wno-orphans -threaded -rtsopts -with-rtsopts=-N
+  buildable:      True
