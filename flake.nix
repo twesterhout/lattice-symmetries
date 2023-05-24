@@ -30,22 +30,16 @@
           # An overlay to replace ghc961 with a custom one that has
           # the static RTS libraries compiled with -fPIC. This lets us use
           # these static libraries to build a self-contained shared library.
-          (final: prev: {
-            haskell = prev.haskell // {
-              packages = prev.haskell.packages // {
-                ghc961 = prev.haskell.packages.ghc961 // {
-                  ghc = prev.haskell.compiler.ghc961.override {
-                    enableRelocatedStaticLibs = true;
-                  };
-                };
+          (final: prev:
+            let
+              ourGhc = prev.haskell.compiler.ghc961.override {
+                enableRelocatedStaticLibs = true;
               };
-              compiler = prev.haskell.compiler // {
-                ghc961 = prev.haskell.compiler.ghc961.override {
-                  enableRelocatedStaticLibs = true;
-                };
-              };
-            };
-          })
+            in
+            lib.recursiveUpdate prev {
+              haskell.packages.ghc961.ghc = ourGhc;
+              haskell.compiler.ghc961 = ourGhc;
+            })
         ];
       };
       haskellPackages =
