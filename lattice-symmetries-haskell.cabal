@@ -39,6 +39,9 @@ common common-options
     -Wall -Wcompat -Widentities -Wincomplete-uni-patterns
     -Wincomplete-record-updates
 
+  ghc-options:
+    -fPIC -fexternal-dynamic-refs
+
   if impl(ghc >=8.0)
     ghc-options: -Wredundant-constraints
 
@@ -149,12 +152,22 @@ library
     -Wduplicated-branches -Wfloat-equal -Wshadow -Wunused-macros
     -Wmissing-field-initializers -Wno-variadic-macros
 
+-- foreign-library foo_bar
+--   type:           native-shared
+--   options: standalone
+--   hs-source-dirs: lib
+--   other-modules:  FooBar
+--   default-language: GHC2021
+--   build-depends:
+--     , base
+
 foreign-library lattice_symmetries_haskell
   import:         common-options
   type:           native-shared
 
-  if ((os(windows) || os(osx)) || os(osx))
-    options: standalone
+  options: standalone
+  -- if ((os(windows) || os(osx)) || os(osx))
+  --   options: standalone
 
   -- For some reason libffi is not linked properly
   if (os(osx) || os(osx))
