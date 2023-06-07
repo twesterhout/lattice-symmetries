@@ -29,7 +29,9 @@ record ConcurrentAccessor {
     // logDebug(arr.domain);
     // logDebug(arr[arr.domain.low]);
     // logDebug(arr[arr.domain.low].locale);
-    this._data = c_ptrTo(arr[arr.domain.low]):c_ptr(chpl__processorAtomicType(eltType));
+    // We go via c_void_ptr, because otherwise chpl issues a warning that we're
+    // casting to a non-equivalent pointer type
+    this._data = c_ptrTo(arr[arr.domain.low]):c_void_ptr:c_ptr(chpl__processorAtomicType(eltType));
     this._numElts = arr.size;
     // It makes no sense to have more locks that there are array elements:
     // if numLocks > _numElts then

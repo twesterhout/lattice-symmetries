@@ -51,7 +51,7 @@ import Foreign
 import Foreign.C.Types
 import LatticeSymmetries.ComplexRational (Cscalar)
 
-#include "lattice_symmetries_haskell.h"
+#include "lattice_symmetries_types.h"
 
 newtype {-# CTYPE "lattice_symmetries_haskell.h" "ls_hs_particle_type" #-} Cparticle_type = Cparticle_type CInt
   deriving stock (Show, Eq)

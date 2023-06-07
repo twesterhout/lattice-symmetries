@@ -8,6 +8,7 @@ use DynamicIters;
 use CommDiagnostics;
 use ChapelLocks;
 import Random;
+import OS.POSIX;
 
 use CommonParameters;
 use FFI;
@@ -33,7 +34,7 @@ private proc meanAndErrString(timings : [] real) {
 
 /* 
  */
-private proc localDiagonalBatch(indices : range(int, BoundedRangeType.bounded, false),
+private proc localDiagonalBatch(indices : range(int, boundKind.both, false),
                                 matrix : Operator, const ref x : [] ?eltType, ref y : [] eltType,
                                 const ref representatives : [] uint(64)) {
   const batchSize = indices.size;
@@ -41,7 +42,7 @@ private proc localDiagonalBatch(indices : range(int, BoundedRangeType.bounded, f
   // if workspace.size < batchSize then
   //   workspace.domain = {0 ..# batchSize};
   ls_internal_operator_apply_diag_x1(
-    matrix.payload, batchSize, c_const_ptrTo(representatives[indices.low]),
+    matrix.payload.deref(), batchSize, c_const_ptrTo(representatives[indices.low]),
     c_ptrTo(y[indices.low]), c_const_ptrTo(x[indices.low]));
   // ls_hs_operator_apply_diag_kernel(
   //   matrix.payload, batchSize,
@@ -62,7 +63,7 @@ private proc localDiagonal(matrix : Operator, const ref x : [] ?eltType, ref y :
                                                  representatives.size)) {
   const totalSize = representatives.size;
   // const batchSize = (totalSize + numChunks - 1) / numChunks;
-  var ranges : [0 ..# numChunks] range(int, BoundedRangeType.bounded, false) =
+  var ranges : [0 ..# numChunks] range(int, boundKind.both, false) =
     chunks(0 ..# totalSize, numChunks);
   // var workspace : [0 ..# batchSize] complex(128) = noinit;
   forall r in ranges {
@@ -326,13 +327,13 @@ record _LocalBuffer {
     assert(destLocaleIdx == here.id);
     isEmpty.write(true);
     isEOF.write(false);
-    basisStates = c_malloc(uint(64), capacity);
-    coeffs = c_malloc(coeffType, capacity);
+    basisStates = allocate(uint(64), capacity);
+    coeffs = allocate(coeffType, capacity);
   }
 
   proc deinit() {
-    c_free(basisStates);
-    c_free(coeffs);
+    deallocate(basisStates);
+    deallocate(coeffs);
   }
 }
 
@@ -689,7 +690,7 @@ record Producer {
       radixOneStep(n, keysPtr, radixOffsets, basisStatesPtr, coeffsPtr);
       radixOneStepTimer.stop();
 
-      c_memset(c_ptrTo(submitted[0]), 0, numLocales:c_size_t * c_sizeof(bool));
+      POSIX.memset(c_ptrTo(submitted[0]), 0, numLocales:c_size_t * c_sizeof(bool));
       var remaining = numLocales;
 
       {

@@ -42,77 +42,6 @@
             })
         ];
       };
-      haskellPackages =
-        pkgs.haskell.packages.ghc961.override {
-          overrides = self: super: {
-            # Ensure that all Haskell packages are built with -fPIC
-            mkDerivation = args: (super.mkDerivation args).overrideAttrs (attrs: {
-              configureFlags = (attrs.configureFlags or [ ]) ++ [
-                "--ghc-option=-fPIC"
-                "--ghc-option=-fexternal-dynamic-refs"
-              ];
-            });
-            # Loosen constraints to make them build with 9.6.1
-            tagged = pkgs.haskell.lib.doJailbreak super.tagged;
-            zigzag = pkgs.haskell.lib.doJailbreak super.zigzag;
-            typerep-map = pkgs.haskell.lib.doJailbreak super.typerep-map;
-            relude = pkgs.haskell.lib.dontCheck (pkgs.haskell.lib.doJailbreak super.relude);
-            bytebuild = pkgs.haskell.lib.doJailbreak super.bytebuild;
-            chronos = pkgs.haskell.lib.doJailbreak super.chronos;
-            # Our project
-            lattice-symmetries-haskell =
-              (self.callCabal2nix "lattice-symmetries-haskell" (haskell-sources ./.) {
-                kernels = lattice-symmetries-kernels;
-              }).overrideAttrs
-                (attrs: {
-                  postInstall = ''
-                    ${attrs.postInstall or ""}
-                    ln --symbolic \
-                      $out/lib/ghc-*/lib/liblattice_symmetries_haskell.so \
-                      $out/lib/
-                  '';
-                });
-          };
-        };
-      # haskellPackages = ghc.override # pkgs.haskell.packages.ghc961.override
-      #   {
-      #     overrides = self: super: {
-      #       lattice-symmetries-haskell =
-      #         (self.callCabal2nix "lattice-symmetries-haskell" (haskell-sources ./.) {
-      #           kernels = lattice-symmetries-kernels;
-      #         }).overrideAttrs
-      #           (attrs: {
-      #             postInstall = ''
-      #               ${attrs.postInstall or ""}
-      #               ln --symbolic \
-      #                 $out/lib/ghc-*/liblattice_symmetries_haskell.so \
-      #                 $out/lib/
-      #             '';
-      #           });
-      #     };
-      #   };
-      # (mapAttrs (name: value:
-      #   if (value ? overrideAttrs)
-      #   then
-      #     value.overrideAttrs
-      #       (attrs: {
-      #         #
-      #       })
-      #   else value))
-      # ];
-      chapel = inputs.nix-chapel.packages.${system}.default;
-
-      lattice-symmetries-kernels = pkgs.stdenv.mkDerivation {
-        pname = "lattice-symmetries-kernels";
-        inherit version;
-        src = ./kernels;
-
-        dontConfigure = true;
-        makeFlags = [
-          "HALIDE_PATH=${pkgs.halide}"
-          "PREFIX=$(out)"
-        ];
-      };
 
       haskell-sources = root: inputs.nix-filter.lib {
         inherit root;
@@ -129,25 +58,112 @@
         ];
       };
 
+      overrideHaskellPackages = hp: withPic:
+        hp.override {
+          overrides = self: super: {
+            # Our project
+            lattice-symmetries-haskell =
+              (self.callCabal2nix "lattice-symmetries-haskell" (haskell-sources ./.) {
+                kernels = lattice-symmetries-kernels;
+              }).overrideAttrs
+                (attrs: {
+                  outputs = (attrs.outputs or [ ]) ++ [ "lib" ];
+                  postInstall = ''
+                    ${attrs.postInstall or ""}
+
+                    echo "Installing foreign library to $lib ..."
+                    mkdir -p $lib/lib
+                    install -v -Dm 755 \
+                      $out/lib/ghc-*/lib/liblattice_symmetries_haskell.so \
+                      $lib/lib/
+
+                    mkdir -p $out/include
+                    install -v -Dm 644 \
+                      lattice_symmetries_functions.h \
+                      $out/include/
+                  '';
+                });
+          } // lib.optionalAttrs withPic {
+            # Ensure that all Haskell packages are built with -fPIC
+            mkDerivation = args: (super.mkDerivation args).overrideAttrs (attrs: {
+              configureFlags = (attrs.configureFlags or [ ]) ++ [
+                "--ghc-option=-fPIC"
+                "--ghc-option=-fexternal-dynamic-refs"
+              ];
+            });
+          } // lib.optionalAttrs (lib.versionAtLeast hp.ghc.version "9.6.1") {
+            # Loosen constraints to make them build with 9.6.1
+            tagged = pkgs.haskell.lib.doJailbreak super.tagged;
+            zigzag = pkgs.haskell.lib.doJailbreak super.zigzag;
+            typerep-map = pkgs.haskell.lib.doJailbreak super.typerep-map;
+            relude = pkgs.haskell.lib.dontCheck (pkgs.haskell.lib.doJailbreak super.relude);
+            bytebuild = pkgs.haskell.lib.doJailbreak super.bytebuild;
+            chronos = pkgs.haskell.lib.doJailbreak super.chronos;
+          };
+        };
+
+      chapel = inputs.nix-chapel.packages.${system}.chapel;
+      chapelFixupBinary = inputs.nix-chapel.packages.${system}.chapelFixupBinary;
+
+      lattice-symmetries-kernels = pkgs.stdenv.mkDerivation {
+        pname = "lattice-symmetries-kernels";
+        inherit version;
+        src = ./kernels;
+
+        dontConfigure = true;
+        makeFlags = [
+          "HALIDE_PATH=${pkgs.halide}"
+          "PREFIX=$(out)"
+        ];
+      };
+
+      lattice-symmetries-haskell =
+        let
+          hp = overrideHaskellPackages pkgs.haskell.packages.ghc961 true;
+        in
+        hp.lattice-symmetries-haskell;
+
       lattice-symmetries-chapel = pkgs.stdenv.mkDerivation {
         pname = "lattice-symmetries-chapel";
         inherit version;
         src = ./chapel;
 
-        dontConfigure = true;
+        configurePhase = ''
+          which c2chapel
+          ls ${chapel}/tools/c2chapel
+
+          cat ${lattice-symmetries-haskell}/include/lattice_symmetries_functions.h
+
+          c2chapel \
+            ${lattice-symmetries-haskell}/include/lattice_symmetries_functions.h \
+            -DLS_C2CHAPEL \
+            -I${chapel}/runtime/include \
+            -I${lattice-symmetries-kernels}/include \
+            >src/FFI.chpl
+
+          # Remove the declaration of chpl_external_array since it's already
+          # present in the ExternalArray module
+          sed -i -e '/extern record chpl_external_array/,+5d' src/FFI.chpl
+          sed -i 's/extern type ls_hs_scalar = _Complex double/extern type ls_hs_scalar = complex(128)/' src/FFI.chpl
+          cat src/FFI.chpl
+          # | sed '/c2chapel thinks these typedefs are from the fake headers/q' \
+        '';
         makeFlags = [
           "PREFIX=$(out)"
-          "OPTIMIZATION=--fast"
+          # "OPTIMIZATION=--fast"
           "CHPL_CFLAGS='-I${lattice-symmetries-kernels}/include'"
-          "CHPL_LDFLAGS='-L${haskellPackages.lattice-symmetries-haskell}/lib'"
+          "CHPL_LDFLAGS='-L${lattice-symmetries-haskell.lib}/lib'"
         ];
 
         buildInputs = [
           lattice-symmetries-kernels
-          haskellPackages.lattice-symmetries-haskell
+          lattice-symmetries-haskell.lib
         ];
-        nativeBuildInputs = [
+        nativeBuildInputs = with pkgs; [
+          which
           chapel
+          chapelFixupBinary
+          gcc
         ];
       };
 
@@ -158,7 +174,7 @@
 
         buildInputs = [
           lattice-symmetries-kernels
-          haskellPackages.lattice-symmetries-haskell
+          lattice-symmetries-haskell
           lattice-symmetries-chapel
         ];
         propagatedBuildInputs = with pkgs.python3Packages; [
@@ -167,6 +183,15 @@
           numpy
           scipy
         ];
+
+        postPatch = ''
+          awk '/python-cffi: START/{flag=1;next}/python-cffi: STOP/{flag=0}flag' \
+            ${lattice-symmetries-kernels}/include/lattice_symmetries_types.h \
+            >lattice_symmetries/extracted_declarations.h
+          awk '/python-cffi: START/{flag=1;next}/python-cffi: STOP/{flag=0}flag' \
+            ${lattice-symmetries-haskell}/include/lattice_symmetries_functions.h \
+            >>lattice_symmetries/extracted_declarations.h
+        '';
 
         installCheckPhase = ''
           # we want to import the installed module that also contains the compiled library
@@ -181,7 +206,7 @@
     {
       packages = {
         kernels = lattice-symmetries-kernels;
-        haskell = haskellPackages.lattice-symmetries-haskell;
+        haskell = lattice-symmetries-haskell;
         chapel = lattice-symmetries-chapel;
         python = lattice-symmetries-python;
         ghc = ghc;
@@ -201,29 +226,41 @@
       devShells.chapel = pkgs.mkShell {
         buildInputs = [
           lattice-symmetries-kernels
-          haskellPackages.lattice-symmetries-haskell
+          lattice-symmetries-haskell
+          lattice-symmetries-haskell.lib
         ];
-        nativeBuildInputs = [
+        nativeBuildInputs = with pkgs; [
           chapel
+          gcc
         ];
         shellHook = ''
-          export CHPL_CFLAGS="-I ${lattice-symmetries-kernels}/include";
-          export CHPL_LDFLAGS="-L ${haskellPackages.lattice-symmetries-haskell}/lib/ghc-${haskellPackages.ghc.version}";
+          export LS_KERNELS="${lattice-symmetries-kernels}";
+          export LS_HASKELL="${lattice-symmetries-haskell}";
+          export LS_HASKELL_LIB="${lattice-symmetries-haskell.lib}";
+          export CHPL_CFLAGS='-I${lattice-symmetries-kernels}/include'
+          export CHPL_LDFLAGS='-L${lattice-symmetries-haskell.lib}/lib'
         '';
       };
-      devShells.default = haskellPackages.shellFor {
-        packages = ps: [ ps.lattice-symmetries-haskell ];
-        # withHoogle = true;
-        nativeBuildInputs = with pkgs; with pkgs.haskell.packages.ghc92; [
-          # cabal-fmt
-          cabal-install
-          # fourmolu
-          # haskell-language-server
-          hsc2hs
-          nil
-          nixpkgs-fmt
-        ];
-      };
+      devShells.default =
+        let
+          hp = overrideHaskellPackages pkgs.haskellPackages false;
+        in
+        hp.shellFor {
+          packages = ps: [ ps.lattice-symmetries-haskell ];
+          withHoogle = true;
+          nativeBuildInputs = with pkgs; with hp; [
+            cabal-fmt
+            cabal-install
+            fourmolu
+            haskell-language-server
+            hsc2hs
+            nil
+            nixpkgs-fmt
+          ];
+          shellHook = ''
+            export LD_LIBRARY_PATH=${lattice-symmetries-kernels}/lib:$LD_LIBRARY_PATH;
+          '';
+        };
     }
   );
 }

@@ -13,22 +13,18 @@ copyright:       2021-2023 Tom Westerhout
 category:        Math
 build-type:      Simple
 extra-doc-files: README.md
+tested-with:     GHC ==9.6.1
 
-tested-with:     GHC ==8.10.7
-
-flag use-standalone
+flag no-standalone
   description:
-    Use standalone option for foreign-library (requires GHC which was built with -fPIC support)
+    Don't use standalone option for foreign-library (it requires GHC which was built with -fPIC support)
 
   manual:      True
   default:     False
 
--- custom-setup
---   setup-depends:       base, containers, Cabal, filepath
-
 common common-options
   build-depends:
-    , base    >=4.13.0.0
+    , base    >=4.13.0.0 && <5
     , relude
 
   mixins:
@@ -36,25 +32,10 @@ common common-options
     relude (Relude as Prelude)
 
   ghc-options:
-    -Wall -Wcompat -Widentities -Wincomplete-uni-patterns
+    -W -Wall -Wcompat -Widentities -Wincomplete-uni-patterns
     -Wincomplete-record-updates
 
-  ghc-options:
-    -fPIC -fexternal-dynamic-refs
-
-  if impl(ghc >=8.0)
-    ghc-options: -Wredundant-constraints
-
-  if impl(ghc >=8.2)
-    ghc-options: -fhide-source-paths
-
-  if impl(ghc >=8.4)
-    ghc-options: -Wmissing-export-lists -Wpartial-fields
-
-  if impl(ghc >=8.8)
-    ghc-options: -Wmissing-deriving-strategies
-
-  default-language:   Haskell2010
+  default-language:   GHC2021 
   default-extensions:
     AllowAmbiguousTypes
     BangPatterns
@@ -104,7 +85,6 @@ library
   build-depends:
     , aeson              >=2
     , bytestring
-    , co-log
     , constraints
     , containers
     , mtl
@@ -152,6 +132,9 @@ library
     -Wduplicated-branches -Wfloat-equal -Wshadow -Wunused-macros
     -Wmissing-field-initializers -Wno-variadic-macros
 
+  if (os(linux) && !flag(no-standalone))
+    ghc-options: -fPIC -fexternal-dynamic-refs
+
 -- foreign-library foo_bar
 --   type:           native-shared
 --   options: standalone
@@ -165,23 +148,22 @@ foreign-library lattice_symmetries_haskell
   import:         common-options
   type:           native-shared
 
-  options: standalone
-  -- if ((os(windows) || os(osx)) || os(osx))
-  --   options: standalone
+  if ((os(windows) || os(osx)) || os(osx))
+    options: standalone
 
   -- For some reason libffi is not linked properly
   if (os(osx) || os(osx))
     extra-libraries: ffi
 
-  if (os(linux) && flag(use-standalone))
-    options:         standalone
-
-    -- For some reason libnuma is not linked
-    extra-libraries: numa
+  if (os(linux) && !flag(no-standalone))
+    options: standalone
 
   --   mod-def-file: MyForeignLib.def
   hs-source-dirs: lib
-  other-modules:  ForeignLibrary
+  other-modules:
+    ForeignLibrary
+    HeaderFileGeneration
+
   c-sources:      cbits/init.c
   cc-options:     -fPIC -Wall -Wextra
   include-dirs:   cbits
@@ -189,10 +171,14 @@ foreign-library lattice_symmetries_haskell
   build-depends:
     , aeson
     , bytestring
+    , containers
+    , directory
+    , filepath
     , lattice-symmetries-haskell
     , prettyprinter
     , safe-exceptions
     , split
+    , template-haskell
     , text
     , vector
 

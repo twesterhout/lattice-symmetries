@@ -1,24 +1,28 @@
-{-# LANGUAGE ImplicitParams #-}
-{-# LANGUAGE RankNTypes #-}
-
+-- |
+-- Module      : LatticeSymmetries.Utils
+-- Description : Random utilities
+-- Copyright   : (c) Tom Westerhout, 2022
+-- Stability   : experimental
 module LatticeSymmetries.Utils
-  ( loopM,
-    iFoldM,
-    logDebug',
-    logInfo',
-    logWarning',
-    logError',
-    ApproxEq (..),
-    peekUtf8,
-    newCString,
-    decodeCString,
-    propagateErrorToC,
-    throwC,
-    toPrettyText,
+  ( -- ** Looping constructs
+    loopM
+  , iFoldM
+
+    -- ** Error handling
+  , throwC
+  , propagateErrorToC
+
+    -- ** String handling
+  , peekUtf8
+  , newCString
+  , decodeCString
+  , toPrettyText
+
+    -- ** Testing utilities
+  , ApproxEq (..)
   )
 where
 
-import Colog
 import Data.Aeson
 import Data.ByteString (packCString, useAsCString)
 import Data.ByteString.Internal (ByteString (..))
@@ -30,11 +34,9 @@ import Foreign.Marshal.Alloc (mallocBytes)
 import Foreign.Marshal.Utils (copyBytes)
 import Foreign.Ptr (Ptr, castPtr)
 import Foreign.Storable (Storable (..))
-import GHC.Stack (freezeCallStack, popCallStack)
-import Prettyprinter (Doc, Pretty (..))
-import qualified Prettyprinter as Pretty
+import Prettyprinter (Pretty (..))
+import Prettyprinter qualified as Pretty
 import Prettyprinter.Render.Text (renderStrict)
-import System.IO.Unsafe (unsafePerformIO)
 
 loopM :: Monad m => i -> (i -> Bool) -> (i -> i) -> (i -> m ()) -> m ()
 loopM i₀ cond inc action = go i₀
@@ -52,53 +54,17 @@ iFoldM i₀ cond inc x₀ action = go x₀ i₀
       | otherwise = pure x
 {-# INLINE iFoldM #-}
 
-defaultLogAction :: LogAction IO Message
-defaultLogAction = filterBySeverity Info msgSeverity $ cmap fmtMessage logTextStderr
-
-currentLogAction :: IORef (LogAction IO Message)
-currentLogAction = unsafePerformIO $ newIORef defaultLogAction
-{-# NOINLINE currentLogAction #-}
-
-withDefaultLogger :: HasCallStack => LoggerT Message IO () -> IO ()
-withDefaultLogger f = withFrozenCallStack $ do
-  logAction <- readIORef currentLogAction
-  usingLoggerT logAction f
-
-withFrozenPoppedCallStack :: HasCallStack => (HasCallStack => a) -> a
-withFrozenPoppedCallStack do_this =
-  let ?callStack = freezeCallStack . popCallStack . popCallStack $ callStack
-   in do_this
-
-logDebug' :: HasCallStack => Text -> IO ()
-logDebug' t = withFrozenPoppedCallStack $ withDefaultLogger (logDebug t)
-
-logInfo' :: HasCallStack => Text -> IO ()
-logInfo' t = withFrozenPoppedCallStack $ withDefaultLogger (logInfo t)
-
-logWarning' :: HasCallStack => Text -> IO ()
-logWarning' t = withFrozenPoppedCallStack $ withDefaultLogger (logWarning t)
-
-logError' :: HasCallStack => Text -> IO ()
-logError' t = withFrozenPoppedCallStack $ withDefaultLogger (logError t)
-
 foreign import ccall unsafe "ls_hs_error"
   ls_hs_error :: CString -> IO ()
 
-throwC :: HasCallStack => a -> Text -> IO a
-throwC x₀ msg = do
-  logError' "Throwing error to C ..."
+-- | Invoke the 'ls_hs_error' error handling function with the given message.
+throwC :: HasCallStack => Text -> IO a
+throwC msg = do
   useAsCString (encodeUtf8 msg) ls_hs_error
-  pure x₀
+  error "this should never happen, because ls_hs_error should not return"
 
-propagateErrorToC :: HasCallStack => a -> SomeException -> IO a
-propagateErrorToC x₀ = \e -> throwC x₀ (show e)
-
--- ls_hs_fatal_error :: HasCallStack => CString -> CString -> IO ()
--- ls_hs_fatal_error c_func c_msg = withFrozenCallStack $ do
---   func <- peekUtf8 c_func
---   msg <- peekUtf8 c_msg
---   logError' $ "[" <> func <> "] " <> msg
---   exitFailure
+propagateErrorToC :: HasCallStack => SomeException -> IO a
+propagateErrorToC = throwC . show
 
 infix 4 ≈
 
@@ -130,6 +96,7 @@ newCString (PS fp _ l) = do
     pokeByteOff buf l (0 :: CChar)
   pure buf
 
+-- | Read JSON from a 'CString'.
 decodeCString :: (HasCallStack, FromJSON a) => CString -> IO a
 decodeCString cStr = do
   s <- packCString cStr

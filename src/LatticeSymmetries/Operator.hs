@@ -269,7 +269,6 @@ newCoperator maybeBasisPtr x = do
           -- coperator_apply_diag_cxt = nullPtr,
           coperator_haskell_payload = castStablePtrToPtr payload
         }
-  logDebug' $ "newCoperator " <> show r <> ", basis was " <> show basis
   pure r
 
 withCoperator :: Ptr Coperator -> (SomeOperator -> IO a) -> IO a
@@ -278,7 +277,6 @@ withCoperator p f = f =<< (deRefStablePtr . castPtrToStablePtr . coperator_haske
 cloneCoperator :: HasCallStack => Ptr Coperator -> IO (Ptr Coperator)
 cloneCoperator p = do
   basis <- coperator_basis <$> peek p
-  logDebug' $ "cloneCoperator " <> show p <> ", basis=" <> show basis
   _ <- operatorIncRefCount p
   -- payload <- newStablePtr =<< deRefStablePtr (castPtrToStablePtr . coperator_haskell_payload $ x)
   -- new $ x {coperator_haskell_payload = castStablePtrToPtr payload}
@@ -286,12 +284,9 @@ cloneCoperator p = do
 
 destroyCoperator :: HasCallStack => Ptr Coperator -> IO ()
 destroyCoperator p = do
-  logDebug' $ "destroyCoperator " <> show p
   refcount <- operatorDecRefCount p
   when (refcount == 1) $ do
-    logDebug' $ "fully destroying " <> show p
     x <- peek p
-    logDebug' $ "destroying basis " <> show (coperator_basis x)
     destroyCbasis (coperator_basis x)
     -- logDebug' $ "destroying off-diag terms ..."
     destroyCnonbranching_terms (coperator_off_diag_terms x)

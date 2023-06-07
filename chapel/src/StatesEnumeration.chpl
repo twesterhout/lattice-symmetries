@@ -13,6 +13,7 @@ use CyclicDist;
 use DynamicIters;
 use RangeChunk;
 use Time;
+import OS.POSIX;
 
 // config const kUseLowLevelComm : bool = true;
 // config const numChunksPerLocale = 3;
@@ -93,9 +94,9 @@ private inline proc unprojectedIndexToState(stateIndex : int,
  */
 private proc determineEnumerationRanges(r : range(uint(64)), in numChunks : int,
                                         isHammingWeightFixed : bool) {
-  var timer = new Timer();
+  var timer = new stopwatch();
   timer.start();
-  const hammingWeight = if isHammingWeightFixed then popcount(r.low):int else -1;
+  const hammingWeight = if isHammingWeightFixed then popCount(r.low):int else -1;
   const lowIdx = unprojectedStateToIndex(r.low, isHammingWeightFixed);
   const highIdx = unprojectedStateToIndex(r.high, isHammingWeightFixed);
   const totalSize = highIdx - lowIdx + 1;
@@ -142,7 +143,7 @@ private proc _enumStatesComputeMasksAndCounts(const ref states, ref outMasks) {
   outMasks.resize(totalCount);
   if numLocales == 1 { // all data belongs to locale 0
     if totalCount > 0 then
-      c_memset(outMasks.data, 0, totalCount:c_size_t * c_sizeof(outMasks.eltType));
+      POSIX.memset(outMasks.data, 0, totalCount:c_size_t * c_sizeof(outMasks.eltType));
     counts[0] = totalCount;
   }
   else {
@@ -202,17 +203,17 @@ private proc _enumerateStatesUnprojected(r : range(uint(64)), const ref basis : 
                                          ref outStates : Vector(uint(64))) {
   const isHammingWeightFixed = basis.isHammingWeightFixed();
   const hasSpinInversionSymmetry = basis.hasSpinInversionSymmetry();
-  if isHammingWeightFixed && popcount(r.low) != popcount(r.high) then
+  if isHammingWeightFixed && popCount(r.low) != popCount(r.high) then
     halt("r.low=" + r.low:string + " and r.high=" + r.high:string
-        + " have different Hamming weight: " + popcount(r.low):string
-        + " vs. " + popcount(r.high):string);
+        + " have different Hamming weight: " + popCount(r.low):string
+        + " vs. " + popCount(r.high):string);
   var low = r.low;
   var high = r.high;
   if hasSpinInversionSymmetry {
     const numberSites = basis.numberSites();
     const mask = (1:uint(64) << numberSites) - 1; // isolate the lower numberSites bits
     high = min(high, high ^ mask);
-    assert(popcount(high) == popcount(low));
+    assert(popCount(high) == popCount(low));
   }
   const lowIdx = unprojectedStateToIndex(low, isHammingWeightFixed);
   const highIdx = unprojectedStateToIndex(high, isHammingWeightFixed);
@@ -285,7 +286,7 @@ proc permuteBasedOnMasks(arrSize : int, masks : c_ptr(?maskType), arr : c_ptr(?e
     offsets[key] += 1;
   }
 
-  var copyTimer = new Timer();
+  var copyTimer = new stopwatch();
   copyTimer.start();
   var i = 0;
   for localeIdx in 0 ..# numLocales {
@@ -319,7 +320,7 @@ proc _enumStatesComputeCounts(ref buckets,
 
   // const ref serializedBasis = basis.json_repr;
   coforall loc in Locales do on loc {
-    var outerTimer = new Timer();
+    var outerTimer = new stopwatch();
     outerTimer.start();
 
     const myBasis = basis;
@@ -333,7 +334,7 @@ proc _enumStatesComputeCounts(ref buckets,
 
     forall chunkIdx in dynamic(mySubdomain, chunkSize=1) {
       ref (outStates, outMasks) = buckets.localAccess(chunkIdx);
-      var timer = new Timer();
+      var timer = new stopwatch();
       timer.start();
       // This is the actual computation!
       _enumerateStates(myRanges[chunkIdx], myBasis, outStates);
@@ -454,7 +455,7 @@ proc _enumStatesDistribute(const ref buckets, ref masks,
   var copyTimes : [0 ..# numLocales] real;
   var maskCopyTimes : [0 ..# numLocales] real;
 
-  var distributeTimer = new Timer();
+  var distributeTimer = new stopwatch();
   distributeTimer.start();
 
   const basisStatesPtrsPtr = c_const_ptrTo(basisStatesPtrs);
@@ -488,7 +489,7 @@ proc _enumStatesDistribute(const ref buckets, ref masks,
         myCopyTime.add(copyTime, memoryOrder.relaxed);
 
         // Distributing masks
-        var timer = new Timer();
+        var timer = new stopwatch();
         timer.start();
         const (localeOrOffset, targetPtr) = myMasksDescriptors[bucketIdx];
         if targetPtr != nil {
@@ -514,7 +515,7 @@ proc _enumStatesDistribute(const ref buckets, ref masks,
 }
 
 proc enumerateStates(ranges : [] range(uint(64)), const ref basis : Basis, out _masks) {
-  var timer = new Timer();
+  var timer = new stopwatch();
   timer.start();
 
   // We distribute ranges among locales using Cyclic distribution to ensure
@@ -525,7 +526,7 @@ proc enumerateStates(ranges : [] range(uint(64)), const ref basis : Basis, out _
 
   // How many states coming from a certain chunk live on a certain locale.
   // Each chunk computes its own row in parallel and then does a remote PUT here.
-  var countsTimer = new Timer();
+  var countsTimer = new stopwatch();
   countsTimer.start();
   const counts = _enumStatesComputeCounts(buckets, ranges, basis);
   countsTimer.stop();
@@ -544,7 +545,7 @@ proc enumerateStates(ranges : [] range(uint(64)), const ref basis : Basis, out _
   // if enableSegFault then
   //   basisStatesPtrs = basisStates._dataPtrs;
   // else
-  c_memcpy(c_ptrTo(basisStatesPtrs), c_const_ptrTo(basisStates._dataPtrs),
+  POSIX.memcpy(c_ptrTo(basisStatesPtrs), c_const_ptrTo(basisStates._dataPtrs),
            numLocales:c_size_t * c_sizeof(c_ptr(uint(64))));
   // logDebug("634: nope it didn't");
 

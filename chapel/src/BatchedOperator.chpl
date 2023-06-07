@@ -1,13 +1,16 @@
 module BatchedOperator {
 
+use BitOps;
 use CTypes;
 use Time;
+import OS.POSIX;
 
 use FFI;
 use ForeignTypes;
 use StatesEnumeration;
 
 // TODO: this is currently implemented inefficiently
+/*
 private proc localCompressMultiply(batchSize : int, numberTerms : int,
                                    sigmas : c_ptr(uint(64)), cs : c_ptr(complex(128)),
                                    xs : c_ptr(?eltType), offsets : c_ptr(int)) {
@@ -34,6 +37,140 @@ private proc localCompressMultiply(batchSize : int, numberTerms : int,
   }
   // offsets[batchSize] = batchSize * numberTerms;
 }
+*/
+
+proc ls_internal_operator_apply_diag_x1(
+    const ref op : ls_hs_operator,
+    batch_size : int,
+    alphas : c_ptrConst(uint(64)),
+    ys : c_ptr(real(64)),
+    xs : c_ptr(real(64))) {
+  // The diagonal is zero
+  if (op.diag_terms == nil || op.diag_terms.deref().number_terms == 0) {
+    POSIX.memset(ys, 0, batch_size:c_size_t * c_sizeof(real(64)));
+    return;
+  }
+
+  const ref terms = op.diag_terms.deref();
+  const number_terms = terms.number_terms;
+
+  foreach batch_idx in 0 ..# batch_size {
+    var acc : real(64) = 0;
+    const alpha = alphas[batch_idx];
+    for term_idx in 0 ..# number_terms {
+      const delta = (alpha & terms.m[term_idx]) == terms.r[term_idx];
+      if delta {
+        const sign = 1 - 2 * (popCount(alpha & terms.s[term_idx]) % 2);
+        const factor = if xs != nil then sign * xs[batch_idx] else sign;
+        acc += terms.v[term_idx].re * factor;
+      }
+    }
+    ys[batch_idx] = acc;
+  }
+}
+// void ls_internal_operator_apply_diag_x1(ls_hs_operator const *const op,
+//                                         ptrdiff_t const batch_size,
+//                                         uint64_t const *restrict const alphas,
+//                                         double *restrict const ys,
+//                                         double const *restrict const xs) {
+//   // The diagonal is zero
+//   if (op->diag_terms == NULL || op->diag_terms->number_terms == 0) {
+//     memset(ys, 0, (size_t)batch_size * sizeof(double));
+//     return;
+//   }
+// 
+//   ls_hs_nonbranching_terms const *restrict terms = op->diag_terms;
+//   ptrdiff_t const number_terms = terms->number_terms;
+//   for (ptrdiff_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+//     double acc = 0;
+//     uint64_t const alpha = alphas[batch_idx];
+//     for (ptrdiff_t term_idx = 0; term_idx < number_terms; ++term_idx) {
+//       uint8_t const delta = (alpha & terms->m[term_idx]) == terms->r[term_idx];
+//       if (delta != 0) {
+//         int const sign =
+//             1 - 2 * (__builtin_popcountll(alpha & terms->s[term_idx]) % 2);
+//         double const factor =
+//             (xs != NULL) ? delta * sign * xs[batch_idx] : delta * sign;
+//         acc += creal(terms->v[term_idx]) * factor;
+//       }
+//     }
+//     ys[batch_idx] = acc;
+//   }
+// }
+// 
+proc ls_internal_operator_apply_off_diag_x1(
+    const ref op : ls_hs_operator,
+    batch_size : int,
+    alphas : c_ptrConst(uint(64)),
+    betas : c_ptr(uint(64)),
+    coeffs : c_ptr(complex(128)),
+    offsets : c_ptr(c_ptrdiff),
+    xs : c_ptrConst(real(64))) {
+  // Nothing to apply
+  if (op.off_diag_terms == nil || op.off_diag_terms.deref().number_terms == 0) {
+    POSIX.memset(offsets, 0, (batch_size + 1):c_size_t * c_sizeof(c_ptrdiff));
+    return;
+  }
+
+  const ref terms = op.off_diag_terms.deref();
+  const number_terms = terms.number_terms;
+
+  offsets[0] = 0;
+  var offset = 0;
+  for batch_idx in 0 ..# batch_size {
+    for term_idx in 0 ..# number_terms {
+      const alpha = alphas[batch_idx];
+      const delta = (alpha & terms.m[term_idx]) == terms.r[term_idx];
+      if delta {
+        const sign = 1 - 2 * (popCount(alpha & terms.s[term_idx]) % 2);
+        const factor = if xs != nil then sign * xs[batch_idx] else sign;
+        coeffs[offset] = terms.v[term_idx] * factor;
+        betas[offset] = alpha ^ terms.x[term_idx];
+        offset += 1;
+      }
+    }
+    offsets[batch_idx + 1] = offset;
+  }
+}
+// void ls_internal_operator_apply_off_diag_x1(ls_hs_operator const *const op,
+//                                             ptrdiff_t const batch_size,
+//                                             uint64_t const *const alphas,
+//                                             uint64_t *const betas,
+//                                             ls_hs_scalar *const coeffs,
+//                                             ptrdiff_t *const offsets,
+//                                             double const *const xs) {
+//   // Nothing to apply
+//   if (op->off_diag_terms == NULL || op->off_diag_terms->number_terms == 0) {
+//     memset(offsets, 0, (size_t)(batch_size + 1) * sizeof(ptrdiff_t));
+//     return;
+//   }
+// 
+//   ls_hs_nonbranching_terms const *restrict terms = op->off_diag_terms;
+//   ptrdiff_t const number_terms = terms->number_terms;
+// 
+//   offsets[0] = 0;
+//   ptrdiff_t offset = 0;
+//   for (ptrdiff_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+//     for (ptrdiff_t term_idx = 0; term_idx < number_terms; ++term_idx) {
+//       uint8_t const delta =
+//           (alphas[batch_idx] & terms->m[term_idx]) == terms->r[term_idx];
+//       if (delta != 0) {
+//         int const sign = 1 - 2 * (__builtin_popcountll(alphas[batch_idx] &
+//                                                        terms->s[term_idx]) %
+//                                   2);
+//         double const factor =
+//             (xs != NULL) ? delta * sign * xs[batch_idx] : delta * sign;
+//         coeffs[offset] = CMPLX(creal(terms->v[term_idx]) * factor,
+//                                cimag(terms->v[term_idx]) * factor);
+//         betas[offset] = alphas[batch_idx] ^ terms->x[term_idx];
+//         ++offset;
+//       }
+//     }
+//     offsets[batch_idx + 1] = offset;
+//   }
+//   return;
+// }
+
 
 config const batchedOperatorNewKernel = true;
 
@@ -50,11 +187,11 @@ record BatchedOperator {
   var _localeIdxs : [_dom] uint(8);
   var _offsets : [0 ..# batchSize + 1] int;
 
-  var applyOffDiagTimer : Timer;
-  var stateInfoTimer : Timer;
-  var memcpyTimer : Timer;
-  var coeffTimer : Timer;
-  var keysTimer : Timer;
+  var applyOffDiagTimer : stopwatch;
+  var stateInfoTimer : stopwatch;
+  var memcpyTimer : stopwatch;
+  var coeffTimer : stopwatch;
+  var keysTimer : stopwatch;
 
   proc init(const ref matrix : Operator, batchSize : int) {
     this._matrixPtr = c_const_ptrTo(matrix);
@@ -97,7 +234,7 @@ record BatchedOperator {
       // representations of them.
       applyOffDiagTimer.start();
       ls_internal_operator_apply_off_diag_x1(
-        matrix.payload,
+        matrix.payload.deref(),
         count,
         alphas,
         betas,
@@ -127,7 +264,7 @@ record BatchedOperator {
       // representations of them.
       applyOffDiagTimer.start();
       ls_internal_operator_apply_off_diag_x1(
-        matrix.payload,
+        matrix.payload.deref(),
         count,
         alphas,
         betas,
@@ -166,7 +303,7 @@ record BatchedOperator {
     const offsets = c_pointer_return(_offsets[0]);
     applyOffDiagTimer.start();
     ls_internal_operator_apply_off_diag_x1(
-      matrix.payload,
+      matrix.payload.deref(),
       count,
       alphas,
       tempSpins,
@@ -178,7 +315,7 @@ record BatchedOperator {
     // We are also interested in norms of alphas, so we append them to tempSpins
     memcpyTimer.start();
     assert(totalCount + count <= _dom.size);
-    c_memcpy(tempSpins + totalCount, alphas, count:c_size_t * c_sizeof(uint(64)));
+    POSIX.memcpy(tempSpins + totalCount, alphas, count:c_size_t * c_sizeof(uint(64)));
     memcpyTimer.stop();
 
     const betas = c_pointer_return(_spins1[0]);
@@ -227,7 +364,8 @@ export proc ls_chpl_operator_apply_diag(matrixPtr : c_ptr(ls_hs_operator),
     halt("bases that require projection are not yet supported");
 
   var _cs : [0 ..# count] real(64) = noinit;
-  ls_internal_operator_apply_diag_x1(matrix.payload, count, alphas, c_ptrTo(_cs[0]), nil);
+  ls_internal_operator_apply_diag_x1(
+    matrix.payload.deref(), count, alphas, c_ptrTo(_cs[0]), nil);
 
   coeffs.deref() = convertToExternalArray(_cs);
   logDebug("Done! Returning ...");
@@ -254,7 +392,7 @@ export proc ls_chpl_operator_apply_off_diag(matrixPtr : c_ptr(ls_hs_operator),
 
   if numberOffDiagTerms != 0 {
     ls_internal_operator_apply_off_diag_x1(
-      matrix.payload,
+      matrix.payload.deref(),
       count,
       alphas,
       c_ptrTo(_betas[0]),

@@ -15,13 +15,6 @@ endif
 PREFIX ?= /usr/local
 BIN_DIR ?= build
 
-# HALIDE_PATH ?= ../third_party/Halide
-# HL_VERSION = 14.0.0
-# HL_HASH = 6b9ed2afd1d6d0badf04986602c943e287d44e46
-# HALIDE_DISTRIB_PATH ?= $(PWD)/../third_party/Halide-$(HL_VERSION)-$(HL_ARCH)-$(HL_BITS)-$(HL_OS)
-# HL_TARGET_SUFFIX ?= -no_asserts-no_bounds_query-no_runtime
-# HL_TARGET_SUFFIX ?= -no_runtime
-
 HL_TARGET_FEATURES ?= -no_asserts-no_bounds_query-no_runtime
 # HL_TARGET_FEATURES ?= -no_runtime
 
@@ -37,16 +30,6 @@ space := $() $()
 comma := ,
 HL_TARGETS ?= $(subst $(space),$(comma),$(_HL_ALL_TARGETS))
 
-# ifeq ($(UNAME), Linux)
-# CONDA_CC ?= $(shell conda run -n ci_devel bash -c "which \$${CC}")
-# CONDA_PREFIX ?= $(shell conda run -n ci_devel bash -c "echo \$${CONDA_PREFIX}")
-# $(info CONDA_CC=$(CONDA_CC))
-# $(info CONDA_PREFIX=$(CONDA_PREFIX))
-# else
-# CONDA_CC = $(CC)
-# CONDA_PREFIX = 
-# endif
-
 ifeq ($(UNAME_M),x86_64)
   CFLAGS ?= -O3 -DNDEBUG -march=nehalem -mtune=haswell
 else
@@ -58,17 +41,6 @@ CFLAGS += -Wall -Wextra -Wpedantic -Wconversion -Wdouble-promotion \
           -Wstrict-overflow=2 -Wduplicated-branches -Wfloat-equal \
           -Wshadow -Wunused-macros -Wmissing-field-initializers \
           -Wno-variadic-macros
-
-#
-# SHELL = bash
-# BIN_DIR ?= build
-# GENERATOR_OUTPUTS ?= static_library,c_header,stmt_html,assembly
-
-# CFLAGS += -I ../cbits -isystem $(HALIDE_DISTRIB_PATH)/include/ -isystem $(HALIDE_DISTRIB_PATH)/share/Halide/tools/ -Wall -Wextra -Wpedantic -Wconversion -Wdouble-promotion -Wformat=2 -Wformat-overflow=2 -Winit-self -Wimplicit-fallthrough -Wunused -Wuninitialized -Wstrict-overflow=2 -Wduplicated-branches -Wfloat-equal -Wshadow -Wundef -Wunused-macros -Wmissing-field-initializers
-# $(info "HALIDE_PATH=$(HALIDE_PATH)")
-# $(info "HALIDE_PATH=$(realpath $(HALIDE_PATH))")
-# $(info "BIN_DIR=$(BIN_DIR)")
-# $(info "find: $(shell find $(HALIDE_PATH) -name "GenGen.cpp")")
 
 HL_LIB_PATH = $(dir $(shell find $(HALIDE_PATH) -name "libHalide.*" | head -n1))
 HL_SHARE_PATH = $(dir $(shell find $(HALIDE_PATH) -name "GenGen.cpp"))
@@ -91,15 +63,15 @@ all: $(BIN_DIR)/libkernels.a
 install: all
 	@mkdir -p $(PREFIX)/include
 	@mkdir -p $(PREFIX)/lib
-	install -m 644 lattice_symmetries_haskell.h $(PREFIX)/include/
+	install -m 644 lattice_symmetries_types.h $(PREFIX)/include/
 	install -m 644 $(BIN_DIR)/libkernels.a $(PREFIX)/lib/
 
-../cabal.project.local:
-	@mkdir -p $(BIN_DIR)
-	@echo "Creating cabal.project.local ..."
-	@echo "-- DO NOT MODIFY (Generated automatically by kernels/Makefile)" >$@
-	@echo "package lattice-symmetries-haskell" >>$@
-	@echo "  extra-lib-dirs: $(BIN_DIR)" >>$@
+# ../cabal.project.local:
+# 	@mkdir -p $(BIN_DIR)
+# 	@echo "Creating cabal.project.local ..."
+# 	@echo "-- DO NOT MODIFY (Generated automatically by kernels/Makefile)" >$@
+# 	@echo "package lattice-symmetries-haskell" >>$@
+# 	@echo "  extra-lib-dirs: $(BIN_DIR)" >>$@
 
 # ifeq ($(UNAME), Darwin)
 #   SHARED_FLAG = -dynamiclib
@@ -200,15 +172,15 @@ $(BIN_DIR)/runtime.o: $(BIN_DIR)/generator
 	@mkdir -p $(@D)
 	$^ -r runtime -o $(@D) -e object target=$(HL_TARGETS)
 
-$(BIN_DIR)/indexing.o: indexing.c lattice_symmetries_haskell.h
+$(BIN_DIR)/indexing.o: indexing.c lattice_symmetries_types.h
 	@mkdir -p $(@D)
 	$(CC) -fPIC $(CFLAGS) -o $@ -c $<
 
-$(BIN_DIR)/reference.o: reference.c lattice_symmetries_haskell.h
+$(BIN_DIR)/reference.o: reference.c lattice_symmetries_types.h
 	@mkdir -p $(@D)
 	$(CC) -fPIC $(CFLAGS) -o $@ -c $<
 
-$(BIN_DIR)/libkernels.a: kernels.c kernels.h lattice_symmetries_haskell.h \
+$(BIN_DIR)/libkernels.a: kernels.c kernels.h lattice_symmetries_types.h \
 												 $(BIN_DIR)/reference.o \
 												 $(BIN_DIR)/indexing.o \
 												 $(BIN_DIR)/runtime.o \

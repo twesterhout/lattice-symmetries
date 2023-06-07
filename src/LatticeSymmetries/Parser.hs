@@ -500,11 +500,10 @@ instance IsString (BasisState t) where
 
 objectFromYAML :: (HasCallStack, FromJSON a) => Text -> Text -> IO a
 objectFromYAML name filename = do
-  logDebug' $ "Loading " <> name <> " from " <> show filename <> " ..."
   r <- decodeFileWithWarnings (toString filename)
   case r of
     Left e -> error $ toText $ prettyPrintParseException e
-    Right (warnings, x) -> mapM_ (logWarning' . show) warnings >> pure x
+    Right (warnings, x) -> pure x
 
 data ConfigSpec = ConfigSpec !SomeBasis !(Maybe SomeOperator) !(Vector SomeOperator)
 

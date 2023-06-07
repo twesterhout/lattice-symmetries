@@ -1,7 +1,7 @@
 #include "stdchpl.h"
 #include "ctype.h"
 #include "wctype.h"
-#include "lattice_symmetries_haskell.h"
+#include "lattice_symmetries_types.h"
 void chpl__init_BatchedOperator(int64_t _ln,
                                 int32_t _fn);
 void ls_chpl_operator_apply_diag(ls_hs_operator * matrixPtr,

@@ -17,8 +17,6 @@ struct ls_hs_state_index_binary_search_data {
   ptrdiff_t *offsets;
 };
 
-void ls_hs_hello_world(void) { fprintf(stdout, "Hello world!\n"); }
-
 #if 0
 static int compare_uint64(const void *_a, const void *_b) {
   uint64_t const a = *(uint64_t const *)_a;

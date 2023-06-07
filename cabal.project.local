@@ -1,0 +1,8 @@
+ignore-project: False
+write-ghc-environment-files: always
+tests: True
+test-options: "--color"
+test-show-details: streaming
+package lattice-symmetries-haskell
+  flags: +no-standalone
+  ghc-options: -g2

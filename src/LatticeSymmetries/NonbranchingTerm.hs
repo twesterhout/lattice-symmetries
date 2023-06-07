@@ -4,9 +4,9 @@
 -- Copyright   : (c) Tom Westerhout, 2022
 -- Stability   : experimental
 module LatticeSymmetries.NonbranchingTerm
-  ( NonbranchingTerm (..),
-    HasNonbranchingRepresentation (..),
-    nbtIsDiagonal,
+  ( NonbranchingTerm (..)
+  , HasNonbranchingRepresentation (..)
+  , nbtIsDiagonal
   )
 where
 
@@ -23,12 +23,12 @@ import LatticeSymmetries.ComplexRational
 -- We use the representation from <http://arxiv.org/abs/2203.04158>. See Appendix A in the paper.
 data NonbranchingTerm = NonbranchingTerm
   -- (v, m, l, r, x, s)
-  { nbtV :: !ComplexRational,
-    nbtM :: !BitString,
-    nbtL :: !BitString,
-    nbtR :: !BitString,
-    nbtX :: !BitString,
-    nbtS :: !BitString
+  { nbtV :: !ComplexRational
+  , nbtM :: !BitString
+  , nbtL :: !BitString
+  , nbtR :: !BitString
+  , nbtX :: !BitString
+  , nbtS :: !BitString
   }
   deriving stock (Show, Eq)
 
@@ -70,11 +70,3 @@ class HasNonbranchingRepresentation g where
 -- | Checks whether an operator is diagonal.
 nbtIsDiagonal :: NonbranchingTerm -> Bool
 nbtIsDiagonal t = nbtX t == zeroBits
-
--- applyNonbranchingTerm :: NonbranchingTerm -> BitString -> (ComplexRational, BitString)
--- applyNonbranchingTerm (NonbranchingTerm v m _ r x s) α = (c, β)
---   where
---     δ = fromEnum $ (α .&. m) == r
---     sign = 1 - 2 * (popCount (α .&. s) `mod` 2)
---     β = α `xor` x
---     c = v * fromIntegral (δ * sign)

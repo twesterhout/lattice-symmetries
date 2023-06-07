@@ -1,4 +1,4 @@
-#include "lattice_symmetries_haskell.h"
+#include "lattice_symmetries_types.h"
 #include <HsFFI.h>
 #include <Rts.h>
 #include <stdio.h>

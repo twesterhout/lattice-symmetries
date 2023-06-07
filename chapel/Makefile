@@ -149,15 +149,20 @@ data/large-scale:
 
 lib: lib/liblattice_symmetries_chapel.$(SHARED_EXT)
 
-lib/liblattice_symmetries_chapel.$(SHARED_EXT): $(LIB_MODULES) src/library.c
+src/library.o: src/library.c
+	$(CC) -c $^ -fPIC -o $@
+
+lib/liblattice_symmetries_chapel.$(SHARED_EXT): $(LIB_MODULES) src/library.o
 	@mkdir -p $(@D)
 	@rm -rf $(@D)/*
-	CHPL_LIB_PIC=pic chpl $(CFLAGS) $(CHPL_CFLAGS) --library --dynamic -o lattice_symmetries_chapel $^ \
+	CHPL_LIB_PIC=pic chpl --print-commands --devel $(CFLAGS) $(CHPL_CFLAGS) --library --dynamic -o lattice_symmetries_chapel $^ \
 		$(CHPL_LDFLAGS) -llattice_symmetries_haskell
 
 install: lib
 	@mkdir -p $(PREFIX)/lib
-	install -m 644 lib/liblattice_symmetries_chapel.$(SHARED_EXT) $(PREFIX)/lib/
+	@mkdir -p $(PREFIX)/include
+	install -m 755 lib/liblattice_symmetries_chapel.$(SHARED_EXT) $(PREFIX)/lib/
+	install -m 644 lib/lattice_symmetries_chapel.h $(PREFIX)/include/
 
 .PHONY: bundle
 bundle: lib

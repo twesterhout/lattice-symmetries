@@ -3,7 +3,84 @@ module ForeignTypes {
 
   use CTypes;
   use ByteBufferHelpers;
+  use IO;
   use Time;
+
+  pragma "fn synchronization free"
+  private extern proc c_pointer_return(const ref x : ?t) : c_ptr(t);
+
+  inline proc c_const_ptrTo(const ref arr: []) {
+    if (!arr.isRectangular() || !arr.domain.dist._value.dsiIsLayout()) then
+      compilerError("Only single-locale rectangular arrays support c_ptrTo() at present");
+
+    if (arr._value.locale != here) then
+      halt("c_ptrTo() can only be applied to an array from the locale on which it lives (array is on locale "
+           + arr._value.locale.id:string + ", call was made on locale " + here.id:string + ")");
+    return c_pointer_return(arr[arr.domain.low]);
+  }
+  inline proc c_const_ptrTo(const ref x) {
+    return c_pointer_return(x);
+  }
+
+  inline proc GET(addr, node, rAddr, size) {
+    __primitive("chpl_comm_get", addr, node, rAddr, size);
+  }
+
+  inline proc PUT(addr, node, rAddr, size) {
+    __primitive("chpl_comm_put", addr, node, rAddr, size);
+  }
+
+  proc unsafeViewAsExternalArray(const ref arr: []): chpl_external_array {
+    if !isIntegralType(arr.domain.idxType) {
+      // Probably not reachable any more, but may become reachable again
+      // once support for interoperability with array types expands.
+      compilerError("cannot return an array with indices that are not " +
+                    "integrals");
+    }
+    if arr.domain.stridable {
+      compilerError("cannot return a strided array");
+    }
+    if arr.domain.rank != 1 {
+      compilerError("cannot return an array with rank != 1");
+    }
+
+    var externalArr = chpl_make_external_array_ptr(
+      c_const_ptrTo(arr[arr.domain.low]), arr.size: uint);
+    return externalArr;
+  }
+
+  inline proc _makeInds(shape: int ...?n) {
+    var inds : n * range;
+    foreach i in 0 ..# n {
+      inds[i] = 0 ..# shape[i];
+    }
+    return inds;
+  }
+
+  pragma "no copy return"
+  proc makeArrayFromPtr(ptr : c_ptr, shape)
+      where isTuple(shape) && isHomogeneousTuple(shape) && shape[0].type == int {
+    var dom = defaultDist.dsiNewRectangularDom(rank=shape.size,
+                                               idxType=shape[0].type,
+                                               strides=strideKind.one,
+                                               inds=_makeInds((...shape)));
+    dom._free_when_no_arrs = true;
+    var arr = new unmanaged DefaultRectangularArr(eltType=ptr.eltType,
+                                                  rank=dom.rank,
+                                                  idxType=dom.idxType,
+                                                  strides=strideKind.one,
+                                                  dom=dom,
+                                                  data=ptr:_ddata(ptr.eltType),
+                                                  externFreeFunc=nil,
+                                                  externArr=true,
+                                                  _borrowed=true);
+    dom.add_arr(arr, locking = false);
+    return _newArray(arr);
+  }
+
+  proc logDebug(msg...) {
+    try! stderr.writeln("[Debug]   [", here, "]   ", (...msg));
+  }
 
   record Basis {
     var payload : c_ptr(ls_hs_basis);
@@ -21,6 +98,11 @@ module ForeignTypes {
       this._json_repr = _toJSON();
       this._hasPermutationSymmetries =
         ls_hs_basis_has_permutation_symmetries(this.payload);
+    }
+    proc init(p : c_ptrConst(ls_hs_basis), owning : bool) {
+      assert(here == p.locale);
+      assert(owning == false);
+      init(p:c_ptr(ls_hs_basis), owning);
     }
     proc init(jsonString : string) {
       const s = jsonString.localize();
@@ -134,6 +216,16 @@ module ForeignTypes {
     assert(are_representatives.size == batchSize);
     assert(norms.size == batchSize);
 
+    // const ref payload = basis.payload.deref();
+    // if payload.is_representative_kernel == nil then
+    //   halt("is_representative_kernel is NULL, perhaps" +
+    //        "this basis requires no projection?");
+    // payload.is_representative_kernel(
+    //   batchSize, c_const_ptrTo(alphas), 1,
+    //   c_ptrTo(are_representatives),
+    //   c_ptrTo(norms),
+    //   payload.is_representative_data
+    // );
     ls_hs_is_representative(
       basis.payload,
       batchSize,
