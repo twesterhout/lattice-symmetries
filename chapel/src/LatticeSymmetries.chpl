@@ -10,6 +10,7 @@ module LatticeSymmetries {
   // public use CommunicationQueue;
   // public use MultiwayMerge;
   public use Vector;
+  public use Utils;
 
   private use CTypes;
 

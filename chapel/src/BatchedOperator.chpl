@@ -45,6 +45,9 @@ proc ls_internal_operator_apply_diag_x1(
     alphas : c_ptrConst(uint(64)),
     ys : c_ptr(real(64)),
     xs : c_ptr(real(64))) {
+  // ls_internal_operator_apply_diag_x1(c_ptrToConst(op), batch_size, alphas, ys, xs);
+  // return;
+
   // The diagonal is zero
   if (op.diag_terms == nil || op.diag_terms.deref().number_terms == 0) {
     POSIX.memset(ys, 0, batch_size:c_size_t * c_sizeof(real(64)));
@@ -54,13 +57,13 @@ proc ls_internal_operator_apply_diag_x1(
   const ref terms = op.diag_terms.deref();
   const number_terms = terms.number_terms;
 
-  foreach batch_idx in 0 ..# batch_size {
+  for batch_idx in 0 ..# batch_size {
     var acc : real(64) = 0;
     const alpha = alphas[batch_idx];
     for term_idx in 0 ..# number_terms {
       const delta = (alpha & terms.m[term_idx]) == terms.r[term_idx];
       if delta {
-        const sign = 1 - 2 * (popCount(alpha & terms.s[term_idx]) % 2);
+        const sign = 1 - 2 * parity(alpha & terms.s[term_idx]):int;
         const factor = if xs != nil then sign * xs[batch_idx] else sign;
         acc += terms.v[term_idx].re * factor;
       }
@@ -106,6 +109,9 @@ proc ls_internal_operator_apply_off_diag_x1(
     coeffs : c_ptr(complex(128)),
     offsets : c_ptr(c_ptrdiff),
     xs : c_ptrConst(real(64))) {
+  // ls_internal_operator_apply_off_diag_x1(c_ptrToConst(op), batch_size, alphas, betas, coeffs, offsets, xs);
+  // return;
+
   // Nothing to apply
   if (op.off_diag_terms == nil || op.off_diag_terms.deref().number_terms == 0) {
     POSIX.memset(offsets, 0, (batch_size + 1):c_size_t * c_sizeof(c_ptrdiff));
@@ -122,7 +128,7 @@ proc ls_internal_operator_apply_off_diag_x1(
       const alpha = alphas[batch_idx];
       const delta = (alpha & terms.m[term_idx]) == terms.r[term_idx];
       if delta {
-        const sign = 1 - 2 * (popCount(alpha & terms.s[term_idx]) % 2);
+        const sign = 1 - 2 * parity(alpha & terms.s[term_idx]):int;
         const factor = if xs != nil then sign * xs[batch_idx] else sign;
         coeffs[offset] = terms.v[term_idx] * factor;
         betas[offset] = alpha ^ terms.x[term_idx];

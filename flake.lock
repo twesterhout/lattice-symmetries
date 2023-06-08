@@ -73,11 +73,11 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1686058742,
-        "narHash": "sha256-xOvv3q/LpJdlSuNcRndyWu3uitpQgo4Nz24xZY7fOm4=",
+        "lastModified": 1686152070,
+        "narHash": "sha256-cCkzRm+SL/n7gtyC4/f+DLRW8jIEZTBck0gS3+dL8Zw=",
         "owner": "twesterhout",
         "repo": "nix-chapel",
-        "rev": "fe89fad1c2000de25e7fdbb9f5dd1f30706ac380",
+        "rev": "1c27274e62581d153f6e3a1a505f516b50c8615c",
         "type": "github"
       },
       "original": {

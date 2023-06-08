@@ -67,9 +67,9 @@ module HashedToBlock {
   proc arrFromHashedToBlock(const ref arr, const ref masks,
                             numChunks = _hashedToBlockNumChunks(masks,
                                           kHashedToBlockNumChunks)) {
-    var timer = new Timer();
-    var countsTimer = new Timer();
-    var distributeTimer = new Timer();
+    var timer = new stopwatch();
+    var countsTimer = new stopwatch();
+    var distributeTimer = new stopwatch();
 
     timer.start();
 

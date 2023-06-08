@@ -129,11 +129,6 @@
         src = ./chapel;
 
         configurePhase = ''
-          which c2chapel
-          ls ${chapel}/tools/c2chapel
-
-          cat ${lattice-symmetries-haskell}/include/lattice_symmetries_functions.h
-
           c2chapel \
             ${lattice-symmetries-haskell}/include/lattice_symmetries_functions.h \
             -DLS_C2CHAPEL \
@@ -144,16 +139,27 @@
           # Remove the declaration of chpl_external_array since it's already
           # present in the ExternalArray module
           sed -i -e '/extern record chpl_external_array/,+5d' src/FFI.chpl
+          sed -i -E '/chpl_make_external_array(_ptr)?(_free)?\(/d' src/FFI.chpl
+          sed -i -e '/cleanupOpaqueArray(/d' src/FFI.chpl
+          sed -i -e '/chpl_free_external_array(/d' src/FFI.chpl
+          sed -i -e '/chpl_call_free_func(/d' src/FFI.chpl
           sed -i 's/extern type ls_hs_scalar = _Complex double/extern type ls_hs_scalar = complex(128)/' src/FFI.chpl
+
+          # For debugging
           cat src/FFI.chpl
-          # | sed '/c2chapel thinks these typedefs are from the fake headers/q' \
         '';
+
         makeFlags = [
           "PREFIX=$(out)"
           # "OPTIMIZATION=--fast"
           "CHPL_CFLAGS='-I${lattice-symmetries-kernels}/include'"
           "CHPL_LDFLAGS='-L${lattice-symmetries-haskell.lib}/lib'"
         ];
+
+        postInstall = ''
+          mkdir -p $out/share/generated
+          install -Dm 644 src/FFI.chpl $out/share/generated/
+        '';
 
         buildInputs = [
           lattice-symmetries-kernels
@@ -223,22 +229,28 @@
           export HALIDE_PATH=${pkgs.halide}
         '';
       };
-      devShells.chapel = pkgs.mkShell {
+      devShells.chapel = with pkgs; mkShell {
+        # packages = [ lattice-symmetries-chapel ];
         buildInputs = [
           lattice-symmetries-kernels
           lattice-symmetries-haskell
           lattice-symmetries-haskell.lib
+          hdf5
+          hdf5.dev
         ];
-        nativeBuildInputs = with pkgs; [
+        nativeBuildInputs = [
           chapel
           gcc
+          pkg-config
         ];
         shellHook = ''
           export LS_KERNELS="${lattice-symmetries-kernels}";
           export LS_HASKELL="${lattice-symmetries-haskell}";
           export LS_HASKELL_LIB="${lattice-symmetries-haskell.lib}";
-          export CHPL_CFLAGS='-I${lattice-symmetries-kernels}/include'
-          export CHPL_LDFLAGS='-L${lattice-symmetries-haskell.lib}/lib'
+          export CHPL_CFLAGS="-I${lattice-symmetries-kernels}/include"
+          export CHPL_LDFLAGS="-L${lattice-symmetries-haskell.lib}/lib"
+          export HDF5_CFLAGS="-I${hdf5.dev}/include"
+          export HDF5_LDFLAGS="-L${hdf5}/lib -lhdf5_hl -lhdf5 -lrt"
         '';
       };
       devShells.default =

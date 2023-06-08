@@ -10,7 +10,7 @@ PREFIX = /usr/local
 SUDO = sudo
 UNAME = $(shell uname)
 CFLAGS = $(OPTIMIZATION) --target-compiler=$(COMPILER)
-# LDFLAGS += -Lthird_party/lib -llattice_symmetries_haskell
+LDFLAGS = -llattice_symmetries_haskell
 # -llattice_symmetries_core
 # ifeq ($(UNAME), Linux)
 #   LDFLAGS += -lnuma
@@ -23,15 +23,15 @@ PRIMME_CFLAGS = -I$(PRIMME_PATH)/include
 PRIMME_LDFLAGS = -L$(PRIMME_PATH)/lib -lprimme -llapacke -lopenblas -lm -lgomp -lpthread
 
 ifeq ($(UNAME), Linux)
-  HDF5_CFLAGS = $(shell pkg-config --cflags hdf5)
-  HDF5_LDFLAGS = -lhdf5_hl $(shell pkg-config --libs hdf5)
+  HDF5_CFLAGS ?= $(shell pkg-config --cflags hdf5)
+  HDF5_LDFLAGS ?= -lhdf5_hl $(shell pkg-config --libs hdf5)
   # CONDA_CC ?= $(shell conda run -n ci_devel bash -c "which \$${CC}")
   # CONDA_PREFIX ?= $(shell conda run -n ci_devel bash -c "echo \$${CONDA_PREFIX}")
   SHARED_EXT = so
   # SHARED_FLAG = -shared -rdynamic
 else
-  HDF5_CFLAGS =
-  HDF5_LDFLAGS = -lhdf5_hl -lhdf5
+  HDF5_CFLAGS ?=
+  HDF5_LDFLAGS ?= -lhdf5_hl -lhdf5
   # CONDA_CC = $(CC)
   # CONDA_PREFIX = 
   SHARED_EXT = dylib
@@ -218,11 +218,11 @@ endif
 
 bin/TestStatesEnumeration: test/TestStatesEnumeration.chpl $(APP_MODULES)
 	@mkdir -p $(@D)
-	chpl $(CFLAGS) $(HDF5_CFLAGS) -o $@ --main-module $(@F) $^ $(HDF5_LDFLAGS) $(LDFLAGS)
+	chpl $(CFLAGS) $(CHPL_CFLAGS) $(HDF5_CFLAGS) -o $@ --main-module $(@F) $^ $(HDF5_LDFLAGS) $(CHPL_LDFLAGS) $(LDFLAGS)
 
 bin/TestMatrixVectorProduct: test/TestMatrixVectorProduct.chpl $(APP_MODULES)
 	@mkdir -p $(@D)
-	chpl $(CFLAGS) $(HDF5_CFLAGS) -o $@ --main-module $(@F) $^ $(HDF5_LDFLAGS) $(LDFLAGS)
+	chpl $(CFLAGS) $(CHPL_CFLAGS) $(HDF5_CFLAGS) -o $@ --main-module $(@F) $^ $(HDF5_LDFLAGS) $(CHPL_LDFLAGS) $(LDFLAGS)
 
 bin/Example01: example/Example01.chpl $(APP_MODULES)
 	@mkdir -p $(@D)

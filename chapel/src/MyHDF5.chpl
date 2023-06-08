@@ -6,7 +6,7 @@ module MyHDF5 {
   import HDF5;
   import HDF5.C_HDF5;
 
-  use LatticeSymmetries.FFI;
+  // use LatticeSymmetries.FFI;
 
   /*
   proc datasetRank(filename : string, dataset : string) {

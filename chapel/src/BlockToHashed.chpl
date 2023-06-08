@@ -88,10 +88,10 @@ module BlockToHashed {
                             numChunksPerLocale : int =
                               _blockToHashedNumChunksPerLocale(masks,
                                 kBlockToHashedNumChunks)) {
-    var timer = new Timer();
-    var countsTimer = new Timer();
-    var makeDestArrTimer = new Timer();
-    var distributeTimer = new Timer();
+    var timer = new stopwatch();
+    var countsTimer = new stopwatch();
+    var makeDestArrTimer = new stopwatch();
+    var distributeTimer = new stopwatch();
     var permuteTime : [0 ..# numLocales] real;
     const permuteTimePtr = c_ptrTo(permuteTime[0]);
     timer.start();
@@ -158,7 +158,7 @@ module BlockToHashed {
                            else c_const_ptrTo(arr.localAccess(batchIdx, mySubdomain.low));
 
         forall (r, chunkIdx) in zip(ranges, 0 ..# numChunksPerLocale) {
-          var myTimer = new Timer();
+          var myTimer = new stopwatch();
           myTimer.start();
           permuteBasedOnMasks(r.size,
                               myMasksPtr + r.low,

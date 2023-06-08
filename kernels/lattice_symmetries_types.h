@@ -236,6 +236,19 @@ void ls_hs_unchecked_set_representatives(ls_hs_basis *basis,
                                          chpl_external_array const *states);
 /* python-cffi: STOP */
 
+void ls_internal_operator_apply_diag_x1(ls_hs_operator const * op,
+                                        ptrdiff_t batch_size,
+                                        uint64_t const * alphas,
+                                        double * ys,
+                                        double const * xs);
+void ls_internal_operator_apply_off_diag_x1(ls_hs_operator const * op,
+                                            ptrdiff_t batch_size,
+                                            uint64_t const * alphas,
+                                            uint64_t * betas,
+                                            ls_hs_scalar * coeffs,
+                                            ptrdiff_t * offsets,
+                                            double const * xs);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

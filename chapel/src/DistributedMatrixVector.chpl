@@ -42,8 +42,11 @@ private proc localDiagonalBatch(indices : range(int, boundKind.both, false),
   // if workspace.size < batchSize then
   //   workspace.domain = {0 ..# batchSize};
   ls_internal_operator_apply_diag_x1(
-    matrix.payload.deref(), batchSize, c_const_ptrTo(representatives[indices.low]),
-    c_ptrTo(y[indices.low]), c_const_ptrTo(x[indices.low]));
+    matrix.payload.deref(),
+    batchSize,
+    c_const_ptrTo(representatives[indices.low]),
+    c_ptrTo(y[indices.low]),
+    c_const_ptrTo(x[indices.low]));
   // ls_hs_operator_apply_diag_kernel(
   //   matrix.payload, batchSize,
   //   c_const_ptrTo(representatives[indices.low]), 1,

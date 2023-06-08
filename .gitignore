@@ -6,3 +6,6 @@ third_party/
 *.egg-info/
 *.so
 *.pyc
+result
+*.o
+.ghc.environment.*

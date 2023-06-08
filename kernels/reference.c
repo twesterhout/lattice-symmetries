@@ -63,7 +63,7 @@ int ls_hs_internal_dec_refcount(_Atomic int *refcount) {
   return atomic_fetch_sub(refcount, 1);
 }
 
-#if 0
+#if 1
 void ls_internal_operator_apply_diag_x1(ls_hs_operator const *const op,
                                         ptrdiff_t const batch_size,
                                         uint64_t const *restrict const alphas,
