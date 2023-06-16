@@ -15,7 +15,11 @@
       url = "github:edolstra/flake-compat";
       flake = false;
     };
-    nix-chapel.url = "github:twesterhout/nix-chapel";
+    nix-chapel = {
+      url = "github:twesterhout/nix-chapel";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.flake-utils.follows = "flake-utils";
+    };
   };
 
   outputs = inputs: inputs.flake-utils.lib.eachDefaultSystem (system:

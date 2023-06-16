@@ -58,6 +58,7 @@ module LatticeSymmetries.Basis
   -- destroyCbasis_kernels,
   -- stateIndex,
   , flattenIndex
+  , unFlattenIndex
   , matchParticleType2
   -- withParticleType,
   -- withReconstructedBasis,
@@ -89,6 +90,7 @@ import LatticeSymmetries.Utils
 import Prettyprinter (Doc, Pretty (..))
 import System.IO.Unsafe (unsafePerformIO)
 import Type.Reflection
+import Prelude hiding (state)
 
 -- | Hilbert space basis vector parametrized by the particle type.
 data BasisState (t :: ParticleTy) = BasisState {-# UNPACK #-} !Int !BitString
@@ -617,7 +619,7 @@ fixedHammingIndexToState hammingWeight = go hammingWeight 0
 
 flattenIndex :: Basis t -> IndexType t -> Int
 flattenIndex basis i = case basis of
-  SpinBasis _ _ _ _ -> i
+  SpinBasis {} -> i
   SpinfulFermionBasis n _ ->
     case i of
       (SpinUp, k) -> k
@@ -626,8 +628,8 @@ flattenIndex basis i = case basis of
 
 unFlattenIndex :: Basis t -> Int -> IndexType t
 unFlattenIndex basis i = case basis of
-  SpinBasis _ _ _ _ -> i
-  SpinlessFermionBasis _ _ -> i
+  SpinBasis {} -> i
+  SpinlessFermionBasis {} -> i
   SpinfulFermionBasis n _
     | i > n -> (SpinDown, i - n)
     | otherwise -> (SpinUp, i)
@@ -676,9 +678,9 @@ getNumberUp x = case x of
 
 getParticleType :: Basis t -> Cparticle_type
 getParticleType x = case x of
-  SpinBasis _ _ _ _ -> c_LS_HS_SPIN
-  SpinfulFermionBasis _ _ -> c_LS_HS_SPINFUL_FERMION
-  SpinlessFermionBasis _ _ -> c_LS_HS_SPINLESS_FERMION
+  SpinBasis {} -> c_LS_HS_SPIN
+  SpinfulFermionBasis {} -> c_LS_HS_SPINFUL_FERMION
+  SpinlessFermionBasis {} -> c_LS_HS_SPINLESS_FERMION
 {-# INLINE getParticleType #-}
 
 getSpinInversion :: Basis t -> Maybe Int
@@ -690,9 +692,9 @@ getSpinInversion x = case x of
 
 getParticleTag :: Basis t -> ParticleTag t
 getParticleTag x = case x of
-  SpinBasis _ _ _ _ -> SpinTag
-  SpinfulFermionBasis _ _ -> SpinfulFermionTag
-  SpinlessFermionBasis _ _ -> SpinlessFermionTag
+  SpinBasis {} -> SpinTag
+  SpinfulFermionBasis {} -> SpinfulFermionTag
+  SpinlessFermionBasis {} -> SpinlessFermionTag
 {-# INLINE getParticleTag #-}
 
 isStateIndexIdentity :: Basis t -> Bool
@@ -794,7 +796,7 @@ newCbasis x = do
   --   poke ptr $
   new $
     Cbasis
-      { cbasis_refcount = 1
+      { cbasis_refcount = AtomicCInt 1
       , cbasis_number_sites = fromIntegral (getNumberSites x)
       , cbasis_number_particles = optionalNatural (getNumberParticles x)
       , cbasis_number_up = optionalNatural (getNumberUp x)
@@ -946,7 +948,7 @@ setStateInfoKernel _ k =
       }
 
 setStateIndexKernel :: Basis t -> Cbasis_kernels -> IO Cbasis_kernels
-setStateIndexKernel x k =
+setStateIndexKernel _ k =
   pure $
     k
       { cbasis_state_index_kernel = nullFunPtr

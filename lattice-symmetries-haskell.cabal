@@ -53,17 +53,18 @@ common common-options
     StandaloneDeriving
     TypeApplications
     TypeFamilies
+    ViewPatterns
 
 library
   import:          common-options
   hs-source-dirs:  src
   exposed-modules:
-    LatticeSymmetries
     LatticeSymmetries.Algebra
     LatticeSymmetries.Basis
     LatticeSymmetries.Benes
     LatticeSymmetries.BitString
     LatticeSymmetries.ComplexRational
+    LatticeSymmetries.Context
     LatticeSymmetries.Dense
     LatticeSymmetries.Expr
     LatticeSymmetries.FFI
@@ -74,11 +75,6 @@ library
     LatticeSymmetries.Parser
     LatticeSymmetries.Utils
 
-  -- LatticeSymmetries.IO
-  -- c-sources:           cbits/helpers.c
-  --                      cbits/csr.c
-  --                      cbits/reference.c
-  -- cc-options:          -Wall -Wextra -Wpedantic
   include-dirs:    cbits
 
   -- build-tool-depends:  hsc2hs:hsc2hs
@@ -87,12 +83,15 @@ library
     , bytestring
     , constraints
     , containers
+    , derive-storable
+    , inline-c
     , mtl
     , parsec
     , prettyprinter      >=1.7
     , primitive
     , safe-exceptions
     , scientific
+    , template-haskell
     , text
     , unliftio-core
     , vector
@@ -126,7 +125,7 @@ library
   -- kernels/kernels.c
   include-dirs:    cbits
   cc-options:
-    -fPIC -O3 -DNDEBUG -Wall -Wextra -Wpedantic -Wconversion
+    -std=c11 -fPIC -O3 -DNDEBUG -Wall -Wextra -Wpedantic -Wconversion
     -Wdouble-promotion -Wformat=2 -Wformat-overflow=2 -Winit-self
     -Wimplicit-fallthrough -Wunused -Wuninitialized -Wstrict-overflow=2
     -Wduplicated-branches -Wfloat-equal -Wshadow -Wunused-macros

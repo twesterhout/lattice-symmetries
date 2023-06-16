@@ -1,7 +1,6 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 -- |
@@ -10,41 +9,37 @@
 -- Copyright   : (c) Tom Westerhout, 2022
 -- Stability   : experimental
 module LatticeSymmetries.Generator
-  ( SpinIndex (..),
-    SpinGeneratorType (..),
-    FermionGeneratorType (..),
-    Generator (..),
-    ParticleTy (..),
-    ParticleTag (..),
-    particleTagToType,
-    particleDispatch,
-    IndexType (..),
-    GeneratorType (..),
-    IsIndexType,
-    HasProperIndexType,
-    IsGeneratorType,
-    HasProperGeneratorType,
-    withConstraint,
-    -- HasSiteIndex (..),
-    getSiteIndex,
-    mapSiteIndex,
-    -- HasMatrixRepresentation (..),
+  ( SpinIndex (..)
+  , SpinGeneratorType (..)
+  , FermionGeneratorType (..)
+  , Generator (..)
+  , ParticleTy (..)
+  , ParticleTag (..)
+  , particleTagToType
+  , particleDispatch
+  , IndexType
+  , GeneratorType
+  , IsIndexType
+  , HasProperIndexType
+  , IsGeneratorType
+  , HasProperGeneratorType
+  , withConstraint
+  -- HasSiteIndex (..),
+  , getSiteIndex
+  , mapSiteIndex
+  -- HasMatrixRepresentation (..),
   )
 where
 
 import Data.Aeson
-import Data.Aeson.Types (Pair)
 import Data.Bits
 import Data.Constraint
 import Data.Constraint.Deferrable
-import Data.Constraint.Unsafe
-import qualified Data.Text as Text
-import qualified Data.Vector.Generic as G
+import Data.Text qualified as Text
 import LatticeSymmetries.BitString
--- import LatticeSymmetries.Dense
 import LatticeSymmetries.NonbranchingTerm
-import Prettyprinter (Doc, Pretty (..))
-import qualified Prettyprinter as Pretty
+import Prettyprinter (Pretty (..))
+import Prettyprinter qualified as Pretty
 import Prettyprinter.Render.Text (renderStrict)
 import Type.Reflection
 import Prelude hiding (Product, Sum, identity, toList)
@@ -83,9 +78,9 @@ data ParticleTag (t :: ParticleTy) where
   SpinfulFermionTag :: ParticleTag 'SpinfulFermionTy
   SpinlessFermionTag :: ParticleTag 'SpinlessFermionTy
 
-instance Show (ParticleTag t)
+deriving instance Show (ParticleTag t)
 
-instance Eq (ParticleTag t)
+deriving instance Eq (ParticleTag t)
 
 -- | Get the runtime representation of the particle type.
 particleTagToType :: ParticleTag t -> ParticleTy
@@ -102,20 +97,15 @@ particleDispatch
   | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinlessFermionTy) = SpinlessFermionTag
   | otherwise = error "this should never happen by construction"
 
-withConstraint ::
-  forall (c :: ParticleTy -> Constraint) (t :: ParticleTy) a.
-  (HasCallStack, Typeable t, c 'SpinTy, c 'SpinfulFermionTy, c 'SpinlessFermionTy) =>
-  (c t => a) ->
-  a
-withConstraint f =
-  case particleDispatch @t of
-    SpinTag -> f
-    SpinfulFermionTag -> f
-    SpinlessFermionTag -> f
-
--- case unsafeCoerceConstraint :: (c 'SpinTy, c 'SpinfulFermionTy, c 'SpinlessFermionTy) :- (c t) of
---   Sub x@Dict -> f
--- {-# NOINLINE proveConstraint #-}
+withConstraint
+  :: forall (c :: ParticleTy -> Constraint) (t :: ParticleTy) a
+   . (HasCallStack, Typeable t, c 'SpinTy, c 'SpinfulFermionTy, c 'SpinlessFermionTy)
+  => (c t => a)
+  -> a
+withConstraint f = case particleDispatch @t of
+  SpinTag -> f
+  SpinfulFermionTag -> f
+  SpinlessFermionTag -> f
 
 -- | Index for the spin sector.
 --
@@ -146,7 +136,7 @@ data SpinGeneratorType
     SpinZ
   | -- | \( \sigma^{+} = \sigma^x + 𝕚\sigma^y = \begin{pmatrix} 0 & 1\\ 0 & 0 \end{pmatrix} \)
     SpinPlus
-  | -- | \( \sigma^{-} = \sigma^x - 𝕚\sigma^y = \begin{pmatrix} 0 & 0\\ 1 & 0 \end{pmatrix} \)
+  | -- | \( \sigma^{\-\} = \sigma^x - 𝕚\sigma^y = \begin{pmatrix} 0 & 0\\ 1 & 0 \end{pmatrix} \))
     SpinMinus
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
 

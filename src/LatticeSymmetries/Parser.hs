@@ -1,45 +1,36 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module LatticeSymmetries.Parser
-  ( pSpinlessFermionicOperator,
-    pSpinfulFermionicOperator,
-    pSpinOperator,
-    pOperatorString,
-    pBasisState,
-    pNumber,
-    pExpr,
-    mkExpr,
-    mkExpr',
-    mkSomeExpr,
-    mkSomeExpr',
-    SpinIndex (..),
-    -- mkSpinOperator,
-    -- termsFromText,
-    -- operatorFromString,
-    -- basisFromYAML,
-    -- hamiltonianFromYAML,
-    -- observablesFromYAML,
-    configFromYAML,
-    ConfigSpec (..),
+  ( pSpinlessFermionicOperator
+  , pSpinfulFermionicOperator
+  , pSpinOperator
+  , pOperatorString
+  , pBasisState
+  , pNumber
+  , pExpr
+  , mkExpr
+  , mkExpr'
+  , mkSomeExpr
+  , mkSomeExpr'
+  , SpinIndex (..)
+  , configFromYAML
+  , ConfigSpec (..)
   )
 where
 
 import Data.Aeson hiding ((<?>))
-import qualified Data.Aeson.Key
-import qualified Data.Aeson.KeyMap
+import Data.Aeson.Key qualified
+import Data.Aeson.KeyMap qualified
 import Data.Aeson.Types (JSONPathElement (..), Parser, parserThrowError)
 import Data.Bits
--- import qualified Data.List.NonEmpty as NonEmpty
 import Data.Ratio
-import qualified Data.Text as Text
+import Data.Text qualified as Text
 import Data.Vector (Vector)
-import qualified Data.Vector.Generic as G
+import Data.Vector.Generic qualified as G
 import Data.Yaml.Aeson (decodeFileWithWarnings, prettyPrintParseException)
--- import Data.String (IsString (..))
--- import qualified Data.Vector.Generic as G
-
 import LatticeSymmetries.Algebra
 import LatticeSymmetries.Basis
 import LatticeSymmetries.BitString
@@ -47,10 +38,8 @@ import LatticeSymmetries.ComplexRational
 import LatticeSymmetries.Expr
 import LatticeSymmetries.Generator
 import LatticeSymmetries.Operator
-import LatticeSymmetries.Utils
 import Text.Parsec
 import Text.Parsec.Token
--- import qualified Text.Read (read)
 import Prelude hiding (Product, Sum, many, optional, (<|>))
 
 -- type ℝ = Rational
@@ -60,16 +49,16 @@ import Prelude hiding (Product, Sum, many, optional, (<|>))
 pSubscriptDigit :: Stream s m Char => ParsecT s u m Char
 pSubscriptDigit =
   choice
-    [ char '₀' *> pure '0',
-      char '₁' *> pure '1',
-      char '₂' *> pure '2',
-      char '₃' *> pure '3',
-      char '₄' *> pure '4',
-      char '₅' *> pure '5',
-      char '₆' *> pure '6',
-      char '₇' *> pure '7',
-      char '₈' *> pure '8',
-      char '₉' *> pure '9'
+    [ char '₀' *> pure '0'
+    , char '₁' *> pure '1'
+    , char '₂' *> pure '2'
+    , char '₃' *> pure '3'
+    , char '₄' *> pure '4'
+    , char '₅' *> pure '5'
+    , char '₆' *> pure '6'
+    , char '₇' *> pure '7'
+    , char '₈' *> pure '8'
+    , char '₉' *> pure '9'
     ]
     <?> "index subscript (one of ₀, ₁, ₂, ₃, ₄, ₅, ₆, ₇, ₈, ₉)"
 
@@ -120,8 +109,8 @@ instance KnownIndex (SpinIndex, Int) where
 pFermionicOperatorType :: Stream s m Char => ParsecT s u m (Char, FermionGeneratorType)
 pFermionicOperatorType =
   choice
-    [ (,) <$> char 'n' <*> pure FermionCount,
-      (,) <$> char 'c' <*> pType
+    [ (,) <$> char 'n' <*> pure FermionCount
+    , (,) <$> char 'c' <*> pType
     ]
   where
     pType =
@@ -129,25 +118,25 @@ pFermionicOperatorType =
         True -> pure FermionCreate
         False -> pure FermionAnnihilate
 
-pSpinfulFermionicOperator ::
-  Stream s m Char =>
-  ParsecT s u m (Expr 'SpinfulFermionTy)
+pSpinfulFermionicOperator
+  :: Stream s m Char
+  => ParsecT s u m (Expr 'SpinfulFermionTy)
 pSpinfulFermionicOperator = do
   (_, t) <- pFermionicOperatorType
   i <- pIndex
   pure $ Expr [Scaled 1 [Generator i t]]
 
-pSpinlessFermionicOperator ::
-  Stream s m Char =>
-  ParsecT s u m (Expr 'SpinlessFermionTy)
+pSpinlessFermionicOperator
+  :: Stream s m Char
+  => ParsecT s u m (Expr 'SpinlessFermionTy)
 pSpinlessFermionicOperator = do
   (_, t) <- pFermionicOperatorType
   i <- pIndex
   pure $ Expr [Scaled 1 [Generator i t]]
 
-pSpinOperator ::
-  Stream s m Char =>
-  ParsecT s u m (Expr 'SpinTy)
+pSpinOperator
+  :: Stream s m Char
+  => ParsecT s u m (Expr 'SpinTy)
 pSpinOperator = do
   c <- oneOf "σS" <?> "one of σ, S"
   superscript <- oneOf "⁺⁻ˣʸᶻ" <?> "one of ⁺, ⁻, ˣ, ʸ, ᶻ"
@@ -171,17 +160,17 @@ pSpinOperator = do
 myDef :: Stream s m Char => GenLanguageDef s u m
 myDef =
   LanguageDef
-    { commentStart = "",
-      commentEnd = "",
-      commentLine = "",
-      nestedComments = True,
-      identStart = letter <|> char '_',
-      identLetter = alphaNum <|> oneOf "_'",
-      opStart = oneOf ":!#$%&*+./<=>?@\\^|-~",
-      opLetter = oneOf ":!#$%&*+./<=>?@\\^|-~",
-      reservedOpNames = [],
-      reservedNames = [],
-      caseSensitive = True
+    { commentStart = ""
+    , commentEnd = ""
+    , commentLine = ""
+    , nestedComments = True
+    , identStart = letter <|> char '_'
+    , identLetter = alphaNum <|> oneOf "_'"
+    , opStart = oneOf ":!#$%&*+./<=>?@\\^|-~"
+    , opLetter = oneOf ":!#$%&*+./<=>?@\\^|-~"
+    , reservedOpNames = []
+    , reservedNames = []
+    , caseSensitive = True
     }
 
 skipSpaces :: Stream s m Char => ParsecT s u m ()
@@ -215,10 +204,10 @@ pNumber = (try pComplex <|> (ComplexRational <$> pReal <*> pure 0)) <?> "real or
       skipSpaces >> char ')' >> skipSpaces
       pure $ ComplexRational r i
 
-pOperatorString ::
-  (Stream s m Char, Ord (IndexType t), Algebra (GeneratorType t)) =>
-  ParsecT s u m (Expr t) ->
-  ParsecT s u m (Expr t)
+pOperatorString
+  :: (Stream s m Char, Ord (IndexType t), Algebra (GeneratorType t))
+  => ParsecT s u m (Expr t)
+  -> ParsecT s u m (Expr t)
 pOperatorString pPrimitive = do
   c <- option 1 $ do z <- pNumber; optional (char '×' >> skipSpaces); pure z
   ops <- pPrimitive `sepBy1` spaces <?> "operator string"
@@ -227,11 +216,11 @@ pOperatorString pPrimitive = do
         [] -> error "should never happen"
   pure expr
 
-pExpr ::
-  forall s u m t.
-  (Stream s m Char, Ord (IndexType t), Algebra (GeneratorType t)) =>
-  ParsecT s u m (Expr t) ->
-  ParsecT s u m (Expr t)
+pExpr
+  :: forall s u m t
+   . (Stream s m Char, Ord (IndexType t), Algebra (GeneratorType t))
+  => ParsecT s u m (Expr t)
+  -> ParsecT s u m (Expr t)
 pExpr pPrimitive = do
   isMinus <- isJust <$> optionMaybe (char '-' >> skipSpaces)
   t <- pTerm
@@ -499,11 +488,11 @@ instance IsString (BasisState t) where
 --   pure $ termsFromText @t expr sites
 
 objectFromYAML :: (HasCallStack, FromJSON a) => Text -> Text -> IO a
-objectFromYAML name filename = do
+objectFromYAML _ filename = do
   r <- decodeFileWithWarnings (toString filename)
   case r of
     Left e -> error $ toText $ prettyPrintParseException e
-    Right (warnings, x) -> pure x
+    Right (_, x) -> pure x
 
 data ConfigSpec = ConfigSpec !SomeBasis !(Maybe SomeOperator) !(Vector SomeOperator)
 
