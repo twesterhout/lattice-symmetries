@@ -1,4 +1,4 @@
-#include "lattice_symmetries_haskell.h"
+#include "lattice_symmetries_types.h"
 #include <assert.h>
 #include <complex.h>
 #include <stdbool.h>

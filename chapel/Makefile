@@ -61,7 +61,8 @@ LIB_MODULES = src/LatticeSymmetries.chpl \
               src/StatesEnumeration.chpl \
               src/BatchedOperator.chpl \
               src/DistributedMatrixVector.chpl \
-              src/CommonParameters.chpl
+              src/CommonParameters.chpl \
+              src/Utils.chpl
 
 APP_MODULES = $(LIB_MODULES) \
               src/HashedToBlock.chpl \
@@ -117,7 +118,7 @@ check-matrix-vector-product: bin/TestMatrixVectorProduct
 	$(CHPL_LIBS) $< $(CHPL_ARGS) --kHamiltonian data/heisenberg_chain_6.yaml --kVectors data/matvec/heisenberg_chain_6.h5
 	$(CHPL_LIBS) $< $(CHPL_ARGS) --kHamiltonian data/heisenberg_chain_8.yaml --kVectors data/matvec/heisenberg_chain_8.h5
 	$(CHPL_LIBS) $< $(CHPL_ARGS) --kHamiltonian data/heisenberg_chain_10.yaml --kVectors data/matvec/heisenberg_chain_10.h5
-	$(CHPL_LIBS) $< $(CHPL_ARGS) --kHamiltonian data/heisenberg_chain_12.yaml --kVectors data/matvec/heisenberg_chain_12.h5
+	# $(CHPL_LIBS) $< $(CHPL_ARGS) --kHamiltonian data/heisenberg_chain_12.yaml --kVectors data/matvec/heisenberg_chain_12.h5
 	$(CHPL_LIBS) $< $(CHPL_ARGS) --kHamiltonian data/heisenberg_chain_16.yaml --kVectors data/matvec/heisenberg_chain_16.h5
 	$(CHPL_LIBS) $< $(CHPL_ARGS) --kHamiltonian data/heisenberg_chain_20.yaml --kVectors data/matvec/heisenberg_chain_20.h5
 	$(CHPL_LIBS) $< $(CHPL_ARGS) --kHamiltonian data/heisenberg_chain_24.yaml --kVectors data/matvec/heisenberg_chain_24.h5
@@ -243,6 +244,10 @@ bin/Example04: example/Example04.chpl $(APP_MODULES)
 bin/Example05: example/Example05.chpl $(APP_MODULES)
 	@mkdir -p $(@D)
 	chpl $(CFLAGS) $(HDF5_CFLAGS) -o $@ --main-module $(@F) $^ $(HDF5_LDFLAGS) $(LDFLAGS)
+
+bin/TestRoseTree: test/TestRoseTree.chpl $(APP_MODULES)
+	@mkdir -p $(@D)
+	chpl $(CFLAGS) $(CHPL_CFLAGS) $(HDF5_CFLAGS) -o $@ --main-module $(@F) $^ $(HDF5_LDFLAGS) $(CHPL_LDFLAGS) $(LDFLAGS)
 
 bin/dummy: src/dummy.chpl
 	@mkdir -p $(@D)

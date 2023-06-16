@@ -3,6 +3,7 @@ module DistributedMatrixVector {
 use CTypes;
 use RangeChunk;
 use AllLocalesBarriers;
+use List;
 use Time;
 use DynamicIters;
 use CommDiagnostics;
@@ -12,10 +13,10 @@ import OS.POSIX;
 
 use CommonParameters;
 use FFI;
+use Utils;
 use ForeignTypes;
 use ConcurrentAccessor;
 use BatchedOperator;
-// use CommunicationQueue;
 
 config const kVerboseComm : bool = false; 
 config const kVerboseGetTiming : bool = false; 
@@ -34,26 +35,16 @@ private proc meanAndErrString(timings : [] real) {
 
 /* 
  */
-private proc localDiagonalBatch(indices : range(int, boundKind.both, false),
+private proc localDiagonalBatch(indices : range(int, boundKind.both, strideKind.one),
                                 matrix : Operator, const ref x : [] ?eltType, ref y : [] eltType,
                                 const ref representatives : [] uint(64)) {
   const batchSize = indices.size;
-  // assert(workspace.size >= batchSize);
-  // if workspace.size < batchSize then
-  //   workspace.domain = {0 ..# batchSize};
   ls_internal_operator_apply_diag_x1(
     matrix.payload.deref(),
     batchSize,
     c_const_ptrTo(representatives[indices.low]),
     c_ptrTo(y[indices.low]),
     c_const_ptrTo(x[indices.low]));
-  // ls_hs_operator_apply_diag_kernel(
-  //   matrix.payload, batchSize,
-  //   c_const_ptrTo(representatives[indices.low]), 1,
-  //   c_ptrTo(workspace));
-  // foreach i in indices {
-  //   y[i] = x[i] * workspace[i - indices.low]:eltType;
-  // }
 }
 
 config const matrixVectorDiagonalNumChunks : int = 10 * here.maxTaskPar;
@@ -66,7 +57,7 @@ private proc localDiagonal(matrix : Operator, const ref x : [] ?eltType, ref y :
                                                  representatives.size)) {
   const totalSize = representatives.size;
   // const batchSize = (totalSize + numChunks - 1) / numChunks;
-  var ranges : [0 ..# numChunks] range(int, boundKind.both, false) =
+  var ranges : [0 ..# numChunks] range(int, boundKind.both, strideKind.one) =
     chunks(0 ..# totalSize, numChunks);
   // var workspace : [0 ..# batchSize] complex(128) = noinit;
   forall r in ranges {
@@ -74,40 +65,58 @@ private proc localDiagonal(matrix : Operator, const ref x : [] ?eltType, ref y :
   }
 }
 
-private proc localProcess(basisPtr : c_ptr(Basis), accessorPtr : c_ptr(ConcurrentAccessor(?coeffType)),
-                          basisStates : c_ptr(uint(64)), coeffs : c_ptr(?t), size : int) {
-  var timer = new stopwatch();
-  timer.start();
-  var allocateTimer = new stopwatch();
-  var indexingTimer = new stopwatch();
-  var accessTimer = new stopwatch();
+
+record LocalProcessTimer {
+  var total : stopwatch;
+  var allocation : stopwatch;
+  var indexing : stopwatch;
+  var accessing : stopwatch;
+
+  proc getTimings() {
+    return timingTree(
+      "localProcess", total.elapsed(),
+      [ ("allocation", allocation.elapsed())
+      , ("ls_hs_state_index", indexing.elapsed())
+      , ("localAdd", accessing.elapsed())
+      ]
+    );
+  }
+}
+
+private proc localProcess(basisPtr : c_ptrConst(Basis),
+                          accessorPtr : c_ptr(ConcurrentAccessor(?coeffType)),
+                          basisStates : c_ptrConst(uint(64)),
+                          coeffs : c_ptrConst(?t),
+                          size : int,
+                          timer : c_ptr(LocalProcessTimer) = nil) {
   local {
     // count == 0 has to be handled separately because c_ptrTo(indices) fails
     // when the size of indices is 0.
-    if size == 0 then return (0, 0, 0, 0);
+    if size == 0 then return;
 
+    if timer != nil then timer.deref().total.start();
+
+    ref accessor = accessorPtr.deref();
     // Special case when we don't have to call ls_hs_state_index
-    if basisPtr.deref().isStateIndexIdentity() {
-      accessTimer.start();
-      ref accessor = accessorPtr.deref();
+    if numLocales == 1 && basisPtr.deref().isStateIndexIdentity() {
+      if timer != nil then timer.deref().accessing.start();
       foreach k in 0 ..# size {
         const i = basisStates[k]:int;
         const c = coeffs[k]:coeffType;
-        accessor.localAdd(i, c);
+        if c != 0 then accessor.localAdd(i, c);
       }
-      accessTimer.stop();
+      if timer != nil then timer.deref().accessing.stop();
     }
     else {
-      allocateTimer.start();
+      if timer != nil then timer.deref().allocation.start();
       var indices : [0 ..# size] int = noinit;
-      allocateTimer.stop();
+      if timer != nil then timer.deref().allocation.stop();
 
-      indexingTimer.start();
+      if timer != nil then timer.deref().indexing.start();
       ls_hs_state_index(basisPtr.deref().payload, size, basisStates, 1, c_ptrTo(indices[0]), 1);
-      indexingTimer.stop();
+      if timer != nil then timer.deref().indexing.stop();
 
-      accessTimer.start();
-      ref accessor = accessorPtr.deref();
+      if timer != nil then timer.deref().accessing.start();
       foreach k in 0 ..# size {
         const i = indices[k];
         const c = coeffs[k]:coeffType;
@@ -122,115 +131,13 @@ private proc localProcess(basisPtr : c_ptr(Basis), accessorPtr : c_ptr(Concurren
                               " with coeff " + c:string);
         }
       }
-      accessTimer.stop();
+      if timer != nil then timer.deref().accessing.stop();
     }
+
+    if timer != nil then timer.deref().total.stop();
+
   }
-  timer.stop();
-  return (timer.elapsed(), allocateTimer.elapsed(),
-          indexingTimer.elapsed(), accessTimer.elapsed());
 }
-
-
-/*
-var globalPtrStore : [LocaleSpace] (c_ptr(Basis), c_ptr(ConcurrentAccessor(real(64))));
-
-private proc localOffDiagonal(matrix : Operator, const ref x : [] ?eltType, ref y : [] eltType,
-                              const ref representatives : [] uint(64),
-                              numChunks : int = min(matrixVectorOffDiagonalNumChunks,
-                                                    representatives.size)) {
-  var timer = new stopwatch();
-  timer.start();
-  var initTime : real;
-  var computeOffDiagTime : atomic real;
-  var stagingAddTime : atomic real;
-  var stagingFlushTime : atomic real;
-  var queueDrainTime : real;
-  var initTimer = new stopwatch();
-  initTimer.start();
-
-  const chunkSize = (representatives.size + numChunks - 1) / numChunks;
-  logDebug("Local dimension=", representatives.size, ", chunkSize=", chunkSize);
-  var accessor = new ConcurrentAccessor(y);
-  globalPtrStore[here.id] = (c_const_ptrTo(matrix.basis), c_ptrTo(accessor));
-  allLocalesBarrier.barrier();
-
-  var queue = new CommunicationQueue(eltType, globalPtrStore);
-
-  const ranges : [0 ..# numChunks] range(int) =
-    chunks(0 ..# representatives.size, numChunks);
-  initTimer.stop();
-  initTime += initTimer.elapsed();
-  forall rangeIdx in dynamic(0 ..# numChunks, chunkSize=1,
-                             numTasks=matrixVectorMainLoopNumTasks)
-                     with (ref queue,
-                           var batchedOperator = new BatchedOperator(matrix, chunkSize),
-                           var staging = new StagingBuffers(queue)) {
-    const r : range(int) = ranges[rangeIdx];
-    // logDebug("Processing ", r, " ...");
-
-    var timer = new stopwatch();
-    timer.start();
-    const (n, basisStatesPtr, coeffsPtr, keysPtr) = batchedOperator.computeOffDiag(
-        r.size, c_const_ptrTo(representatives[r.low]), c_const_ptrTo(x[r.low]));
-    chpl_task_yield();
-    var radixOffsets : c_array(int, 257);
-    radixOneStep(n, keysPtr, radixOffsets, basisStatesPtr, coeffsPtr);
-    chpl_task_yield();
-    // const n = offsetsPtr[r.size];
-    timer.stop();
-    computeOffDiagTime.add(timer.elapsed(), memoryOrder.relaxed);
-
-    timer.clear();
-    timer.start();
-    var numberToDo = numLocales;
-    var isComplete : [0 ..# numLocales] bool = false;
-    while numberToDo > 0 {
-      const prev = numberToDo;
-      for localeIdx in 0 ..# numLocales {
-        if isComplete[localeIdx] then continue;
-
-        const k = radixOffsets[localeIdx];
-        const n = radixOffsets[localeIdx + 1] - k;
-        const isDone = if n != 0 then queue.tryEnqueue(localeIdx, n, basisStatesPtr + k, coeffsPtr + k)
-                                 else true;
-        if isDone {
-          isComplete[localeIdx] = true;
-          numberToDo -= 1;
-        }
-        // else
-        //   chpl_task_yield();
-      }
-      if numberToDo == prev then chpl_task_yield();
-    }
-    // staging.add(n, basisStatesPtr, coeffsPtr);
-    timer.stop();
-    stagingAddTime.add(timer.elapsed(), memoryOrder.relaxed);
-  }
-
-  var queueTimer = new stopwatch();
-  queueTimer.start();
-  queue.drain();
-  queueTimer.stop();
-  queueDrainTime += queueTimer.elapsed();
-
-  allLocalesBarrier.barrier();
-  timer.stop();
-  logDebug("localOffDiagonal took ", timer.elapsed(), "\n",
-           "  ├─ ", initTime, " in initialization\n",
-           "  ├─ ", computeOffDiagTime, " in computeOffDiag (total)\n",
-           "  ├─ ", stagingAddTime, " in staging.add (total)\n",
-           "  │   └─ ", queue.enqueueTime, " in queue.enqueue\n",
-           "  │       ├─ ", queue.localProcessTimeHere, " in localProcess on here\n",
-           "  │       ├─ ", queue.lockWaitingTimeHere, " waiting for queue.lock\n",
-           "  │       └─ ", queue.enqueueUnsafeTime, " in queue._enqueueUnsafe\n",
-           "  │           └─ ", queue.flushBufferTime, " in queue._flushBuffer\n",
-           "  │               ├─ ", queue.lockWaitingTimeRemote, " waiting for remoteBuffer.lock\n",
-           "  │               ├─ ", queue.flushBufferPutTime, " in remote PUTs\n",
-           "  │               └─ ", queue.flushBufferRemoteTime, " in remote tasks\n",
-           "  │                   └─ ", queue.localProcessTimeRemote, " in localProcess on remote\n",
-           "  └─ ", queueDrainTime, " in queue.drain\n");
-}
-*/
 
 record PartitionInfo {
     var _countOrOffset : int;
@@ -240,7 +147,7 @@ record PartitionInfo {
     inline proc offset ref { return _countOrOffset; }
 };
 
-proc partitionBy(in first : c_ptr(?eltType), last : c_ptr(eltType), predicate) {
+inline proc partitionBy(in first : c_ptr(?eltType), last : c_ptr(eltType), predicate) {
     while true {
       if first == last then return last;
       if !predicate(first.deref()) then break;
@@ -340,7 +247,14 @@ record _LocalBuffer {
   }
 }
 
-config const kDeadlock = false;
+// record RemoteBufferTimer {
+//   var put : stopwatch;
+//   var putSize : int;
+//   var wait : stopwatch;
+//   var waitCalls : int;
+//   var waitCount : int;
+//   var submit : stopwatch;
+// }
 
 record _RemoteBuffer {
   type coeffType;
@@ -354,93 +268,73 @@ record _RemoteBuffer {
   var isEmpty : c_ptr(chpl__processorAtomicType(bool));
   var isEOF : c_ptr(chpl__processorAtomicType(bool));
 
-  var _putTime : real;
-  var _waitTime : real;
-  var _submitTime : real;
+  // var timer : RemoteBufferTimer;
 
   proc postinit() {
     isFull.write(false);
   }
 
-  inline proc put(localBasisStates : c_ptr(uint(64)),
-                  localCoeffs : c_ptr(coeffType),
+  inline proc put(localBasisStates : c_ptrConst(uint(64)),
+                  localCoeffs : c_ptrConst(coeffType),
                   count : int) {
+    // timer.put.start();
     assert(here.id == srcLocaleIdx);
     assert(count <= capacity);
-    // assert(!isFull.read());
-    // startVerboseCommHere();
     PUT(localBasisStates, destLocaleIdx, basisStates, count:c_size_t * c_sizeof(uint(64)));
     PUT(localCoeffs, destLocaleIdx, coeffs, count:c_size_t * c_sizeof(coeffType));
-    // stopVerboseCommHere();
+    // timer.putSize += count * (c_sizeof(coeffTimer) + c_sizeof(uint(64))):int;
+    // timer.put.stop();
   }
 
   inline proc put(localBasisStates : [] uint(64),
                   localCoeffs : [] coeffType,
                   size : int) {
-    put(c_const_ptrTo(localBasisStates[0]), c_const_ptrTo(localCoeffs[0]), size);
+    put(c_ptrToConst(localBasisStates[0]), c_ptrToConst(localCoeffs[0]), size);
   }
 
-  proc submit(basisStatesPtr : c_ptr(uint(64)),
-              coeffsPtr : c_ptr(coeffType),
-              count : int,
-              inTheMeantime) {
-    var timer = new stopwatch();
-    timer.start();
+  // proc submit(basisStatesPtr : c_ptrConst(uint(64)),
+  //             coeffsPtr : c_ptrConst(coeffType),
+  //             count : int,
+  //             inTheMeantime) {
+  //   timer.submit.start();
 
-    var waitTimer = new stopwatch();
-    waitTimer.start();
-    // Wait for the buffer to become empty
-    while isFull.read() {
-      inTheMeantime();
-      if kDeadlock {
-        chpl_task_yield();
-      }
-      // tryProcessLocal(taskIdx, newLocalBuffers, matrix, accessor);
-    }
-    waitTimer.stop();
-    _waitTime += waitTimer.elapsed();
+  //   timer.wait.start();
+  //   timer.waitCalls += 1; // Count number of times we had to wait
+  //   // Wait for the buffer to become empty
+  //   while isFull.read() {
+  //     inTheMeantime();
+  //     timer.waitCount += 1; // Count busy-waiting iterations
+  //   }
+  //   timer.wait.stop();
 
-    put(basisStatesPtr, coeffsPtr, count);
-    isFull.write(true);
-    const atomicPtr = isEmpty;
-    const sizePtr = size;
-    on Locales[destLocaleIdx] {
-      sizePtr.deref() = count;
-      atomicStoreBool(atomicPtr, false);
-    }
+  //   put(basisStatesPtr, coeffsPtr, count);
+  //   isFull.write(true);
+  //   const atomicPtr = isEmpty;
+  //   const sizePtr = size;
+  //   on Locales[destLocaleIdx] {
+  //     sizePtr.deref() = count;
+  //     atomicStoreBool(atomicPtr, false);
+  //   }
 
-    timer.stop();
-    _submitTime += timer.elapsed();
-  }
+  //   timer.submit.stop();
+  // }
 
-  proc submit(basisStatesPtr : c_ptr(uint(64)),
-              coeffsPtr : c_ptr(coeffType),
-              count : int) {
-    record InTheMeantime {
-      inline proc this() {
-        return;
-      }
-    }
-    submit(basisStatesPtr, coeffsPtr, count, new InTheMeantime());
-  }
+  // proc submit(basisStatesPtr : c_ptr(uint(64)),
+  //             coeffsPtr : c_ptr(coeffType),
+  //             count : int) {
+  //   record InTheMeantime {
+  //     inline proc this() { return; }
+  //   }
+  //   submit(basisStatesPtr, coeffsPtr, count, new InTheMeantime());
+  // }
 
   proc finish() {
-    // startVerboseCommHere();
     const atomicPtr = isEOF;
     on Locales[destLocaleIdx] {
       atomicStoreBool(atomicPtr, true);
-      // pragma "local fn" pragma "fast-on safe extern function"
-      // extern proc atomic_store_bool(ref obj : chpl__processorAtomicType(bool), value : bool) : void;
-
-      // atomic_store_bool(atomicPtr.deref(), true);
-      // isEOF.deref().write(true);
     }
-    // stopVerboseCommHere();
   }
 }
-
-
-
 
 class GlobalPtrStore {
   var arr : [LocaleSpace] (c_ptr(Basis),
@@ -463,7 +357,7 @@ config const kNumConsumerTasks = 1;
 config const kVerbose = false;
 config const kUseConsumer : bool = false;
 
-extern proc chpl_task_getId(): chpl_taskID_t;
+// extern proc chpl_task_getId(): chpl_taskID_t;
 
 inline proc atomicStoreBool(p : c_ptr(chpl__processorAtomicType(bool)), value : bool) {
   pragma "local fn" pragma "fast-on safe extern function"
@@ -560,6 +454,19 @@ proc _offDiagInitRemoteBuffers(numTasks : int, ref remoteBuffers, const ref ptrS
   }
 }
 
+record ProducerTimer {
+  var run : stopwatch;
+  var computeOffDiag : stopwatch;
+  var radixOneStep : stopwatch;
+  var localProcess : LocalProcessTimer;
+  var putSize : int;
+  var put : stopwatch;
+  var fastOn : stopwatch;
+  var submit : stopwatch;
+  var submitCalls : int;
+  var submitIterations : int;
+}
+
 record Producer {
   type eltType;
   var _taskIdx : int;
@@ -578,17 +485,15 @@ record Producer {
 
   var remoteBuffersPtr : c_ptr(_RemoteBuffer(complex(128)));
 
-  var runTimer : stopwatch;
-  var computeOffDiagTimer : stopwatch;
-  var radixOneStepTimer : stopwatch;
-  var localProcessTimer : stopwatch;
-  var localProcessAllocating : real;
-  var localProcessIndexing : real;
-  var localProcessAccessing : real;
-  var putSize : int;
-  var putTimer : stopwatch;
-  var fastOnTimer : stopwatch;
-  var submitTimer : stopwatch;
+  var timer : ProducerTimer;
+  // var runTimer : stopwatch;
+  // var computeOffDiagTimer : stopwatch;
+  // var radixOneStepTimer : stopwatch;
+  // var localProcessTimer : LocalProcessTimer;
+  // var putSize : int;
+  // var putTimer : stopwatch;
+  // var fastOnTimer : stopwatch;
+  // var submitTimer : stopwatch;
 
   proc init(taskIdx : int, numChunks : int, in batchedOperator : BatchedOperator,
             ref accessor : ConcurrentAccessor(?eltType),
@@ -613,17 +518,14 @@ record Producer {
     this.currentChunkIdxPtr = c_ptrTo(currentChunkIdx);
     this.remoteBuffersPtr = c_ptrTo(remoteBuffers);
 
-    this.runTimer = new stopwatch();
-    this.computeOffDiagTimer = new stopwatch();
-    this.radixOneStepTimer = new stopwatch();
-    this.localProcessTimer = new stopwatch();
-    this.localProcessAllocating = 0;
-    this.localProcessIndexing = 0;
-    this.localProcessAccessing = 0;
-    this.putSize = 0;
-    this.putTimer = new stopwatch();
-    this.fastOnTimer = new stopwatch();
-    this.submitTimer = new stopwatch();
+    // this.runTimer = new stopwatch();
+    // this.computeOffDiagTimer = new stopwatch();
+    // this.radixOneStepTimer = new stopwatch();
+    // this.localProcessTimer = new LocalProcessTimer();
+    // this.putSize = 0;
+    // this.putTimer = new stopwatch();
+    // this.fastOnTimer = new stopwatch();
+    // this.submitTimer = new stopwatch();
     // logDebug("Done creating Producer(", taskIdx, ")...");
   }
 
@@ -634,8 +536,8 @@ record Producer {
   }
 
   proc bandwidth() : real {
-    const sentBytes = putSize * (c_sizeof(uint(64)) + c_sizeof(complex(128))):int;
-    const sentTime = putTimer.elapsed();
+    const sentBytes = timer.putSize * (c_sizeof(uint(64)) + c_sizeof(complex(128))):int;
+    const sentTime = timer.put.elapsed();
     return sentBytes / (1024.0 * 1024.0 * 1024.0) / sentTime;
   }
 
@@ -646,27 +548,27 @@ record Producer {
     if remoteBuffer.isFull.read() then
       return false;
 
-    putTimer.start();
+    timer.put.start();
     remoteBuffer.put(basisStatesPtr, coeffsPtr, count);
-    putTimer.stop();
-    putSize += count;
+    timer.putSize += count;
+    timer.put.stop();
 
     remoteBuffer.isFull.write(true);
 
     const atomicPtr = remoteBuffer.isEmpty;
     const sizePtr = remoteBuffer.size;
-    fastOnTimer.start();
+    timer.fastOn.start();
     on Locales[remoteBuffer.destLocaleIdx] {
       sizePtr.deref() = count;
       atomicStoreBool(atomicPtr, false);
     }
-    fastOnTimer.stop();
+    timer.fastOn.stop();
     return true;
   }
 
   proc run() {
     assert(numLocales <= 256);
-    runTimer.start();
+    timer.run.start();
 
     var radixOffsets : c_array(int, 257);
     var submitted : [0 ..# numLocales] bool;
@@ -683,42 +585,42 @@ record Producer {
         moreWorkPtr.deref().write(false);
 
       // Compute a r.size rows of the matrix
-      computeOffDiagTimer.start();
+      timer.computeOffDiag.start();
       const r : range(int) = rangesPtr[rangeIdx];
       const (n, basisStatesPtr, coeffsPtr, keysPtr) = batchedOperator.computeOffDiag(
           r.size, representativesPtr + r.low, xPtr + r.low);
-      computeOffDiagTimer.stop();
+      timer.computeOffDiag.stop();
 
-      radixOneStepTimer.start();
+      timer.radixOneStep.start();
       radixOneStep(n, keysPtr, radixOffsets, basisStatesPtr, coeffsPtr);
-      radixOneStepTimer.stop();
+      timer.radixOneStep.stop();
 
+      timer.submit.start();
       POSIX.memset(c_ptrTo(submitted[0]), 0, numLocales:c_size_t * c_sizeof(bool));
       var remaining = numLocales;
+      timer.submit.stop();
 
       {
         const destLocaleIdx = here.id;
         const k = radixOffsets[destLocaleIdx];
         const n = radixOffsets[destLocaleIdx + 1] - k;
         ref remoteBuffer = remoteBuffers[destLocaleIdx, _taskIdx];
-        localProcessTimer.start();
+
         assert(!remoteBuffer.isFull.read());
-        const (_, allocTime, indexTime, accessTime) =
-          localProcess(basisPtr,
-                       accessorPtr,
-                       basisStatesPtr + k,
-                       coeffsPtr + k,
-                       n);
-        localProcessTimer.stop();
-        localProcessAllocating += allocTime;
-        localProcessIndexing += indexTime;
-        localProcessAccessing += accessTime;
+        localProcess(basisPtr,
+                     accessorPtr,
+                     basisStatesPtr + k,
+                     (coeffsPtr + k):c_ptrConst(complex(128)),
+                     n,
+                     c_ptrTo(timer.localProcess));
 
         submitted[destLocaleIdx] = true;
         remaining -= 1;
       }
-      submitTimer.start();
+      timer.submit.start();
+      timer.submitCalls += 1;
       while remaining > 0 {
+        timer.submitIterations += 1;
         for destLocaleIdx in 0 ..# numLocales {
           if submitted[destLocaleIdx] then continue;
 
@@ -731,10 +633,27 @@ record Producer {
           }
         }
       }
-      submitTimer.stop();
+      timer.submit.stop();
     }
 
-    runTimer.stop();
+    timer.run.stop();
+  }
+
+  proc getTimings() {
+    var tree = timingTree("Producer.run", timer.run.elapsed());
+    tree.addChild(batchedOperator.getTimings());
+    tree.addChild(timer.localProcess.getTimings());
+    tree.addChild(timingTree(
+      "radixOneStep", timer.radixOneStep.elapsed()
+    ));
+    tree.addChild(timingTree(
+      "submit", timer.submit.elapsed(),
+      [ ("extra iterations per submit", timer.submitIterations:real / timer.submitCalls:real)
+      , ("put", timer.put.elapsed())
+      , ("fastOn", timer.fastOn.elapsed())
+      ]
+    ));
+    return tree;
   }
 }
 
@@ -758,10 +677,7 @@ record Consumer {
   var localBuffersPtr : c_ptr(_LocalBuffer(complex(128)));
 
   var runTimer : stopwatch;
-  var localProcessTimer : stopwatch;
-  var localProcessAllocating : real;
-  var localProcessIndexing : real;
-  var localProcessAccessing : real;
+  var localProcessTimer : LocalProcessTimer;
   var fastOnTimer : stopwatch;
 
   proc init(taskIdx : int, numConsumerTasks : int, numProducerTasks : int,
@@ -809,7 +725,7 @@ record Consumer {
     this.localBuffersPtr = c_ptrTo(localBuffers[0, 0]);
 
     this.runTimer = new stopwatch();
-    this.localProcessTimer = new stopwatch();
+    this.localProcessTimer = new LocalProcessTimer();
     this.fastOnTimer = new stopwatch();
   }
 
@@ -827,18 +743,13 @@ record Consumer {
         ref localBuffer = localBuffers[localeIdx, otherTaskIdx];
         if !localBuffer.isEmpty.read() {
           local {
-            localProcessTimer.start();
             numProcessedPtr.deref().add(1);
-            const (_, allocTime, indexTime, accessTime) =
-              localProcess(basisPtr, accessorPtr,
-                           localBuffer.basisStates,
-                           localBuffer.coeffs,
-                           localBuffer.size);
+            localProcess(basisPtr, accessorPtr,
+                         localBuffer.basisStates,
+                         localBuffer.coeffs:c_ptrConst(complex(128)),
+                         localBuffer.size,
+                         c_ptrTo(localProcessTimer));
             localBuffer.isEmpty.write(true);
-            localProcessTimer.stop();
-            localProcessAllocating += allocTime;
-            localProcessIndexing += indexTime;
-            localProcessAccessing += accessTime;
           }
           const atomicPtr = localBuffer.isFull;
 
@@ -853,6 +764,13 @@ record Consumer {
       }
     }
     runTimer.stop();
+  }
+
+  proc getTimings() {
+    var tree = timingTree("Consumer.run", runTimer.elapsed());
+    tree.addChild(localProcessTimer.getTimings());
+    tree.addChild(timingTree("fastOn", fastOnTimer.elapsed()));
+    return tree;
   }
 }
 
@@ -930,35 +848,38 @@ private proc localOffDiagonalNoQueue(matrix : Operator, const ref x : [] ?eltTyp
   //          ", representatives.size = ", representatives.size,
   //          ", numberOffDiagTerms = ", matrix.numberOffDiagTerms());
 
-  var producerRunTime : [0 ..# numProducerTasks] real;
-  var producerComputeOffDiagTime : [0 ..# numProducerTasks] real;
-  var producerApplyOffDiagTime : [0 ..# numProducerTasks] real;
-  var producerMemcpyTime : [0 ..# numProducerTasks] real;
-  var producerStateInfoTime : [0 ..# numProducerTasks] real;
-  var producerCoeffTime : [0 ..# numProducerTasks] real;
-  var producerKeysTime : [0 ..# numProducerTasks] real;
-  var producerRadixOneStepTime : [0 ..# numProducerTasks] real;
-  var producerLocalProcessTime : [0 ..# numProducerTasks] real;
-  var producerAllocTime : [0 ..# numProducerTasks] real;
-  var producerIndexTime : [0 ..# numProducerTasks] real;
-  var producerAccessTime : [0 ..# numProducerTasks] real;
-  var producerSubmitTime : [0 ..# numProducerTasks] real;
-  var producerFastOnTime : [0 ..# numProducerTasks] real;
-  var producerPutTime : [0 ..# numProducerTasks] real;
-  var producerBandwidth : [0 ..# numProducerTasks] real;
+  // var producerTimers : [0 ..# numProducerTasks] ProducerTimer;
+  // var producerRunTime : [0 ..# numProducerTasks] real;
+  // var producerComputeOffDiagTime : [0 ..# numProducerTasks] real;
+  // var producerApplyOffDiagTime : [0 ..# numProducerTasks] real;
+  // var producerMemcpyTime : [0 ..# numProducerTasks] real;
+  // var producerStateInfoTime : [0 ..# numProducerTasks] real;
+  // var producerCoeffTime : [0 ..# numProducerTasks] real;
+  // var producerKeysTime : [0 ..# numProducerTasks] real;
+  // var producerRadixOneStepTime : [0 ..# numProducerTasks] real;
+  // var producerLocalProcessTime : [0 ..# numProducerTasks] real;
+  // var producerAllocTime : [0 ..# numProducerTasks] real;
+  // var producerIndexTime : [0 ..# numProducerTasks] real;
+  // var producerAccessTime : [0 ..# numProducerTasks] real;
+  // var producerSubmitTime : [0 ..# numProducerTasks] real;
+  // var producerFastOnTime : [0 ..# numProducerTasks] real;
+  // var producerPutTime : [0 ..# numProducerTasks] real;
+  // var producerBandwidth : [0 ..# numProducerTasks] real;
 
-  var consumerRunTime : [0 ..# numConsumerTasks] real;
-  var consumerLocalProcessTime : [0 ..# numConsumerTasks] real;
-  var consumerAllocTime : [0 ..# numConsumerTasks] real;
-  var consumerIndexTime : [0 ..# numConsumerTasks] real;
-  var consumerAccessTime : [0 ..# numConsumerTasks] real;
-  var consumerFastOnTime : [0 ..# numConsumerTasks] real;
+  // var consumerRunTime : [0 ..# numConsumerTasks] real;
+  // var consumerLocalProcessTime : [0 ..# numConsumerTasks] real;
+  // var consumerAllocTime : [0 ..# numConsumerTasks] real;
+  // var consumerIndexTime : [0 ..# numConsumerTasks] real;
+  // var consumerAccessTime : [0 ..# numConsumerTasks] real;
+  // var consumerFastOnTime : [0 ..# numConsumerTasks] real;
+  var producerTimings : list(shared RoseTree(TimingResult(real)), parSafe=true);
+  var consumerTimings : list(shared RoseTree(TimingResult(real)), parSafe=true);
 
   // logDebug("Check #8");
   allLocalesBarrier.barrier();
   initializationTimer.stop();
 
-  coforall taskIdx in 0 ..# numTasks with (ref accessor) {
+  coforall taskIdx in 0 ..# numTasks with (ref accessor, ref producerTimings, ref consumerTimings) {
     if taskIdx < numProducerTasks {
       // I'm a producer
       var producer = new Producer(
@@ -974,22 +895,26 @@ private proc localOffDiagonalNoQueue(matrix : Operator, const ref x : [] ?eltTyp
         newRemoteBuffers);
       producer.run();
 
-      producerRunTime[taskIdx] = producer.runTimer.elapsed();
-      producerComputeOffDiagTime[taskIdx] = producer.computeOffDiagTimer.elapsed();
-      producerApplyOffDiagTime[taskIdx] = producer.batchedOperator.applyOffDiagTimer.elapsed();
-      producerMemcpyTime[taskIdx] = producer.batchedOperator.memcpyTimer.elapsed();
-      producerStateInfoTime[taskIdx] = producer.batchedOperator.stateInfoTimer.elapsed();
-      producerCoeffTime[taskIdx] = producer.batchedOperator.coeffTimer.elapsed();
-      producerKeysTime[taskIdx] = producer.batchedOperator.keysTimer.elapsed();
-      producerRadixOneStepTime[taskIdx] = producer.radixOneStepTimer.elapsed();
-      producerLocalProcessTime[taskIdx] = producer.localProcessTimer.elapsed();
-      producerAllocTime[taskIdx] = producer.localProcessAllocating;
-      producerIndexTime[taskIdx] = producer.localProcessIndexing;
-      producerAccessTime[taskIdx] = producer.localProcessAccessing;
-      producerSubmitTime[taskIdx] = producer.submitTimer.elapsed();
-      producerFastOnTime[taskIdx] = producer.fastOnTimer.elapsed();
-      producerPutTime[taskIdx] = producer.putTimer.elapsed();
-      producerBandwidth[taskIdx] = producer.bandwidth();
+      if kDisplayTimings then
+        producerTimings.pushBack(producer.getTimings());
+
+      //  logDebug(producer.getTimings());
+      // producerRunTime[taskIdx] = producer.runTimer.elapsed();
+      // producerComputeOffDiagTime[taskIdx] = producer.computeOffDiagTimer.elapsed();
+      // producerApplyOffDiagTime[taskIdx] = producer.batchedOperator.applyOffDiagTimer.elapsed();
+      // producerMemcpyTime[taskIdx] = producer.batchedOperator.memcpyTimer.elapsed();
+      // producerStateInfoTime[taskIdx] = producer.batchedOperator.stateInfoTimer.elapsed();
+      // producerCoeffTime[taskIdx] = producer.batchedOperator.coeffTimer.elapsed();
+      // producerKeysTime[taskIdx] = producer.batchedOperator.keysTimer.elapsed();
+      // producerRadixOneStepTime[taskIdx] = producer.radixOneStepTimer.elapsed();
+      // producerLocalProcessTime[taskIdx] = producer.localProcessTimer.total.elapsed();
+      // producerAllocTime[taskIdx] = producer.localProcessTimer.allocation.elapsed();
+      // producerIndexTime[taskIdx] = producer.localProcessTimer.indexing.elapsed();
+      // producerAccessTime[taskIdx] = producer.localProcessTimer.accessing.elapsed();
+      // producerSubmitTime[taskIdx] = producer.submitTimer.elapsed();
+      // producerFastOnTime[taskIdx] = producer.fastOnTimer.elapsed();
+      // producerPutTime[taskIdx] = producer.putTimer.elapsed();
+      // producerBandwidth[taskIdx] = producer.bandwidth();
     }
     else {
       // I'm a consumer
@@ -1004,13 +929,18 @@ private proc localOffDiagonalNoQueue(matrix : Operator, const ref x : [] ?eltTyp
         newLocalBuffers);
       consumer.run();
 
-      const i = taskIdx - numProducerTasks;
-      consumerRunTime[i] = consumer.runTimer.elapsed();
-      consumerLocalProcessTime[i] = consumer.localProcessTimer.elapsed();
-      consumerAllocTime[i] = consumer.localProcessAllocating;
-      consumerIndexTime[i] = consumer.localProcessIndexing;
-      consumerAccessTime[i] = consumer.localProcessAccessing;
-      consumerFastOnTime[i] = consumer.fastOnTimer.elapsed();
+      if kDisplayTimings then
+        consumerTimings.pushBack(consumer.getTimings());
+      // if kDisplayTimings then
+      //   logDebug(consumer.getTimings());
+
+      // const i = taskIdx - numProducerTasks;
+      // consumerRunTime[i] = consumer.runTimer.elapsed();
+      // consumerLocalProcessTime[i] = consumer.localProcessTimer.total.elapsed();
+      // consumerAllocTime[i] = consumer.localProcessTimer.allocation.elapsed();
+      // consumerIndexTime[i] = consumer.localProcessTimer.indexing.elapsed();
+      // consumerAccessTime[i] = consumer.localProcessTimer.accessing.elapsed();
+      // consumerFastOnTime[i] = consumer.fastOnTimer.elapsed();
     }
   }
 
@@ -1029,31 +959,38 @@ private proc localOffDiagonalNoQueue(matrix : Operator, const ref x : [] ?eltTyp
   }
 
   totalTimer.stop();
-  if kDisplayTimings then
-    logDebug("localOffDiagonalNoQueue: ", totalTimer.elapsed(), "\n",
-             " ├─ ", initializationTimer.elapsed(), " in initialization\n",
-             " ├─ producers: ", meanAndErrString(producerRunTime), "\n",
-             " │   ├─ computeOffDiag: ", meanAndErrString(producerComputeOffDiagTime), "\n",
-             " │   │   ├─ applyOffDiag: ", meanAndErrString(producerApplyOffDiagTime), "\n",
-             " │   │   ├─ memcpy:       ", meanAndErrString(producerMemcpyTime), "\n",
-             " │   │   ├─ stateInfo:    ", meanAndErrString(producerStateInfoTime), "\n",
-             " │   │   ├─ rescale:      ", meanAndErrString(producerCoeffTime), "\n",
-             " │   │   └─ localeIdxOf:  ", meanAndErrString(producerKeysTime), "\n",
-             " │   ├─ radixOneStep:   ", meanAndErrString(producerRadixOneStepTime), "\n",
-             " │   ├─ localProcess:   ", meanAndErrString(producerLocalProcessTime), "\n",
-             " │   │   ├─ allocating: ", meanAndErrString(producerAllocTime), "\n",
-             " │   │   ├─ indexing:   ", meanAndErrString(producerIndexTime), "\n",
-             " │   │   └─ accessing:  ", meanAndErrString(producerAccessTime), "\n",
-             " │   └─ submit:         ", meanAndErrString(producerSubmitTime), "\n",
-             " │       ├─ PUT:    ", meanAndErrString(producerPutTime), "\n",
-             " │       └─ fastOn: ", meanAndErrString(producerFastOnTime), "\n",
-             " └─ consumers: ", meanAndErrString(consumerRunTime), "\n",
-             "     ├─ localProcess: ", meanAndErrString(consumerLocalProcessTime), "\n",
-             "     │   ├─ allocating: ", meanAndErrString(consumerAllocTime), "\n",
-             "     │   ├─ indexing:   ", meanAndErrString(consumerIndexTime), "\n",
-             "     │   └─ accessing:  ", meanAndErrString(consumerAccessTime), "\n",
-             "     └─ fastOn:       ", meanAndErrString(consumerFastOnTime), "\n",
-             "    (bandwidth in GB/s: ", meanAndErrString(producerBandwidth), ")");
+  if kDisplayTimings {
+    var tree = timingTree("localOffDiagonalNoQueue", totalTimer.elapsed());
+    tree.addChild(timingTree("initialization", initializationTimer.elapsed()));
+    tree.addChild(combineTimingTrees(producerTimings.toArray()));
+    tree.addChild(combineTimingTrees(consumerTimings.toArray()));
+    logDebug(tree);
+  }
+    // logDebug("localOffDiagonalNoQueue: ", totalTimer.elapsed(), "\n",
+    //          " ├─ ", initializationTimer.elapsed(), " in initialization\n"
+             // " ├─ producers: ", meanAndErrString(producerRunTime), "\n",
+             // " │   ├─ computeOffDiag: ", meanAndErrString(producerComputeOffDiagTime), "\n",
+             // " │   │   ├─ applyOffDiag: ", meanAndErrString(producerApplyOffDiagTime), "\n",
+             // " │   │   ├─ memcpy:       ", meanAndErrString(producerMemcpyTime), "\n",
+             // " │   │   ├─ stateInfo:    ", meanAndErrString(producerStateInfoTime), "\n",
+             // " │   │   ├─ rescale:      ", meanAndErrString(producerCoeffTime), "\n",
+             // " │   │   └─ localeIdxOf:  ", meanAndErrString(producerKeysTime), "\n",
+             // " │   ├─ radixOneStep:   ", meanAndErrString(producerRadixOneStepTime), "\n",
+             // " │   ├─ localProcess:   ", meanAndErrString(producerLocalProcessTime), "\n",
+             // " │   │   ├─ allocating: ", meanAndErrString(producerAllocTime), "\n",
+             // " │   │   ├─ indexing:   ", meanAndErrString(producerIndexTime), "\n",
+             // " │   │   └─ accessing:  ", meanAndErrString(producerAccessTime), "\n",
+             // " │   └─ submit:         ", meanAndErrString(producerSubmitTime), "\n",
+             // " │       ├─ PUT:    ", meanAndErrString(producerPutTime), "\n",
+             // " │       └─ fastOn: ", meanAndErrString(producerFastOnTime), "\n",
+             // " └─ consumers: ", meanAndErrString(consumerRunTime), "\n",
+             // "     ├─ localProcess: ", meanAndErrString(consumerLocalProcessTime), "\n",
+             // "     │   ├─ allocating: ", meanAndErrString(consumerAllocTime), "\n",
+             // "     │   ├─ indexing:   ", meanAndErrString(consumerIndexTime), "\n",
+             // "     │   └─ accessing:  ", meanAndErrString(consumerAccessTime), "\n",
+             // "     └─ fastOn:       ", meanAndErrString(consumerFastOnTime), "\n"
+             // "    (bandwidth in GB/s: ", meanAndErrString(producerBandwidth), ")");
+             // );
 }
 
 proc localMatrixVector(matrix : Operator, const ref x : [] ?eltType, ref y : [] eltType,

@@ -1,5 +1,4 @@
 module HashedToBlock {
-
   use CommonParameters;
   use FFI;
 
@@ -8,15 +7,13 @@ module HashedToBlock {
   use RangeChunk;
   use Time;
 
-  private proc _hashedToBlockComputeCounts(const ref masks : [] ?i, numChunks : int) {
+  private proc hashedToBlockComputeCounts(const ref masks : [] ?i, numChunks : int) {
     var counts : [0 ..# numLocales, 0 ..# numChunks, 0 ..# numLocales] int;
     const countsPtr = c_ptrTo(counts[counts.domain.low]);
     coforall loc in Locales do on loc {
       const mySubdomain = masks.localSubdomain(loc);
       const myRanges : [0 ..# numChunks] range(int) =
         chunks(mySubdomain.dim(0), numChunks);
-      // logDebug(myRanges, " and numChunks=", numChunks);
-      // assert(myRanges.size == numChunks);
       var myCounts : [0 ..# numChunks, 0 ..# numLocales] int;
       forall (r, chunkIdx) in zip(myRanges, 0 ..# numChunks) {
         foreach key in masks.localAccess(r) {
@@ -31,7 +28,7 @@ module HashedToBlock {
     return counts;
   }
 
-  private proc _hashedToBlockComputeSrcOffsets(counts) {
+  private proc hashedToBlockComputeSrcOffsets(counts) {
     const numChunks = counts.shape[1];
     var offsets : [0 ..# numLocales, 0 ..# numChunks, 0 ..# numLocales] int;
     forall localeIdx in 0 ..# numLocales {
@@ -46,7 +43,7 @@ module HashedToBlock {
     return offsets;
   }
 
-  private proc _hashedToBlockMakeDestArray(arr, masks) {
+  private proc hashedToBlockMakeDestArray(arr, masks) {
     param rank = arr.innerRank;
     const batchSize = if rank == 1 then 1
                                    else arr.innerDom.shape[0];
@@ -59,42 +56,46 @@ module HashedToBlock {
     return destArr;
   }
 
-  private proc _hashedToBlockNumChunks(masks, numChunks) {
+  private proc hashedToBlockNumChunks(masks, numChunks) {
     const minChunkSize = min reduce [loc in Locales] masks.localSubdomain(loc).size;
     return min(numChunks, minChunkSize);
   }
 
+  record HashedToBlockTimer {
+    var total : stopwatch;
+    var counts : stopwatch;
+    var distribute : stopwatch;
+
+    proc writeThis(f) throws {
+      f.write(timingTree(
+        "arrFromHashedToBlock", total.elapsed(),
+        [ ("counts", counts.elapsed())
+        , ("distribute", distribute.elapsed())
+        ]
+      ));
+    }
+  }
+
   proc arrFromHashedToBlock(const ref arr, const ref masks,
-                            numChunks = _hashedToBlockNumChunks(masks,
-                                          kHashedToBlockNumChunks)) {
-    var timer = new stopwatch();
-    var countsTimer = new stopwatch();
-    var distributeTimer = new stopwatch();
+                            numChunks = hashedToBlockNumChunks(masks, kHashedToBlockNumChunks)) {
+    var timer = new HashedToBlockTimer();
+    timer.total.start();
 
-    timer.start();
+    timer.counts.start();
+    const counts = hashedToBlockComputeCounts(masks, numChunks);
+    timer.counts.stop();
 
-    countsTimer.start();
-    const counts = _hashedToBlockComputeCounts(masks, numChunks);
-    countsTimer.stop();
-
-    const srcOffsets = _hashedToBlockComputeSrcOffsets(counts);
-
-    // const destArrBox = {0 ..# masks.size};
-    // const destArrDom = destArrBox dmapped Block(boundingBox=destArrBox);
-    var destArr = _hashedToBlockMakeDestArray(arr, masks);
-    // : [destArrDom] arr.eltType;
-
+    const srcOffsets = hashedToBlockComputeSrcOffsets(counts);
+    var destArr = hashedToBlockMakeDestArray(arr, masks);
     const countsPtr = c_const_ptrTo(counts[counts.domain.low]);
     const srcOffsetsPtr = c_const_ptrTo(srcOffsets[srcOffsets.domain.low]);
     const mainLocaleIdx = here.id;
     const arrPtrsPtr = c_const_ptrTo(arr._dataPtrs[0]);
     param rank = arr.innerRank;
-    const batchSize = if rank == 1 then 1
-                                   else arr.innerDom.shape[0];
-    const batchStride = if rank == 1 then 0
-                                     else arr.innerDom.shape[1];
+    const batchSize = if rank == 1 then 1 else arr.innerDom.shape[0];
+    const batchStride = if rank == 1 then 0 else arr.innerDom.shape[1];
 
-    distributeTimer.start();
+    timer.distribute.start();
     coforall loc in Locales do on loc {
       const myDestSubdomain = destArr.localSubdomain();
       const myMasksSubdomain = masks.localSubdomain();
@@ -140,16 +141,12 @@ module HashedToBlock {
           }
         }
       }
-
-
     }
-    distributeTimer.stop();
+    timer.distribute.stop();
+    timer.total.stop();
+    if kDisplayTimings then logDebug(timer);
 
-    timer.stop();
-    logDebug("arrFromHashedToBlock took ", timer.elapsed(), "\n",
-             "  ├─ ", countsTimer.elapsed(), " in computing counts\n",
-             "  └─ ", distributeTimer.elapsed(), " in merging arrays");
     return destArr;
   }
 
-}
+} // module HashedToBlock

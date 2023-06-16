@@ -4,40 +4,12 @@ use BitOps;
 use CTypes;
 use Time;
 import OS.POSIX;
+import Map;
 
 use FFI;
+use Utils;
 use ForeignTypes;
 use StatesEnumeration;
-
-// TODO: this is currently implemented inefficiently
-/*
-private proc localCompressMultiply(batchSize : int, numberTerms : int,
-                                   sigmas : c_ptr(uint(64)), cs : c_ptr(complex(128)),
-                                   xs : c_ptr(?eltType), offsets : c_ptr(int)) {
-  var offset : int = 0;
-  var i : int = 0;
-
-  offsets[0] = 0;
-  for batchIdx in 0 ..# batchSize {
-    // foreach termIdx in 0 ..# numberTerms {
-    //   cs[batchIdx * numberTerms + termIdx] *= xs[batchIdx];
-    // }
-    for termIdx in 0 ..# numberTerms {
-      if (cs[i] != 0) {
-        if (i > offset) {
-          cs[offset] = cs[i];
-          sigmas[offset] = sigmas[i];
-        }
-        cs[offset] *= xs[batchIdx];
-        offset += 1;
-      }
-      i += 1;
-    }
-    offsets[batchIdx + 1] = offset;
-  }
-  // offsets[batchSize] = batchSize * numberTerms;
-}
-*/
 
 proc ls_internal_operator_apply_diag_x1(
     const ref op : ls_hs_operator,
@@ -57,7 +29,7 @@ proc ls_internal_operator_apply_diag_x1(
   const ref terms = op.diag_terms.deref();
   const number_terms = terms.number_terms;
 
-  for batch_idx in 0 ..# batch_size {
+  foreach batch_idx in 0 ..# batch_size {
     var acc : real(64) = 0;
     const alpha = alphas[batch_idx];
     for term_idx in 0 ..# number_terms {
@@ -71,36 +43,7 @@ proc ls_internal_operator_apply_diag_x1(
     ys[batch_idx] = acc;
   }
 }
-// void ls_internal_operator_apply_diag_x1(ls_hs_operator const *const op,
-//                                         ptrdiff_t const batch_size,
-//                                         uint64_t const *restrict const alphas,
-//                                         double *restrict const ys,
-//                                         double const *restrict const xs) {
-//   // The diagonal is zero
-//   if (op->diag_terms == NULL || op->diag_terms->number_terms == 0) {
-//     memset(ys, 0, (size_t)batch_size * sizeof(double));
-//     return;
-//   }
-// 
-//   ls_hs_nonbranching_terms const *restrict terms = op->diag_terms;
-//   ptrdiff_t const number_terms = terms->number_terms;
-//   for (ptrdiff_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
-//     double acc = 0;
-//     uint64_t const alpha = alphas[batch_idx];
-//     for (ptrdiff_t term_idx = 0; term_idx < number_terms; ++term_idx) {
-//       uint8_t const delta = (alpha & terms->m[term_idx]) == terms->r[term_idx];
-//       if (delta != 0) {
-//         int const sign =
-//             1 - 2 * (__builtin_popcountll(alpha & terms->s[term_idx]) % 2);
-//         double const factor =
-//             (xs != NULL) ? delta * sign * xs[batch_idx] : delta * sign;
-//         acc += creal(terms->v[term_idx]) * factor;
-//       }
-//     }
-//     ys[batch_idx] = acc;
-//   }
-// }
-// 
+
 proc ls_internal_operator_apply_off_diag_x1(
     const ref op : ls_hs_operator,
     batch_size : int,
@@ -138,50 +81,15 @@ proc ls_internal_operator_apply_off_diag_x1(
     offsets[batch_idx + 1] = offset;
   }
 }
-// void ls_internal_operator_apply_off_diag_x1(ls_hs_operator const *const op,
-//                                             ptrdiff_t const batch_size,
-//                                             uint64_t const *const alphas,
-//                                             uint64_t *const betas,
-//                                             ls_hs_scalar *const coeffs,
-//                                             ptrdiff_t *const offsets,
-//                                             double const *const xs) {
-//   // Nothing to apply
-//   if (op->off_diag_terms == NULL || op->off_diag_terms->number_terms == 0) {
-//     memset(offsets, 0, (size_t)(batch_size + 1) * sizeof(ptrdiff_t));
-//     return;
-//   }
-// 
-//   ls_hs_nonbranching_terms const *restrict terms = op->off_diag_terms;
-//   ptrdiff_t const number_terms = terms->number_terms;
-// 
-//   offsets[0] = 0;
-//   ptrdiff_t offset = 0;
-//   for (ptrdiff_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
-//     for (ptrdiff_t term_idx = 0; term_idx < number_terms; ++term_idx) {
-//       uint8_t const delta =
-//           (alphas[batch_idx] & terms->m[term_idx]) == terms->r[term_idx];
-//       if (delta != 0) {
-//         int const sign = 1 - 2 * (__builtin_popcountll(alphas[batch_idx] &
-//                                                        terms->s[term_idx]) %
-//                                   2);
-//         double const factor =
-//             (xs != NULL) ? delta * sign * xs[batch_idx] : delta * sign;
-//         coeffs[offset] = CMPLX(creal(terms->v[term_idx]) * factor,
-//                                cimag(terms->v[term_idx]) * factor);
-//         betas[offset] = alphas[batch_idx] ^ terms->x[term_idx];
-//         ++offset;
-//       }
-//     }
-//     offsets[batch_idx + 1] = offset;
-//   }
-//   return;
-// }
 
-
-config const batchedOperatorNewKernel = true;
-
+// A wrapper around the Operator class that allows applying the operator to a
+// batch of basis vectors instead of one.
+//
+// This record pre-allocates all buffers such that repeated application cause no allocations.
+//
+// Operations on this record are not thread-safe, so each task should keep a separate copy of BatchedOperator.
 record BatchedOperator {
-  var _matrixPtr : c_ptr(Operator);
+  var _matrixPtr : c_ptrConst(Operator);
   var batchSize : int;
   var _numberOffDiagTerms : int;
   var _dom : domain(1);
@@ -193,6 +101,7 @@ record BatchedOperator {
   var _localeIdxs : [_dom] uint(8);
   var _offsets : [0 ..# batchSize + 1] int;
 
+  var totalTimer : stopwatch;
   var applyOffDiagTimer : stopwatch;
   var stateInfoTimer : stopwatch;
   var memcpyTimer : stopwatch;
@@ -200,12 +109,11 @@ record BatchedOperator {
   var keysTimer : stopwatch;
 
   proc init(const ref matrix : Operator, batchSize : int) {
-    this._matrixPtr = c_const_ptrTo(matrix);
+    this._matrixPtr = c_addrOfConst(matrix);
     this.batchSize = batchSize;
     this._numberOffDiagTerms = matrix.numberOffDiagTerms();
     const numberTerms = max(_numberOffDiagTerms, 1);
     this._dom = {0 ..# (batchSize * (numberTerms + 1))};
-    // logDebug("BatchedOperator._dom = ", this._dom);
   }
   proc init=(const ref other : BatchedOperator) {
     assert(other.locale == here);
@@ -217,93 +125,82 @@ record BatchedOperator {
 
   inline proc matrix ref { return _matrixPtr.deref(); }
   inline proc basis ref { return matrix.basis; }
-  // proc deinit() {
-    // logDebug("BatchedOperator spent ", compressTime, " in localCompressMultiply and ",
-    //          offDiagTime, " in apply_off_diag");
-  // }
 
-  proc computeOffDiag(count : int,
-                      alphas : c_ptr(uint(64)),
-                      xs : c_ptr(?eltType))
-      : (int, c_ptr(uint(64)), c_ptr(complex(128)), c_ptr(uint(8))) {
+  proc computeOffDiagNoProjection(count, alphas, xs) {
+    const betas = c_pointer_return(_spins1[0]);
+    const cs = c_pointer_return(_coeffs1[0]);
+    const offsets = c_pointer_return(_offsets[0]);
+    const keys = c_pointer_return(_localeIdxs[0]);
+    // We compute H|αᵢ⟩ = ∑ⱼ cᵢⱼ|βᵢⱼ⟩ for each |αᵢ⟩ where i ∈ {0 ..# count}
+    // at this point j ∈ {0 ..# _numberOffDiagTerms}. Both cᵢⱼ and |βᵢⱼ⟩ are
+    // conceptually 2-dimensional arrays, but we use flattened
+    // representations of them.
+    applyOffDiagTimer.start();
+    ls_internal_operator_apply_off_diag_x1(
+      matrix.payload.deref(),
+      count,
+      alphas,
+      betas,
+      cs,
+      offsets,
+      xs);
+    applyOffDiagTimer.stop();
 
-    assert(count <= batchSize);
-    // Simple case when no symmetries are used
-    if !matrix.basis.requiresProjection() {
-      const betas = c_pointer_return(_spins1[0]);
-      const cs = c_pointer_return(_coeffs1[0]);
-      const offsets = c_pointer_return(_offsets[0]);
-      const keys = c_pointer_return(_localeIdxs[0]);
-      // We compute H|αᵢ⟩ = ∑ⱼ cᵢⱼ|βᵢⱼ⟩ for each |αᵢ⟩ where i ∈ {0 ..# count}
-      // at this point j ∈ {0 ..# _numberOffDiagTerms}. Both cᵢⱼ and |βᵢⱼ⟩ are
-      // conceptually 2-dimensional arrays, but we use flattened
-      // representations of them.
-      applyOffDiagTimer.start();
-      ls_internal_operator_apply_off_diag_x1(
-        matrix.payload.deref(),
-        count,
-        alphas,
-        betas,
-        cs,
-        offsets,
-        xs);
-      applyOffDiagTimer.stop();
-
-      keysTimer.start();
-      const totalCount = offsets[count];
-      foreach i in 0 ..# totalCount {
-        keys[i] = localeIdxOf(betas[i]):uint(8);
-      }
-      keysTimer.stop();
-      return (totalCount, betas, cs, keys);
+    // Determine the target locale for every |βᵢⱼ⟩.
+    keysTimer.start();
+    const totalCount = offsets[count];
+    foreach i in 0 ..# totalCount {
+      keys[i] = localeIdxOf(betas[i]):uint(8);
     }
-    // Another simple case when no permutations were given,
-    // only the spin inversion
-    if !matrix.basis.hasPermutationSymmetries() && matrix.basis.hasSpinInversionSymmetry() {
-      const betas = c_pointer_return(_spins1[0]);
-      const cs = c_pointer_return(_coeffs1[0]);
-      const offsets = c_pointer_return(_offsets[0]);
-      const keys = c_pointer_return(_localeIdxs[0]);
-      // We compute H|αᵢ⟩ = ∑ⱼ cᵢⱼ|βᵢⱼ⟩ for each |αᵢ⟩ where i ∈ {0 ..# count}
-      // at this point j ∈ {0 ..# _numberOffDiagTerms}. Both cᵢⱼ and |βᵢⱼ⟩ are
-      // conceptually 2-dimensional arrays, but we use flattened
-      // representations of them.
-      applyOffDiagTimer.start();
-      ls_internal_operator_apply_off_diag_x1(
-        matrix.payload.deref(),
-        count,
-        alphas,
-        betas,
-        cs,
-        offsets,
-        xs);
-      applyOffDiagTimer.stop();
+    keysTimer.stop();
+    return (totalCount, betas, cs, keys);
+  }
 
-      const totalCount = offsets[count];
-      const mask = (1:uint(64) << matrix.basis.numberSites()) - 1;
-      const character = matrix.basis.spinInversion;
-      assert(character != 0);
+  proc computeOffDiagOnlyInversion(count, alphas, xs) {
+    const betas = c_pointer_return(_spins1[0]);
+    const cs = c_pointer_return(_coeffs1[0]);
+    const offsets = c_pointer_return(_offsets[0]);
+    const keys = c_pointer_return(_localeIdxs[0]);
+    // We compute H|αᵢ⟩ = ∑ⱼ cᵢⱼ|βᵢⱼ⟩ for each |αᵢ⟩ where i ∈ {0 ..# count}
+    // at this point j ∈ {0 ..# _numberOffDiagTerms}. Both cᵢⱼ and |βᵢⱼ⟩ are
+    // conceptually 2-dimensional arrays, but we use flattened
+    // representations of them.
+    applyOffDiagTimer.start();
+    ls_internal_operator_apply_off_diag_x1(
+      matrix.payload.deref(),
+      count,
+      alphas,
+      betas,
+      cs,
+      offsets,
+      xs);
+    applyOffDiagTimer.stop();
 
-      stateInfoTimer.start();
-      foreach i in 0 ..# totalCount {
-        const current = betas[i];
-        const inverted = current ^ mask;
-        if inverted < current {
-          betas[i] = inverted;
-          cs[i] *= character;
-        }
+    const totalCount = offsets[count];
+    const mask = (1:uint(64) << matrix.basis.numberSites()) - 1;
+    const character = matrix.basis.spinInversion;
+    assert(character != 0);
+
+    stateInfoTimer.start();
+    foreach i in 0 ..# totalCount {
+      const current = betas[i];
+      const inverted = current ^ mask;
+      if inverted < current {
+        betas[i] = inverted;
+        cs[i] *= character;
       }
-      stateInfoTimer.stop();
-
-      keysTimer.start();
-      foreach i in 0 ..# totalCount {
-        keys[i] = localeIdxOf(betas[i]):uint(8);
-      }
-      keysTimer.stop();
-      return (totalCount, betas, cs, keys);
     }
+    stateInfoTimer.stop();
 
-    // The tricky case when we have to project betas first
+    keysTimer.start();
+    foreach i in 0 ..# totalCount {
+      keys[i] = localeIdxOf(betas[i]):uint(8);
+    }
+    keysTimer.stop();
+    return (totalCount, betas, cs, keys);
+  }
+
+  proc computeOffDiagWithProjection(count, alphas, xs) {
     const tempSpins = c_pointer_return(_spins2[0]);
     const tempCoeffs = c_pointer_return(_coeffs2[0]);
     const offsets = c_pointer_return(_offsets[0]);
@@ -355,6 +252,47 @@ record BatchedOperator {
     return (totalCount, betas, cs, keys);
   }
 
+  // Given `count` basis vectors `alphas` with corresponding coefficients `xs`,
+  // we apply the operator to each basis vector.
+  //
+  // For each basis vector, we have:
+  //
+  //   O |α⟩ = ∑ⱼ cⱼ|βⱼ⟩
+  //
+  // where the number of cⱼ coefficients depends on the basis vector |α⟩, but is bounded by
+  // `_numberOffDiagTerms`.
+  proc computeOffDiag(count : int, alphas : c_ptr(uint(64)), xs : c_ptr(?eltType))
+      : (int, c_ptr(uint(64)), c_ptr(complex(128)), c_ptr(uint(8))) {
+
+    assert(count <= batchSize);
+    totalTimer.start();
+    defer totalTimer.stop();
+
+    // Simple case when no symmetries are used
+    if !matrix.basis.requiresProjection() then
+      return computeOffDiagNoProjection(count, alphas, xs);
+
+    // Another simple case when no permutations were given, only the spin
+    // inversion
+    if !matrix.basis.hasPermutationSymmetries() && matrix.basis.hasSpinInversionSymmetry() then
+      return computeOffDiagOnlyInversion(count, alphas, xs);
+
+    // The tricky case when we have to project betas first
+    return computeOffDiagWithProjection(count, alphas, xs);
+  }
+
+  proc getTimings() {
+    var tree = timingTree(
+      "BatchedOperator.computeOffDiag", totalTimer.elapsed(),
+      [ ("ls_internal_operator_apply_off_diag_x1", applyOffDiagTimer.elapsed())
+      , ("memcpy", memcpyTimer.elapsed())
+      , ("ls_hs_state_info", stateInfoTimer.elapsed())
+      , ("rescale coeffs", coeffTimer.elapsed())
+      , ("localeIdxOf", keysTimer.elapsed())
+      ]
+    );
+    return tree;
+  }
 }
 
 export proc ls_chpl_operator_apply_diag(matrixPtr : c_ptr(ls_hs_operator),
@@ -362,7 +300,7 @@ export proc ls_chpl_operator_apply_diag(matrixPtr : c_ptr(ls_hs_operator),
                                         alphas : c_ptr(uint(64)),
                                         coeffs : c_ptr(chpl_external_array),
                                         numTasks : int) {
-  logDebug("Calling ls_chpl_operator_apply_diag ...");
+  // logDebug("Calling ls_chpl_operator_apply_diag ...");
   var matrix = new Operator(matrixPtr, owning=false);
   if matrix.basis.numberWords != 1 then
     halt("bases with more than 64 bits are not yet implemented");
@@ -374,7 +312,7 @@ export proc ls_chpl_operator_apply_diag(matrixPtr : c_ptr(ls_hs_operator),
     matrix.payload.deref(), count, alphas, c_ptrTo(_cs[0]), nil);
 
   coeffs.deref() = convertToExternalArray(_cs);
-  logDebug("Done! Returning ...");
+  // logDebug("Done! Returning ...");
 }
 
 export proc ls_chpl_operator_apply_off_diag(matrixPtr : c_ptr(ls_hs_operator),
@@ -384,7 +322,7 @@ export proc ls_chpl_operator_apply_off_diag(matrixPtr : c_ptr(ls_hs_operator),
                                             coeffs : c_ptr(chpl_external_array),
                                             offsets : c_ptr(chpl_external_array),
                                             numTasks : int) {
-  logDebug("Calling ls_chpl_operator_apply_off_diag ...");
+  // logDebug("Calling ls_chpl_operator_apply_off_diag ...");
   var matrix = new Operator(matrixPtr, owning=false);
   if matrix.basis.numberWords != 1 then
     halt("bases with more than 64 bits are not yet implemented");
@@ -415,7 +353,7 @@ export proc ls_chpl_operator_apply_off_diag(matrixPtr : c_ptr(ls_hs_operator),
     coeffs.deref() = new chpl_external_array(nil, 0, nil);
     offsets.deref() = convertToExternalArray(_offsets);
   }
-  logDebug("Done! Returning ...");
+  // logDebug("Done! Returning ...");
 }
 
 } // end module BatchedOperator

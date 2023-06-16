@@ -7,18 +7,16 @@ module BlockToHashed {
   use RangeChunk;
   use Time;
 
-  private proc _blockToHashedLocaleCounts(const ref masks : [] ?i) where isIntegral(i) {
+  private proc blockToHashedLocaleCounts(const ref masks : [] ?i) where isIntegral(i) {
     var counts : [0 ..# numLocales, 0 ..# numLocales] int;
     const countsPtr = c_ptrTo(counts[counts.domain.low]);
     const mainLocaleIdx = here.id;
     coforall loc in Locales do on loc {
       const mySubdomain = masks.localSubdomain();
-      // const ref myMasks = masks[masks.localSubdomain()];
       var myCounts : [0 ..# numLocales] int;
       forall key in masks.localAccess(mySubdomain) with (+ reduce myCounts) {
         myCounts[key:int] += 1;
       }
-
       const putOffset = loc.id * numLocales;
       const putSize = numLocales:c_size_t * c_sizeof(int);
       PUT(c_ptrTo(myCounts[0]), mainLocaleIdx, countsPtr + putOffset, putSize);
@@ -26,7 +24,7 @@ module BlockToHashed {
     return counts;
   }
 
-  private proc _blockToHashedLocaleOffsets(counts) {
+  private proc blockToHashedLocaleOffsets(counts) {
     var offsets : [0 ..# numLocales, 0 ..# numLocales] int;
     foreach destLocaleIdx in 0 ..# numLocales {
       var total = 0;
@@ -39,9 +37,8 @@ module BlockToHashed {
     return offsets;
   }
 
-  private proc _blockToHashedTaskCounts(masksSize : int, masksPtr : c_ptr(?i),
-                                        numChunksPerLocale : int) {
-    // if kVerboseComm then startVerboseCommHere();
+  private proc blockToHashedTaskCounts(masksSize : int, masksPtr : c_ptr(?i),
+                                       numChunksPerLocale : int) {
     var counts : [0 ..# numChunksPerLocale, 0 ..# numLocales] int;
     const ranges : [0 ..# numChunksPerLocale] range(int) =
       chunks(0 ..# masksSize, numChunksPerLocale);
@@ -53,7 +50,7 @@ module BlockToHashed {
     return counts;
   }
 
-  proc _blockToHashedTaskOffsets(counts, perLocaleOffsets) {
+  proc blockToHashedTaskOffsets(counts, perLocaleOffsets) {
     const numChunksPerLocale = counts.shape[0];
     var offsets : [0 ..# numChunksPerLocale, 0 ..# numLocales] int;
     for destLocaleIdx in 0 ..# numLocales {
@@ -67,47 +64,64 @@ module BlockToHashed {
     return offsets;
   }
 
-  proc _blockToHashedMakeDestArr(arr : [] ?eltType, counts)
+  proc blockToHashedMakeDestArr(arr : [] ?eltType, counts)
       where arr.domain.rank == 1 {
     const destCounts = [i in 0 ..# numLocales] (+ reduce counts[.., i]);
     return new BlockVector(eltType, destCounts);
   }
-  proc _blockToHashedMakeDestArr(arr : [] ?eltType, counts)
+  proc blockToHashedMakeDestArr(arr : [] ?eltType, counts)
       where arr.domain.rank == 2 {
     const destCounts = [i in 0 ..# numLocales] (+ reduce counts[.., i]);
     return new BlockVector(eltType, arr.shape[0], destCounts);
   }
 
-  proc _blockToHashedNumChunksPerLocale(masks, numChunks) {
+  proc blockToHashedNumChunksPerLocale(masks, numChunks) {
     const minBlockSize = min reduce [loc in Locales] masks.localSubdomain(loc).size;
     const suggested = max(1, numChunks / numLocales);
     return min(minBlockSize, suggested);
   }
 
+  record BlockToHashedTimer {
+    var total : stopwatch;
+    var counts : stopwatch;
+    var makeDestArr : stopwatch;
+    var distribute : stopwatch;
+    var permute : [0 ..# numLocales] real;
+
+    proc writeThis(f) throws {
+      const tree = timingTree(
+        "arrFromBlockToHashed", total.elapsed(),
+        [ ("counts", counts.elapsed())
+        , ("makeDestArr", makeDestArr.elapsed())
+        , ("distribute", distribute.elapsed())
+        ]
+      );
+      tree.children[2].children.append(
+        timingTree("permute (mean over locales, sum over tasks)", meanAndErr(permute)[0]));
+      f.write(tree);
+    }
+  }
+
+
   proc arrFromBlockToHashed(const ref arr : [] ?eltType, const ref masks : [] ?i,
                             numChunksPerLocale : int =
-                              _blockToHashedNumChunksPerLocale(masks,
-                                kBlockToHashedNumChunks)) {
-    var timer = new stopwatch();
-    var countsTimer = new stopwatch();
-    var makeDestArrTimer = new stopwatch();
-    var distributeTimer = new stopwatch();
-    var permuteTime : [0 ..# numLocales] real;
-    const permuteTimePtr = c_ptrTo(permuteTime[0]);
-    timer.start();
+                              blockToHashedNumChunksPerLocale(masks, kBlockToHashedNumChunks)) {
+    var timer = new BlockToHashedTimer();
+    const permuteTimePtr = c_ptrTo(timer.permute[0]);
+    timer.total.start();
 
-    countsTimer.start();
-    const perLocaleCounts = _blockToHashedLocaleCounts(masks);
-    const perLocaleOffsets = _blockToHashedLocaleOffsets(perLocaleCounts);
+    timer.counts.start();
+    const perLocaleCounts = blockToHashedLocaleCounts(masks);
+    const perLocaleOffsets = blockToHashedLocaleOffsets(perLocaleCounts);
     const perLocaleOffsetsPtr = c_const_ptrTo(perLocaleOffsets[perLocaleOffsets.domain.low]);
-    countsTimer.stop();
+    timer.counts.stop();
 
-    makeDestArrTimer.start();
-    var destArr = _blockToHashedMakeDestArr(arr, perLocaleCounts);
+    timer.makeDestArr.start();
+    var destArr = blockToHashedMakeDestArr(arr, perLocaleCounts);
     const destPtrsPtr = c_ptrTo(destArr._dataPtrs);
-    makeDestArrTimer.stop();
+    timer.makeDestArr.stop();
 
-    distributeTimer.start();
+    timer.distribute.start();
     param rank = arr.domain.rank;
     const batchSize = if rank == 1
                         then 1
@@ -117,14 +131,6 @@ module BlockToHashed {
                           else destArr.innerDom.shape[1];
     const mainLocaleIdx = here.id;
     coforall loc in Locales do on loc {
-      // const _myPtr : c_ptr(eltType) = c_ptrTo(destArr[loc.id, destArr.innerDom.low]);
-      // if kUseLowLevelComm then
-      //   PUT(c_const_ptrTo(_myPtr), 0, destPtrsPtr + loc.id, c_sizeof(c_ptr(eltType)));
-      // else
-      //   destPtrs[loc.id] = _myPtr;
-
-      // allLocalesBarrier.barrier();
-
       var myPerLocaleOffsets : [0 ..# numLocales] int;
       GET(c_ptrTo(myPerLocaleOffsets[0]), mainLocaleIdx,
           perLocaleOffsetsPtr + loc.id * numLocales,
@@ -139,17 +145,11 @@ module BlockToHashed {
       const myMasksSize = mySubdomain.size;
 
       const myPerTaskCounts =
-        _blockToHashedTaskCounts(myMasksSize, myMasksPtr, numChunksPerLocale);
-      const myPerTaskOffsets = _blockToHashedTaskOffsets(myPerTaskCounts, myPerLocaleOffsets);
-      // const (perTaskCount, perTaskOffset) =
-      //   getPerTaskCountAndOffset(myMasksSize, myMasksPtr, myPerLocaleOffset);
+        blockToHashedTaskCounts(myMasksSize, myMasksPtr, numChunksPerLocale);
+      const myPerTaskOffsets = blockToHashedTaskOffsets(myPerTaskCounts, myPerLocaleOffsets);
       const ranges : [0 ..# numChunksPerLocale] range(int) =
         chunks(0 ..# myMasksSize, numChunksPerLocale);
 
-      // var computeTimer = new Timer();
-      // computeTimer.start();
-      // var permuteSmallPrepareTime : atomic real;
-      // var permuteSmallComputeTime : atomic real;
       var myPermuteTime : atomic real;
 
       for batchIdx in 0 ..# batchSize {
@@ -168,19 +168,6 @@ module BlockToHashed {
                               myDestPtrs);
           myTimer.stop();
           myPermuteTime.add(myTimer.elapsed(), memoryOrder.relaxed);
-          // proc permuteBasedOnMasks(arrSize : int, masks : c_ptr(?maskType), arr : c_ptr(?eltType),
-          //                          counts : [] int, destOffsets : [] int,
-          //                          destPtrs : [] c_ptr(eltType)) {
-          // const _copy =
-          //   permuteSmall(r.size,
-          //                myMasksPtr + r.low,
-          //                myArrPtr + r.low,
-          //                perTaskCount[chunkIdx, ..],
-          //                perTaskOffset[chunkIdx, ..],
-          //                myDestPtrs);
-          // permuteSmallPrepareTime.add(_prep);
-          // permuteSmallComputeTime.add(_compute);
-          // permuteSmallCopyTime.add(_copy, memoryOrder.relaxed);
         }
         myDestPtrs += batchStride;
       }
@@ -189,21 +176,11 @@ module BlockToHashed {
       PUT(c_const_ptrTo(_myPermuteTime), mainLocaleIdx,
           permuteTimePtr + loc.id,
           c_sizeof(real));
-      // computeTimer.stop();
-      // logDebug("arrFromBlockToHashed main loop took ", computeTimer.elapsed(), "\n",
-      //          "                      from which ", permuteSmallCopyTime.read(),
-      //          " were spent in remote PUTs (divide by the number of tasks because ",
-      //          "they ran in parallel)");
     }
-    distributeTimer.stop();
+    timer.distribute.stop();
+    timer.total.stop();
 
-    timer.stop();
-    logDebug("arrFromBlockToHashed took ", timer.elapsed(), "\n",
-             "  ├─ ", countsTimer.elapsed(), " were spent computing counts\n",
-             "  ├─ ", makeDestArrTimer.elapsed(), " allocating destArr\n",
-             "  └─ ", distributeTimer.elapsed(), " in the main loop\n",
-             "      └─ ", permuteTime, " in permuteBasedOnMasks");
-    // if kVerboseComm then stopVerboseComm();
+    if kDisplayTimings then logDebug(timer);
     return destArr;
   }
 

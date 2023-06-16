@@ -1,5 +1,5 @@
 #include "kernels.h"
-#include "lattice_symmetries_haskell.h"
+#include "lattice_symmetries_types.h"
 #include <HalideRuntime.h>
 #include <stddef.h>
 #include <stdint.h>

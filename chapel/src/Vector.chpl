@@ -9,7 +9,7 @@ use CTypes;
 record Vector {
   type eltType;
   // _dom specifies the capacity, and _size is the current size
-  var _dom : domain(1, idxType=int, stridable=false);
+  var _dom : domain(1, idxType=int, strides=strideKind.one);
   var _arr : [_dom] eltType;
   var _size : int;
 
@@ -25,11 +25,6 @@ record Vector {
   }
 
   forwarding _arr only this;
-  // proc this(i : int) {
-  //   if i >= _size then
-  //     halt("index " + i:string + " is out of bounds for domain {0 ..# " + _size:string + "}");
-  //   return _arr[i];
-  // }
 
   proc reserve(capacity : int) {
     if capacity > _dom.size then
