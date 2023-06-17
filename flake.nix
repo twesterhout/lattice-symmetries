@@ -127,30 +127,47 @@
         in
         hp.lattice-symmetries-haskell;
 
+      lattice-symmetries-chapel-ffi = pkgs.stdenv.mkDerivation {
+        pname = "lattice-symmetries-chapel-ffi";
+        inherit version;
+        unpackPhase = "true";
+        buildPhase = ''
+          c2chapel \
+            ${lattice-symmetries-haskell}/include/lattice_symmetries_functions.h \
+            -DLS_C2CHAPEL \
+            -I${chapel}/runtime/include \
+            -I${lattice-symmetries-kernels}/include \
+            >FFI.chpl
+
+          # Remove the declaration of chpl_external_array since it's already
+          # present in the ExternalArray module
+          sed -i -e '/extern record chpl_external_array/,+5d' FFI.chpl
+          sed -i -E '/chpl_make_external_array(_ptr)?(_free)?\(/d' FFI.chpl
+          sed -i -e '/cleanupOpaqueArray(/d' FFI.chpl
+          sed -i -e '/chpl_free_external_array(/d' FFI.chpl
+          sed -i -e '/chpl_call_free_func(/d' FFI.chpl
+          sed -i 's/extern type ls_hs_scalar = _Complex double/extern type ls_hs_scalar = complex(128)/' FFI.chpl
+        '';
+        installPhase = ''
+          install -m 644 FFI.chpl $out
+        '';
+        buildInputs = [
+          lattice-symmetries-haskell
+          lattice-symmetries-kernels
+        ];
+        nativeBuildInputs = [
+          chapel
+        ];
+      };
+
+
       lattice-symmetries-chapel = pkgs.stdenv.mkDerivation {
         pname = "lattice-symmetries-chapel";
         inherit version;
         src = ./chapel;
 
         configurePhase = ''
-          c2chapel \
-            ${lattice-symmetries-haskell}/include/lattice_symmetries_functions.h \
-            -DLS_C2CHAPEL \
-            -I${chapel}/runtime/include \
-            -I${lattice-symmetries-kernels}/include \
-            >src/FFI.chpl
-
-          # Remove the declaration of chpl_external_array since it's already
-          # present in the ExternalArray module
-          sed -i -e '/extern record chpl_external_array/,+5d' src/FFI.chpl
-          sed -i -E '/chpl_make_external_array(_ptr)?(_free)?\(/d' src/FFI.chpl
-          sed -i -e '/cleanupOpaqueArray(/d' src/FFI.chpl
-          sed -i -e '/chpl_free_external_array(/d' src/FFI.chpl
-          sed -i -e '/chpl_call_free_func(/d' src/FFI.chpl
-          sed -i 's/extern type ls_hs_scalar = _Complex double/extern type ls_hs_scalar = complex(128)/' src/FFI.chpl
-
-          # For debugging
-          cat src/FFI.chpl
+          ln --symbolic ${lattice-symmetries-chapel-ffi} src/FFI.chpl
         '';
 
         makeFlags = [
@@ -160,21 +177,40 @@
           "CHPL_LDFLAGS='-L${lattice-symmetries-haskell.lib}/lib'"
         ];
 
-        postInstall = ''
-          mkdir -p $out/share/generated
-          install -Dm 644 src/FFI.chpl $out/share/generated/
+        buildInputs = [ lattice-symmetries-kernels lattice-symmetries-haskell.lib ];
+        nativeBuildInputs = [ chapel chapelFixupBinary ];
+      };
+
+      test-matrix-vector = pkgs.stdenv.mkDerivation {
+        pname = "test-matrix-vector";
+        inherit version;
+        src = ./chapel;
+
+        configurePhase = ''
+          ln --symbolic ${lattice-symmetries-chapel-ffi} src/FFI.chpl
         '';
 
-        buildInputs = [
-          lattice-symmetries-kernels
-          lattice-symmetries-haskell.lib
-        ];
-        nativeBuildInputs = with pkgs; [
-          which
-          chapel
-          chapelFixupBinary
-          gcc
-        ];
+        buildPhase = ''
+          make \
+            CHPL_COMM=gasnet \
+            CHPL_COMM_SUBSTRATE=smp \
+            OPTIMIZATION=--fast \
+            CHPL_CFLAGS='-I${lattice-symmetries-kernels}/include' \
+            CHPL_LDFLAGS='-L${lattice-symmetries-haskell.lib}/lib' \
+            HDF5_CFLAGS='-I${pkgs.hdf5.dev}/include' \
+            HDF5_LDFLAGS='-L${pkgs.hdf5}/lib -lhdf5_hl -lhdf5 -lrt' \
+            bin/TestMatrixVectorProduct
+
+          chapelFixupBinary bin/TestMatrixVectorProduct
+          chapelFixupBinary bin/TestMatrixVectorProduct_real
+        '';
+
+        installPhase = ''
+          mkdir -p $out/bin
+          install -Dm 755 bin/TestMatrixVectorProduct* $out/bin
+        '';
+
+        nativeBuildInputs = [ chapel chapelFixupBinary ];
       };
 
       lattice-symmetries-python = pkgs.python3Packages.buildPythonPackage {
@@ -218,6 +254,7 @@
         kernels = lattice-symmetries-kernels;
         haskell = lattice-symmetries-haskell;
         chapel = lattice-symmetries-chapel;
+        test-matrix-vector = test-matrix-vector;
         python = lattice-symmetries-python;
         ghc = ghc;
       };

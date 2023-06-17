@@ -96,7 +96,7 @@ module BlockToHashed {
         , ("distribute", distribute.elapsed())
         ]
       );
-      tree.children[2].children.append(
+      tree.children[2].addChild(
         timingTree("permute (mean over locales, sum over tasks)", meanAndErr(permute)[0]));
       f.write(tree);
     }
