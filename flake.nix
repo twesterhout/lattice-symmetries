@@ -67,7 +67,7 @@
           overrides = self: super: {
             # Our project
             lattice-symmetries-haskell =
-              (self.callCabal2nix "lattice-symmetries-haskell" (haskell-sources ./.) {
+              (self.callCabal2nix "lattice-symmetries-haskell" ./haskell {
                 kernels = lattice-symmetries-kernels;
               }).overrideAttrs
                 (attrs: {

@@ -1,19 +1,20 @@
-cabal-version:   3.0
-name:            lattice-symmetries-haskell
-version:         2.0.0
-synopsis:        See README for more info
-description:     See README for more info
-license:         BSD-3-Clause
-license-file:    LICENSE
-author:          Tom Westerhout
+cabal-version: 3.0
+name:          lattice-symmetries-haskell
+version:       2.0.0
+synopsis:      See README for more info
+description:   See README for more info
+license:       BSD-3-Clause
+license-file:  LICENSE
+author:        Tom Westerhout
 maintainer:
   Tom Westerhout <14264576+twesterhout@users.noreply.github.com>
 
-copyright:       2021-2023 Tom Westerhout
-category:        Math
-build-type:      Simple
-extra-doc-files: README.md
-tested-with:     GHC ==9.6.1
+copyright:     2021-2023 Tom Westerhout
+category:      Math
+build-type:    Simple
+
+-- extra-doc-files: README.md
+tested-with:   GHC ==9.6.1
 
 flag no-standalone
   description:

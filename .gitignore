@@ -9,3 +9,6 @@ third_party/
 result
 *.o
 .ghc.environment.*
+
+.nixie
+result
