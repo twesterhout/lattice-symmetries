@@ -1,0 +1,54 @@
+basis:
+  number_spins: 16
+  hamming_weight: 8
+  spin_inversion: 1
+  symmetries:
+    # Initial layout:
+    # - permutation: [ 0,  1,  2,  3,
+    #                  4,  5,  6,  7,
+    #                  8,  9, 10, 11,
+    #                 12, 13, 14, 15]
+    #
+    # Translation along x-axis
+    - permutation: [ 1,  2,  3,  0,
+                     5,  6,  7,  4,
+                     9, 10, 11,  8,
+                    13, 14, 15, 12]
+      sector: 0
+    # Translation along y-axis
+    - permutation: [ 4,  5,  6,  7,
+                     8,  9, 10, 11,
+                    12, 13, 14, 15,
+                     0,  1,  2,  3]
+      sector: 0
+    # Reflection along x-axis (i.e. around y-axis)
+    - permutation: [ 3,  2,  1,  0,
+                     7,  6,  5,  4,
+                    11, 10,  9,  8,
+                    15, 14, 13, 12]
+      sector: 0
+    # Reflection along y-axis (i.e. around x-axis)
+    - permutation: [12, 13, 14, 15,
+                     8,  9, 10, 11,
+                     4,  5,  6,  7,
+                     0,  1,  2,  3]
+      sector: 0
+    # Rotation
+    - permutation: [ 3,  7, 11, 15,
+                     2,  6, 10, 14,
+                     1,  5,  9, 13,
+                     0,  4,  8, 12]
+      sector: 0
+hamiltonian:
+  name: "Heisenberg Hamiltonian"
+  lattice: &lattice [[0, 1], [0, 4], [1, 2], [1, 5], [2, 3], [2, 6], [3, 0], [3, 7],
+                     [4, 5], [4, 8], [5, 6], [5, 9], [6, 7], [6, 10], [7, 4], [7, 11],
+                     [8, 9], [8, 12], [9, 10], [9, 13], [10, 11], [10, 14], [11, 8], [11, 15],
+                     [12, 13], [12, 0], [13, 14], [13, 1], [14, 15], [14, 2], [15, 12], [15, 3]]
+  terms:
+    - expression: "σˣ₀ σˣ₁"
+      sites: *lattice
+    - expression: "σʸ₀ σʸ₁"
+      sites: *lattice
+    - expression: "σᶻ₀ σᶻ₁"
+      sites: *lattice

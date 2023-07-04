@@ -1,0 +1,13 @@
+basis:
+  particle: spin-1/2
+  number_spins: 4
+  hamming_weight: 2
+hamiltonian:
+  name: Heisenberg Hamiltonian
+  terms:
+    - expression: "σˣ₀ σˣ₁"
+      sites: &lattice [ [0, 1], [1, 2], [2, 3], [3, 0] ]
+    - expression: "σʸ₀ σʸ₁"
+      sites: *lattice
+    - expression: "σᶻ₀ σᶻ₁"
+      sites: *lattice

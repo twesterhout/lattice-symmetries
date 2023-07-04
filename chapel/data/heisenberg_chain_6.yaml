@@ -1,0 +1,14 @@
+basis:
+  number_spins: 6
+  hamming_weight: 3
+  symmetries: []
+hamiltonian:
+  name: "Heisenberg Hamiltonian"
+  lattice: &lattice [ [0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0] ]
+  terms:
+    - expression: "σˣ₀ σˣ₁"
+      sites: *lattice
+    - expression: "σʸ₀ σʸ₁"
+      sites: *lattice
+    - expression: "σᶻ₀ σᶻ₁"
+      sites: *lattice

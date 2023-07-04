@@ -1,0 +1,31 @@
+basis:
+  number_spins: 25
+  hamming_weight: 13
+  symmetries: []
+    # - permutation: [1,  2,  3,  4,  0,  6,  7,  8,  9,  5, 11, 12, 13, 14, 10, 16, 17, 18, 19, 15, 21, 22, 23, 24, 20]
+    #   sector: 1
+    # - permutation: [5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,  0,  1,  2,  3,  4]
+    #   sector: 1
+hamiltonian:
+  name: "Heisenberg Hamiltonian"
+  lattice: &lattice [[0, 1], [0, 5], [1, 2], [1, 6], [2, 3], [2, 7], [3, 4], [3, 8],
+          [4, 0], [4, 9], [5, 6], [5, 10], [6, 7], [6, 11], [7, 8], [7, 12],
+          [8, 9], [8, 13], [9, 5], [9, 14], [10, 11], [10, 15], [11, 12], [11, 16],
+          [12, 13], [12, 17], [13, 14], [13, 18], [14, 10], [14, 19], [15, 16], [15, 20],
+          [16, 17], [16, 21], [17, 18], [17, 22], [18, 19], [18, 23], [19, 15], [19, 24],
+          [20, 21], [20, 0], [21, 22], [21, 1], [22, 23], [22, 2], [23, 24], [23, 3],
+          [24, 20], [24, 4]]
+  terms:
+    - expression: "σˣ₀ σˣ₁"
+      sites: *lattice
+    - expression: "σʸ₀ σʸ₁"
+      sites: *lattice
+    - expression: "σᶻ₀ σᶻ₁"
+      sites: *lattice
+observables: []
+number_vectors: 1
+output: "heisenberg_square_5x5.h5"
+# datatype: "float32"
+# precision: 5.0e-7
+max_primme_block_size: 2
+max_primme_basis_size: 20

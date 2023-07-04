@@ -1,0 +1,18 @@
+basis:
+  number_spins: 16
+  hamming_weight: 8
+  symmetries: []
+hamiltonian:
+  name: "Heisenberg Hamiltonian"
+
+  lattice: &lattice [[0, 1], [0, 4], [1, 2], [1, 4], [2, 3], [2, 5], [3, 5], [4, 6], [5, 7], [5, 8], [6, 7], [6, 10], [7, 8], [7, 10], [8, 9], [8, 11], [9, 11], [10, 12], [11, 13], [11, 14], [12, 13], [13, 14], [14, 15]]
+  terms:
+    - expression: "Sˣ₀ Sˣ₁"
+      sites: *lattice
+    - expression: "Sʸ₀ Sʸ₁"
+      sites: *lattice
+    - expression: "Sᶻ₀ Sᶻ₁"
+      sites: *lattice
+observables: []
+number_vectors: 2
+output: "heisenberg_kagome_16.h5"
