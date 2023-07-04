@@ -10,11 +10,6 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    nix-filter.url = "github:numtide/nix-filter";
-    flake-compat = {
-      url = "github:edolstra/flake-compat";
-      flake = false;
-    };
     nix-chapel = {
       url = "github:twesterhout/nix-chapel";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -44,21 +39,6 @@
               haskell.packages.ghc961.ghc = ourGhc;
               haskell.compiler.ghc961 = ourGhc;
             })
-        ];
-      };
-
-      haskell-sources = root: inputs.nix-filter.lib {
-        inherit root;
-        include = [
-          "app"
-          "cbits"
-          "lib"
-          "src"
-          "test"
-          (inputs.nix-filter.lib.matchExt "cabal")
-          "cabal.project"
-          "LICENSE"
-          "README.md"
         ];
       };
 

@@ -1,8 +1,10 @@
 module BlockToHashed {
-  use FFI;
-  use Vector;
   use CommonParameters;
+  use FFI;
+  import StatesEnumeration.permuteBasedOnMasks;
+  import Vector.BlockVector;
 
+  import Communication;
   use CTypes;
   use RangeChunk;
   use Time;
@@ -14,12 +16,13 @@ module BlockToHashed {
     coforall loc in Locales do on loc {
       const mySubdomain = masks.localSubdomain();
       var myCounts : [0 ..# numLocales] int;
-      forall key in masks.localAccess(mySubdomain) with (+ reduce myCounts) {
+      forall key in masks.localAccess(mySubdomain) with (+ reduce myCounts) do
         myCounts[key:int] += 1;
-      }
-      const putOffset = loc.id * numLocales;
-      const putSize = numLocales:c_size_t * c_sizeof(int);
-      PUT(c_ptrTo(myCounts[0]), mainLocaleIdx, countsPtr + putOffset, putSize);
+
+      Communication.put(dest = countsPtr + loc.id * numLocales,
+                        src = c_ptrTo(myCounts[0]),
+                        destLocID = mainLocaleIdx,
+                        numBytes = numLocales:c_size_t * c_sizeof(int));
     }
     return counts;
   }
@@ -64,15 +67,12 @@ module BlockToHashed {
     return offsets;
   }
 
-  proc blockToHashedMakeDestArr(arr : [] ?eltType, counts)
-      where arr.domain.rank == 1 {
+  proc blockToHashedMakeDestArr(arr : [] ?eltType, counts) {
     const destCounts = [i in 0 ..# numLocales] (+ reduce counts[.., i]);
-    return new BlockVector(eltType, destCounts);
-  }
-  proc blockToHashedMakeDestArr(arr : [] ?eltType, counts)
-      where arr.domain.rank == 2 {
-    const destCounts = [i in 0 ..# numLocales] (+ reduce counts[.., i]);
-    return new BlockVector(eltType, arr.shape[0], destCounts);
+    return
+      if arr.domain.rank == 1
+        then new BlockVector(eltType, destCounts)
+        else new BlockVector(eltType, arr.shape[0], destCounts);
   }
 
   proc blockToHashedNumChunksPerLocale(masks, numChunks) {
@@ -89,15 +89,15 @@ module BlockToHashed {
     var permute : [0 ..# numLocales] real;
 
     proc writeThis(f) throws {
-      const tree = timingTree(
-        "arrFromBlockToHashed", total.elapsed(),
+      const tree = timingTree("arrFromBlockToHashed", total.elapsed(),
         [ ("counts", counts.elapsed())
         , ("makeDestArr", makeDestArr.elapsed())
         , ("distribute", distribute.elapsed())
-        ]
-      );
-      tree.children[2].addChild(
-        timingTree("permute (mean over locales, sum over tasks)", meanAndErr(permute)[0]));
+        ]);
+      tree.children[2].addChild(timingTree(
+        "permute (mean over locales, sum over tasks)", meanAndErr(permute)[0]
+      ));
+
       f.write(tree);
     }
   }
@@ -131,27 +131,30 @@ module BlockToHashed {
                           else destArr.innerDom.shape[1];
     const mainLocaleIdx = here.id;
     coforall loc in Locales do on loc {
-      var myPerLocaleOffsets : [0 ..# numLocales] int;
-      GET(c_ptrTo(myPerLocaleOffsets[0]), mainLocaleIdx,
-          perLocaleOffsetsPtr + loc.id * numLocales,
-          numLocales:c_size_t * c_sizeof(int));
+      var myPerLocaleOffsets : [0 ..# numLocales] int = noinit;
+      // NOTE: Actually, we want myPerLocaleOffsets = perLocaleOffsets[loc.id, ..],
+      // but Chapel fails to generate a bulk copy operation and copies element-by-element.
+      Communication.get(dest = c_ptrTo(myPerLocaleOffsets[0]),
+                        src = perLocaleOffsetsPtr + loc.id * numLocales,
+                        srcLocID = mainLocaleIdx,
+                        numBytes = numLocales:c_size_t * c_sizeof(int));
 
-      var myDestPtrs : [0 ..# numLocales] c_ptr(eltType);
-      GET(c_ptrTo(myDestPtrs[0]), mainLocaleIdx, destPtrsPtr,
-          numLocales:c_size_t * c_sizeof(c_ptr(eltType)));
+      var myDestPtrs : [0 ..# numLocales] c_ptr(eltType) = noinit;
+      // TODO: we're not doing rank-changing copies here, so myDestPtrs = destPtrs
+      // should do the trick... Check it!
+      Communication.get(dest = c_ptrTo(myDestPtrs[0]),
+                        src = destPtrsPtr,
+                        srcLocID = mainLocaleIdx,
+                        numBytes = numLocales:c_size_t * c_sizeof(c_ptr(eltType)));
 
       const mySubdomain = masks.localSubdomain();
       const myMasksPtr = c_const_ptrTo(masks.localAccess(mySubdomain.low));
       const myMasksSize = mySubdomain.size;
-
-      const myPerTaskCounts =
-        blockToHashedTaskCounts(myMasksSize, myMasksPtr, numChunksPerLocale);
+      const myPerTaskCounts = blockToHashedTaskCounts(myMasksSize, myMasksPtr, numChunksPerLocale);
       const myPerTaskOffsets = blockToHashedTaskOffsets(myPerTaskCounts, myPerLocaleOffsets);
-      const ranges : [0 ..# numChunksPerLocale] range(int) =
-        chunks(0 ..# myMasksSize, numChunksPerLocale);
+      const ranges : [0 ..# numChunksPerLocale] range(int) = chunks(0 ..# myMasksSize, numChunksPerLocale);
 
       var myPermuteTime : atomic real;
-
       for batchIdx in 0 ..# batchSize {
         const myArrPtr = if rank == 1
                            then c_const_ptrTo(arr.localAccess(mySubdomain.low))
@@ -173,9 +176,10 @@ module BlockToHashed {
       }
 
       const _myPermuteTime = myPermuteTime.read();
-      PUT(c_const_ptrTo(_myPermuteTime), mainLocaleIdx,
-          permuteTimePtr + loc.id,
-          c_sizeof(real));
+      Communication.put(dest = permuteTimePtr + loc.id,
+                        src = c_const_ptrTo(_myPermuteTime),
+                        destLocID = mainLocaleIdx,
+                        numBytes = c_sizeof(real));
     }
     timer.distribute.stop();
     timer.total.stop();

@@ -163,14 +163,11 @@ class BlockVector {
 
   proc finalizeInitialization(innerDom : domain(innerRank), counts) {
     forall (i, n) in zip(outerDom, counts) with (in innerDom) {
-      _locBlocks[i].dom = innerDom;
-      _locBlocks[i].count = n;
-      _dataPtrs[i] = c_ptrTo(_locBlocks[i].data[innerDom.low]);
+      ref locBlock = _locBlocks[i];
+      locBlock.dom = innerDom;
+      locBlock.count = n;
+      _dataPtrs[i] = c_ptrTo(locBlock.data[innerDom.low]);
     }
-    // logDebug("this is going to fail...");
-    // _dataPtrs = getBlockPtrs(eltType, _locBlocks);
-    // getBlockPtrs(eltType, _locBlocks, _dataPtrs);
-    // logDebug("hm... nope, it didn't");
   }
   inline proc finalizeInitialization(counts : [] int) {
     finalizeInitialization(getInnerDom(counts), counts);
@@ -213,22 +210,6 @@ class BlockVector {
       locBlock.data[0 ..# chunk.size] = chunk.toArray();
     }
   }
-
-  // proc init(chunks : [] ?eltType, counts : [] int)
-  //     where !isArray(eltType) {
-  //   this.eltType = eltType;
-  //   this.innerRank = chunks.rank - 1;
-  //   this._outerDom = counts.domain;
-  //   this._counts = counts;
-  //   const maxNumElts = max reduce _counts;
-  //   this._innerDom = {0 ..# maxNumElts};
-  //   this._dataPtrsDom = {0 ..# counts.size};
-  //   this.complete();
-  //   this._dataPtrs = _getDataPtrs(eltType, _counts, _data);
-  //   forall (arr, count, i) in zip(this._data, this._counts, 0 ..) {
-  //     arr[0 ..# count] = chunks[i, 0 ..# count];
-  //   }
-  // }
 
   inline proc numBlocks { return outerDom.size; }
   inline proc count(i) { return _locBlocks[i].count; }
