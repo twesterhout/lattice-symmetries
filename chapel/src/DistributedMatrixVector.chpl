@@ -18,11 +18,6 @@ use ForeignTypes;
 use ConcurrentAccessor;
 use BatchedOperator;
 
-config const kVerboseComm : bool = false; 
-config const kVerboseGetTiming : bool = false; 
-config const kUseQueue : bool = false;
-
-
 private proc meanAndErrString(timings : [] real) {
   const mean = (+ reduce timings) / timings.size:real;
   const variance =
@@ -47,14 +42,19 @@ private proc localDiagonalBatch(indices : range(int, boundKind.both, strideKind.
     c_const_ptrTo(x[indices.low]));
 }
 
-config const matrixVectorDiagonalNumChunks : int = 10 * here.maxTaskPar;
+config const matrixVectorDiagonalNumChunks : int = here.maxTaskPar;
 config const matrixVectorOffDiagonalNumChunks : int = 32 * here.maxTaskPar;
-config const matrixVectorMainLoopNumTasks : int = here.maxTaskPar;
 
-private proc localDiagonal(matrix : Operator, const ref x : [] ?eltType, ref y : [] eltType,
+private proc localDiagonal(matrix : Operator,
+                           const ref x : [] ?eltType,
+                           ref y : [] eltType,
                            const ref representatives : [] uint(64),
+                           in timings : TimingTree? = nil,
                            numChunks : int = min(matrixVectorDiagonalNumChunks,
                                                  representatives.size)) {
+  var timer = new stopwatch();
+  timer.start();
+
   const totalSize = representatives.size;
   // const batchSize = (totalSize + numChunks - 1) / numChunks;
   var ranges : [0 ..# numChunks] range(int, boundKind.both, strideKind.one) =
@@ -63,6 +63,10 @@ private proc localDiagonal(matrix : Operator, const ref x : [] ?eltType, ref y :
   forall r in ranges {
     localDiagonalBatch(r, matrix, x, y, representatives);
   }
+
+  timer.stop();
+  if timings != nil then
+    timings!.addChild("localDiagonal", timer.elapsed());
 }
 
 
@@ -88,35 +92,34 @@ private proc localProcess(basisPtr : c_ptrConst(Basis),
                           basisStates : c_ptrConst(uint(64)),
                           coeffs : c_ptrConst(?t),
                           size : int,
-                          timer : c_ptr(LocalProcessTimer) = nil) {
+                          ref timer : LocalProcessTimer) {
   local {
     // count == 0 has to be handled separately because c_ptrTo(indices) fails
     // when the size of indices is 0.
     if size == 0 then return;
-
-    if timer != nil then timer.deref().total.start();
+    timer.total.start();
 
     ref accessor = accessorPtr.deref();
     // Special case when we don't have to call ls_hs_state_index
     if numLocales == 1 && basisPtr.deref().isStateIndexIdentity() {
-      if timer != nil then timer.deref().accessing.start();
+      timer.accessing.start();
       foreach k in 0 ..# size {
         const i = basisStates[k]:int;
         const c = coeffs[k]:coeffType;
-        if c != 0 then accessor.localAdd(i, c);
+        accessor.localAdd(i, c);
       }
-      if timer != nil then timer.deref().accessing.stop();
+      timer.accessing.stop();
     }
     else {
-      if timer != nil then timer.deref().allocation.start();
+      timer.allocation.start();
       var indices : [0 ..# size] int = noinit;
-      if timer != nil then timer.deref().allocation.stop();
+      timer.allocation.stop();
 
-      if timer != nil then timer.deref().indexing.start();
+      timer.indexing.start();
       ls_hs_state_index(basisPtr.deref().payload, size, basisStates, 1, c_ptrTo(indices[0]), 1);
-      if timer != nil then timer.deref().indexing.stop();
+      timer.indexing.stop();
 
-      if timer != nil then timer.deref().accessing.start();
+      timer.accessing.start();
       foreach k in 0 ..# size {
         const i = indices[k];
         const c = coeffs[k]:coeffType;
@@ -131,11 +134,10 @@ private proc localProcess(basisPtr : c_ptrConst(Basis),
                               " with coeff " + c:string);
         }
       }
-      if timer != nil then timer.deref().accessing.stop();
+      timer.accessing.stop();
     }
 
-    if timer != nil then timer.deref().total.stop();
-
+    timer.total.stop();
   }
 }
 
@@ -173,8 +175,7 @@ inline proc swapElements(a : int, b : int, arr1 : c_ptr(?t1), arr2 : c_ptr(?t2))
   swapElements(a, b, arr2);
 }
 
-proc radixOneStep(numKeys : int, keys : c_ptr(uint(8)), offsets : c_array(int, 257), arrs...?numArrs)
-{
+proc radixOneStep(numKeys : int, keys : c_ptr(uint(8)), offsets : c_array(int, 257), arrs...?numArrs) {
   var partitions : c_array(PartitionInfo, 256);
   foreach i in 0 ..# numKeys {
     partitions[keys[i]:int].count += 1;
@@ -592,7 +593,13 @@ record Producer {
       timer.computeOffDiag.stop();
 
       timer.radixOneStep.start();
-      radixOneStep(n, keysPtr, radixOffsets, basisStatesPtr, coeffsPtr);
+      if numLocales == 1 { // We don't have to reshuffle stuff
+        radixOffsets[0] = 0;
+        radixOffsets[1] = n;
+      }
+      else {
+        radixOneStep(n, keysPtr, radixOffsets, basisStatesPtr, coeffsPtr);
+      }
       timer.radixOneStep.stop();
 
       timer.submit.start();
@@ -612,7 +619,7 @@ record Producer {
                      basisStatesPtr + k,
                      (coeffsPtr + k):c_ptrConst(complex(128)),
                      n,
-                     c_ptrTo(timer.localProcess));
+                     timer.localProcess);
 
         submitted[destLocaleIdx] = true;
         remaining -= 1;
@@ -748,7 +755,7 @@ record Consumer {
                          localBuffer.basisStates,
                          localBuffer.coeffs:c_ptrConst(complex(128)),
                          localBuffer.size,
-                         c_ptrTo(localProcessTimer));
+                         localProcessTimer);
             localBuffer.isEmpty.write(true);
           }
           const atomicPtr = localBuffer.isFull;
@@ -775,8 +782,11 @@ record Consumer {
 }
 
 
-private proc localOffDiagonalNoQueue(matrix : Operator, const ref x : [] ?eltType, ref y : [] eltType,
-                                     const ref representatives : [] uint(64)) {
+private proc localOffDiagonalNoQueue(matrix : Operator,
+                                     const ref x : [] ?eltType,
+                                     ref y : [] eltType,
+                                     const ref representatives : [] uint(64),
+                                     in timings : TimingTree? = nil) {
   // logDebug("Calling localOffDiagonalNoQueue...");
   var totalTimer = new stopwatch();
   var initializationTimer = new stopwatch();
@@ -872,8 +882,8 @@ private proc localOffDiagonalNoQueue(matrix : Operator, const ref x : [] ?eltTyp
   // var consumerIndexTime : [0 ..# numConsumerTasks] real;
   // var consumerAccessTime : [0 ..# numConsumerTasks] real;
   // var consumerFastOnTime : [0 ..# numConsumerTasks] real;
-  var producerTimings : list(shared RoseTree(TimingResult(real)), parSafe=true);
-  var consumerTimings : list(shared RoseTree(TimingResult(real)), parSafe=true);
+  var producerTimings : list(TimingTree, parSafe=true);
+  var consumerTimings : list(TimingTree, parSafe=true);
 
   // logDebug("Check #8");
   allLocalesBarrier.barrier();
@@ -959,12 +969,14 @@ private proc localOffDiagonalNoQueue(matrix : Operator, const ref x : [] ?eltTyp
   }
 
   totalTimer.stop();
-  if kDisplayTimings {
+  if timings != nil && kDisplayTimings {
     var tree = timingTree("localOffDiagonalNoQueue", totalTimer.elapsed());
     tree.addChild(timingTree("initialization", initializationTimer.elapsed()));
-    tree.addChild(combineTimingTrees(producerTimings.toArray()));
-    tree.addChild(combineTimingTrees(consumerTimings.toArray()));
-    logDebug(tree);
+    if !producerTimings.isEmpty() then
+      tree.addChild(combineTimingTrees(producerTimings.toArray()));
+    if !consumerTimings.isEmpty() then
+      tree.addChild(combineTimingTrees(consumerTimings.toArray()));
+    timings!.addChild(tree);
   }
     // logDebug("localOffDiagonalNoQueue: ", totalTimer.elapsed(), "\n",
     //          " ├─ ", initializationTimer.elapsed(), " in initialization\n"
@@ -993,21 +1005,19 @@ private proc localOffDiagonalNoQueue(matrix : Operator, const ref x : [] ?eltTyp
              // );
 }
 
-proc localMatrixVector(matrix : Operator, const ref x : [] ?eltType, ref y : [] eltType,
-                               const ref representatives : [] uint(64)) {
-  // logDebug("Calling localMatrixVector...");
+proc localMatrixVector(matrix : Operator,
+                       const ref x : [] ?eltType,
+                       ref y : [] eltType,
+                       const ref representatives : [] uint(64),
+                       in timings : TimingTree? = nil) {
   assert(matrix.locale == here);
   assert(x.locale == here);
   assert(y.locale == here);
   assert(representatives.locale == here);
   if matrix.numberDiagTerms() > 0 then
-    localDiagonal(matrix, x, y, representatives);
-  // logDebug("Done with diagonal");
-  // if kUseQueue then
-  //   localOffDiagonal(matrix, x, y, representatives);
-  // else
+    localDiagonal(matrix, x, y, representatives, timings);
   if matrix.numberOffDiagTerms() > 0 then
-    localOffDiagonalNoQueue(matrix, x, y, representatives);
+    localOffDiagonalNoQueue(matrix, x, y, representatives, timings);
 }
 
 proc matrixVectorProduct(const ref matrix : Operator,
@@ -1024,12 +1034,19 @@ proc matrixVectorProduct(const ref matrix : Operator,
     // logDebug("Setting representatives...");
     myMatrix.basis.uncheckedSetRepresentatives(myBasisStates);
     // logDebug("Done setting representatives");
+    var timings : TimingTree? = nil;
+    if kDisplayTimings then
+      timings = timingTree("matrixVectorProduct", 0.0);
+
     var timer = new stopwatch();
     timer.start();
-    localMatrixVector(myMatrix, myX, myY, myBasisStates);
+    localMatrixVector(myMatrix, myX, myY, myBasisStates, timings);
     timer.stop();
-    if kDisplayTimings then
-      logDebug("Spent ", timer.elapsed(), " in localMatrixVector");
+
+    if kDisplayTimings {
+      timings!.stat = timer.elapsed();
+      logDebug(timings!);
+    }
   }
 }
 

@@ -126,6 +126,16 @@ record BatchedOperator {
   inline proc matrix ref { return _matrixPtr.deref(); }
   inline proc basis ref { return matrix.basis; }
 
+  proc computeKeys(totalCount, betas : c_ptrConst(uint(64)), keys : c_ptr(uint(8))) {
+    keysTimer.start();
+    if numLocales == 1 then
+      POSIX.memset(keys, 0, totalCount:c_size_t * c_sizeof(uint(8)));
+    else
+      foreach i in 0 ..# totalCount do
+        keys[i] = localeIdxOf(betas[i]):uint(8);
+    keysTimer.stop();
+  }
+
   proc computeOffDiagNoProjection(count, alphas, xs) {
     const betas = c_pointer_return(_spins1[0]);
     const cs = c_pointer_return(_coeffs1[0]);
@@ -147,12 +157,9 @@ record BatchedOperator {
     applyOffDiagTimer.stop();
 
     // Determine the target locale for every |βᵢⱼ⟩.
-    keysTimer.start();
     const totalCount = offsets[count];
-    foreach i in 0 ..# totalCount {
-      keys[i] = localeIdxOf(betas[i]):uint(8);
-    }
-    keysTimer.stop();
+    computeKeys(totalCount, betas, keys);
+
     return (totalCount, betas, cs, keys);
   }
 
@@ -192,11 +199,8 @@ record BatchedOperator {
     }
     stateInfoTimer.stop();
 
-    keysTimer.start();
-    foreach i in 0 ..# totalCount {
-      keys[i] = localeIdxOf(betas[i]):uint(8);
-    }
-    keysTimer.stop();
+    computeKeys(totalCount, betas, keys);
+
     return (totalCount, betas, cs, keys);
   }
 
@@ -242,12 +246,8 @@ record BatchedOperator {
     }
     coeffTimer.stop();
 
-    keysTimer.start();
     const keys = c_pointer_return(_localeIdxs[0]);
-    foreach i in 0 ..# totalCount {
-      keys[i] = localeIdxOf(betas[i]):uint(8);
-    }
-    keysTimer.stop();
+    computeKeys(totalCount, betas, keys);
 
     return (totalCount, betas, cs, keys);
   }

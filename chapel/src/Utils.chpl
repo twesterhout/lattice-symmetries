@@ -16,116 +16,100 @@ proc deinitRuntime() {
   }
 }
 
-class RoseTree {
+record VarianceAccumulator {
   type eltType;
-  var current : eltType;
-  var children : list(shared RoseTree(eltType));
+  var _count : int;
+  var _mean : eltType;
+  var _M2 : eltType;
 
   proc init(x : ?eltType) {
     this.eltType = eltType;
-    this.current = x;
-  }
-  proc init(x : ?eltType, ys) {
-    this.eltType = eltType;
-    this.current = x;
-    this.children = ys;
+    this._count = 1;
+    this._mean = x;
+    this._M2 = 0;
   }
 
-  proc addChild(x : shared RoseTree(eltType)) {
-    this.children.pushBack(x);
-  }
-  proc addChild(x : eltType) {
-    addChild(new shared RoseTree(x));
-  }
-
-  proc getChild(x : eltType) ref {
-    for c in children {
-      if c.current == x then return c;
-    }
-    halt("child " + x:string + " not found");
+  proc update(x : eltType) {
+    _count += 1;
+    const delta = x - _mean;
+    _mean += delta / _count;
+    const delta2 = x - _mean;
+    _M2 += delta * delta2;
   }
 
-  // proc map(fn : proc(_ : eltType) : ?t) : shared RoseTree(t) {
-  //   var outTree = new shared RoseTree(fn(current));
-  //   for c in children do
-  //     outTree.addChild(c.map(fn));
-  //   return outTree;
-  // }
+  inline proc mean { return if _count == 0 then (0.0 / 0.0):eltType else _mean; }
+  inline proc std { return if _count < 2 then (0.0 / 0.0):eltType else _M2 / _count; }
 
-  proc writeChildren(f, indent : string) throws {
-    if !children.isEmpty() {
-      for (x, i) in zip(children, 0 ..) {
-        const currentPrefix = if i == children.size - 1 then "└─ " else "├─ ";
-        const childPrefix = if i == children.size - 1 then "   " else "│  ";
-        f.write(indent, currentPrefix, x.current, '\n');
-        x.writeChildren(f, indent + childPrefix);
-      }
-    }
-  }
-  override proc writeThis(f) throws {
-    f.write(current, '\n');
-    writeChildren(f, indent = "  ");
+  proc writeThis(f) throws {
+    f.write(mean, " ± ", std);
   }
 }
 
-record TimingResult {
+
+class RoseTree {
   type eltType;
   var func : string;
   var stat : eltType;
+  var children : list(shared RoseTree(eltType));
 
   proc init(func : string, stat : ?eltType) {
     this.eltType = eltType;
     this.func = func;
     this.stat = stat;
   }
-
-  proc writeThis(f) throws {
-    f.write(func, ": ", stat);
-  }
-}
-
-record TimingResultAccumulator {
-  type eltType;
-  var func : string;
-  var _count : int;
-  var _mean : eltType;
-  var _M2 : eltType;
-
-  proc init(func : string, x : ?eltType) {
+  proc init(func : string, stat : ?eltType, children) {
     this.eltType = eltType;
     this.func = func;
-    this._count = 1;
-    this._mean = x;
-    this._M2 = 0;
-  }
-  proc init(x : TimingResult(?eltType)) {
-    init(x.func, x.stat);
+    this.stat = stat;
+    this.children = children;
   }
 
-  proc update(x : TimingResult(eltType)) {
-    if func != x.func then
-      halt("cannot combine TimingResults with different func attributes: " + func + " != " + x.func);
-    _count += 1;
-    const delta = x.stat - _mean;
-    _mean += delta / _count;
-    const delta2 = x.stat - _mean;
-    _M2 += delta * delta2;
+  proc addChild(x : shared RoseTree(eltType)) {
+    this.children.pushBack(x);
+  }
+  proc addChild(func : string, stat : eltType) {
+    addChild(new shared RoseTree(func, stat));
   }
 
-  inline proc mean { return if _count == 0 then (0.0 / 0.0):eltType else _mean; }
-  inline proc std { return if _count < 2 then (0.0 / 0.0):eltType else _M2 / _count; }
+  proc getChild(func : string) ref {
+    for c in children {
+      if c.func == func then return c;
+    }
+    halt("child " + func:string + " not found");
+  }
+
+  proc toAccumulatorTree() : shared RoseTree(VarianceAccumulator(eltType)) {
+    var tree = new shared RoseTree(func, new VarianceAccumulator(stat));
+    for c in children do
+      tree.addChild(c.toAccumulatorTree());
+    return tree;
+  }
+
+  proc writeChildren(f, indent : string) throws {
+    if !children.isEmpty() {
+      for (x, i) in zip(children, 0 ..) {
+        const currentPrefix = if i == children.size - 1 then "└─ " else "├─ ";
+        const childPrefix = if i == children.size - 1 then "   " else "│  ";
+        f.write(indent, currentPrefix, x.func, ": ", x.stat, '\n');
+        x.writeChildren(f, indent + childPrefix);
+      }
+    }
+  }
+  override proc writeThis(f) throws {
+    f.write(func, ": ", stat, '\n');
+    writeChildren(f, indent = "  ");
+  }
 }
 
-type TimingTree = shared RoseTree(TimingResult(real));
+
+type TimingTree = shared RoseTree(real);
 
 proc timingTree(func, result, children) {
-  return new shared RoseTree(
-    new TimingResult(func, result),
-    [(f, r) in children] new shared RoseTree(new TimingResult(f, r))
-  );
+  return new shared RoseTree(func, result,
+    [(f, r) in children] new shared RoseTree(f, r));
 }
 proc timingTree(func, result) {
-  return new shared RoseTree(new TimingResult(func, result));
+  return new shared RoseTree(func, result);
 }
 
 proc meanAndErr(xs : [] real) {
@@ -137,44 +121,26 @@ proc meanAndErr(xs : [] real) {
   return (mean, err);
 }
 
-proc combineTimingTrees(ref dest : shared RoseTree(TimingResultAccumulator(?eltType)),
-                        const ref tree : shared RoseTree(TimingResult(eltType))) {
-  dest.current.update(tree.current);
+proc fromAccumulatorTree(tree) : TimingTree {
+  var outTree = new shared RoseTree(tree.func, tree.stat.mean);
+  for c in tree.children do
+    outTree.addChild(fromAccumulatorTree(c));
+  return outTree;
+}
+
+proc combineTimingTrees(ref dest, const ref tree) {
+  dest.stat.update(tree.stat);
   for (destChild, child) in zip(dest.children, tree.children) {
     combineTimingTrees(destChild, child);
   }
 }
-
-proc timingTreeToAccumulator(tree : TimingTree) : shared RoseTree(TimingResultAccumulator(real)) {
-  var outTree = new shared RoseTree(new TimingResultAccumulator(tree.current));
-  for c in tree.children do
-    outTree.addChild(timingTreeToAccumulator(c));
-  return outTree;
-}
-
-proc timingTreeFromAccumulator(tree : shared RoseTree(TimingResultAccumulator(real))) : TimingTree {
-  var outTree = new shared RoseTree(new TimingResult(tree.current.func, tree.current.mean));
-  for c in tree.children do
-    outTree.addChild(timingTreeFromAccumulator(c));
-  return outTree;
-}
-
-proc combineTimingTrees(trees : [] shared RoseTree(TimingResult(real))) {
-  type eltType = real;
-  var arr = trees;
-  var dest = timingTreeToAccumulator(arr[0]);
-  // var dest = arr[0].map(
-  //   proc(x : TimingResult(eltType)) : TimingResultAccumulator(eltType) {
-  //     return new TimingResultAccumulator(x);
-  //   });
+proc combineTimingTrees(arr : [] TimingTree) {
+  if arr.isEmpty() then
+    halt("trying to combine an empty list of timings");
+  var dest = arr[0].toAccumulatorTree();
   for tree in arr[1..] do
     combineTimingTrees(dest, tree);
-  return timingTreeFromAccumulator(dest);
-  // return dest.map(
-  //   proc(x : TimingResultAccumulator(eltType)) : TimingResult(eltType) {
-  //     return new TimingResult(x.func, x.mean);
-  //   });
+  return fromAccumulatorTree(dest);
 }
-
 
 } // module Utils
