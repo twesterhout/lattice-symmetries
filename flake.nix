@@ -31,13 +31,13 @@
           # these static libraries to build a self-contained shared library.
           (final: prev:
             let
-              ourGhc = prev.haskell.compiler.ghc961.override {
+              ourGhc = prev.haskell.compiler.ghc962.override {
                 enableRelocatedStaticLibs = true;
               };
             in
             lib.recursiveUpdate prev {
-              haskell.packages.ghc961.ghc = ourGhc;
-              haskell.compiler.ghc961 = ourGhc;
+              haskell.packages.ghc962.ghc = ourGhc;
+              haskell.compiler.ghc962 = ourGhc;
             })
         ];
       };
@@ -103,7 +103,7 @@
 
       lattice-symmetries-haskell =
         let
-          hp = overrideHaskellPackages pkgs.haskell.packages.ghc961 true;
+          hp = overrideHaskellPackages pkgs.haskell.packages.ghc96 true;
         in
         hp.lattice-symmetries-haskell;
 
