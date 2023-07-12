@@ -185,15 +185,17 @@ void ls_hs_build_representatives(ls_hs_basis *basis, uint64_t const lower,
   // if (basis->kernels->state_index_kernel == NULL) {
   const int number_bits =
     (basis->particle_type == LS_HS_SPINFUL_FERMION ? 2 : 1) * basis->number_sites;
+  const int default_cache_bits = 22;
   basis->kernels->state_index_data =
       ls_hs_create_state_index_binary_search_kernel_data(
-          &basis->representatives, number_bits);
+          &basis->representatives, number_bits, default_cache_bits);
   basis->kernels->state_index_kernel = &ls_hs_state_index_binary_search_kernel;
   // }
 }
 
 void ls_hs_unchecked_set_representatives(ls_hs_basis *basis,
-                                         chpl_external_array const *states) {
+                                         chpl_external_array const *states,
+					 int const cache_bits) {
   LS_CHECK(basis->representatives.num_elts == 0,
            "representatives have already been set");
   LS_CHECK(basis->kernels != NULL, "basis->kernels not set");
@@ -204,7 +206,7 @@ void ls_hs_unchecked_set_representatives(ls_hs_basis *basis,
     (basis->particle_type == LS_HS_SPINFUL_FERMION ? 2 : 1) * basis->number_sites;
   basis->kernels->state_index_data =
       ls_hs_create_state_index_binary_search_kernel_data(
-          &basis->representatives, number_bits);
+          &basis->representatives, number_bits, cache_bits);
   basis->kernels->state_index_kernel = &ls_hs_state_index_binary_search_kernel;
 }
 

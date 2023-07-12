@@ -201,7 +201,7 @@ typedef struct ls_hs_state_index_binary_search_data
 
 ls_hs_state_index_binary_search_data *
 ls_hs_create_state_index_binary_search_kernel_data(
-    chpl_external_array const *representatives, int number_bits);
+    chpl_external_array const *representatives, int number_bits, int prefix_bits);
 
 void ls_hs_destroy_state_index_binary_search_kernel_data(
     ls_hs_state_index_binary_search_data *cache);
@@ -231,7 +231,8 @@ void ls_hs_state_info(ls_hs_basis const *basis, ptrdiff_t batch_size,
 void ls_hs_build_representatives(ls_hs_basis *basis, uint64_t const lower,
                                  uint64_t const upper);
 void ls_hs_unchecked_set_representatives(ls_hs_basis *basis,
-                                         chpl_external_array const *states);
+                                         chpl_external_array const *states,
+					 int cache_bits);
 /* python-cffi: STOP */
 
 void ls_internal_operator_apply_diag_x1(ls_hs_operator const * op,

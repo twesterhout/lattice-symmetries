@@ -184,4 +184,73 @@
 
         });
     };
+# test-matrix-vector = pkgs.stdenv.mkDerivation {
+#         pname = "test-matrix-vector";
+#         inherit version;
+#         src = ./chapel;
+# 
+#         configurePhase = ''
+#           ln --symbolic ${lattice-symmetries-chapel-ffi} src/FFI.chpl
+#         '';
+# 
+#         buildPhase = ''
+#           make \
+#             CHPL_COMM=gasnet \
+#             CHPL_COMM_SUBSTRATE=ibv \
+#             CHPL_LAUNCHER=none \
+#             OPTIMIZATION=--fast \
+#             CHPL_CFLAGS='-I${lattice-symmetries-kernels}/include' \
+#             CHPL_LDFLAGS='-L${lattice-symmetries-haskell.lib}/lib' \
+#             HDF5_CFLAGS='-I${pkgs.hdf5.dev}/include' \
+#             HDF5_LDFLAGS='-L${pkgs.hdf5}/lib -lhdf5_hl -lhdf5 -lrt' \
+#             bin/TestMatrixVectorProduct
+# 
+#           for f in $(ls bin); do
+#             chapelFixupBinary bin/$f
+#           done
+#         '';
+# 
+#         installPhase = ''
+#           mkdir -p $out/bin
+#           install -Dm 755 bin/TestMatrixVectorProduct* $out/bin
+#         '';
+# 
+#         nativeBuildInputs = [ chapel chapelFixupBinary ];
+#       };
+# 
+#       chapelBuild = target: pkgs.stdenv.mkDerivation {
+#         pname = target;
+#         inherit version;
+#         src = ./chapel;
+#         configurePhase = "ln --symbolic ${lattice-symmetries-chapel-ffi} src/FFI.chpl";
+#         buildPhase = ''
+#           make \
+#             CHPL_COMM=gasnet \
+#             CHPL_COMM_SUBSTRATE=ibv \
+#             CHPL_LAUNCHER=none \
+#             OPTIMIZATION=--fast \
+#             CHPL_CFLAGS='-I${lattice-symmetries-kernels}/include' \
+#             CHPL_LDFLAGS='-L${lattice-symmetries-haskell.lib}/lib' \
+#             bin/${target}
+# 
+#           for f in $(ls bin); do
+#             chapelFixupBinary bin/$f
+#           done
+#         '';
+#         installPhase = ''
+#           mkdir -p $out/bin
+#           install -Dm 755 bin/* $out/bin
+#         '';
+#         nativeBuildInputs = [ chapel chapelFixupBinary ];
+#       };
+# 
+#       benchmark-states-enumeration = chapelBuild "BenchmarkStatesEnumeration";
+#       benchmark-matrix-vector-product = chapelBuild "BenchmarkMatrixVectorProduct";
+# 
+#       toContainer = drv: pkgs.singularity-tools.buildImage {
+#       	name = drv.pname;
+# 	contents = [ drv ];
+#         diskSize = 10240;
+#         memSize = 5120;
+#       };
 }

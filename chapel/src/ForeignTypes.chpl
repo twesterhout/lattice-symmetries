@@ -1,5 +1,6 @@
 module ForeignTypes {
   use FFI;
+  use CommonParameters;
 
   use CTypes;
   use ByteBufferHelpers;
@@ -155,7 +156,8 @@ module ForeignTypes {
 
     proc uncheckedSetRepresentatives(representatives : [] uint(64)) {
       var arr = unsafeViewAsExternalArray(representatives);
-      ls_hs_unchecked_set_representatives(payload, c_ptrTo(arr));
+      ls_hs_unchecked_set_representatives(payload, c_ptrTo(arr),
+                                          kCacheNumberBits:c_int);
     }
 
     proc isSpinBasis() { return payload.deref().particle_type == LS_HS_SPIN; }

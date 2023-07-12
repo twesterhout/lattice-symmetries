@@ -225,6 +225,14 @@ bin/TestMatrixVectorProduct: test/TestMatrixVectorProduct.chpl $(APP_MODULES)
 	@mkdir -p $(@D)
 	chpl $(CFLAGS) $(CHPL_CFLAGS) $(HDF5_CFLAGS) -o $@ --main-module $(@F) $^ $(HDF5_LDFLAGS) $(CHPL_LDFLAGS) $(LDFLAGS)
 
+bin/BenchmarkStatesEnumeration: benchmark/BenchmarkStatesEnumeration.chpl $(LIB_MODULES)
+	@mkdir -p $(@D)
+	chpl $(CFLAGS) $(CHPL_CFLAGS) -o $@ --main-module $(@F) $^ $(CHPL_LDFLAGS) $(LDFLAGS)
+
+bin/BenchmarkMatrixVectorProduct: benchmark/BenchmarkMatrixVectorProduct.chpl $(LIB_MODULES)
+	@mkdir -p $(@D)
+	chpl $(CFLAGS) $(CHPL_CFLAGS) -o $@ --main-module $(@F) $^ $(CHPL_LDFLAGS) $(LDFLAGS)
+
 bin/Example01: example/Example01.chpl $(APP_MODULES)
 	@mkdir -p $(@D)
 	chpl $(CFLAGS) $(HDF5_CFLAGS) -o $@ --main-module $(@F) $^ $(HDF5_LDFLAGS) $(LDFLAGS)
