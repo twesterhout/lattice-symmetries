@@ -410,7 +410,7 @@ def _chpl_external_array_as_ndarray(arr: ffi.CData, dtype) -> NDArray[Any]:
     if not isinstance(dtype, np.dtype):
         dtype = np.dtype(dtype)
     buf = ffi.buffer(arr.elts, arr.num_elts * dtype.itemsize)
-    weakref.finalize(buf, lambda: lib.ls_hs_destroy_external_array(arr))
+    weakref.finalize(buf, lambda: lib.ls_hs_internal_destroy_external_array(arr))
     return np.frombuffer(buf, dtype=dtype)
 
 
