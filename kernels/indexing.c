@@ -278,23 +278,23 @@ void ls_hs_state_index_binary_search_kernel(ptrdiff_t const batch_size,
 #if 1
   ptrdiff_t const block_size = 8;
   ptrdiff_t batch_idx = 0;
-  // for (; batch_idx + block_size <= batch_size; batch_idx += block_size) {
-  //   for (int i = 0; i < block_size; ++i) {
-  //     uint64_t const spin = spins[batch_idx + i];
-  //     indices[batch_idx + i] = cache->offsets[spin >> cache->shift];
-  //   }
-  //   ls_hs_internal_binary_search_x8(cache->representatives, cache->range_size,
-  //                                   spins + batch_idx, indices + batch_idx);
-  // }
+  for (; batch_idx + block_size <= batch_size; batch_idx += block_size) {
+    for (int i = 0; i < block_size; ++i) {
+      uint64_t const spin = spins[batch_idx + i];
+      indices[batch_idx + i] = cache->offsets[spin >> cache->shift];
+    }
+    ls_hs_internal_binary_search_x8(cache->representatives, cache->range_size,
+                                    spins + batch_idx, indices + batch_idx);
+  }
   for (; batch_idx < batch_size; ++batch_idx) {
     uint64_t const spin = spins[batch_idx];
     indices[batch_idx] = cache->offsets[spin >> cache->shift];
-    normal_binary_search_x1(cache->representatives, cache->range_size,
-                            spins[batch_idx], indices + batch_idx);
+    // normal_binary_search_x1(cache->representatives, cache->range_size,
+    //                         spins[batch_idx], indices + batch_idx);
     // branchless_binary_search_x1(cache->representatives, cache->range_size,
     //                             spins[batch_idx], indices + batch_idx);
-    // ls_hs_internal_binary_search_x1(cache->representatives, cache->range_size,
-    //                                 spins[batch_idx], indices + batch_idx);
+    ls_hs_internal_binary_search_x1(cache->representatives, cache->range_size,
+                                    spins[batch_idx], indices + batch_idx);
   }
 
 #else

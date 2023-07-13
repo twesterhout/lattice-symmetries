@@ -162,6 +162,7 @@ class BlockVector {
   var _dataPtrs;
 
   proc finalizeInitialization(innerDom : domain(innerRank), counts) {
+    logDebug("finalizeInitialization: ", innerDom);
     forall (i, n) in zip(outerDom, counts) with (in innerDom) {
       ref locBlock = _locBlocks[i];
       locBlock.dom = innerDom;
@@ -283,7 +284,7 @@ proc similar(type t, const ref other : BlockVector(?eltType, ?rank)) {
   if rank == 1 then
     return new BlockVector(t, other.counts);
   else if rank == 2 then
-    return new BlockVector(t, other.numBlocks, other.counts);
+    return new BlockVector(t, other.innerDom.shape[0], other.counts);
   else
     compilerError("unsupported rank: " + rank:string);
 }

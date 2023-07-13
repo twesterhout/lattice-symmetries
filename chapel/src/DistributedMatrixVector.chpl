@@ -8,6 +8,7 @@ use Time;
 use DynamicIters;
 use CommDiagnostics;
 use ChapelLocks;
+import MemDiagnostics;
 import Random;
 import OS.POSIX;
 
@@ -232,11 +233,11 @@ record _LocalBuffer {
   var coeffs : c_ptr(coeffType);
   var isFull : c_ptr(chpl__processorAtomicType(bool));
   var isEmpty : chpl__processorAtomicType(bool);
-  // var incrementNumProcessed : chpl__processorAtomicType(bool);
+  var incrementNumProcessed : chpl__processorAtomicType(bool);
 
   proc postinit() {
     assert(destLocaleIdx == here.id);
-    // incrementNumProcessed.write(true);
+    incrementNumProcessed.write(true);
     isEmpty.write(true);
     basisStates = allocate(uint(64), capacity);
     coeffs = allocate(coeffType, capacity);
@@ -267,7 +268,7 @@ record _RemoteBuffer {
   var coeffs : c_ptr(coeffType);
   var isFull : chpl__processorAtomicType(bool);
   var isEmpty : c_ptr(chpl__processorAtomicType(bool));
-  // var incrementNumProcessed : c_ptr(chpl__processorAtomicType(bool));
+  var incrementNumProcessed : c_ptr(chpl__processorAtomicType(bool));
 
   // var timer : RemoteBufferTimer;
 
@@ -448,7 +449,7 @@ proc _offDiagInitRemoteBuffers(numTasks : int, ref remoteBuffers, const ref ptrS
       remoteBuffer.coeffs = myLocalBuffer.coeffs;
       remoteBuffer.size = c_ptrTo(myLocalBuffer.size);
       remoteBuffer.isEmpty = c_ptrTo(myLocalBuffer.isEmpty);
-      // remoteBuffer.incrementNumProcessed = c_ptrTo(myLocalBuffer.incrementNumProcessed);
+      remoteBuffer.incrementNumProcessed = c_ptrTo(myLocalBuffer.incrementNumProcessed);
     }
   }
 }
@@ -464,6 +465,7 @@ record ProducerTimer {
   var submit : stopwatch;
   var submitCalls : int;
   var submitIterations : int;
+  var overflowCount : int;
 }
 
 record Producer {
@@ -543,8 +545,8 @@ record Producer {
   proc trySubmit(ref remoteBuffer,
                  basisStatesPtr : c_ptr(uint(64)),
                  coeffsPtr : c_ptr(complex(128)),
-                 count : int) {
-                 // increment : bool = true) {
+                 count : int,
+                 increment : bool = true) {
     if remoteBuffer.isFull.read() then
       return false;
 
@@ -558,20 +560,20 @@ record Producer {
     const atomicPtr = remoteBuffer.isEmpty;
     const sizePtr = remoteBuffer.size;
     timer.fastOn.start();
-    // if increment {
+    if increment {
       on Locales[remoteBuffer.destLocaleIdx] {
         sizePtr.deref() = count;
         atomicStoreBool(atomicPtr, false);
       }
-    // }
-    // else {
-    //   const incrementAtomicPtr = remoteBuffer.incrementNumProcessed;
-    //   on Locales[remoteBuffer.destLocaleIdx] {
-    //     sizePtr.deref() = count;
-    //     atomicStoreBool(atomicPtr, false);
-    //     atomicStoreBool(incrementAtomicPtr, false);
-    //   }
-    // }
+    }
+    else {
+      const incrementAtomicPtr = remoteBuffer.incrementNumProcessed;
+      on Locales[remoteBuffer.destLocaleIdx] {
+        sizePtr.deref() = count;
+        atomicStoreBool(incrementAtomicPtr, false);
+        atomicStoreBool(atomicPtr, false);
+      }
+    }
     timer.fastOn.stop();
     return true;
   }
@@ -646,20 +648,20 @@ record Producer {
           const k = radixOffsets[destLocaleIdx] + radixExtraOffsets[destLocaleIdx];
           const n = radixOffsets[destLocaleIdx + 1] - k;
           ref remoteBuffer = remoteBuffers[destLocaleIdx, _taskIdx];
-          // const capacity = remoteBuffer.capacity;
-          // if n > capacity {
-          //   assert(false, "ooops");
-          //   if trySubmit(remoteBuffer, basisStatesPtr + k, coeffsPtr + k,
-          //                capacity, increment=false) {
-          //     radixExtraOffsets[destLocaleIdx] += capacity;
-          //   }
-          // }
-          // else {
+          const capacity = remoteBuffer.capacity;
+          if n > capacity {
+            if trySubmit(remoteBuffer, basisStatesPtr + k, coeffsPtr + k,
+                         capacity, increment=false) {
+              radixExtraOffsets[destLocaleIdx] += capacity;
+              timer.overflowCount += 1;
+            }
+          }
+          else {
             if trySubmit(remoteBuffer, basisStatesPtr + k, coeffsPtr + k, n) {
               submitted[destLocaleIdx] = true;
               remaining -= 1;
             }
-          // }
+          }
         }
       }
       timer.submit.stop();
@@ -678,6 +680,8 @@ record Producer {
     tree.addChild(timingTree(
       "submit", timer.submit.elapsed(),
       [ ("extra iterations per submit", timer.submitIterations:real / timer.submitCalls:real)
+      , ("number overflows", timer.overflowCount:real)
+
       , ("put", timer.put.elapsed())
       , ("fastOn", timer.fastOn.elapsed())
       ]
@@ -690,7 +694,7 @@ record Producer {
 }
 
 config const kShuffle : bool = false;
-config const kFactor : int = 1;
+config const kFactor : int = round(1.75 * numLocales):int;
 
 record Consumer {
   type eltType;
@@ -776,10 +780,10 @@ record Consumer {
         ref localBuffer = localBuffers[localeIdx, otherTaskIdx];
         if !localBuffer.isEmpty.read() {
           local {
-            // if localBuffer.incrementNumProcessed.read() then
-            numProcessedPtr.deref().add(1);
-            // else
-            //   localBuffer.incrementNumProcessed.write(true);
+            if localBuffer.incrementNumProcessed.read() then
+              numProcessedPtr.deref().add(1);
+            else
+              localBuffer.incrementNumProcessed.write(true);
             localProcess(basisPtr, accessorPtr,
                          localBuffer.basisStates,
                          localBuffer.coeffs:c_ptrConst(complex(128)),
