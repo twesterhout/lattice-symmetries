@@ -55,9 +55,10 @@ class _RuntimeInitializer:
         lib.set_python_exception_handler()
 
     def __del__(self):
-        logger.debug("Deinitializing Haskell runtime...")
+        # NOTE: The order of these should actually be reversed, but ls_chpl_finalize calls exit(0) :/
+        # logger.debug("Deinitializing Haskell runtime...")
         lib.ls_hs_exit()
-        logger.debug("Deinitializing Chapel runtime...")
+        # logger.debug("Deinitializing Chapel runtime...")
         lib.ls_chpl_finalize()
 
 

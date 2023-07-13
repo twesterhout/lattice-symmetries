@@ -191,9 +191,7 @@ void ls_chpl_finalize(void);
 
 /* python-cffi: START */
 ls_chpl_kernels const *ls_hs_internal_get_chpl_kernels(void);
-/* python-cffi: STOP */
 void ls_hs_internal_set_chpl_kernels(ls_chpl_kernels const *kernels);
-
 void ls_hs_internal_destroy_external_array(chpl_external_array *arr);
 /* python-cffi: STOP */
 

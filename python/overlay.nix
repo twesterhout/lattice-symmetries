@@ -30,10 +30,13 @@ final: prev: {
             >>lattice_symmetries/extracted_declarations.h
         '';
 
-        installCheckPhase = ''
-          # we want to import the installed module that also contains the compiled library
-          rm -rf lattice_symmetries
-          runHook pytestCheckPhase
+        preCheck = "rm -rf lattice_symmetries";
+
+        checkPhase = ''
+          runHook preCheck
+          python3 -m pytest --color=yes --capture=no test/test_api.py | tee output.txt
+          grep -q -E '(FAILURES|failed)' output.txt && exit 1
+          runHook postCheck
         '';
 
         nativeCheckInputs = with python-final; [ pytestCheckHook ];
