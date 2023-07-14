@@ -408,7 +408,6 @@ proc _enumStatesMakeMasksOffsets(counts) {
 }
 
 proc _enumStatesMakeMasks(counts, totalCounts) {
-  const numChunks = counts.shape[0];
   const numMasks = + reduce totalCounts;
   const masksBox = {0 ..# numMasks};
   const masksDom = masksBox dmapped Block(boundingBox=masksBox);

@@ -55,9 +55,10 @@ class _RuntimeInitializer:
         lib.set_python_exception_handler()
 
     def __del__(self):
-        logger.debug("Deinitializing Haskell runtime...")
+        # NOTE: The order of these should actually be reversed, but ls_chpl_finalize calls exit(0) :/
+        # logger.debug("Deinitializing Haskell runtime...")
         lib.ls_hs_exit()
-        logger.debug("Deinitializing Chapel runtime...")
+        # logger.debug("Deinitializing Chapel runtime...")
         lib.ls_chpl_finalize()
 
 
@@ -410,7 +411,7 @@ def _chpl_external_array_as_ndarray(arr: ffi.CData, dtype) -> NDArray[Any]:
     if not isinstance(dtype, np.dtype):
         dtype = np.dtype(dtype)
     buf = ffi.buffer(arr.elts, arr.num_elts * dtype.itemsize)
-    weakref.finalize(buf, lambda: lib.ls_hs_destroy_external_array(arr))
+    weakref.finalize(buf, lambda: lib.ls_hs_internal_destroy_external_array(arr))
     return np.frombuffer(buf, dtype=dtype)
 
 

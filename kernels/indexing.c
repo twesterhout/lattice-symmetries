@@ -88,13 +88,14 @@ static ptrdiff_t normalize_offset_ranges(ptrdiff_t const number_offsets,
 
 ls_hs_state_index_binary_search_data *
 ls_hs_create_state_index_binary_search_kernel_data(
-    chpl_external_array const *representatives, int const number_bits) {
+    chpl_external_array const *representatives, int const number_bits,
+    int const prefix_bits) {
   ls_hs_state_index_binary_search_data *cache =
       malloc(sizeof(ls_hs_state_index_binary_search_data));
   LS_CHECK(cache != NULL, "malloc failed");
   cache->number_states = (ptrdiff_t)representatives->num_elts;
   cache->representatives = representatives->elts;
-  cache->number_bits = 22;
+  cache->number_bits = prefix_bits;
   if (cache->number_bits > number_bits) {
     cache->number_bits = number_bits;
   }
@@ -116,6 +117,75 @@ void ls_hs_destroy_state_index_binary_search_kernel_data(
     free(cache->offsets);
   }
   free(cache);
+}
+
+inline size_t bit_floor(size_t const i)
+{
+    int const num_bits = sizeof(i) * 8;
+    return (size_t)1 << (num_bits - __builtin_clzl(i) - 1);
+}
+inline size_t bit_ceil(size_t const i)
+{
+    int const num_bits = sizeof(i) * 8;
+    return (size_t)1 << (num_bits - __builtin_clzl(i - 1));
+}
+
+static inline
+uint64_t const* branchless_lower_bound(uint64_t const* begin,
+                                       uint64_t const* const end,
+                                       uint64_t const value)
+{
+    size_t length = end - begin;
+    if (length == 0) { return end; }
+
+    size_t step = bit_floor(length);
+    if (step != length && begin[step] < value)
+    {
+        length -= step + 1;
+        if (length == 0) { return end; }
+        step = bit_ceil(length);
+        begin = end - step;
+    }
+
+    for (step /= 2; step != 0; step /= 2)
+    {
+        if (begin[step] < value) { begin += step; }
+    }
+
+    return begin + (*begin < value);
+}
+
+static inline void
+branchless_binary_search_x1(uint64_t const haystack[],
+                            ptrdiff_t const haystack_size,
+                            uint64_t const needle, ptrdiff_t *index) {
+  uint64_t const *begin = haystack + *index;
+  uint64_t const *end = begin + haystack_size;
+  begin = branchless_lower_bound(begin, end, needle);
+  *index = (begin != end && *begin == needle) ? begin - haystack : -1;
+}
+
+static inline void
+normal_binary_search_x1(uint64_t const haystack[],
+                        ptrdiff_t const haystack_size,
+                        uint64_t const needle, ptrdiff_t *index) {
+  ptrdiff_t n = haystack_size;
+  uint64_t const* first = haystack + *index;
+
+  while (n > 0) {
+    ptrdiff_t const half = n >> 1;
+    uint64_t const* middle = first + half;
+    if (*middle < needle) {
+      first = middle + 1;
+      n = n - half - 1;
+    }
+    else {
+      n = half;
+    }
+  }
+
+  ptrdiff_t k = first - haystack;
+  return (k < haystack_size && *first == needle) ? k : -1;
 }
 
 static inline void
@@ -151,14 +221,14 @@ ls_hs_internal_binary_search_x8(uint64_t const haystack[],
 
   while (n > 1) {
     ptrdiff_t const half = n / 2;
-    // __builtin_prefetch(base[0] + half, 0, 3);
-    // __builtin_prefetch(base[1] + half, 0, 3);
-    // __builtin_prefetch(base[2] + half, 0, 3);
-    // __builtin_prefetch(base[3] + half, 0, 3);
-    // __builtin_prefetch(base[4] + half, 0, 3);
-    // __builtin_prefetch(base[5] + half, 0, 3);
-    // __builtin_prefetch(base[6] + half, 0, 3);
-    // __builtin_prefetch(base[7] + half, 0, 3);
+    __builtin_prefetch(base[0] + half, 0, 0);
+    __builtin_prefetch(base[1] + half, 0, 0);
+    __builtin_prefetch(base[2] + half, 0, 0);
+    __builtin_prefetch(base[3] + half, 0, 0);
+    __builtin_prefetch(base[4] + half, 0, 0);
+    __builtin_prefetch(base[5] + half, 0, 0);
+    __builtin_prefetch(base[6] + half, 0, 0);
+    __builtin_prefetch(base[7] + half, 0, 0);
     // __builtin_prefetch(base0 + half + half / 2, 0, 0);
     // __builtin_prefetch(base1 + half / 2, 0, 0);
     // __builtin_prefetch(base1 + half + half / 2, 0, 0);
@@ -219,6 +289,10 @@ void ls_hs_state_index_binary_search_kernel(ptrdiff_t const batch_size,
   for (; batch_idx < batch_size; ++batch_idx) {
     uint64_t const spin = spins[batch_idx];
     indices[batch_idx] = cache->offsets[spin >> cache->shift];
+    // normal_binary_search_x1(cache->representatives, cache->range_size,
+    //                         spins[batch_idx], indices + batch_idx);
+    // branchless_binary_search_x1(cache->representatives, cache->range_size,
+    //                             spins[batch_idx], indices + batch_idx);
     ls_hs_internal_binary_search_x1(cache->representatives, cache->range_size,
                                     spins[batch_idx], indices + batch_idx);
   }

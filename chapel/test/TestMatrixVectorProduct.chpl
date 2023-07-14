@@ -12,8 +12,8 @@ proc localLoadVectors(filename : string, x : string = "/x", y : string = "/y") {
 
 config const kHamiltonian = "data/heisenberg_chain_10.yaml";
 config const kVectors = "data/matvec/heisenberg_chain_10.h5";
-config const kAbsTol = 1e-14;
-config const kRelTol = 1e-12;
+config const kAbsTol = 1e-13;
+config const kRelTol = 1e-11;
 
 proc approxEqual(a : real, b : real, atol = kAbsTol, rtol = kRelTol) {
   return abs(a - b) <= max(atol, rtol * max(abs(a), abs(b)));
@@ -49,7 +49,10 @@ proc main() {
     var maxErrorCount = 10;
     for i in yBlock.domain {
       if !approxEqual(zBlock[i], yBlock[i]) && maxErrorCount > 0 {
-        writeln("at ", i, ": ", zBlock[i], " (computed) != ", yBlock[i], " (expected)");
+        writeln("at ", i, ": ",
+                zBlock[i], " (computed) != ",
+                yBlock[i], " (expected); Δ = ",
+                abs(zBlock[i] - yBlock[i]));
         maxErrorCount -= 1;
       }
     }

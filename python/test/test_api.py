@@ -2,7 +2,6 @@ import lattice_symmetries as ls
 import numpy as np
 import scipy.sparse.linalg
 
-
 def test_symmetry():
     a = ls.Symmetry([0, 1, 2], sector=0)
     assert a.sector == 0
@@ -39,3 +38,10 @@ def test_kagome_symmetries():
     hamiltonian = ls.Operator(basis, expr)
     energy, state = scipy.sparse.linalg.eigsh(hamiltonian, k=1, which="SA")
     print(energy)
+
+def test_operator_apply():
+    basis = ls.SpinBasis(2)
+    basis.build()
+    expr = ls.Expr("1.0 × σᶻ₀ σᶻ₁ + 2.0 × σ⁺₀ σ⁻₁ + 2.0 × σ⁻₀ σ⁺₁")
+    hamiltonian = ls.Operator(basis, expr)
+    assert len(hamiltonian.apply_off_diag_to_basis_state(basis.states[1])) == 1
