@@ -17,6 +17,8 @@ final: prev: {
             make \
               CHPL_COMM=gasnet \
               CHPL_COMM_SUBSTRATE=ibv \
+              CHPL_GASNET_SEGMENT=everything \
+              CHPL_HOST_MEM=cstdlib CHPL_TARGET_MEM=cstdlib \
               CHPL_LAUNCHER=none \
               OPTIMIZATION=--fast \
               CHPL_CFLAGS='-I${final.lattice-symmetries.kernels}/include' \

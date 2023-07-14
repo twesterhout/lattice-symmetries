@@ -28,11 +28,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1689284945,
-        "narHash": "sha256-lj4tS4vhgpLlftls+Q0WOXzBM1ZQv1Km/QQTx8QovZQ=",
+        "lastModified": 1689321935,
+        "narHash": "sha256-r5MQDWX6ZYj4eCTeGHVoMHkAZuY8qh+HJJTZs/M8/Fw=",
         "owner": "twesterhout",
         "repo": "nix-chapel",
-        "rev": "95964f4566e5175aad9056ec53d0deb163a9af09",
+        "rev": "e03eae25122c0980c1dffe19f0906996ff082af9",
         "type": "github"
       },
       "original": {
