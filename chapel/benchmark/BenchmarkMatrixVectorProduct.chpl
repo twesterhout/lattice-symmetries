@@ -1,5 +1,7 @@
 use LatticeSymmetries;
+import CTypes;
 import MemDiagnostics;
+import OS.POSIX;
 import Random;
 import Time;
 
@@ -21,12 +23,19 @@ proc main() {
   Time.sleep(5);
   logDebug("Current memory usage: ", MemDiagnostics.memoryUsed());
 
+  // reserve a 100Gi for later
+  // const someMemorySize = 100 * 1024 * 1024 * 1024;
+  // var someMemory = CTypes.allocate(uint(8), someMemorySize);
+  // POSIX.memset(someMemory, 42, someMemorySize);
+
   const masks;
   const basisStates = enumerateStates(matrix.basis, masks);
   const dimension = + reduce basisStates.counts;
   logDebug("Hilbert space dimension: ", dimension);
   logDebug("masks.size(): ", masks.localSubdomain().size);
   logDebug("Current memory usage: ", MemDiagnostics.memoryUsed());
+
+  // CTypes.deallocate(someMemory);
 
   if kMemory2 then MemDiagnostics.startVerboseMem();
   var timer = new Time.stopwatch();

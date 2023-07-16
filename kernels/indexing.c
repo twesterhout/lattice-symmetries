@@ -52,6 +52,11 @@ generate_offset_ranges(ls_hs_state_index_binary_search_data *cache) {
   uint64_t const *const last = cache->representatives + cache->number_states;
   uint64_t const *const begin = first;
 
+  // for (ptrdiff_t i = 0; i < cache->number_states - 1; ++i) {
+  //   LS_CHECK(cache->representatives[i] < cache->representatives[i + 1],
+  //            "basis states are not ordered");
+  // }
+
   ptrdiff_t const size = (ptrdiff_t)1 << cache->number_bits;
   cache->number_offsets = size + 1;
   cache->offsets = malloc((size_t)cache->number_offsets * sizeof(ptrdiff_t));
@@ -185,7 +190,7 @@ normal_binary_search_x1(uint64_t const haystack[],
   }
 
   ptrdiff_t k = first - haystack;
-  return (k < haystack_size && *first == needle) ? k : -1;
+  *index = (k < haystack_size && *first == needle) ? k : -1;
 }
 
 static inline void

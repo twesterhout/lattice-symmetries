@@ -162,7 +162,6 @@ class BlockVector {
   var _dataPtrs;
 
   proc finalizeInitialization(innerDom : domain(innerRank), counts) {
-    logDebug("finalizeInitialization: ", innerDom);
     forall (i, n) in zip(outerDom, counts) with (in innerDom) {
       ref locBlock = _locBlocks[i];
       locBlock.dom = innerDom;

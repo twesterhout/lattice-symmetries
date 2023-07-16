@@ -10,6 +10,7 @@ PREFIX = /usr/local
 SUDO = sudo
 UNAME = $(shell uname)
 CFLAGS = $(OPTIMIZATION) --target-compiler=$(COMPILER)
+# TODO: enable later to get rid of __primitive calls: -s cPtrToLogicalValue=true
 LDFLAGS = -llattice_symmetries_haskell
 # -llattice_symmetries_core
 # ifeq ($(UNAME), Linux)
@@ -230,6 +231,10 @@ bin/BenchmarkStatesEnumeration: benchmark/BenchmarkStatesEnumeration.chpl $(LIB_
 	chpl $(CFLAGS) $(CHPL_CFLAGS) -o $@ --main-module $(@F) $^ $(CHPL_LDFLAGS) $(LDFLAGS)
 
 bin/BenchmarkMatrixVectorProduct: benchmark/BenchmarkMatrixVectorProduct.chpl $(LIB_MODULES)
+	@mkdir -p $(@D)
+	chpl $(CFLAGS) $(CHPL_CFLAGS) -o $@ --main-module $(@F) $^ $(CHPL_LDFLAGS) $(LDFLAGS)
+
+bin/BenchmarkBlockHashed: benchmark/BenchmarkBlockHashed.chpl $(LIB_MODULES)
 	@mkdir -p $(@D)
 	chpl $(CFLAGS) $(CHPL_CFLAGS) -o $@ --main-module $(@F) $^ $(CHPL_LDFLAGS) $(LDFLAGS)
 

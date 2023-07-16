@@ -13,6 +13,7 @@ use CyclicDist;
 use DynamicIters;
 use RangeChunk;
 use Time;
+import Communication;
 import OS.POSIX;
 
 // config const kUseLowLevelComm : bool = true;
@@ -74,6 +75,44 @@ private proc manyNextState(v: uint(64), bound: uint(64), ref buffer: [] uint(64)
 
   return offset;
 }
+
+/* TODO: finish later because the version in Haskell is slow.
+private proc computeBinomials(dim : int = 64) {
+  assert(dim <= 64);
+  var coeff : [0 ..# dim, 0 ..# dim] uint(64);
+  coeff[0, 0] = 1;
+  for n in 1 ..< dim {
+    coeff[n, 0] = 1;
+    for k in 1 .. n do
+      coeff[n, k] = coeff[n - 1, k - 1] + coeff[n - 1, k];
+  }
+  return coeff;
+}
+
+record BinomialsCache {
+  var binomials;
+
+  proc init() {
+    this.binomials = computeBinomials();
+  }
+
+  proc this(n : int, k : int) {
+    if (n <= 0 || k > n) then
+      return 0;
+    return binomials[n, k];
+  }
+
+  proc fixedHammingStateToIndex(in alpha : uint(64)) {
+    var i = 0;
+    var k = 0;
+    while alpha != 0 {
+      const c = ctz(alpha);
+      alpha = alpha & (alpha - 1);
+
+    }
+  }
+}
+*/
 
 private inline proc unprojectedStateToIndex(basisState : uint(64),
                                             isHammingWeightFixed : bool) : int {
@@ -401,7 +440,9 @@ proc _enumStatesMakeMasksOffsets(counts) {
   var total = 0;
   for chunkIdx in 0 ..# numChunks {
     masksOffsets[chunkIdx] = total;
-    total += (+ reduce counts[chunkIdx, ..]);
+    foreach k in 0 ..# counts.shape[1] do
+      total += counts[chunkIdx, k];
+    // total += (+ reduce counts[chunkIdx, ..]);
   }
   masksOffsets[numChunks] = total;
   return masksOffsets;
@@ -415,16 +456,22 @@ proc _enumStatesMakeMasks(counts, totalCounts) {
   return masks;
 }
 
-proc _enumStatesPrepareDescriptors(masks, counts, totalCounts) {
+proc _enumStatesPrepareDescriptors(const ref masks, counts, totalCounts) {
   const numChunks = counts.shape[0];
   const masksOffsets = _enumStatesMakeMasksOffsets(counts);
   const numMasks = masksOffsets[numChunks];
   const ref masksDom = masks.domain;
 
   var masksPtrs : [0 ..# numLocales] c_ptr(uint(8));
-  for loc in Locales {
-    ref x = masks[masks.localSubdomain(loc).low];
-    masksPtrs[loc.id] = __primitive("_wide_get_addr", x):c_ptr(uint(8));
+  const mainLocaleIdx = here.id;
+  const masksPtrsPtr = c_ptrTo(masksPtrs[0]);
+  forall loc in Locales do on loc {
+    const ref x = masks.localAccess(masks.localSubdomain(loc).low);
+    const ptr = __primitive("_wide_get_addr", x):c_ptr(uint(8));
+    Communication.put(dest = masksPtrsPtr + loc.id,
+                      src = c_addrOfConst(ptr),
+                      destLocID = mainLocaleIdx,
+                      numBytes = c_sizeof(c_ptr(uint(8))));
   }
 
   var masksDescriptors : [0 ..# numChunks] (int, c_ptr(uint(8)));
@@ -520,8 +567,11 @@ proc enumerateStates(ranges : [] range(uint(64)), const ref basis : Basis, out _
   // We distribute ranges among locales using Cyclic distribution to ensure
   // an even workload. For each range, a vector of basis states and a vector of
   // masks is computed. Masks indicate on which locale a basis state should live.
+  var bucketsTimer = new stopwatch();
+  bucketsTimer.start();
   const numChunks = ranges.size;
   var buckets = _enumStatesMakeBuckets(numChunks);
+  bucketsTimer.stop();
 
   // How many states coming from a certain chunk live on a certain locale.
   // Each chunk computes its own row in parallel and then does a remote PUT here.
@@ -536,7 +586,10 @@ proc enumerateStates(ranges : [] range(uint(64)), const ref basis : Basis, out _
   const offsets = _enumStatesCountsToOffsets(counts, totalCounts);
 
   // Allocate space for states
+  var allocateTimer = new stopwatch();
+  allocateTimer.start();
   var basisStates = new BlockVector(uint(64), totalCounts, distribute=true);
+  allocateTimer.stop();
   // logDebug("634: the following is going to fail");
   // Simple assignment fails with a segmentation fault when compiling with
   // CHPL_COMM=none. This is a workaround
@@ -549,9 +602,15 @@ proc enumerateStates(ranges : [] range(uint(64)), const ref basis : Basis, out _
   // logDebug("634: nope it didn't");
 
   // Allocate space for masks
+  var masksTimer = new stopwatch();
+  masksTimer.start();
   var masks = _enumStatesMakeMasks(counts, totalCounts);
+  masksTimer.stop();
+  var descriptorsTimer = new stopwatch();
+  descriptorsTimer.start();
   var masksDescriptors =
     _enumStatesPrepareDescriptors(masks, counts, totalCounts);
+  descriptorsTimer.stop();
 
   // Distribute buckets to basisStates and maks
   const (distributeTime, copyTimes, maskCopyTimes) =
@@ -561,6 +620,10 @@ proc enumerateStates(ranges : [] range(uint(64)), const ref basis : Basis, out _
   if kDisplayTimings then
     logDebug("enumerateStates: ", timer.elapsed(), "\n",
              "  ├─ ", countsTimer.elapsed(), " in _enumStatesComputeCounts\n",
+             "  ├─ ", bucketsTimer.elapsed(), " in _enumStatesMakeBuckets\n",
+             "  ├─ ", allocateTimer.elapsed(), " in allocation\n",
+             "  ├─ ", masksTimer.elapsed(), " in _enumStatesMakeMasks\n",
+             "  ├─ ", descriptorsTimer.elapsed(), " in _enumStatesPrepareDescriptors\n",
              "  └─ ", distributeTime, " shuffling stuff around\n",
              "      ├─ ", copyTimes, " copying states\n",
              "      └─ ", maskCopyTimes, " copying masks");

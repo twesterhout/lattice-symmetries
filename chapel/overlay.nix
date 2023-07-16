@@ -13,16 +13,20 @@ final: prev: {
           src = ./.;
           configurePhase = "ln --symbolic ${final.lattice-symmetries.ffi} src/FFI.chpl";
           buildPhase = ''
-            # CHPL_HOST_MEM=cstdlib CHPL_TARGET_MEM=cstdlib
+            #  CHPL_GASNET_SEGMENT=everything
+            #  CHPL_HOST_MEM=cstdlib CHPL_TARGET_MEM=cstdlib
+
             make \
               CHPL_COMM=gasnet \
               CHPL_COMM_SUBSTRATE=ibv \
-              CHPL_GASNET_SEGMENT=everything \
-              CHPL_HOST_MEM=cstdlib CHPL_TARGET_MEM=cstdlib \
+              CHPL_GASNET_SEGMENT=fast \
+              CHPL_HOST_MEM=jemalloc CHPL_TARGET_MEM=jemalloc \
               CHPL_LAUNCHER=none \
               OPTIMIZATION=--fast \
               CHPL_CFLAGS='-I${final.lattice-symmetries.kernels}/include' \
               CHPL_LDFLAGS='-L${final.lattice-symmetries.haskell.lib}/lib' \
+              HDF5_CFLAGS='-I${final.hdf5.dev}/include' \
+              HDF5_LDFLAGS='-L${final.hdf5}/lib -lhdf5_hl -lhdf5 -lrt' \
               bin/${target}
   
             for f in $(ls bin); do
@@ -47,6 +51,7 @@ final: prev: {
           test-matrix-vector-product = toContainer (chapelBuild "TestMatrixVectorProduct");
           benchmark-states-enumeration = toContainer (chapelBuild "BenchmarkStatesEnumeration");
           benchmark-matrix-vector-product = toContainer (chapelBuild "BenchmarkMatrixVectorProduct");
+          benchmark-block-hashed = toContainer (chapelBuild "BenchmarkBlockHashed");
         };
   };
 }
