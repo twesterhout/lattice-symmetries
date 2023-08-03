@@ -1,4 +1,3 @@
-{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedLists #-}
@@ -93,8 +92,8 @@ foldlCoeffs' :: (a -> ComplexRational -> a) -> a -> Expr t -> a
 foldlCoeffs' combine x₀ (Expr (Sum s)) =
   G.foldl' (\ !x (Scaled c _) -> combine x c) x₀ s
 
-mapCoeffs :: (ComplexRational -> ComplexRational) -> Expr t -> Expr t
-mapCoeffs f = Expr . fmap (\(Scaled c p) -> Scaled (f c) p) . unExpr
+-- mapCoeffs :: (ComplexRational -> ComplexRational) -> Expr t -> Expr t
+-- mapCoeffs f = Expr . fmap (\(Scaled c p) -> Scaled (f c) p) . unExpr
 
 simplifyExpr :: (Algebra (GeneratorType t), Ord (IndexType t)) => Expr t -> Expr t
 simplifyExpr = Expr . simplifyPolynomial . unExpr

@@ -886,9 +886,9 @@ private proc localOffDiagonalNoQueue(matrix : Operator,
 
   var numProcessedChunks : atomic int = 0;
 
-  logDebug("remoteBufferSize: ", remoteBufferSize,
-           "; numChunks: ", numChunks,
-           "; batchedOperatorChunkSize: ", batchedOperatorChunkSize);
+  // logDebug("remoteBufferSize: ", remoteBufferSize,
+  //          "; numChunks: ", numChunks,
+  //          "; batchedOperatorChunkSize: ", batchedOperatorChunkSize);
 
   // logDebug("numChunks = ", numChunks, ", chunkSize = ",
   //          batchedOperatorChunkSize, ", numTasks = ", numTasks,

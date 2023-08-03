@@ -168,7 +168,6 @@
               lattice-symmetries.haskell
               hdf5
               hdf5.dev
-              atomic_queue
             ];
             nativeBuildInputs = [
               pkgs.chapel
@@ -186,7 +185,12 @@
               export HDF5_LDFLAGS="-L${hdf5}/lib -lhdf5_hl -lhdf5 -lrt"
             '';
           };
-
+          python = with pkgs; lattice-symmetries.python.overrideAttrs (attrs: {
+            nativeBuildInputs = (attrs.nativeBuildInputs or [ ]) ++ [
+              python3Packages.black
+              nodePackages.pyright
+            ];
+          });
         });
     };
 }

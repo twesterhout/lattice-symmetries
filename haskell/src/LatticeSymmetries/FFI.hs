@@ -33,7 +33,6 @@ module LatticeSymmetries.FFI
 import Foreign
 import Foreign.C.Types
 import Foreign.Storable.Generic
-import Language.C.Inline qualified as C
 import Language.C.Inline.Unsafe qualified as CU
 import LatticeSymmetries.ComplexRational (Cscalar)
 import LatticeSymmetries.Context

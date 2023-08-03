@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE PatternSynonyms #-}
@@ -5,8 +6,10 @@
 module LatticeSymmetries.Conversion
   ( extractInteractions
   , spinsToFermions
+  , convertedToInteractions
   , prepareHPhi
   , prepareVMC
+  , Interactions (..)
   )
 where
 
@@ -22,14 +25,16 @@ import LatticeSymmetries.Basis
 import LatticeSymmetries.ComplexRational
 import LatticeSymmetries.Expr
 import LatticeSymmetries.Generator
+import LatticeSymmetries.Operator
+import LatticeSymmetries.Utils
 import System.Directory
 import Prelude hiding (Product, Sum)
 
 pattern C :: Int -> SpinIndex -> Generator (SpinIndex, Int) FermionGeneratorType
-pattern C i s <- Generator (s, i) FermionCreate
+pattern C i s = Generator (s, i) FermionCreate
 
 pattern A :: Int -> SpinIndex -> Generator (SpinIndex, Int) FermionGeneratorType
-pattern A i s <- Generator (s, i) FermionAnnihilate
+pattern A i s = Generator (s, i) FermionAnnihilate
 
 pattern N :: Int -> SpinIndex -> Generator (SpinIndex, Int) FermionGeneratorType
 pattern N i s = Generator (s, i) FermionCount
@@ -176,61 +181,78 @@ extractViaConversion convert (Expr (Sum terms)) = (selected, Expr (fromList othe
   where
     (selected, others) = attemptConversion (\(Scaled c p) -> scale c <$> convert p) (toList terms)
 
-data CoulombInter = CoulombInter !Int !Int !ℂ
+extractViaSubtraction
+  :: ( g ~ Generator (IndexType t) (GeneratorType t)
+     , IsBasis t
+     , Ord i
+     )
+  => (Scaled ℂ (Product g) -> Maybe (i, ℂ))
+  -> (i -> ℂ -> a)
+  -> (a -> [Scaled ℂ (Product g)])
+  -> Expr t
+  -> ([a], Expr t)
+extractViaSubtraction isRelevant toInteraction toTerms expr@(Expr (Sum terms)) = (interactions, others)
+  where
+    others = expr - Expr (fromList (concatMap toTerms interactions))
+    interactions = uncurry toInteraction <$> Map.toList coeffsMap
+    coeffsMap = G.foldl' combineMap Map.empty relevantTerms
+    relevantTerms = G.map fromJust . G.filter isJust . G.map isRelevant $ terms
+    combineMap coeffs (i, c) = Map.insertWith combineCoeffs i c coeffs
+    combineCoeffs new old = if magnitudeSquared new > magnitudeSquared old then new else old
+
+data CoulombInter = CoulombInter !(Int, Int) !ℂ
 
 instance PrettyStdFace CoulombInter where
-  prettyStdFace (CoulombInter i j c) =
-    assert (imagPart c == 0) $ prettyStdFace (i, j, realPart c)
+  prettyStdFace (CoulombInter i c) = assert (imagPart c == 0) $ prettyStdFace (i, realPart c)
 
 extractCoulombInter :: Expr 'SpinfulFermionTy -> ([CoulombInter], Expr 'SpinfulFermionTy)
-extractCoulombInter expr@(Expr (Sum terms)) = (coulombTerms, others)
+extractCoulombInter = extractViaSubtraction isRelevant CoulombInter toTerms
   where
-    others = let e = Expr (fromList coulombExprs) in expr - e
-
-    coulombExprs = concatMap coulombTermToList (toList coulombTerms)
-    coulombTermToList (CoulombInter i1 i2 c) =
+    isRelevant (Scaled c (Product p)) = case toList p of
+      [N i1 s1, N i2 s2] | i1 /= i2 && s1 /= s2 -> (,c) <$> if i1 < i2 then Just (i1, i2) else Just (i2, i1)
+      _ -> Nothing
+    toTerms (CoulombInter (i1, i2) c) =
       [ Scaled c [N i1 SpinUp, N i2 SpinUp]
       , Scaled c [N i1 SpinUp, N i2 SpinDown]
       , Scaled c [N i1 SpinDown, N i2 SpinUp]
       , Scaled c [N i1 SpinDown, N i2 SpinDown]
       ]
-    coulombTerms = (\((i1, i2), c) -> CoulombInter i1 i2 c) <$> Map.toList coeffsMap
-    coeffsMap = G.foldl' combineMap Map.empty relevantTerms
-    relevantTerms = G.map fromJust . G.filter isJust . G.map isCoulombInter $ terms
-    isCoulombInter (Scaled c (Product p)) = case toList p of
-      [N i1 s1, N i2 s2]
-        | i1 /= i2 && s1 /= s2 ->
-            if i1 < i2 then Just (i1, i2, c) else Just (i2, i1, c)
-      _ -> Nothing
-    combineMap coeffs (i1, i2, c) = Map.insertWith combineCoeffs (i1, i2) c coeffs
-    combineCoeffs new old = if magnitudeSquared new > magnitudeSquared old then new else old
 
-data Hund = Hund !Int !Int !ℂ
+data Hund = Hund !(Int, Int) !ℂ
 
 instance PrettyStdFace Hund where
-  prettyStdFace (Hund i j c) =
-    assert (imagPart c == 0) $ prettyStdFace (i, j, -realPart c)
+  prettyStdFace (Hund i c) = assert (imagPart c == 0) $ prettyStdFace (i, -realPart c)
 
 extractHund :: Expr 'SpinfulFermionTy -> ([Hund], Expr 'SpinfulFermionTy)
-extractHund expr@(Expr (Sum terms)) = (hundTerms, others)
+extractHund = extractViaSubtraction isRelevant Hund toTerms
   where
-    others = let e = Expr (fromList hundExprs) in expr - e
-
-    hundExprs = concatMap hundToList (toList hundTerms)
-    hundToList (Hund i1 i2 c) =
+    isRelevant (Scaled c (Product p)) = case toList p of
+      [N i1 s1, N i2 s2] | i1 /= i2 && s1 == s2 -> (,c) <$> if i1 < i2 then Just (i1, i2) else Just (i2, i1)
+      _ -> Nothing
+    toTerms (Hund (i1, i2) c) =
       [ Scaled c [N i1 SpinUp, N i2 SpinUp]
       , Scaled c [N i1 SpinDown, N i2 SpinDown]
       ]
-    hundTerms = (\((i1, i2), c) -> Hund i1 i2 c) <$> Map.toList coeffsMap
-    coeffsMap = G.foldl' combineMap Map.empty relevantTerms
-    relevantTerms = G.map fromJust . G.filter isJust . G.map isHund $ terms
-    isHund (Scaled c (Product p)) = case toList p of
-      [N i1 s1, N i2 s2]
-        | i1 /= i2 && s1 == s2 ->
-            if i1 < i2 then Just (i1, i2, c) else Just (i2, i1, c)
+
+data Exchange = Exchange !(Int, Int) !ℂ
+  deriving stock (Show)
+
+instance PrettyStdFace Exchange where
+  prettyStdFace (Exchange i c) = assert (imagPart c == 0) $ prettyStdFace (i, realPart c)
+
+extractExchange :: Expr 'SpinfulFermionTy -> ([Exchange], Expr 'SpinfulFermionTy)
+extractExchange = extractViaSubtraction isRelevant Exchange toTerms
+  where
+    isRelevant (Scaled c (Product p)) = case toList p of
+      [C i1 SpinUp, A i2 SpinUp, A i1' SpinDown, C i2' SpinDown]
+        | i1 /= i2 && i1 == i1' && i2 == i2' -> Just ((i1, i2), -c)
+      [A i1 SpinUp, C i2 SpinUp, C i1' SpinDown, A i2' SpinDown]
+        | i1 /= i2 && i1 == i1' && i2 == i2' -> Just ((i1, i2), -c)
       _ -> Nothing
-    combineMap coeffs (i1, i2, c) = Map.insertWith combineCoeffs (i1, i2) c coeffs
-    combineCoeffs new old = if magnitudeSquared new > magnitudeSquared old then new else old
+    toTerms (Exchange (i1, i2) c) =
+      [ Scaled c [C i1 SpinUp, A i2 SpinUp, C i2 SpinDown, A i1 SpinDown]
+      , Scaled c [C i1 SpinDown, A i2 SpinDown, C i2 SpinUp, A i1 SpinUp]
+      ]
 
 generateLocSpin :: Basis t -> Text
 generateLocSpin basis = case basis of
@@ -406,11 +428,12 @@ data Interactions = Interactions
   , coulombIntra :: [CoulombIntra]
   , coulombInter :: [CoulombInter]
   , hund :: [Hund]
+  , exchange :: [Exchange]
   , interAll :: [TwoBodyInteraction]
   }
 
 extractInteractions :: Expr 'SpinfulFermionTy -> (Interactions, Expr 'SpinfulFermionTy)
-extractInteractions expr0 = (hphi, expr5)
+extractInteractions expr0 = (hphi, expr6)
   where
     hphi =
       Interactions
@@ -418,43 +441,75 @@ extractInteractions expr0 = (hphi, expr5)
         , coulombIntra = coulombIntra
         , coulombInter = coulombInter
         , hund = hund
+        , exchange = exchange
         , interAll = interAll
         }
     (trans, expr1) = extractViaConversion toTransferIntegral expr0
     (coulombIntra, expr2) = extractViaConversion toCoulombIntra expr1
     (coulombInter, expr3) = extractCoulombInter expr2
     (hund, expr4) = extractHund expr3
-    (interAll, expr5) = extractViaConversion toTwoBodyInteraction expr4
+    (exchange, expr5) = extractExchange expr4
+    -- expr5 = expr4
+    -- exchange = []
+    (interAll, expr6) = extractViaConversion toTwoBodyInteraction expr5
 
 writeCommon :: Basis t -> Interactions -> FilePath -> IO [Text]
 writeCommon basis int folder = do
+  let writeUnlessNull :: PrettyStdFace a => FilePath -> Text -> Text -> [a] -> IO ()
+      writeUnlessNull suffix name header terms =
+        unless (null terms) $
+          Text.writeFile (folder <> "/" <> suffix) $
+            generateContents name (length terms) header terms
   Text.writeFile (folder <> "/LocSpin.def") $ generateLocSpin basis
-  unless (null int.trans) $
-    Text.writeFile (folder <> "/Trans.def") $
-      generateContents "NTransfer" (length int.trans) "i_j_s_tijs" int.trans
-  unless (null int.coulombIntra) $
-    Text.writeFile (folder <> "/CoulombIntra.def") $
-      generateContents "NCoulombIntra" (length int.coulombIntra) "i_0LocSpn_1IteElc" int.coulombIntra
-  unless (null int.coulombInter) $
-    Text.writeFile (folder <> "/CoulombInter.def") $
-      generateContents "NCoulombInter" (length int.coulombInter) "CoulombInter" int.coulombInter
-  unless (null int.hund) $
-    Text.writeFile (folder <> "/Hund.def") $
-      generateContents "NHund" (length int.hund) "Hund" int.hund
-  unless (null int.interAll) $
-    Text.writeFile (folder <> "/InterAll.def") $
-      generateContents "NInterAll" (length int.interAll) "zInterAll" int.interAll
+  writeUnlessNull "Trans.def" "NTransfer" "i_j_s_tijs" int.trans
+  writeUnlessNull "CoulombIntra.def" "NCoulombIntra" "i_0LocSpn_1IteElc" int.coulombIntra
+  writeUnlessNull "CoulombInter.def" "NCoulombInter" "CoulombInter" int.coulombInter
+  writeUnlessNull "Hund.def" "NHund" "Hund" int.hund
+  writeUnlessNull "Exchange.def" "NExchange" "Exchange" int.exchange
+  writeUnlessNull "InterAll.def" "NInterAll" "zInterAll" int.interAll
+  -- unless (null int.trans) $
+  --   Text.writeFile (folder <> "/Trans.def") $
+  --     generateContents "NTransfer" (length int.trans) "i_j_s_tijs" int.trans
+  -- unless (null int.coulombIntra) $
+  --   Text.writeFile (folder <> "/CoulombIntra.def") $
+  --     generateContents "NCoulombIntra" (length int.coulombIntra) "i_0LocSpn_1IteElc" int.coulombIntra
+  -- unless (null int.coulombInter) $
+  --   Text.writeFile (folder <> "/CoulombInter.def") $
+  --     generateContents "NCoulombInter" (length int.coulombInter) "CoulombInter" int.coulombInter
+  -- unless (null int.hund) $
+  --   Text.writeFile (folder <> "/Hund.def") $
+  --     generateContents "NHund" (length int.hund) "Hund" int.hund
+  -- unless (null int.exchange) $
+  --   Text.writeFile (folder <> "/Hund.def") $
+  --     generateContents "NHund" (length int.hund) "Hund" int.hund
+  -- unless (null int.interAll) $
+  --   Text.writeFile (folder <> "/InterAll.def") $
+  --     generateContents "NInterAll" (length int.interAll) "zInterAll" int.interAll
   pure $
     concat @[]
-      [ ["Trans Trans.def" | not (null int.trans)]
+      [ ["LocSpin LocSpin.def"]
+      , ["Trans Trans.def" | not (null int.trans)]
       , ["CoulombIntra CoulombIntra.def" | not (null int.coulombIntra)]
       , ["CoulombInter CoulombInter.def" | not (null int.coulombInter)]
       , ["Hund Hund.def" | not (null int.hund)]
+      , ["Exchange Exchange.def" | not (null int.exchange)]
       , ["InterAll InterAll.def" | not (null int.interAll)]
       ]
 
-prepareHPhi :: Basis t -> Interactions -> Text -> IO ()
-prepareHPhi basis int (Text.unpack -> folder) = do
+convertedToInteractions :: forall a. HasCallStack => SomeOperator -> (forall t. IsBasis t => Basis t -> Interactions -> a) -> a
+convertedToInteractions op f = case op of
+  (SomeOperator SpinTag (Operator basis spinExpr)) -> run basis $ extractInteractions (spinsToFermions spinExpr)
+  (SomeOperator SpinfulFermionTag (Operator basis expr)) -> run basis $ extractInteractions expr
+  (SomeOperator SpinlessFermionTag _) -> error "spinless fermions are not yet supported"
+  where
+    run :: forall t1 t2. (IsBasis t1, IsBasis t2) => Basis t1 -> (Interactions, Expr t2) -> a
+    run basis (int, others) =
+      if others == Expr []
+        then f basis int
+        else error $ "some interaction terms could not be handled: " <> toPrettyText others
+
+prepareHPhi :: Text -> Basis t -> Interactions -> IO ()
+prepareHPhi (Text.unpack -> folder) basis int = do
   createDirectoryIfMissing True folder
   Text.writeFile (folder <> "/CalcMod.def") $ generateCalcModHPhi basis
   Text.writeFile (folder <> "/ModPara.def") $ generateModParaHPhi basis
@@ -463,8 +518,8 @@ prepareHPhi basis int (Text.unpack -> folder) = do
     Text.unlines $
       ["CalcMod CalcMod.def", "ModPara ModPara.def"] <> common
 
-prepareVMC :: Basis t -> Interactions -> Text -> IO ()
-prepareVMC basis int (Text.unpack -> folder) = do
+prepareVMC :: Text -> Basis t -> Interactions -> IO ()
+prepareVMC (Text.unpack -> folder) basis int = do
   createDirectoryIfMissing True folder
   Text.writeFile (folder <> "/ModPara.def") $ generateModParaVMC basis
   Text.writeFile (folder <> "/Orbital.def") $ generateOrbitalVMC basis
@@ -473,7 +528,6 @@ prepareVMC basis int (Text.unpack -> folder) = do
   Text.writeFile (folder <> "/namelist.def") $
     Text.unlines $
       [ "ModPara ModPara.def"
-      , "LocSpin LocSpin.def"
       , "OrbitalGeneral Orbital.def"
       , "TransSym TransSym.def"
       ]

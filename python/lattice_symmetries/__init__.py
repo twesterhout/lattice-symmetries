@@ -751,6 +751,13 @@ class Operator(LinearOperator):
     def _matvec(self, x):
         return self.apply_to_state_vector(x)
 
+    def prepare_inputs_for_hphi(self, folder: str) -> None:
+        lib.ls_hs_prepare_hphi(self._payload, folder.encode("utf-8"))
+
+    def prepare_inputs_for_mvmc(self, folder: str) -> None:
+        lib.ls_hs_prepare_mvmc(self._payload, folder.encode("utf-8"))
+
+
 
 def load_yaml_config(filename: str):
     config = lib.ls_hs_load_yaml_config(filename.encode("utf-8"))
@@ -765,10 +772,10 @@ def load_yaml_config(filename: str):
     return Config(basis, hamiltonian)
 
 
-def test_01():
-    basis = SpinBasis(2)
-    basis.build()
-    a = Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁")
-    h = Operator(basis, a)
-    (e, v) = scipy.sparse.linalg.eigsh(h, k=3, which="SA")
-    return h, e, v
+    # def test_01():
+    #     basis = SpinBasis(2)
+    #     basis.build()
+    #     a = Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁")
+    #     h = Operator(basis, a)
+    #     (e, v) = scipy.sparse.linalg.eigsh(h, k=3, which="SA")
+    #     return h, e, v

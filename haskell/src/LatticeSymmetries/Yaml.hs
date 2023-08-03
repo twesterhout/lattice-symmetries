@@ -3,13 +3,12 @@ module LatticeSymmetries.Yaml where
 import Data.Aeson
 import Data.Aeson.Key qualified
 import Data.Aeson.KeyMap qualified
-import Data.Aeson.Types (JSONPathElement (..), Parser, parserThrowError)
+import Data.Aeson.Types (Parser)
 import Data.Vector (Vector)
 import Data.Vector.Generic qualified as G
 import Data.Yaml.Aeson (decodeFileWithWarnings, prettyPrintParseException)
 import LatticeSymmetries.Basis
 import LatticeSymmetries.Expr
-import LatticeSymmetries.Generator
 import LatticeSymmetries.Operator
 
 data ConfigSpec = ConfigSpec !SomeBasis !(Maybe SomeOperator) !(Vector SomeOperator)

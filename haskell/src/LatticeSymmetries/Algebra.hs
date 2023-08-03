@@ -34,8 +34,6 @@ import GHC.Exts (IsList (..))
 import LatticeSymmetries.ComplexRational
 import LatticeSymmetries.Generator
 import LatticeSymmetries.NonbranchingTerm
-import Prettyprinter (Pretty (..))
-import Prettyprinter qualified as Pretty
 import Prelude hiding (Product, Sum, identity, toList)
 
 -- | Represents a term of the form @c × g@ where @c@ is typically a scalar and @g@ is some

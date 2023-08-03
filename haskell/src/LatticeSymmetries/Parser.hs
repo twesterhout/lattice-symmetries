@@ -12,34 +12,14 @@ module LatticeSymmetries.Parser
   )
 where
 
--- pSpinlessFermionicOperator
--- , pSpinfulFermionicOperator
--- , pSpinOperator
--- , pOperatorString
--- , pBasisState
--- , pNumber
--- , pExpr
--- , mkExpr
--- , mkExpr'
--- , mkSomeExpr
--- , mkSomeExpr'
--- , configFromYAML
--- , ConfigSpec (..)
-
 import Control.Monad.Combinators
 import Control.Monad.Combinators.NonEmpty qualified as NonEmpty
 import Data.Text qualified as Text
-
--- import Data.Aeson hiding ((<?>))
--- import Data.Aeson.Key qualified
--- import Data.Aeson.KeyMap qualified
--- import Data.Aeson.Types (JSONPathElement (..), Parser, parserThrowError)
--- import Data.Yaml.Aeson (decodeFileWithWarnings, prettyPrintParseException)
 import LatticeSymmetries.ComplexRational
 import LatticeSymmetries.Generator
 import Text.Megaparsec
 import Text.Megaparsec.Char
-import Text.Megaparsec.Char.Lexer (decimal, float, lexeme, signed)
+import Text.Megaparsec.Char.Lexer (decimal, float, lexeme)
 import Prelude hiding (Product, Sum, many, optional, some, (<|>))
 
 data SFermion
