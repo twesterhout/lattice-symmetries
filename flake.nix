@@ -19,7 +19,7 @@
   outputs = { self, nixpkgs, flake-utils, nix-chapel }:
     let
       inherit (nixpkgs) lib;
-      version = "2.1.0";
+      version = "2.2.0";
 
       kernels-overlay = import ./kernels/overlay.nix { inherit version; };
       haskell-overlay = { withPic }: import ./haskell/overlay.nix { inherit lib withPic; };
@@ -126,6 +126,7 @@
       packages = flake-utils.lib.eachDefaultSystemMap (system:
         with (pkgs-for { withPic = true; } system); {
           inherit (lattice-symmetries) kernels haskell chapel python distributed;
+          inherit atomic_queue;
         });
 
       overlays.default = composed-overlay { withPic = true; };
@@ -155,7 +156,10 @@
               nixpkgs-fmt
             ];
             shellHook = ''
-              export LD_LIBRARY_PATH=${lattice-symmetries.kernels}/lib:$LD_LIBRARY_PATH;
+              if [ ! -f libkernels.so ]; then
+                gcc -shared -o libkernels.so ${lattice-symmetries.kernels}/lib/libkernels.a
+              fi
+              export LD_LIBRARY_PATH=$PWD:$LD_LIBRARY_PATH;
             '';
           };
           chapel = with pkgs; mkShell {
@@ -164,6 +168,7 @@
               lattice-symmetries.haskell
               hdf5
               hdf5.dev
+              atomic_queue
             ];
             nativeBuildInputs = [
               pkgs.chapel

@@ -17,6 +17,7 @@ module LatticeSymmetries.Algebra
   , CommutatorType (..)
   , Algebra (..)
   , simplifyPolynomial
+  , swapGenerators
   )
 where
 
@@ -44,9 +45,6 @@ data Scaled c g = Scaled !c !g
 
 instance Functor (Scaled c) where
   fmap f (Scaled c g) = Scaled c (f g)
-
-instance (Pretty c, Pretty g) => Pretty (Scaled c g) where
-  pretty (Scaled c g) = pretty c <> " × " <> pretty g
 
 -- | A product of @g@s.
 newtype Product g = Product {unProduct :: Vector g}
@@ -246,14 +244,14 @@ instance Num c => CanScale c (Scaled c g) where
 instance Traversable Product where
   traverse f (Product v) = Product <$> traverse f v
 
-instance Pretty g => Pretty (Product g) where
-  pretty (Product v) =
-    Pretty.encloseSep mempty mempty " " (G.toList $ fmap pretty v)
-
-instance Pretty g => Pretty (Sum g) where
-  pretty (Sum v)
-    | not (G.null v) = Pretty.encloseSep mempty mempty " + " (G.toList $ fmap pretty v)
-    | otherwise = pretty (0 :: Int)
+-- instance Pretty g => Pretty (Product g) where
+--   pretty (Product v) =
+--     Pretty.encloseSep mempty mempty " " (G.toList $ fmap pretty v)
+--
+-- instance Pretty g => Pretty (Sum g) where
+--   pretty (Sum v)
+--     | not (G.null v) = Pretty.encloseSep mempty mempty " + " (G.toList $ fmap pretty v)
+--     | otherwise = pretty (0 :: Int)
 
 instance CanScale c g => CanScale c (Sum g) where
   scale c (Sum v) = Sum $ G.map (scale c) v

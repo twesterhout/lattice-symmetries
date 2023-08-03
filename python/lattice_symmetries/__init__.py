@@ -42,7 +42,7 @@ from scipy.sparse.linalg import LinearOperator
 import lattice_symmetries
 from lattice_symmetries._ls_hs import ffi, lib
 
-__version__ = "2.1.0"
+__version__ = "2.2.0"
 
 
 class _RuntimeInitializer:
@@ -147,6 +147,7 @@ def _basis_state_to_array(state: int, number_words: int) -> ffi.CData:
 class Basis:
     _payload: ffi.CData
     _finalizer: Optional[weakref.finalize]
+    _unchecked_states: Optional[NDArray[np.uint64]]
 
     @singledispatchmethod
     def __init__(self, arg, *args, **kwargs):
@@ -159,13 +160,14 @@ class Basis:
             self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_basis, self._payload)
         else:
             self._finalizer = None
+        self._unchecked_states = None
 
     @__init__.register
     def _(self, json_string: str):
         self._payload = lib.ls_hs_basis_from_json(json_string.encode("utf-8"))
         assert self._payload != 0
         self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_basis, self._payload)
-
+        self._unchecked_states = None
     # @__init__.register
     # def _(self, json_object: dict):
     #     self.__init__(json.dumps(json_object))
@@ -195,6 +197,13 @@ class Basis:
         if not self.is_built:
             lib.ls_hs_basis_build(self._payload)
         assert self.is_built
+
+        # def unchecked_set_representatives(self, states: NDArray[np.uint64]) -> None:
+        #     self._unchecked_states = np.asarray(states, order="C", dtype=np.uint64)
+        #     chpl_array = ffi.new("chpl_external_array *")
+        #     chpl_array.elts = ffi.from_buffer("uint64_t[]", self._unchecked_states, require_writable=False)
+        #     chpl_array.num_elts = self._unchecked_states.size
+        #     lib.ls_hs_unchecked_set_representatives(self._payload, chpl_array, 22)
 
     @property
     def number_states(self) -> int:

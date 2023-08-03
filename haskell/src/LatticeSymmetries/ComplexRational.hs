@@ -4,24 +4,27 @@
 -- Copyright   : (c) Tom Westerhout, 2022
 -- Stability   : experimental
 module LatticeSymmetries.ComplexRational
-  ( ComplexRational (..),
-    ConvertibleToComplexDouble (..),
-    realPart,
-    imagPart,
-    conjugate,
-    magnitudeSquared,
-    Cscalar,
+  ( ComplexRational (..)
+  , ℂ
+  , ConvertibleToComplexDouble (..)
+  , realPart
+  , imagPart
+  , conjugate
+  , magnitudeSquared
+  , Cscalar
   )
 where
 
 import Data.Complex (Complex (..))
 import Foreign.C.Types (CDouble (..))
 import Prettyprinter (Doc, Pretty (..))
-import qualified Prettyprinter as Pretty
+import Prettyprinter qualified as Pretty
 
 -- | Arbitrary precision complex number \(\mathbb{C}\) built from two 'Rational's.
 data ComplexRational = ComplexRational {-# UNPACK #-} !Rational {-# UNPACK #-} !Rational
   deriving stock (Eq, Show)
+
+type ℂ = ComplexRational
 
 prettyRational :: Rational -> Doc ann
 prettyRational x
@@ -31,6 +34,9 @@ prettyRational x
 instance Pretty ComplexRational where
   pretty (ComplexRational r i)
     | i == 0 = prettyRational r
+    | r == 0 && i == 1 = "ⅈ"
+    | r == 0 && i == -1 = "-ⅈ"
+    | r == 0 = prettyRational i <> "ⅈ"
     | otherwise = Pretty.parens $ prettyRational r <> " + " <> prettyRational i <> "ⅈ"
 
 realPart :: ComplexRational -> Rational
@@ -42,7 +48,7 @@ imagPart (ComplexRational _ i) = i
 {-# INLINE imagPart #-}
 
 conjugate :: ComplexRational -> ComplexRational
-conjugate (ComplexRational r i) = (ComplexRational r (-i))
+conjugate (ComplexRational r i) = ComplexRational r (-i)
 {-# INLINE conjugate #-}
 
 magnitudeSquared :: ComplexRational -> Rational

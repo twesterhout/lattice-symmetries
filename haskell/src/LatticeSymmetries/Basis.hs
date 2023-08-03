@@ -30,6 +30,7 @@ module LatticeSymmetries.Basis
     -- ** Querying information
   , getNumberBits
   , getNumberWords
+  , getNumberSites
   , minStateEstimate
   , maxStateEstimate
   , isStateIndexIdentity

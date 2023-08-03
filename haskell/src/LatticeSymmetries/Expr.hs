@@ -1,5 +1,6 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -7,7 +8,11 @@
 
 module LatticeSymmetries.Expr
   ( Expr (..)
+  , mkExpr
+  , mkExprEither
   , SomeExpr (..)
+  , mkSomeExpr
+  , mkSomeExprEither
   , withSomeExpr
   , foldSomeExpr
   , mapSomeExpr
@@ -33,6 +38,7 @@ module LatticeSymmetries.Expr
 where
 
 import Data.Aeson
+import Data.Aeson.Types (JSONPathElement (..), Parser, parserThrowError)
 import Data.List qualified as List
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
@@ -45,8 +51,10 @@ import LatticeSymmetries.Algebra
 import LatticeSymmetries.Basis
 import LatticeSymmetries.ComplexRational
 import LatticeSymmetries.Generator
+import LatticeSymmetries.Parser
 import LatticeSymmetries.Utils
 import Prettyprinter (Pretty (..))
+import Prettyprinter qualified as Pretty
 import Prelude hiding (Product, Sum, identity, toList)
 
 newtype Expr t = Expr
@@ -92,7 +100,11 @@ simplifyExpr :: (Algebra (GeneratorType t), Ord (IndexType t)) => Expr t -> Expr
 simplifyExpr = Expr . simplifyPolynomial . unExpr
 
 conjugateExpr :: (Algebra (GeneratorType t), Ord (IndexType t)) => Expr t -> Expr t
-conjugateExpr = simplifyExpr . mapGenerators conjugateGenerator . mapCoeffs conjugate
+conjugateExpr = simplifyExpr . Expr . conjugateSum . unExpr
+  where
+    conjugateSum = fmap conjugateScaled
+    conjugateScaled (Scaled c p) = Scaled (conjugate c) (conjugateProduct p)
+    conjugateProduct (Product gs) = Product . G.reverse $ conjugateGenerator <$> gs
 
 isIdentityExpr :: Algebra (GeneratorType t) => Expr t -> Bool
 isIdentityExpr = isIdentitySum . unExpr
@@ -125,7 +137,30 @@ instance CanScale ComplexRational (Expr t) where
     | otherwise = Expr $ c `scale` unExpr a
 
 instance Pretty (Generator (IndexType t) (GeneratorType t)) => Pretty (Expr t) where
-  pretty (Expr terms) = pretty terms
+  pretty (Expr (Sum terms)) = prettySum (G.toList terms)
+    where
+      prettyScaled (Scaled c g)
+        | c == 1 = prettyProduct g
+        | c == -1 = "-" <> prettyProduct g
+        | otherwise = pretty c <> " " <> prettyProduct g
+      prettyProduct (Product v) =
+        Pretty.encloseSep mempty mempty " " (G.toList $ fmap pretty v)
+      prettySum [] = "0"
+      prettySum (term : others) = prettyScaled term <> prettySumRest others
+      prettySumRest [] = ""
+      prettySumRest (Scaled c p : others)
+        | (realPart c == 0 && imagPart c < 0) || (imagPart c == 0 && realPart c < 0) =
+            " - " <> prettyScaled (Scaled (-c) p) <> prettySumRest others
+        | otherwise = " + " <> prettyScaled (Scaled c p) <> prettySumRest others
+
+-- instance Pretty g => Pretty (Product g) where
+--   pretty (Product v) =
+--     Pretty.encloseSep mempty mempty " " (G.toList $ fmap pretty v)
+--
+-- instance Pretty g => Pretty (Sum g) where
+--   pretty (Sum v)
+--     | not (G.null v) = Pretty.encloseSep mempty mempty " + " (G.toList $ fmap pretty v)
+--     | otherwise = pretty (0 :: Int)
 
 instance Pretty SomeExpr where
   pretty (SomeExpr SpinTag expr) = pretty expr
@@ -276,3 +311,91 @@ withCexpr2 p1 p2 f =
   withCexpr p1 $ \x1 ->
     withCexpr p2 $ \x2 ->
       pure (f x1 x2)
+
+fromSExpr :: (HasCallStack, IsBasis t) => ParticleTag t -> SExpr -> Either Text (Expr t)
+fromSExpr t (SSum terms) = do
+  exprs <- mapM (fromSExpr t) terms
+  pure $ foldl' (+) (Expr []) exprs
+fromSExpr t (SScaled c term) = scale c <$> fromSExpr t term
+fromSExpr t (SProduct (term :| terms)) = do
+  expr <- fromSExpr t term
+  exprs <- mapM (fromSExpr t) terms
+  pure $ foldl' (*) expr exprs
+fromSExpr SpinTag (SPrimitive (SSpinOp c t i)) = pure $
+  case t of
+    SSpinPlus -> Expr [scaled [Generator i SpinPlus]]
+    SSpinMinus -> Expr [scaled [Generator i SpinMinus]]
+    SSpinZ -> Expr [scaled [Generator i SpinZ]]
+    SSpinX -> Expr [scaled [Generator i SpinPlus], scaled [Generator i SpinMinus]]
+    SSpinY ->
+      scale (ComplexRational 0 (-1)) $
+        Expr [scaled [Generator i SpinPlus], scale (-1 :: ℂ) (scaled [Generator i SpinMinus])]
+  where
+    scaled = if c == 'S' then Scaled 0.5 else Scaled 1
+fromSExpr SpinfulFermionTag (SPrimitive (SFermionOp t (Just s) i)) = pure $
+  case t of
+    SFermionCreate -> Expr [Scaled 1 [Generator (s, i) FermionCreate]]
+    SFermionAnnihilate -> Expr [Scaled 1 [Generator (s, i) FermionAnnihilate]]
+    SFermionNumber -> Expr [Scaled 1 [Generator (s, i) FermionCount]]
+fromSExpr SpinlessFermionTag (SPrimitive (SFermionOp t Nothing i)) = pure $
+  case t of
+    SFermionCreate -> Expr [Scaled 1 [Generator i FermionCreate]]
+    SFermionAnnihilate -> Expr [Scaled 1 [Generator i FermionAnnihilate]]
+    SFermionNumber -> Expr [Scaled 1 [Generator i FermionCount]]
+fromSExpr SpinTag (SPrimitive _) = fail "expected an expression for spin-1/2 particles"
+fromSExpr SpinfulFermionTag (SPrimitive _) = fail "expected an expression for spinful fermions"
+fromSExpr SpinlessFermionTag (SPrimitive _) = fail "expected an expression for spinless fermions"
+
+mkExprEither :: (HasCallStack, IsBasis t) => ParticleTag t -> Text -> Either Text (Expr t)
+mkExprEither tag s = parseExprEither s >>= fromSExpr tag
+
+mkExpr :: (HasCallStack, IsBasis t) => ParticleTag t -> Text -> Expr t
+mkExpr tag s = either error id (mkExprEither tag s)
+
+determineParticleTag :: SExpr -> ParticleTy
+determineParticleTag expr = fromMaybe SpinTy (go expr)
+  where
+    go (SSum ts) = foldl' (<|>) Nothing (fmap go ts)
+    go (SScaled _ p) = go p
+    go (SProduct (t :| ts)) = foldl' (<|>) (go t) (fmap go ts)
+    go (SPrimitive (SSpinOp {})) = Just SpinTy
+    go (SPrimitive (SFermionOp _ Nothing _)) = Just SpinlessFermionTy
+    go (SPrimitive (SFermionOp _ (Just _) _)) = Just SpinfulFermionTy
+
+mkSomeExprEither :: Maybe ParticleTy -> Text -> Either Text SomeExpr
+mkSomeExprEither tp s = do
+  sexpr <- parseExprEither s
+  case fromMaybe (determineParticleTag sexpr) tp of
+    SpinTy -> SomeExpr SpinTag <$> fromSExpr SpinTag sexpr
+    SpinlessFermionTy -> SomeExpr SpinlessFermionTag <$> fromSExpr SpinlessFermionTag sexpr
+    SpinfulFermionTy -> SomeExpr SpinfulFermionTag <$> fromSExpr SpinfulFermionTag sexpr
+
+mkSomeExpr :: HasCallStack => Maybe ParticleTy -> Text -> SomeExpr
+mkSomeExpr tp s = either error id $ mkSomeExprEither tp s
+
+exprFromJSON :: (Maybe ParticleTy -> Text -> Either Text a) -> ([[Int]] -> a -> a) -> Value -> Parser a
+exprFromJSON f expand = withObject "Expr" $ \v -> do
+  tp <- v .:? "particle"
+  s <- v .: "expression"
+  sites <- v .:? "sites"
+  let expand' x = case sites of
+        Just is -> expand is x
+        Nothing -> x
+  case fmap expand' (f tp s) of
+    Left e -> parserThrowError [Key "expression"] (toString e)
+    Right x -> pure x
+
+instance IsBasis t => FromJSON (Expr t) where
+  parseJSON = exprFromJSON (exprParserConcrete (particleDispatch @t)) replicateSiteIndices
+    where
+      exprParserConcrete :: ParticleTag t -> Maybe ParticleTy -> Text -> Either Text (Expr t)
+      exprParserConcrete tag Nothing s = mkExprEither tag s
+      exprParserConcrete tag (Just tp) s
+        | particleTagToType tag == tp = mkExprEither tag s
+        | otherwise = Left $ "invalid particle type: " <> show tp <> "; expected " <> show (particleTagToType tag)
+
+instance FromJSON SomeExpr where
+  parseJSON = exprFromJSON mkSomeExprEither expandSomeExpr
+    where
+      expandSomeExpr :: [[Int]] -> SomeExpr -> SomeExpr
+      expandSomeExpr indices = mapSomeExpr (replicateSiteIndices indices)
