@@ -28,7 +28,7 @@ $$
 <td>
 
 `"Sˣ₀ Sˣ₁ + Sʸ₀ Sʸ₁ + Sᶻ₀ Sᶻ₁"`
-or<br/>
+or
 `"Sx0 Sx0 + Sy1 Sy1 + Sz0 Sz1"`
 
 </td>
@@ -57,8 +57,8 @@ $$
 </td>
 <td>
 
-`"σ⁺₀ σ⁻₁"` or <br/>
-`"\sigma^+_0 \sigma^-_1"` or <br/>
+`"σ⁺₀ σ⁻₁"` or
+`"\sigma^+_0 \sigma^-_1"` or
 `"\sigma+0 \sigma-1"`
 
 </td>
@@ -88,7 +88,7 @@ $$
 
 </td><td>
 
-`"n₀↑ n₀↓"` or<br/>
+`"n₀↑ n₀↓"` or
 `"n0up n0down"`
 
 </td></tr>
