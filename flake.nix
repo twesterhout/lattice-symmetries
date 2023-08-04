@@ -123,13 +123,18 @@
       # };
     in
     {
+      overlays.default = composed-overlay { withPic = true; };
+
+      templates.default = {
+        path = ./template;
+        description = "Python project template that uses lattice-symmetries";
+      };
+
       packages = flake-utils.lib.eachDefaultSystemMap (system:
         with (pkgs-for { withPic = true; } system); {
           inherit (lattice-symmetries) kernels haskell chapel python distributed;
           inherit atomic_queue;
         });
-
-      overlays.default = composed-overlay { withPic = true; };
 
       devShells = flake-utils.lib.eachDefaultSystemMap (system:
         let
@@ -154,6 +159,16 @@
               hsc2hs
               nil
               nixpkgs-fmt
+              (python3Packages.grip.overrideAttrs (attrs: {
+                src = fetchFromGitHub {
+                  owner = "Antonio-R1";
+                  repo = "grip";
+                  rev = "d2efd3c6a896c01cfd7624b6504107e7b3b4b20f";
+                  hash = "sha256-0wgIM7Ll5WELvAOiu1TLyoNSrhJ22Y1SRbWqa3BDF3k=";
+                };
+                checkPhase = "true";
+                installCheckPhase = "true";
+              }))
             ];
             shellHook = ''
               if [ ! -f libkernels.so ]; then
