@@ -1,0 +1,11 @@
+L = 3
+W = 2
+model = "SpinGC"
+method = "Lanczos"
+lattice = "ladder"
+J0 = 1.0
+J1 = 1.0
+// D = 1.0
+Gamma = 0.5
+// 2Sz = 0
+outputmode = "all"

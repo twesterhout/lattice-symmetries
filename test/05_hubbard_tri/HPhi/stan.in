@@ -1,0 +1,11 @@
+a0w = 3
+a0l = 0
+a1w = -1
+a1l = 2
+model = "HubbardGC"
+method = "Lanczos"
+lattice = "Triangular"
+t = 1.0
+t' = 0.5
+U = 4.0
+outputmode = "all"

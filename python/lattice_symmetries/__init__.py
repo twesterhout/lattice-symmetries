@@ -765,7 +765,7 @@ def load_yaml_config(filename: str):
     hamiltonian = None
     if config.hamiltonian != 0:
         hamiltonian = Operator(lib.ls_hs_clone_operator(config.hamiltonian))
-    if config.observables != 0:
+    if config.number_observables != 0:
         raise NotImplementedError
     lib.ls_hs_destroy_yaml_config(config)
     Config = namedtuple("Config", ["basis", "hamiltonian", "observables"], defaults=[None, None])

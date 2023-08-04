@@ -713,21 +713,20 @@ requiresProjection x = hasPermutationSymmetries x || hasSpinInversionSymmetry x
 hasSpinInversionSymmetry :: Basis t -> Bool
 hasSpinInversionSymmetry x = case x of
   SpinBasis _ _ i _ -> isJust i
-  SpinfulFermionBasis _ _ -> False
-  SpinlessFermionBasis _ _ -> False
+  _ -> False
 {-# INLINE hasSpinInversionSymmetry #-}
 
 hasPermutationSymmetries :: Basis t -> Bool
 hasPermutationSymmetries x = case x of
   SpinBasis _ _ _ g -> not (nullSymmetries g)
-  SpinfulFermionBasis _ _ -> False
-  SpinlessFermionBasis _ _ -> False
+  _ -> False
 {-# INLINE hasPermutationSymmetries #-}
 
 hasFixedHammingWeight :: Basis t -> Bool
 hasFixedHammingWeight x = case x of
   SpinBasis _ (Just _) _ _ -> True
   SpinfulFermionBasis _ (SpinfulTotalParticles _) -> True
+  SpinfulFermionBasis _ (SpinfulPerSector _ _) -> True
   SpinlessFermionBasis _ (Just _) -> True
   _ -> False
 {-# INLINE hasFixedHammingWeight #-}

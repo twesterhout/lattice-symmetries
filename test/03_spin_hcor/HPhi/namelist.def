@@ -1,0 +1,12 @@
+         ModPara  modpara.def
+         LocSpin  locspn.def
+           Trans  trans.def
+    CoulombInter  coulombinter.def
+            Hund  hund.def
+        Exchange  exchange.def
+        PairLift  pairlift.def
+        OneBodyG  greenone.def
+        TwoBodyG  greentwo.def
+         CalcMod  calcmod.def
+  PairExcitation  pair.def
+     SpectrumVec  zvo_eigenvec_0

@@ -1,0 +1,12 @@
+a0w = 1
+a0l = 1
+a1w = -1
+a1l = 2
+model = "Spin"
+method = "Lanczos"
+lattice = "kagome"
+J0 = 1.0
+J1 = 0.5
+J2 = 0.5
+2Sz = 1
+outputmode = "all"

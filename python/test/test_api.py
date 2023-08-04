@@ -1,6 +1,9 @@
+import glob
+import os
 import lattice_symmetries as ls
 import numpy as np
 import scipy.sparse.linalg
+from pytest import approx
 
 def sum1(xs):
     s = None
@@ -125,3 +128,21 @@ def test_anisotropic_kagome_9():
     energy, state = scipy.sparse.linalg.eigsh(hamiltonian, k=1, which="SA", tol=1e-6)
     print(energy)
 
+
+def test_vs_hphi():
+    prefix = "../../test"
+    for folder in os.listdir(prefix):
+        print(folder)
+        config = ls.load_yaml_config(os.path.join(prefix, folder, "hamiltonian.yaml"))
+        config.basis.build()
+        energy, state = scipy.sparse.linalg.eigsh(config.hamiltonian, k=1, which="SA", tol=1e-6)
+        with open(os.path.join(prefix, folder, "HPhi", "output", "zvo_energy.dat")) as f:
+            for line in f.readlines():
+                if line.startswith("Energy"):
+                    ref_energy = float(line.strip().split(" ")[-1])
+        print(energy, ref_energy)
+        assert ref_energy is not None
+        assert energy == approx(ref_energy)
+
+
+test_vs_hphi()
