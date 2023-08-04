@@ -17,43 +17,52 @@ A package to simplify working with symmetry-adapted quantum many-body bases.
 
 <table>
 <tr><th>Maths</th><th>Code</th></tr>
-<tr><td>
+<tr>
+<td>
 
 $$
 \mathbf{S}_i \cdot \mathbf{S}_j = S^x_i S^x_j + S^y_i S^y_j + S^z_i S^z_j
 $$
 
-</td><td>
+</td>
+<td>
 
 `"Sˣ₀ Sˣ₁ + Sʸ₀ Sʸ₁ + Sᶻ₀ Sᶻ₁"`
 or<br/>
 `"Sx0 Sx0 + Sy1 Sy1 + Sz0 Sz1"`
 
-</td></tr>
-<tr><td>
+</td>
+</tr>
+<tr>
+<td>
 
 $$
 \mathbf{S}_i \cdot \mathbf{S}_j = \frac{1}{4} \left( \sigma^x_i \sigma^x_j + \sigma^y_i \sigma^y_j + \sigma^z_i \sigma^z_j \right)
 $$
 
-</td><td>
+</td>
+<td>
 
 `"0.25 (σˣ₀ σˣ₁ + σʸ₀ σʸ₁ + σᶻ₀ σᶻ₁)"`
 
-</td></tr>
-<tr><td>
+</td>
+</tr>
+<tr>
+<td>
 
 $$
 \sigma^{+}_i \sigma^{-}_j
 $$
 
-</td><td>
+</td>
+<td>
 
 `"σ⁺₀ σ⁻₁"` or <br/>
 `"\sigma^+_0 \sigma^-_1"` or <br/>
 `"\sigma+0 \sigma-1"`
 
-</td></tr>
+</td>
+</tr>
 </table>
 
 #### Electrons
