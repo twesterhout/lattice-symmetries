@@ -16,10 +16,6 @@ use Time;
 import Communication;
 import OS.POSIX;
 
-// config const kUseLowLevelComm : bool = true;
-// config const numChunksPerLocale = 3;
-// config const enableSegFault : bool = false;
-
 /* Get the next integer with the same Hamming weight.
 
    Semantically equivalent to
@@ -133,6 +129,9 @@ private inline proc unprojectedIndexToState(stateIndex : int,
  */
 private proc determineEnumerationRanges(r : range(uint(64)), in numChunks : int,
                                         isHammingWeightFixed : bool) {
+  // const ranges = determineEnumerationRanges(globalRange, min(numChunks, globalRange.size),
+  //                                           isHammingWeightFixed);
+
   var timer = new stopwatch();
   timer.start();
   const hammingWeight = if isHammingWeightFixed then popCount(r.low):int else -1;
@@ -150,6 +149,43 @@ private proc determineEnumerationRanges(r : range(uint(64)), in numChunks : int,
   if kDisplayTimings then
     logDebug("determineEnumerationRanges(", r, ") took ", timer.elapsed());
   return ranges;
+}
+private proc determineEnumerationRanges(r : range(uint(64)), numChunks : int, basis : Basis) {
+  if basis.isSpinBasis() ||
+     basis.isSpinlessFermionicBasis() ||
+     (basis.isSpinfulFermionicBasis() && basis.numberUp() == -1) {
+    return determineEnumerationRanges(r, numChunks, basis.isHammingWeightFixed());
+  }
+  if basis.isSpinfulFermionicBasis() {
+    // Both the number of ↑ and ↓ spins are set.
+    const numberSites = basis.numberSites();
+    const mask = (1 << numberSites) - 1; // isolate the lower numberSites bits
+    const numberUp = basis.numberUp();
+    const numberDown = basis.numberParticles() - numberUp;
+
+    const minA = r.low & mask;
+    const maxA = r.high & mask;
+    const minB = (r.low >> numberSites) & mask;
+    const maxB = (r.high >> numberSites) & mask;
+    assert(popCount(minA) == numberUp && popCount(maxA) == numberUp &&
+             popCount(minB) == numberDown && popCount(maxB) == numberDown,
+           "invalid r.low=" + r.low:string + " and r.high=" + r.high:string +
+           " for a spinless fermion system with " + numberUp:string +
+           " spins up and " + numberDown:string + " spins down");
+
+    // TODO: This algorithm will be inefficient when we have only 1 spin down and many spins up.
+    // In such cases, we should split into subranges using minA .. maxA range.
+    const rangesB = determineEnumerationRanges(minB .. maxB, numChunks, true);
+    var ranges : [0 ..# rangesB.size] range(uint(64));
+
+    for (dest, rB) in zip(ranges, rangesB) {
+      const low = (rB.low << numberSites) | minA;
+      const high = (rB.high << numberSites) | maxA;
+      dest = low .. high;
+    }
+    return ranges;
+  }
+  halt("unsupported basis type");
 }
 
 /* Hash function which we use to map spin configurations to locale indices.
@@ -195,38 +231,33 @@ private proc _enumStatesComputeMasksAndCounts(const ref states, ref outMasks) {
   return counts;
 }
 
+private proc assertBoundsHaveSameHammingWeight(r : range(?t), isHammingWeightFixed : bool) {
+  assert(!isHammingWeightFixed || popCount(r.low) == popCount(r.high),
+    "r.low=" + r.low:string + " and r.high=" + r.high:string
+      + " have different Hamming weight: " + popCount(r.low):string
+      + " vs. " + popCount(r.high):string);
+}
+
+
 private proc _enumerateStatesProjected(r : range(uint(64)), const ref basis : Basis,
                                        ref outStates : Vector(uint(64))) {
   if r.size == 0 then return;
   const isHammingWeightFixed = basis.isHammingWeightFixed();
-  // var timer = new Timer();
-  // timer.start();
+  assertBoundsHaveSameHammingWeight(r, isHammingWeightFixed);
+
   var buffer: [0 ..# kIsRepresentativeBatchSize] uint(64);
   var flags: [0 ..# kIsRepresentativeBatchSize] uint(8);
   var norms: [0 ..# kIsRepresentativeBatchSize] real(64);
-  // timer.stop();
   var lower = r.low;
   const upper = r.high;
 
-  // var manyNextStateTimer = new Timer();
-  // var isRepresentativeTimer = new Timer();
-  // var pushBackTimer = new Timer();
   while true {
-    // manyNextStateTimer.start();
     const written = manyNextState(lower, upper, buffer, isHammingWeightFixed);
-    // manyNextStateTimer.stop();
+    isRepresentative(basis, buffer[0 ..# written], flags[0 ..# written], norms[0 ..# written]);
 
-    // isRepresentativeTimer.start(); 
-    isRepresentative(basis, buffer[0 ..# written],
-                            flags[0 ..# written],
-                            norms[0 ..# written]);
-    // isRepresentativeTimer.stop();
-
-    // pushBackTimer.start(); 
     for i in 0 ..# written do
       if flags[i]:bool && norms[i] > 0 then
         outStates.pushBack(buffer[i]);
-    // pushBackTimer.stop(); 
 
     const last = buffer[written - 1];
     if last == upper then break;
@@ -234,18 +265,12 @@ private proc _enumerateStatesProjected(r : range(uint(64)), const ref basis : Ba
     if isHammingWeightFixed { lower = nextState(last, true); }
     else { lower = nextState(last, false); }
   }
-
-  // logDebug("_enumerateStatesProjected: ", timer.elapsed(), ", ", manyNextStateTimer.elapsed(), ", ",
-  //   isRepresentativeTimer.elapsed(), ", ", pushBackTimer.elapsed());
 }
 private proc _enumerateStatesUnprojected(r : range(uint(64)), const ref basis : Basis,
                                          ref outStates : Vector(uint(64))) {
   const isHammingWeightFixed = basis.isHammingWeightFixed();
   const hasSpinInversionSymmetry = basis.hasSpinInversionSymmetry();
-  if isHammingWeightFixed && popCount(r.low) != popCount(r.high) then
-    halt("r.low=" + r.low:string + " and r.high=" + r.high:string
-        + " have different Hamming weight: " + popCount(r.low):string
-        + " vs. " + popCount(r.high):string);
+  assertBoundsHaveSameHammingWeight(r, isHammingWeightFixed);
   var low = r.low;
   var high = r.high;
   if hasSpinInversionSymmetry {
@@ -265,20 +290,26 @@ private proc _enumerateStatesUnprojected(r : range(uint(64)), const ref basis : 
 private proc _enumerateStatesUnprojectedSpinfulFermion(r : range(uint(64)),
                                                        const ref basis : Basis,
                                                        ref outStates : Vector(uint(64))) {
+  // logDebug("_enumerateStatesUnprojectedSpinfulFermion ...");
   assert(basis.isSpinfulFermionicBasis());
   const numberSites = basis.numberSites();
   const mask = (1 << numberSites) - 1; // isolate the lower numberSites bits
   const numberUp = basis.numberUp();
   const numberDown = basis.numberParticles() - numberUp;
+  assert(numberUp >= 0 && numberDown >= 0);
+  // logDebug("numberSites = ", numberSites, ", numberUp = ", numberUp, ", numberDown = ", numberDown);
 
   const minA = r.low & mask;
   const maxA = r.high & mask;
+  // logDebug("minA = ", minA, ", maxA = ", maxA);
+  assert(popCount(minA) == numberUp && popCount(maxA) == numberUp);
   const countA =
     unprojectedStateToIndex(maxA, isHammingWeightFixed=true) -
-      unprojectedStateToIndex(maxA, isHammingWeightFixed=true) + 1;
+      unprojectedStateToIndex(minA, isHammingWeightFixed=true) + 1;
 
   const minB = (r.low >> numberSites) & mask;
   const maxB = (r.high >> numberSites) & mask;
+  assert(popCount(minB) == numberDown && popCount(maxB) == numberDown);
   const countB =
     unprojectedStateToIndex(maxB, isHammingWeightFixed=true) -
       unprojectedStateToIndex(minB, isHammingWeightFixed=true) + 1;
@@ -296,12 +327,22 @@ private proc _enumerateStatesUnprojectedSpinfulFermion(r : range(uint(64)),
 
 private proc _enumerateStates(r : range(uint(64)), const ref basis : Basis,
                               ref outStates : Vector(uint(64))) {
-  if basis.hasPermutationSymmetries() then
-    _enumerateStatesProjected(r, basis, outStates);
-  else if basis.isStateIndexIdentity() || basis.isHammingWeightFixed() then
+  if basis.isSpinBasis() {
+    if basis.hasPermutationSymmetries() then
+      _enumerateStatesProjected(r, basis, outStates);
+    else
+      _enumerateStatesUnprojected(r, basis, outStates);
+  }
+  else if basis.isSpinfulFermionicBasis() {
+    if basis.numberUp() == -1 then
+      _enumerateStatesUnprojected(r, basis, outStates);
+    else
+      _enumerateStatesUnprojectedSpinfulFermion(r, basis, outStates);
+  }
+  else {
+    assert(basis.isSpinlessFermionicBasis());
     _enumerateStatesUnprojected(r, basis, outStates);
-  else
-    _enumerateStatesUnprojectedSpinfulFermion(r, basis, outStates);
+  }
 }
 
 proc prefixSum(arr : [] ?eltType) {
@@ -630,20 +671,20 @@ proc enumerateStates(ranges : [] range(uint(64)), const ref basis : Basis, out _
   _masks = masks;
   return basisStates;
 }
-proc enumerateStates(globalRange : range(uint(64)), const ref basis : Basis,
-                     out masks, in numChunks : int = kEnumerateStatesNumChunks) {
-  const isHammingWeightFixed = basis.isHammingWeightFixed();
+proc enumerateStates(globalRange : range(uint(64)), basis : Basis, out masks,
+                     in numChunks : int = kEnumerateStatesNumChunks) {
   // If we don't have to project, the enumeration ranges can be split equally,
   // so there's no need to use more chunks than there are cores
   if !basis.requiresProjection() then
     numChunks = numLocales * here.maxTaskPar;
-  const ranges = determineEnumerationRanges(globalRange, numChunks, isHammingWeightFixed);
+  const ranges = determineEnumerationRanges(globalRange, min(numChunks, globalRange.size), basis);
   return enumerateStates(ranges, basis, masks);
 }
 proc enumerateStates(const ref basis : Basis, out masks,
                      numChunks : int = kEnumerateStatesNumChunks) {
   const lower = basis.minStateEstimate();
   const upper = basis.maxStateEstimate();
+  // logDebug("computed lower=", lower, ", upper=", upper);
   return enumerateStates(lower .. upper, basis, masks, numChunks);
 }
 
@@ -652,11 +693,13 @@ export proc ls_chpl_enumerate_representatives(p : c_ptr(ls_hs_basis),
                                               lower : uint(64),
                                               upper : uint(64),
                                               dest : c_ptr(chpl_external_array)) {
-  logDebug("ls_chpl_enumerate_representatives ...");
+  // logDebug("ls_chpl_enumerate_representatives ...");
   const basis = new Basis(p, owning=false);
   // var rs = localEnumerateRepresentatives(basis, lower, upper);
   const masks;
+  // logDebug("calling enumerateStates(", lower, ", ", upper, ") ...");
   var rs = enumerateStates(basis, masks);
+  // logDebug("enumerateStates done!");
   // ref v = rs[here];
   var v = rs[here];
   // writeln(v.type:string);
@@ -664,463 +707,5 @@ export proc ls_chpl_enumerate_representatives(p : c_ptr(ls_hs_basis),
   // writeln(v._value.isDefaultRectangular():string);
   dest.deref() = convertToExternalArray(v);
 }
-
-/*
-proc determineMergeBounds(const ref basisStates : [] uint(64), numChunks : int) {
-  assert(basisStates.size >= numChunks);
-  assert(numChunks > 1);
-  var bounds : [0 ..# numChunks] uint(64);
-  for (chunk, bound) in zip(chunks(0 ..# basisStates.size, numChunks), bounds) {
-    bound = basisStates[chunk.high];
-  }
-  bounds[bounds.domain.low] = 0;
-  bounds[bounds.domain.high] = ~(0:uint(64));
-  return bounds;
-}
-*/
-// inline proc determineMergeBounds(const ref basisStates : Vector(uint(64)), numChunks : int) {
-//   return determineMergeBounds(basisStates.toArray(), numChunks);
-// }
-
-/*
-proc mergeBoundsToIndexRanges(const ref basisStates : [] uint(64),
-                              const ref bounds : [] uint(64)) {
-  assert(bounds[bounds.domain.low] <= basisStates[basisStates.domain.low]);
-  assert(bounds[bounds.domain.high] >= basisStates[basisStates.domain.high]);
-  var ranges : [bounds.domain] range(int);
-  for (r, b, i) in zip(ranges, bounds, 0..) {
-    var loIdx = if i == 0 then 0 else ranges[i - 1].high + 1;
-    var (found, hiIdx) = binarySearch(basisStates, b, lo=loIdx);
-    if !found then
-      hiIdx -= 1;
-    r = loIdx .. hiIdx;
-    // if hiIdx - loIdx >= 0 {
-    //   if i != 0 {
-    //     assert(basisStates[loIdx] > bounds[i - 1]);
-    //   }
-    //   assert(basisStates[hiIdx] <= b);
-    // }
-  }
-  assert(ranges[bounds.size - 1].high == basisStates.size - 1);
-  return ranges;
-}
-*/
-// inline proc mergeBoundsToIndexRanges(const ref basisStates : Vector(uint(64)),
-//                                      const ref bounds : [] uint(64)) {
-//   return mergeBoundsToIndexRanges(basisStates.toArray(), bounds);
-// }
-
-/*
-proc determineMergeRanges(const ref basisStates : BlockVector(uint(64), 1), numChunks : int) {
-  // logDebug("determineMergeRanges: numStates=" + (+ reduce basisStates._counts):string);
-  const bounds = determineMergeBounds(basisStates[here], numChunks);
-  var ranges : [basisStates.outerDom] [0 ..# bounds.size] range(int);
-  forall (r, i) in zip(ranges, 0 ..) {
-    const localBounds = bounds;
-    r = mergeBoundsToIndexRanges(basisStates.getBlock(i), localBounds);
-  }
-  return ranges;
-}
-
-proc mergeRangesToOffsets(const ref ranges) {
-  const numRanges = ranges[0].size;
-  var offsets : [0 ..# numRanges + 1] int;
-  offsets[0] = 0;
-  for i in 0 ..# numRanges {
-    offsets[i + 1] = offsets[i] + (+ reduce [k in ranges.domain] ranges[k][i].size);
-  }
-  return offsets;
-}
-
-iter parallelMergeRangesIterator(basisStates : BlockVector(uint(64), 1), numChunks : int) {
-  halt("not implemented, but required for compilation :(");
-}
-
-iter parallelMergeRangesIterator(param tag: iterKind, basisStates : BlockVector(uint(64), 1),
-                                 in numChunks : int)
-    where tag == iterKind.standalone {
-  const maxNumChunks = min reduce basisStates.counts;
-  if numChunks > maxNumChunks then
-    numChunks = maxNumChunks;
-
-  var timer = new Timer();
-  timer.start();
-  const ranges = determineMergeRanges(basisStates, numChunks);
-  const offsets = mergeRangesToOffsets(ranges);
-  const numRanges = offsets.size - 1;
-  const numStates = offsets[numRanges];
-  // logDebug("numStates=" + numStates:string);
-
-  const space = {0 ..# numStates};
-  const dom = space dmapped Block(boundingBox=space);
-  timer.stop();
-  logDebug("parallelMergeRangesIterator spent ", timer.elapsed(), " setting up");
-
-  coforall rangeIdx in 0 ..# numRanges {
-    const loc = dom.dist.dsiIndexToLocale(offsets[rangeIdx]);
-    on loc {
-      const localRange = offsets[rangeIdx] .. offsets[rangeIdx + 1] - 1;
-      const localChunks = [i in LocaleSpace] ranges[i][rangeIdx];
-      // logDebug("yielding: (" + localRange:string + ", " + localChunks:string + ")");
-      yield (localRange, localChunks);
-    }
-  }
-}
-*/
-
-/*
-proc statesFromHashedToBlock(const ref basisStates : BlockVector(uint(64), 1)) {
-  const numStates = + reduce basisStates.counts; // + reduce basisStates._counts;
-  const space = {0 ..# numStates};
-  const dom = space dmapped Block(boundingBox=space);
-  var blockBasisStates : [dom] uint(64);
-  var blockBasisStatesPtrs : [0 ..# numLocales] c_ptr(uint(64));
-  coforall loc in Locales do on loc {
-    const mySubdomain = blockBasisStates.localSubdomain();
-    blockBasisStatesPtrs[loc.id] = c_ptrTo(blockBasisStates[mySubdomain.low]);
-  }
-  const blockBasisStatesPtrsPtr = c_ptrTo(blockBasisStatesPtrs);
-
-  const basisStatesDataPtrsPtr = c_ptrTo(basisStates._dataPtrs[0]);
-
-  forall (currentRange, currentChunks) in
-      parallelMergeRangesIterator(basisStates, statesFromHashedToBlockNumChunks) {
-    var timer = new Timer();
-
-    // timer.start();
-    const currentCounts = [chunk in currentChunks] chunk.size;
-    var localBasisStates = new BlockVector(uint(64), currentCounts, distribute=false);
-    // timer.stop();
-    // logDebug("statesFromHashedToBlock spent ", timer.elapsed(), " setting up");
-
-    // Get data from remote
-    timer.clear();
-    timer.start();
-    var basisStatesDataPtrs : [0 ..# numLocales] c_ptr(uint(64));
-    if kUseLowLevelComm then
-      GET(c_ptrTo(basisStatesDataPtrs[0]), 0, basisStatesDataPtrsPtr,
-          numLocales:c_size_t * c_sizeof(c_ptr(uint(64))));
-    for (i, chunk) in zip(0 ..# numLocales, currentChunks) {
-      if kUseLowLevelComm then
-        if chunk.size > 0 {
-          const destPtr = c_ptrTo(localBasisStates[i, 0]);
-          const destSize = chunk.size:c_size_t * c_sizeof(uint(64));
-          const srcPtr = basisStatesDataPtrs[i] + chunk.low;
-          GET(destPtr, i, srcPtr, destSize);
-        }
-      else
-        localBasisStates._locBlocks[i][0 ..# chunk.size] = basisStates._locBlocks[i][chunk];
-    }
-    timer.stop();
-    logDebug("statesFromHashedToBlock spent ", timer.elapsed(), " downloading");
-
-    // Perform local merge
-    timer.clear();
-    timer.start();
-    var mergedStates : [0 ..# currentRange.size] uint(64) = noinit;
-    local {
-      for ((chunkIndex, indexInChunk), offset) in zip(kMergeIndices(localBasisStates), 0..) {
-        mergedStates[offset] = localBasisStates[chunkIndex, indexInChunk];
-      }
-    }
-    timer.stop();
-    logDebug("statesFromHashedToBlock spent ", timer.elapsed(), " merging");
-    
-    // Copy to remote
-    timer.clear();
-    timer.start();
-    var blockBasisStatesPtrs : [0 ..# numLocales] c_ptr(uint(64));
-    if kUseLowLevelComm then
-      GET(c_ptrTo(blockBasisStatesPtrs[0]), 0, basisStatesDataPtrsPtr,
-          numLocales:c_size_t * c_sizeof(c_ptr(uint(64))));
-    // const targetLocale =
-    //   blockBasisStates.domain.dist.dsiIndexToLocale(currentRange.low);
-    // const targetSubdomain = blockBasisStates.localSubdomain(targetLocale);
-    // if targetSubdomain.contains(currentRange) {
-    //   
-    // }
-    // else {
-      blockBasisStates[currentRange] = mergedStates;
-    // }
-    timer.stop();
-    logDebug("statesFromHashedToBlock spent ", timer.elapsed(), " uploading");
-  }
-
-  return blockBasisStates;
-}
-
-proc makeBlockDomainForVectors(numVectors, numStates) {
-  const boundingBox = {0 ..# numVectors, 0 ..# numStates};
-  const targetLocales = reshape(Locales, {0 ..# 1, 0 ..# numLocales});
-  const dom : domain(2) dmapped Block(boundingBox=boundingBox, targetLocales=targetLocales) =
-    boundingBox;
-  return dom;
-}
-
-proc vectorsFromHashedToBlock(const ref basisStates : BlockVector(uint(64), 1),
-                              const ref vectors : BlockVector(?eltType, 2)) {
-  const numVectors = vectors.innerDom.dim(0).size;
-  const numStates = + reduce basisStates.counts;
-  const dom = makeBlockDomainForVectors(numVectors, numStates);
-  var blockVectors : [dom] eltType;
-
-  forall (currentRange, currentChunks) in
-      parallelMergeRangesIterator(basisStates, statesFromHashedToBlockNumChunks) {
-    const currentCounts = [chunk in currentChunks] chunk.size;
-    var localBasisStates = new BlockVector(uint(64), currentCounts);
-    var localVectors = new BlockVector(eltType, numVectors, currentCounts);
-    // Get data from remote
-    forall (i, chunk) in zip(LocaleSpace, currentChunks) {
-      localBasisStates._data[i][0 ..# chunk.size] = basisStates._data[i][chunk];
-      localVectors._data[i][.., 0 ..# chunk.size] = vectors._data[i][.., chunk];
-    }
-
-    // Perform local merge
-    var mergedVectors : [0 ..# numVectors, 0 ..# currentRange.size] eltType = noinit;
-    for ((chunkIndex, indexInChunk), offset) in zip(kMergeIndices(localBasisStates), 0..) {
-      foreach k in 0 ..# numVectors {
-        mergedVectors[k, offset] = localVectors._data[chunkIndex][k, indexInChunk];
-      }
-    }
-    
-    // Copy to remote
-    blockVectors[.., currentRange] = mergedVectors;
-  }
-
-  return blockVectors;
-}
-*/
-
-/*
-proc statesAndVectorsFromHashedToBlock(const ref basisStates : BlockVector(uint(64), 1),
-                                       const ref vectors : BlockVector(?eltType, 2)) {
-  const ranges = determineMergeRanges(basisStates, statesFromHashedToBlockNumChunks);
-  const offsets = mergeRangesToOffsets(ranges);
-  const numRanges = offsets.size - 1;
-  const numStates = offsets[numRanges];
-  const numVectors = vectors._innerDom.dim(0).size;
-
-  const statesDomain = {0 ..# numStates} dmapped Block(LocaleSpace);
-  const vectorsDomain = makeBlockDomainForVectors(numVectors, numStates);
-  var blockBasisStates : [statesDomain] uint(64);
-  var blockVectors : [vectorsDomain] eltType;
-
-  coforall rangeIdx in 0 ..# numRanges {
-    const loc = statesDomain.dist.dsiIndexToLocale(offsets[rangeIdx]);
-    on loc {
-      const localRanges = [i in LocaleSpace] ranges[i][rangeIdx];
-      const localCounts = [r in localRanges] r.size;
-      var localBasisStates = new BlockVector(uint(64), localCounts);
-      var localVectors = new BlockVector(eltType, numVectors, localCounts);
-      forall (i, r) in zip(LocaleSpace, localRanges) {
-        // ref v = localBasisStates.getBlock(i);
-        localBasisStates._data[i][0 ..# r.size] = basisStates._data[i][r];
-        localVectors._data[i][.., 0 ..# r.size] = vectors._data[i][.., r];
-      }
-
-      var mergedSize = offsets[rangeIdx + 1] - offsets[rangeIdx];
-      var mergedStates : [0 ..# mergedSize] uint(64) = noinit;
-      var mergedVectors : [0 ..# numVectors, 0 ..# mergedSize] eltType = noinit;
-
-
-      for ((chunkIndex, indexInChunk), offset) in zip(kMergeIndices(localBasisStates), 0..) {
-        mergedStates[offset] = localBasisStates._data[chunkIndex][indexInChunk];
-        foreach k in 0 ..# numVectors {
-          mergedVectors[k, offset] = localVectors._data[chunkIndex][k, indexInChunk];
-        }
-      }
-
-      blockBasisStates[offsets[rangeIdx] .. offsets[rangeIdx + 1] - 1] = mergedStates;
-      blockVectors[.., offsets[rangeIdx] .. offsets[rangeIdx + 1] - 1] = mergedVectors;
-    }
-  }
-  return (blockBasisStates, blockVectors);
-}
-*/
-
-/*
-private proc distributionCounts(const ref basisStates : [] uint(64)) {
-  var histogram : [LocaleSpace] int;
-  forall basisState in basisStates with (+ reduce histogram) {
-    const localeIdx = localeIdxOf(basisState);
-    histogram[localeIdx] += 1;
-  }
-
-  const dom = LocaleSpace dmapped Block(LocaleSpace);
-  var histogramDist : [dom] int = histogram;
-  return histogramDist;
-}
-
-
-
-proc statesFromBlockToHashed(const ref basisStates : [] uint(64)) {
-  const counts = distributionCounts(basisStates);
-  var hashedBasisStates = new BlockVector(uint(64), counts);
-
-  coforall loc in Locales with (ref hashedBasisStates) do on loc {
-    ref dest = hashedBasisStates[loc];
-    var offset = 0;
-
-    for r in chunks(0 ..# basisStates.size, statesFromBlockToHashedNumChunks) {
-      // Download from remote
-      var localBasisStates = basisStates[r];
-      // Determine which states to copy
-      var mask : [0 ..# r.size] bool = noinit;
-      forall (x, shouldInclude) in zip(localBasisStates, mask) {
-        shouldInclude = localeIdxOf(x) == loc.id;
-      }
-      // Perform the copy
-      for (x, shouldInclude) in zip(localBasisStates, mask) {
-        if shouldInclude {
-          dest[offset] = x;
-          offset += 1;
-        }
-      }
-    }
-    assert(offset == dest.size);
-  }
-  return hashedBasisStates;
-}
-*/
-
-/*
-proc countingSort(src : [] ?t, dest : [] t, extractKey) {
-  var counts : c_array(int, 256);
-  foreach x in src {
-    counts[extractKey(x)] += 1;
-  }
-
-  var total = 0;
-  for i in 0 ..# 256 {
-    const oldCount = counts[i];
-    counts[i] = total;
-    total += oldCount;
-  }
-
-  for x in src {
-    const key = extractKey(x);
-    dest[counts[key]] = x;
-    counts[key] += 1;
-  }
-}
-
-
-proc sortByLocaleIdx(const ref basisStates : [] uint(64),
-                     ref vectors : [] ?eltType)
-    where basisStates.domain.rank == 1 &&
-          vectors.domain.rank == 2 {
-
-  const numStates = basisStates.size;
-  const numVectors = vectors.dim(0).size;
-  if vectors.dim(1).size != numStates then
-    halt("incompatible dimensions in sortByLocaleIdx: " + numStates:string +
-         " vs. " + vectors.dim(1).size:string);
-
-  if numLocales > 256 then
-    halt("We're currently using uint(8) to store locale index. " +
-         "Running with more than 256 locales is not yet supported");
-  var masks : [0 ..# numStates] uint(8) = noinit;
-  foreach (mask, basisState) in zip(masks, basisStates) {
-    mask = localeIdxOf(basisState):uint(8);
-  }
-
-  var counts : [0 ..# numLocales] int;
-  foreach mask in masks {
-    counts[mask:int] += 1;
-  }
-
-  var offsets : [0 ..# numLocales] int;
-  var sum : int = 0;
-  for k in 0 ..# numLocales {
-    offsets[k] = sum;
-    sum += counts[k];
-  }
-
-  for i in 0 ..# numStates {
-    
-  }
-}
-*/
-
-/*
-proc vectorsFromBlockToHashed(const ref basisStates : [] uint(64),
-                              const ref vectors : [] ?eltType) {
-  const counts = distributionCounts(basisStates);
-  const numVectors = vectors.dim(0).size;
-  var hashedVectors = new BlockVector(eltType, numVectors, counts);
-
-  coforall loc in Locales with (ref hashedVectors) do on loc {
-    ref dest = hashedVectors[loc];
-    var offset = 0;
-
-    for r in chunks(0 ..# basisStates.size, statesFromBlockToHashedNumChunks) {
-      // Download from remote
-      var localBasisStates = basisStates[r];
-      var localVectors = vectors[.., r];
-      // Determine which states to copy
-      var mask : [0 ..# r.size] bool = noinit;
-      forall (x, shouldInclude) in zip(localBasisStates, mask) {
-        shouldInclude = localeIdxOf(x) == loc.id;
-      }
-      // Perform the copy
-      for i in 0 ..# r.size {
-        const shouldInclude = mask[i];
-        if shouldInclude {
-          foreach k in 0 ..# numVectors {
-            dest[k, offset] = localVectors[k, r.low + i];
-          }
-          offset += 1;
-        }
-      }
-    }
-    assert(offset == dest.dim(1).size);
-  }
-  return hashedVectors;
-}
-*/
-
-
-/*
-*/
-
-/*
-proc permuteSmall(arrSize : int, masks : c_ptr(int), arr : c_ptr(?eltType),
-                  counts : [] int, destOffsets : [] int, destPtrs : [] c_ptr(eltType)) {
-  if kVerboseComm then startVerboseCommHere();
-  // var prepareTimer = new Timer();
-  // var computeTimer = new Timer();
-  var copyTimer = new Timer();
-
-  // prepareTimer.start();
-  var offsets : [0 ..# numLocales] int = prefixSum(counts);
-  var src : [0 ..# arrSize] eltType = noinit;
-  // prepareTimer.stop();
-
-  // computeTimer.start();
-  for i in 0 ..# arrSize {
-    const key = masks[i];
-    src[offsets[key]] = arr[i];
-    offsets[key] += 1;
-  }
-  // computeTimer.stop();
-
-  copyTimer.start();
-  var i = 0;
-  for localeIdx in 0 ..# numLocales {
-    if counts[localeIdx] > 0 {
-      const srcPtr = c_ptrTo(src[i]);
-      const destPtr = destPtrs[localeIdx] + destOffsets[localeIdx];
-      const destSize = counts[localeIdx]:c_size_t * c_sizeof(eltType);
-      PUT(srcPtr, localeIdx, destPtr, destSize);
-      i += counts[localeIdx];
-    }
-  }
-  copyTimer.stop();
-
-  if kVerboseComm then stopVerboseCommHere();
-  return copyTimer.elapsed();
-}
-*/
-
 
 }
