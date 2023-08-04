@@ -2,6 +2,7 @@
 }:
 
 final: prev: {
+  atomic_queue = final.callPackage ./atomic_queue.nix { };
   lattice-symmetries = (prev.lattice-symmetries or { }) // {
     ffi = final.callPackage ./ffi.nix { inherit version; };
     chapel = final.callPackage ./. { inherit version; };
@@ -47,11 +48,11 @@ final: prev: {
           memSize = 5120;
         };
       in
-        {
-          test-matrix-vector-product = toContainer (chapelBuild "TestMatrixVectorProduct");
-          benchmark-states-enumeration = toContainer (chapelBuild "BenchmarkStatesEnumeration");
-          benchmark-matrix-vector-product = toContainer (chapelBuild "BenchmarkMatrixVectorProduct");
-          benchmark-block-hashed = toContainer (chapelBuild "BenchmarkBlockHashed");
-        };
+      {
+        test-matrix-vector-product = toContainer (chapelBuild "TestMatrixVectorProduct");
+        benchmark-states-enumeration = toContainer (chapelBuild "BenchmarkStatesEnumeration");
+        benchmark-matrix-vector-product = toContainer (chapelBuild "BenchmarkMatrixVectorProduct");
+        benchmark-block-hashed = toContainer (chapelBuild "BenchmarkBlockHashed");
+      };
   };
 }
