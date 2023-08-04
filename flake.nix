@@ -126,7 +126,7 @@
       overlays.default = composed-overlay { withPic = true; };
 
       templates.default = {
-        path = ./template;
+        path = builtins.toPath ./template;
         description = "Python project template that uses lattice-symmetries";
       };
 
