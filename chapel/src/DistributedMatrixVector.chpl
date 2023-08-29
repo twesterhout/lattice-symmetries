@@ -694,7 +694,7 @@ record Producer {
 }
 
 config const kShuffle : bool = false;
-config const kFactor : int = round(1.75 * numLocales):int;
+config const kFactor : int = numLocales; // round(1.75 * numLocales):int;
 
 record Consumer {
   type eltType;
