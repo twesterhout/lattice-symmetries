@@ -8,19 +8,14 @@ final: prev: {
     chapel = final.callPackage ./. { inherit version; };
     distributed =
       let
-        chapelBuild = target: final.stdenv.mkDerivation {
+        chapelBuild = target: makeFlags: final.stdenv.mkDerivation {
           pname = target;
           inherit version;
           src = ./.;
           configurePhase = "ln --symbolic ${final.lattice-symmetries.ffi} src/FFI.chpl";
           buildPhase = ''
-            #  CHPL_GASNET_SEGMENT=everything
-            #  CHPL_HOST_MEM=cstdlib CHPL_TARGET_MEM=cstdlib
-
             make \
-              CHPL_COMM=gasnet \
-              CHPL_COMM_SUBSTRATE=ibv \
-              CHPL_GASNET_SEGMENT=fast \
+              ${final.lib.concatStringsSep " " makeFlags} \
               CHPL_HOST_MEM=jemalloc CHPL_TARGET_MEM=jemalloc \
               CHPL_LAUNCHER=none \
               OPTIMIZATION=--fast \
@@ -29,7 +24,7 @@ final: prev: {
               HDF5_CFLAGS='-I${final.hdf5.dev}/include' \
               HDF5_LDFLAGS='-L${final.hdf5}/lib -lhdf5_hl -lhdf5 -lrt' \
               bin/${target}
-  
+
             for f in $(ls bin); do
               chapelFixupBinary bin/$f
             done
@@ -47,12 +42,28 @@ final: prev: {
           diskSize = 10240;
           memSize = 5120;
         };
+
+        buildContainers = makeFlags:
+          builtins.foldl'
+            (acc: s: acc // { "${s}" = toContainer (chapelBuild s makeFlags); })
+            { }
+            [
+              "TestMatrixVectorProduct"
+              "BenchmarkStatesEnumeration"
+              "BenchmarkMatrixVectorProduct"
+              "BenchmarkBlockHashed"
+            ];
       in
       {
-        test-matrix-vector-product = toContainer (chapelBuild "TestMatrixVectorProduct");
-        benchmark-states-enumeration = toContainer (chapelBuild "BenchmarkStatesEnumeration");
-        benchmark-matrix-vector-product = toContainer (chapelBuild "BenchmarkMatrixVectorProduct");
-        benchmark-block-hashed = toContainer (chapelBuild "BenchmarkBlockHashed");
+        smp = buildContainers [
+          "CHPL_COMM=gasnet"
+          "CHPL_COMM_SUBSTRATE=smp"
+        ];
+        ibv = buildContainers [
+          "CHPL_COMM=gasnet"
+          "CHPL_COMM_SUBSTRATE=ibv"
+          "CHPL_GASNET_SEGMENT=fast"
+        ];
       };
   };
 }
