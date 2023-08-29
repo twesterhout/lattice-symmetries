@@ -10,9 +10,9 @@ module LatticeSymmetries.NonbranchingTerm
   )
 where
 
-import Data.Bits
-import LatticeSymmetries.BitString
-import LatticeSymmetries.ComplexRational
+import Data.Bits (Bits (complement, popCount, shiftL, zeroBits, (.&.), (.|.)))
+import LatticeSymmetries.BitString (BitString (BitString))
+import LatticeSymmetries.ComplexRational (ComplexRational)
 
 -- | Non-branching term of the Hamiltonian.
 --

@@ -32,12 +32,12 @@ final: prev: {
 
         preCheck = "rm -rf lattice_symmetries";
 
-        checkPhase = ''
-          runHook preCheck
-          python3 -m pytest --color=yes --capture=no test/test_api.py | tee output.txt
-          grep -q -E '(FAILURES|failed)' output.txt && exit 1
-          runHook postCheck
-        '';
+        # checkPhase = ''
+        #   runHook preCheck
+        #   python3 -m pytest --color=yes --capture=no test/test_api.py | tee output.txt
+        #   grep -q -E '(FAILURES|failed)' output.txt && exit 1
+        #   runHook postCheck
+        # '';
 
         nativeCheckInputs = with python-final; [ pytestCheckHook ];
       };
