@@ -353,9 +353,9 @@ var globalPtrStoreNoQueue = new GlobalPtrStore();
 //                                            c_ptr(_LocalBuffer(complex(128))),
 //                                            int);
 
-config const kRemoteBufferSize = 150000;
+config const kRemoteBufferSize = 10000;
 config const kNumTasks = here.maxTaskPar;
-config const kNumConsumerTasks = 1;
+config const kNumConsumerTasks = 24;
 
 // extern proc chpl_task_getId(): chpl_taskID_t;
 

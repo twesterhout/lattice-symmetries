@@ -4,5 +4,5 @@ module CommonParameters {
   config const kBlockToHashedNumChunks = 2 * numLocales * here.maxTaskPar;
   config const kIsRepresentativeBatchSize : int = 10240;
   config const kEnumerateStatesNumChunks : int = 8 * numLocales * here.maxTaskPar;
-  config const kCacheNumberBits : int = 22;
+  config const kCacheNumberBits : int = 26;
 }
