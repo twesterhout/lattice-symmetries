@@ -17,6 +17,15 @@ stdenv.mkDerivation {
     "CHPL_CFLAGS='-I${lattice-symmetries.kernels}/include'"
     "CHPL_LDFLAGS='-L${lattice-symmetries.haskell.lib}/lib'"
   ];
+  preInstall = ''
+    for f in $(ls lib); do
+      chapelFixupBinary lib/$f
+    done
+    for f in $(ls bin); do
+      chapelFixupBinary bin/$f
+    done
+  '';
+
   buildInputs = [ lattice-symmetries.kernels lattice-symmetries.haskell.lib ];
   nativeBuildInputs = [ chapel chapelFixupBinary ];
 }

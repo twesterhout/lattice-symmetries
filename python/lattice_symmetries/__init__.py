@@ -42,7 +42,7 @@ from scipy.sparse.linalg import LinearOperator
 import lattice_symmetries
 from lattice_symmetries._ls_hs import ffi, lib
 
-__version__ = "2.1.0"
+__version__ = "2.2.0"
 
 
 class _RuntimeInitializer:
@@ -147,6 +147,7 @@ def _basis_state_to_array(state: int, number_words: int) -> ffi.CData:
 class Basis:
     _payload: ffi.CData
     _finalizer: Optional[weakref.finalize]
+    _unchecked_states: Optional[NDArray[np.uint64]]
 
     @singledispatchmethod
     def __init__(self, arg, *args, **kwargs):
@@ -159,13 +160,14 @@ class Basis:
             self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_basis, self._payload)
         else:
             self._finalizer = None
+        self._unchecked_states = None
 
     @__init__.register
     def _(self, json_string: str):
         self._payload = lib.ls_hs_basis_from_json(json_string.encode("utf-8"))
         assert self._payload != 0
         self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_basis, self._payload)
-
+        self._unchecked_states = None
     # @__init__.register
     # def _(self, json_object: dict):
     #     self.__init__(json.dumps(json_object))
@@ -195,6 +197,13 @@ class Basis:
         if not self.is_built:
             lib.ls_hs_basis_build(self._payload)
         assert self.is_built
+
+        # def unchecked_set_representatives(self, states: NDArray[np.uint64]) -> None:
+        #     self._unchecked_states = np.asarray(states, order="C", dtype=np.uint64)
+        #     chpl_array = ffi.new("chpl_external_array *")
+        #     chpl_array.elts = ffi.from_buffer("uint64_t[]", self._unchecked_states, require_writable=False)
+        #     chpl_array.num_elts = self._unchecked_states.size
+        #     lib.ls_hs_unchecked_set_representatives(self._payload, chpl_array, 22)
 
     @property
     def number_states(self) -> int:
@@ -742,6 +751,13 @@ class Operator(LinearOperator):
     def _matvec(self, x):
         return self.apply_to_state_vector(x)
 
+    def prepare_inputs_for_hphi(self, folder: str) -> None:
+        lib.ls_hs_prepare_hphi(self._payload, folder.encode("utf-8"))
+
+    def prepare_inputs_for_mvmc(self, folder: str) -> None:
+        lib.ls_hs_prepare_mvmc(self._payload, folder.encode("utf-8"))
+
+
 
 def load_yaml_config(filename: str):
     config = lib.ls_hs_load_yaml_config(filename.encode("utf-8"))
@@ -749,17 +765,17 @@ def load_yaml_config(filename: str):
     hamiltonian = None
     if config.hamiltonian != 0:
         hamiltonian = Operator(lib.ls_hs_clone_operator(config.hamiltonian))
-    if config.observables != 0:
+    if config.number_observables != 0:
         raise NotImplementedError
     lib.ls_hs_destroy_yaml_config(config)
     Config = namedtuple("Config", ["basis", "hamiltonian", "observables"], defaults=[None, None])
     return Config(basis, hamiltonian)
 
 
-def test_01():
-    basis = SpinBasis(2)
-    basis.build()
-    a = Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁")
-    h = Operator(basis, a)
-    (e, v) = scipy.sparse.linalg.eigsh(h, k=3, which="SA")
-    return h, e, v
+    # def test_01():
+    #     basis = SpinBasis(2)
+    #     basis.build()
+    #     a = Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁")
+    #     h = Operator(basis, a)
+    #     (e, v) = scipy.sparse.linalg.eigsh(h, k=3, which="SA")
+    #     return h, e, v

@@ -224,7 +224,7 @@ instance Pretty g => Pretty (Generator Int g) where
   pretty (Generator i g) = pretty g <> pretty (toSubscript i)
 
 instance Pretty g => Pretty (Generator (SpinIndex, Int) g) where
-  pretty (Generator (σ, i) g) = pretty g <> pretty σ <> pretty (toSubscript i)
+  pretty (Generator (σ, i) g) = pretty g <> pretty (toSubscript i) <> pretty σ
 
 instance HasNonbranchingRepresentation (Generator Int SpinGeneratorType) where
   nonbranchingRepresentation (Generator _ SpinIdentity) =

@@ -1,0 +1,14 @@
+basis:
+  particle: "spinful-fermion"
+  number_sites: 8
+  number_particles: [4, 4]
+hamiltonian:
+  name: "Hamiltonian"
+  terms:
+    - expression: "- (c†₁↑ c₀↑ + c†₀↑ c₁↑ + c†₁↓ c₀↓ + c†₀↓ c₁↓)"
+      sites: [[0, 1], [0, 3], [0, 4], [1, 2], [1, 5], [2, 3], [2, 6], [3, 7], [4, 5], [4, 7], [5, 6], [6, 7],
+             # HPhi counts hoppings crossing the boundaries twice because the system is too thin
+              [0, 4], [1, 5], [2, 6], [3, 7]]
+    - expression: "4.0 n₀↑ n₀↓"
+      sites: [[0], [1], [2], [3], [4], [5], [6], [7]]
+

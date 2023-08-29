@@ -1,0 +1,15 @@
+basis:
+  number_spins: 8
+  symmetries: []
+hamiltonian:
+  name: "Hamiltonian"
+  terms:
+    - expression: "- Sˣ₀ Sˣ₁"
+      sites: [[0, 5], [1, 4], [2, 7], [3, 6]]
+    - expression: "- Sʸ₀ Sʸ₁"
+      sites: [[0, 3], [1, 2], [4, 7], [5, 6]]
+    - expression: "- Sᶻ₀ Sᶻ₁"
+      sites: [[0, 1], [2, 3], [4, 5], [6, 7]]
+    - expression: "- Sᶻ₀"
+      sites: [[0], [1], [2], [3], [4], [5], [6], [7]]
+

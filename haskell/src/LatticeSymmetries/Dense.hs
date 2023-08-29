@@ -4,29 +4,26 @@
 -- Copyright   : (c) Tom Westerhout, 2022
 -- Stability   : experimental
 module LatticeSymmetries.Dense
-  ( DenseMatrix (..),
-    dmShape,
-    denseMatrixFromList,
-    denseMatrixToList,
-    indexDenseMatrix,
+  ( DenseMatrix (..)
+  , dmShape
+  , denseMatrixFromList
+  , denseMatrixToList
+  , indexDenseMatrix
   )
 where
 
-import Control.Monad.ST
 import Data.Vector.Generic ((!))
-import qualified Data.Vector.Generic as G
-import qualified Data.Vector.Generic.Mutable as GM
-import qualified GHC.Exts as GHC (IsList (..))
-import LatticeSymmetries.Utils
+import Data.Vector.Generic qualified as G
+import GHC.Exts qualified as GHC (IsList (..))
 
 -- | A dense matrix in row-major order (C layout).
 data DenseMatrix v a = DenseMatrix
-  { -- | Number of rows
-    dmRows :: !Int,
-    -- | Number of columns
-    dmCols :: !Int,
-    -- | Matrix elements in row-major order stored in a 'Data.Vector.Generic.Vector'
-    dmData :: !(v a)
+  { dmRows :: !Int
+  -- ^ Number of rows
+  , dmCols :: !Int
+  -- ^ Number of columns
+  , dmData :: !(v a)
+  -- ^ Matrix elements in row-major order stored in a 'Data.Vector.Generic.Vector'
   }
   deriving stock (Show, Eq, Generic)
   deriving anyclass (NFData)

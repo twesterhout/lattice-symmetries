@@ -1,64 +1,189 @@
 {-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE OverloadedLists #-}
-{-# LANGUAGE UndecidableInstances #-}
-{-# OPTIONS_GHC -Wno-orphans #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module LatticeSymmetries.Parser
-  ( pSpinlessFermionicOperator
-  , pSpinfulFermionicOperator
-  , pSpinOperator
-  , pOperatorString
-  , pBasisState
-  , pNumber
-  , pExpr
-  , mkExpr
-  , mkExpr'
-  , mkSomeExpr
-  , mkSomeExpr'
-  , SpinIndex (..)
-  , configFromYAML
-  , ConfigSpec (..)
+  ( parseExprEither
+  , SExpr (..)
+  , SOp (..)
+  , SSpin (..)
+  , SFermion (..)
   )
 where
 
-import Data.Aeson hiding ((<?>))
-import Data.Aeson.Key qualified
-import Data.Aeson.KeyMap qualified
-import Data.Aeson.Types (JSONPathElement (..), Parser, parserThrowError)
-import Data.Bits
-import Data.Ratio
+import Control.Monad.Combinators
+import Control.Monad.Combinators.NonEmpty qualified as NonEmpty
 import Data.Text qualified as Text
-import Data.Vector (Vector)
-import Data.Vector.Generic qualified as G
-import Data.Yaml.Aeson (decodeFileWithWarnings, prettyPrintParseException)
-import LatticeSymmetries.Algebra
-import LatticeSymmetries.Basis
-import LatticeSymmetries.BitString
 import LatticeSymmetries.ComplexRational
-import LatticeSymmetries.Expr
 import LatticeSymmetries.Generator
-import LatticeSymmetries.Operator
-import Text.Parsec
-import Text.Parsec.Token
-import Prelude hiding (Product, Sum, many, optional, (<|>))
+import Text.Megaparsec
+import Text.Megaparsec.Char
+import Text.Megaparsec.Char.Lexer (decimal, float, lexeme)
+import Prelude hiding (Product, Sum, many, optional, some, (<|>))
 
--- type ℝ = Rational
+data SFermion
+  = SFermionCreate
+  | SFermionAnnihilate
+  | SFermionNumber
+  deriving stock (Show, Eq)
 
--- type ℂ = ComplexRational
+data SSpin
+  = SSpinPlus
+  | SSpinMinus
+  | SSpinX
+  | SSpinY
+  | SSpinZ
+  deriving stock (Show, Eq)
 
+data SOp
+  = SFermionOp !SFermion !(Maybe SpinIndex) !Int
+  | SSpinOp !Char !SSpin !Int
+  deriving stock (Show, Eq)
+
+data SExpr
+  = SSum ![SExpr]
+  | SScaled !ℂ !SExpr
+  | SProduct !(NonEmpty SExpr)
+  | SPrimitive !SOp
+  deriving stock (Show, Eq)
+
+type Parser = Parsec Void Text
+
+parseExprEither :: Text -> Either Text SExpr
+parseExprEither s = case parse pSum "" s of
+  Left e -> Left $ Text.pack (errorBundlePretty e)
+  Right x -> Right x
+
+pSum :: Parser SExpr
+pSum = fmap SSum . many $ do
+  sign <- fromMaybe '+' <$> optional (lexeme space (oneOf ['-', '+']))
+  (SScaled c expr) <- lexeme space pScaled
+  case sign of
+    '-' -> pure $ SScaled (-c) expr
+    '+' -> pure $ SScaled c expr
+    _ -> fail "can never happen"
+
+pScaled :: Parser SExpr
+pScaled = do
+  c <- fromMaybe 1 <$> optional (lexeme space pCoeff)
+  p <- lexeme space pProduct
+  pure $ SScaled c p
+
+pProduct :: Parser SExpr
+pProduct = fmap SProduct . NonEmpty.some $ do
+  choice
+    [ try (lexeme space (between (char '(') (char ')') pSum))
+    , lexeme space pPrimitive
+    ]
+
+pCoeff :: Parser ℂ
+pCoeff = realToFrac @Double <$> (try float <|> decimal)
+
+pPrimitive :: Parser SExpr
+pPrimitive = SPrimitive <$> (pPrimitiveSpin <|> pPrimitiveFermion)
+
+pPrimitiveSpin :: Parser SOp
+pPrimitiveSpin = SSpinOp <$> prefix <*> superscript <*> subscript
+  where
+    prefix =
+      choice
+        [ char 'σ'
+        , char 'S'
+        , try (string "\\sigma" $> 'σ')
+        ]
+    superscript =
+      choice
+        [ char 'ˣ' $> SSpinX
+        , char 'ʸ' $> SSpinY
+        , char 'ᶻ' $> SSpinZ
+        , char '⁺' $> SSpinPlus
+        , char '⁻' $> SSpinMinus
+        , optional (char '^')
+            >> choice
+              [ char 'x' $> SSpinX
+              , char 'y' $> SSpinY
+              , char 'z' $> SSpinZ
+              , char '+' $> SSpinPlus
+              , char '-' $> SSpinMinus
+              ]
+        ]
+    subscript = pUnicodeSubscriptNumber <|> (optional (char '_') >> decimal)
+
+pPrimitiveFermion :: Parser SOp
+pPrimitiveFermion = do
+  op <-
+    choice
+      [ try (string "c†") $> SFermionCreate
+      , try (char 'c' >> optional (char '^') >> string "\\dagger") $> SFermionCreate
+      , char 'c' $> SFermionAnnihilate
+      , char 'n' $> SFermionNumber
+      ]
+  (i, s) <-
+    choice
+      [ (,) <$> pUnicodeSubscriptNumber <*> pSpin
+      , (,) <$> (optional (char '_') >> decimal) <*> pSpin
+      ]
+  pure $ SFermionOp op s i
+  where
+    pSpin =
+      optional $
+        choice
+          [ char '↑' $> SpinUp
+          , char '↓' $> SpinDown
+          , try (optional (char '_') >> string "\\up" $> SpinUp)
+          , try (optional (char '_') >> string "\\down" $> SpinDown)
+          ]
+
+pSubscriptDigit :: Parser Char
+pSubscriptDigit =
+  choice
+    [ char '₀' $> '0'
+    , char '₁' $> '1'
+    , char '₂' $> '2'
+    , char '₃' $> '3'
+    , char '₄' $> '4'
+    , char '₅' $> '5'
+    , char '₆' $> '6'
+    , char '₇' $> '7'
+    , char '₈' $> '8'
+    , char '₉' $> '9'
+    ]
+    <?> "index subscript (one of ₀, ₁, ₂, ₃, ₄, ₅, ₆, ₇, ₈, ₉)"
+
+pUnicodeSubscriptNumber :: Parser Int
+pUnicodeSubscriptNumber = readInteger <$> some pSubscriptDigit
+  where
+    readInteger s = case readEither s of
+      Right x -> x
+      Left _ -> error "should not have happened"
+
+-- pSum :: Parser SyntaxTree
+-- pSum = do
+--   x <- lexeme space pProduct
+--   ys <- many $ do
+--     sign <- lexeme space (oneOf ['-', '+'])
+--     p@(SProduct terms) <- lexeme space pProduct
+--     pure $ case sign of
+--       '-' -> SProduct $ NonEmpty.cons (SNumber (-1)) terms
+--       '+' -> p
+--       _ -> error "can never happen"
+--   pure $ SSum (x :| ys)
+
+{-
 pSubscriptDigit :: Stream s m Char => ParsecT s u m Char
 pSubscriptDigit =
   choice
-    [ char '₀' *> pure '0'
-    , char '₁' *> pure '1'
-    , char '₂' *> pure '2'
-    , char '₃' *> pure '3'
-    , char '₄' *> pure '4'
-    , char '₅' *> pure '5'
-    , char '₆' *> pure '6'
-    , char '₇' *> pure '7'
-    , char '₈' *> pure '8'
-    , char '₉' *> pure '9'
+    [ char '₀' $> '0'
+    , char '₁' $> '1'
+    , char '₂' $> '2'
+    , char '₃' $> '3'
+    , char '₄' $> '4'
+    , char '₅' $> '5'
+    , char '₆' $> '6'
+    , char '₇' $> '7'
+    , char '₈' $> '8'
+    , char '₉' $> '9'
     ]
     <?> "index subscript (one of ₀, ₁, ₂, ₃, ₄, ₅, ₆, ₇, ₈, ₉)"
 
@@ -71,26 +196,6 @@ pUnicodeSubscriptNumber = readInteger <$> many1 pSubscriptDigit
 
 pSpin :: Stream s m Char => ParsecT s u m SpinIndex
 pSpin = choice [char '↑' *> pure SpinUp, char '↓' *> pure SpinDown] <?> "spin label (one of ↑, ↓)"
-
-data FermionicOperatorType
-  = FermionicCreationOperator
-  | FermionicAnnihilationOperator
-  | FermionicNumberCountingOperator
-  deriving stock (Show, Eq)
-
-data SpinOperatorType
-  = SpinPlusOperator
-  | SpinMinusOperator
-  | SpinXOperator
-  | SpinYOperator
-  | SpinZOperator
-  deriving stock (Show, Eq)
-
-data PrimitiveOperator
-  = SpinfulFermionicOperator !FermionicOperatorType !Char !SpinIndex !Int
-  | SpinlessFermionicOperator !FermionicOperatorType !Char !Int
-  | SpinOperator !SpinOperatorType !Char !Int
-  deriving stock (Show, Eq)
 
 -- getSiteIndex :: PrimitiveOperator -> Int
 -- getSiteIndex (SpinfulFermionicOperator _ _ _ i) = i
@@ -288,33 +393,6 @@ mkSomeExpr' tp s
 mkSomeExpr :: HasCallStack => Maybe ParticleTy -> Text -> SomeExpr
 mkSomeExpr tp s = either error id $ mkSomeExpr' tp s
 
-exprFromJSON :: (Maybe ParticleTy -> Text -> Either Text a) -> ([[Int]] -> a -> a) -> Value -> Parser a
-exprFromJSON f expand = withObject "Expr" $ \v -> do
-  tp <- v .:? "particle"
-  s <- v .: "expression"
-  sites <- v .:? "sites"
-  let expand' x = case sites of
-        Just is -> expand is x
-        Nothing -> x
-  case fmap expand' (f tp s) of
-    Left e -> parserThrowError [Key "expression"] (toString e)
-    Right x -> pure x
-
-instance IsBasis t => FromJSON (Expr t) where
-  parseJSON = exprFromJSON (exprParserConcrete (particleDispatch @t)) replicateSiteIndices
-    where
-      exprParserConcrete :: ParticleTag t -> Maybe ParticleTy -> Text -> Either Text (Expr t)
-      exprParserConcrete tag Nothing s = mkExpr' tag s
-      exprParserConcrete tag (Just tp) s
-        | particleTagToType tag == tp = mkExpr' tag s
-        | otherwise = Left $ "invalid particle type: " <> show tp <> "; expected " <> show (particleTagToType tag)
-
-instance FromJSON SomeExpr where
-  parseJSON = exprFromJSON mkSomeExpr' expandSomeExpr
-    where
-      expandSomeExpr :: [[Int]] -> SomeExpr -> SomeExpr
-      expandSomeExpr indices = mapSomeExpr (replicateSiteIndices indices)
-
 -- instance FromJSON SomeExpr where
 --   parseJSON = withObject "SomeExpr" $ \v -> do
 --     tp <- v .:? "particle"
@@ -494,8 +572,6 @@ objectFromYAML _ filename = do
     Left e -> error $ toText $ prettyPrintParseException e
     Right (_, x) -> pure x
 
-data ConfigSpec = ConfigSpec !SomeBasis !(Maybe SomeOperator) !(Vector SomeOperator)
-
 instance FromJSON ConfigSpec where
   parseJSON = withObject "Config" $ \v -> do
     someBasis <- v .: "basis"
@@ -544,6 +620,7 @@ operatorFromJSON :: IsBasis t => Basis t -> Value -> Parser (Operator t)
 operatorFromJSON basis = withObject "Operator" $ \v -> do
   ((t :| ts) :: NonEmpty (Expr t)) <- v .: "terms"
   pure $ mkOperator basis (foldl' (+) t ts)
+-}
 
 -- newtype BasisAndHamiltonianConfig = BasisAndHamiltonianConfig SomeOperator
 --

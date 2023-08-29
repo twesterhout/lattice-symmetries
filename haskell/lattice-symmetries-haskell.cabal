@@ -1,6 +1,6 @@
 cabal-version: 3.0
 name:          lattice-symmetries-haskell
-version:       2.0.0
+version:       2.2.0
 synopsis:      See README for more info
 description:   See README for more info
 license:       BSD-3-Clause
@@ -66,6 +66,7 @@ library
     LatticeSymmetries.BitString
     LatticeSymmetries.ComplexRational
     LatticeSymmetries.Context
+    LatticeSymmetries.Conversion
     LatticeSymmetries.Dense
     LatticeSymmetries.Expr
     LatticeSymmetries.FFI
@@ -75,20 +76,23 @@ library
     LatticeSymmetries.Operator
     LatticeSymmetries.Parser
     LatticeSymmetries.Utils
+    LatticeSymmetries.Yaml
 
   include-dirs:    cbits
 
   -- build-tool-depends:  hsc2hs:hsc2hs
   build-depends:
-    , aeson              >=2
+    , aeson               >=2
     , bytestring
     , constraints
     , containers
     , derive-storable
+    , directory
     , inline-c
+    , megaparsec
     , mtl
-    , parsec
-    , prettyprinter      >=1.7
+    , parser-combinators
+    , prettyprinter       >=1.7
     , primitive
     , safe-exceptions
     , scientific
@@ -193,6 +197,7 @@ test-suite lattice-symmetries-haskell-test
     LatticeSymmetries.BenesSpec
     LatticeSymmetries.BitStringSpec
     LatticeSymmetries.ComplexRationalSpec
+    LatticeSymmetries.ConversionSpec
     LatticeSymmetries.DenseSpec
     LatticeSymmetries.GeneratorSpec
     LatticeSymmetries.NonbranchingTermSpec
@@ -202,9 +207,10 @@ test-suite lattice-symmetries-haskell-test
     , aeson
     , hspec
     , lattice-symmetries-haskell
-    , parsec
+    , megaparsec
     , prettyprinter
     , QuickCheck
+    , text
     , vector
     , yaml
 

@@ -3,73 +3,26 @@
 
 module Main (main) where
 
--- import Data.Yaml.Aeson
--- import qualified Data.Aeson as Aeson
--- import Data.Bits
--- import Data.Complex
--- import Data.Ratio ((%))
--- import Data.Type.Equality
--- import qualified Data.Vector as V
--- import qualified Data.Vector.Storable as S
--- import qualified Data.Vector.Unboxed as U
--- import Foreign.Storable
--- import GHC.Exts (IsList (..))
--- import LatticeSymmetries.Algebra
--- import LatticeSymmetries.Basis
--- import LatticeSymmetries.Benes
-import qualified LatticeSymmetries.BenesSpec
-import qualified LatticeSymmetries.BitStringSpec
--- import LatticeSymmetries.ComplexRational
-import qualified LatticeSymmetries.ComplexRationalSpec
--- import LatticeSymmetries.Dense
-import qualified LatticeSymmetries.DenseSpec
--- import LatticeSymmetries.Generator
-import qualified LatticeSymmetries.GeneratorSpec
--- import LatticeSymmetries.Group
--- import LatticeSymmetries.NonbranchingTerm
-import qualified LatticeSymmetries.NonbranchingTermSpec
--- import LatticeSymmetries.Operator
--- import LatticeSymmetries.Parser
-import qualified LatticeSymmetries.ParserSpec
--- import Prettyprinter (Pretty (..))
--- import qualified Prettyprinter as Pretty
+import LatticeSymmetries.BenesSpec qualified
+import LatticeSymmetries.BitStringSpec qualified
+import LatticeSymmetries.ComplexRationalSpec qualified
+import LatticeSymmetries.ConversionSpec qualified
+import LatticeSymmetries.DenseSpec qualified
+import LatticeSymmetries.GeneratorSpec qualified
+import LatticeSymmetries.NonbranchingTermSpec qualified
+import LatticeSymmetries.ParserSpec qualified
 import Test.Hspec
-
--- import Text.Parsec (parse)
--- import Prelude hiding (Product, Sum, toList)
-
--- anySpinEDException :: Selector SpinEDException
--- anySpinEDException = const True
-
--- anyLatticeSymmetriesException :: Selector LatticeSymmetriesException
--- anyLatticeSymmetriesException = const True
-
--- parseLines :: FromJSON a => [Text] -> Either ParseException a
--- parseLines xs = decodeEither' . encodeUtf8 . unlines $ xs
-
--- checkRight s y = case s of
---   Left _ -> s `shouldSatisfy` isRight
---   Right x -> x `shouldBe` y
-
--- checkJust s y = case s of
---   Just x -> x `shouldBe` y
---   Nothing -> s `shouldSatisfy` isJust
-
--- type SpinPolynomial =
---   Sum (Scaled ComplexRational (Product (Generator Int SpinGeneratorType)))
---
--- type FermionicPolynomial =
---   Sum (Scaled ComplexRational (Product (Generator Int FermionGeneratorType)))
 
 main :: IO ()
 main = hspec $ do
+  describe "Parser" LatticeSymmetries.ParserSpec.spec
   describe "BitString" LatticeSymmetries.BitStringSpec.spec
   describe "ComplexRational" LatticeSymmetries.ComplexRationalSpec.spec
+  describe "Conversion" LatticeSymmetries.ConversionSpec.spec
   describe "DenseMatrix" LatticeSymmetries.DenseSpec.spec
   describe "NonbranchingTerm" LatticeSymmetries.NonbranchingTermSpec.spec
   describe "Benes" LatticeSymmetries.BenesSpec.spec
   describe "Generator" LatticeSymmetries.GeneratorSpec.spec
-  describe "Parser" LatticeSymmetries.ParserSpec.spec
 
 -- it "encodes Symmetry" $ do
 --   Aeson.encode (mkSymmetry [0, 1, 2, 3, 4] 0) `shouldBe` "{\"sector\":0,\"permutation\":[0,1,2,3,4]}"

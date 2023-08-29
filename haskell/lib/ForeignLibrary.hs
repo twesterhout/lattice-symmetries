@@ -1,10 +1,11 @@
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wno-missed-extra-shared-lib #-}
 
 module ForeignLibrary () where
 
-import Control.Exception.Safe (handleAny, handleAnyDeep)
 import Data.Aeson qualified
 import Data.Vector.Generic qualified as G
 import Foreign.C.String (CString)
@@ -20,13 +21,14 @@ import LatticeSymmetries.Basis
 import LatticeSymmetries.Benes
 import LatticeSymmetries.BitString
 import LatticeSymmetries.ComplexRational (ComplexRational, fromComplexDouble)
+import LatticeSymmetries.Conversion
 import LatticeSymmetries.Expr
 import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
 import LatticeSymmetries.Group
 import LatticeSymmetries.Operator
-import LatticeSymmetries.Parser
 import LatticeSymmetries.Utils
+import LatticeSymmetries.Yaml
 import Type.Reflection
 import Prelude hiding (state, toList)
 
@@ -48,7 +50,7 @@ withCsymmetry :: Ptr Csymmetry -> (Symmetry -> IO a) -> IO a
 withCsymmetry p f = f =<< deRefStablePtr . unCsymmetry =<< peek p
 
 ls_hs_symmetry_from_json :: CString -> IO (MutablePtr Csymmetry)
-ls_hs_symmetry_from_json cStr = handleAny propagateErrorToC $ newCsymmetry =<< decodeCString cStr
+ls_hs_symmetry_from_json cStr = propagateErrorToC nullPtr $ newCsymmetry =<< decodeCString cStr
 
 ls_hs_destroy_symmetry :: MutablePtr Csymmetry -> IO ()
 ls_hs_destroy_symmetry = destroyCsymmetry
@@ -87,8 +89,7 @@ destroyCsymmetries p = do
   free p
 
 ls_hs_symmetries_from_json :: CString -> IO (MutablePtr Csymmetries)
-ls_hs_symmetries_from_json cStr =
-  handleAny propagateErrorToC $ newCsymmetries =<< decodeCString cStr
+ls_hs_symmetries_from_json cStr = propagateErrorToC nullPtr $ newCsymmetries =<< decodeCString cStr
 
 ls_hs_destroy_symmetries :: MutablePtr Csymmetries -> IO ()
 ls_hs_destroy_symmetries = destroyCsymmetries
@@ -109,28 +110,28 @@ ls_hs_basis_to_json cBasis = do
     newCString $ toStrict (Data.Aeson.encode basis)
 
 ls_hs_basis_from_json :: CString -> IO (MutablePtr Cbasis)
-ls_hs_basis_from_json cStr = handleAny propagateErrorToC $ do
+ls_hs_basis_from_json cStr = propagateErrorToC nullPtr $ do
   foldSomeBasis newCbasis =<< decodeCString cStr
 
 ls_hs_destroy_string :: CString -> IO ()
 ls_hs_destroy_string = free
 
 ls_hs_min_state_estimate :: Ptr Cbasis -> IO Word64
-ls_hs_min_state_estimate p =
+ls_hs_min_state_estimate p = propagateErrorToC 0 $
   withCbasis p $ \someBasis ->
     withSomeBasis someBasis $ \basis ->
       let (BasisState n (BitString x)) = minStateEstimate basis
        in if n > 64
-            then throwC "minimal state is not representable as a 64-bit integer"
+            then error "minimal state is not representable as a 64-bit integer"
             else pure $ fromIntegral x
 
 ls_hs_max_state_estimate :: Ptr Cbasis -> IO Word64
-ls_hs_max_state_estimate p =
+ls_hs_max_state_estimate p = propagateErrorToC 0 $
   withCbasis p $ \someBasis ->
     withSomeBasis someBasis $ \basis ->
       let (BasisState n (BitString x)) = maxStateEstimate basis
        in if n > 64
-            then throwC "maximal state is not representable as a 64-bit integer"
+            then error "maximal state is not representable as a 64-bit integer"
             else pure $ fromIntegral x
 
 ls_hs_basis_has_fixed_hamming_weight :: Ptr Cbasis -> IO CBool
@@ -156,7 +157,7 @@ foreign import ccall safe "ls_hs_build_representatives"
 --   ls_hs_basis_build :: Ptr Cbasis -> IO ()
 
 ls_hs_basis_build :: Ptr Cbasis -> IO ()
-ls_hs_basis_build p = do
+ls_hs_basis_build p = propagateErrorToC () $ do
   withCbasis p $ \someBasis ->
     withSomeBasis someBasis $ \basis ->
       if getNumberBits basis <= 64
@@ -164,7 +165,7 @@ ls_hs_basis_build p = do
           let (BasisState _ (BitString lower)) = minStateEstimate basis
               (BasisState _ (BitString upper)) = maxStateEstimate basis
           ls_hs_build_representatives p (fromIntegral lower) (fromIntegral upper)
-        else throwC "too many bits"
+        else error "too many bits"
 
 -- foreign export ccall "ls_hs_basis_is_built"
 --   ls_hs_basis_is_built :: Ptr Cbasis -> IO CBool
@@ -225,7 +226,7 @@ ls_hs_expr_to_json cExpr =
 --   ls_hs_expr_from_json :: CString -> IO (Ptr Cexpr)
 
 ls_hs_expr_from_json :: CString -> IO (MutablePtr Cexpr)
-ls_hs_expr_from_json cStr = handleAny propagateErrorToC $ do
+ls_hs_expr_from_json cStr = propagateErrorToC nullPtr $ do
   !expr <- decodeCString cStr
   newCexpr expr
 
@@ -240,7 +241,7 @@ ls_hs_destroy_expr = destroyCexpr
 
 ls_hs_expr_to_string :: Ptr Cexpr -> IO CString
 ls_hs_expr_to_string p =
-  handleAnyDeep propagateErrorToC $
+  propagateErrorToC nullPtr $
     withCexpr p $
       newCString . encodeUtf8 . toPrettyText
 
@@ -248,26 +249,26 @@ ls_hs_expr_to_string p =
 --   ls_hs_expr_plus :: Ptr Cexpr -> Ptr Cexpr -> IO (Ptr Cexpr)
 
 ls_hs_expr_plus :: Ptr Cexpr -> Ptr Cexpr -> IO (MutablePtr Cexpr)
-ls_hs_expr_plus a b = handleAnyDeep propagateErrorToC $ withCexpr2 a b (+) >>= newCexpr
+ls_hs_expr_plus a b = propagateErrorToC nullPtr $ withCexpr2 a b (+) >>= newCexpr
 
 -- foreign export ccall "ls_hs_expr_minus"
 --   ls_hs_expr_minus :: Ptr Cexpr -> Ptr Cexpr -> IO (Ptr Cexpr)
 
 ls_hs_expr_minus :: Ptr Cexpr -> Ptr Cexpr -> IO (MutablePtr Cexpr)
-ls_hs_expr_minus a b = handleAnyDeep propagateErrorToC $ withCexpr2 a b (-) >>= newCexpr
+ls_hs_expr_minus a b = propagateErrorToC nullPtr $ withCexpr2 a b (-) >>= newCexpr
 
 -- foreign export ccall "ls_hs_expr_times"
 --   ls_hs_expr_times :: Ptr Cexpr -> Ptr Cexpr -> IO (Ptr Cexpr)
 
 ls_hs_expr_times :: Ptr Cexpr -> Ptr Cexpr -> IO (MutablePtr Cexpr)
-ls_hs_expr_times a b = handleAnyDeep propagateErrorToC $ withCexpr2 a b (*) >>= newCexpr
+ls_hs_expr_times a b = propagateErrorToC nullPtr $ withCexpr2 a b (*) >>= newCexpr
 
 -- foreign export ccall "ls_hs_expr_scale"
 --   ls_hs_expr_scale :: Ptr Cscalar -> Ptr Cexpr -> IO (MutablePtr Cexpr)
 
 ls_hs_expr_scale :: Ptr Cscalar -> Ptr Cexpr -> IO (MutablePtr Cexpr)
 ls_hs_expr_scale c_z c_a =
-  handleAnyDeep propagateErrorToC $
+  propagateErrorToC nullPtr $
     withCexpr c_a $ \a -> do
       z <- fromComplexDouble <$> peek c_z
       newCexpr $ scale (z :: ComplexRational) a
@@ -277,7 +278,7 @@ ls_hs_expr_scale c_z c_a =
 
 ls_hs_replace_indices :: Ptr Cexpr -> FunPtr Creplace_index -> IO (MutablePtr Cexpr)
 ls_hs_replace_indices exprPtr fPtr =
-  handleAnyDeep propagateErrorToC $
+  propagateErrorToC nullPtr $
     withCexpr exprPtr $ \expr -> do
       let f :: Int -> Int -> IO (Int, Int)
           f !s !i =
@@ -340,7 +341,7 @@ ls_hs_expr_is_identity = flip withCexpr $ foldSomeExpr (pure . fromBool . isIden
 --   ls_hs_create_operator :: Ptr Cbasis -> Ptr Cexpr -> IO (Ptr Coperator)
 
 ls_hs_create_operator :: Ptr Cbasis -> Ptr Cexpr -> IO (MutablePtr Coperator)
-ls_hs_create_operator basisPtr exprPtr = handleAny propagateErrorToC $ do
+ls_hs_create_operator basisPtr exprPtr = propagateErrorToC nullPtr $ do
   withCbasis basisPtr $ \someBasis ->
     withSomeBasis someBasis $ \basis ->
       withCexpr exprPtr $ \someExpr ->
@@ -401,6 +402,16 @@ ls_hs_operator_get_basis = ls_hs_clone_basis . coperator_basis <=< peek
 -- foreign import ccall "ls_hs_destroy_operator_v2"
 --   ls_hs_destroy_operator_v2 :: Ptr Coperator -> IO ()
 
+ls_hs_prepare_hphi :: Ptr Coperator -> CString -> IO ()
+ls_hs_prepare_hphi opPtr pathPtr = propagateErrorToC () $ do
+  path <- peekUtf8 pathPtr
+  withCoperator opPtr $ \op -> convertedToInteractions op (prepareHPhi path)
+
+ls_hs_prepare_mvmc :: Ptr Coperator -> CString -> IO ()
+ls_hs_prepare_mvmc opPtr pathPtr = propagateErrorToC () $ do
+  path <- peekUtf8 pathPtr
+  withCoperator opPtr $ \op -> convertedToInteractions op (prepareVMC path)
+
 toCyaml_config :: ConfigSpec -> IO (Ptr Cyaml_config)
 toCyaml_config (ConfigSpec basis maybeHamiltonian observables) = do
   p <- malloc
@@ -429,7 +440,8 @@ toCyaml_config (ConfigSpec basis maybeHamiltonian observables) = do
 
 ls_hs_load_yaml_config :: CString -> IO (MutablePtr Cyaml_config)
 ls_hs_load_yaml_config cFilename =
-  toCyaml_config =<< configFromYAML =<< peekUtf8 cFilename
+  propagateErrorToC nullPtr $
+    toCyaml_config =<< configFromYAML =<< peekUtf8 cFilename
 
 -- foreign export ccall "ls_hs_destroy_yaml_config"
 --   ls_hs_destroy_yaml_config :: Ptr Cyaml_config -> IO ()
@@ -440,7 +452,7 @@ ls_hs_destroy_yaml_config p
   | otherwise = do
       (Cyaml_config basisPtr hamiltonianPtr numberObservables observablesPtr) <- peek p
       -- logDebug' "ls_hs_destroy_yaml_config 1) ..."
-      forM_ [0 .. fromIntegral numberObservables - 1] $
+      forM_ @[] [0 .. fromIntegral numberObservables - 1] $
         destroyCoperator <=< peekElemOff observablesPtr
       -- logDebug' "ls_hs_destroy_yaml_config 2) ..."
       when (observablesPtr /= nullPtr) $ free observablesPtr
@@ -556,6 +568,8 @@ addDeclarations
   , "ls_hs_operator_max_number_off_diag"
   , "ls_hs_operator_get_expr"
   , "ls_hs_operator_get_basis"
+  , "ls_hs_prepare_hphi"
+  , "ls_hs_prepare_mvmc"
   , "ls_hs_load_yaml_config"
   , "ls_hs_destroy_yaml_config"
   ]

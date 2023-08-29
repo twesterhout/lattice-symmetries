@@ -162,9 +162,9 @@ lib/liblattice_symmetries_chapel.$(SHARED_EXT): $(LIB_MODULES) src/library.o
 
 install: lib
 	@mkdir -p $(PREFIX)/lib
-	@mkdir -p $(PREFIX)/include
+	# @mkdir -p $(PREFIX)/include
 	install -m 755 lib/liblattice_symmetries_chapel.$(SHARED_EXT) $(PREFIX)/lib/
-	install -m 644 lib/lattice_symmetries_chapel.h $(PREFIX)/include/
+	# install -m 644 lib/lattice_symmetries_chapel.h $(PREFIX)/include/
 
 .PHONY: bundle
 bundle: lib
@@ -263,6 +263,10 @@ bin/TestRoseTree: test/TestRoseTree.chpl $(APP_MODULES)
 	chpl $(CFLAGS) $(CHPL_CFLAGS) $(HDF5_CFLAGS) -o $@ --main-module $(@F) $^ $(HDF5_LDFLAGS) $(CHPL_LDFLAGS) $(LDFLAGS)
 
 bin/dummy: src/dummy.chpl
+	@mkdir -p $(@D)
+	chpl $(CFLAGS) -o $@ $<
+
+bin/atomic_queue: src/ConcurrentQueue.chpl
 	@mkdir -p $(@D)
 	chpl $(CFLAGS) -o $@ $<
 

@@ -23,6 +23,7 @@ module LatticeSymmetries.Utils
   )
 where
 
+import Control.Exception.Safe (handleAnyDeep)
 import Data.Aeson
 import Data.ByteString (packCString, useAsCString)
 import Data.ByteString.Internal (ByteString (..))
@@ -58,13 +59,13 @@ foreign import ccall unsafe "ls_hs_error"
   ls_hs_error :: CString -> IO ()
 
 -- | Invoke the 'ls_hs_error' error handling function with the given message.
-throwC :: HasCallStack => Text -> IO a
-throwC msg = do
+throwC :: HasCallStack => a -> Text -> IO a
+throwC def msg = do
   useAsCString (encodeUtf8 msg) ls_hs_error
-  error "this should never happen, because ls_hs_error should not return"
+  pure def
 
-propagateErrorToC :: HasCallStack => SomeException -> IO a
-propagateErrorToC = throwC . show
+propagateErrorToC :: (HasCallStack, NFData a) => a -> IO a -> IO a
+propagateErrorToC def = handleAnyDeep (throwC def . show)
 
 infix 4 ≈
 

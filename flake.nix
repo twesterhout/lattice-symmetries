@@ -19,7 +19,7 @@
   outputs = { self, nixpkgs, flake-utils, nix-chapel }:
     let
       inherit (nixpkgs) lib;
-      version = "2.1.0";
+      version = "2.2.0";
 
       kernels-overlay = import ./kernels/overlay.nix { inherit version; };
       haskell-overlay = { withPic }: import ./haskell/overlay.nix { inherit lib withPic; };
@@ -123,12 +123,18 @@
       # };
     in
     {
+      overlays.default = composed-overlay { withPic = true; };
+
+      templates.default = {
+        path = builtins.toPath "${./.}/template";
+        description = "Python project template that uses lattice-symmetries";
+      };
+
       packages = flake-utils.lib.eachDefaultSystemMap (system:
         with (pkgs-for { withPic = true; } system); {
           inherit (lattice-symmetries) kernels haskell chapel python distributed;
+          inherit atomic_queue;
         });
-
-      overlays.default = composed-overlay { withPic = true; };
 
       devShells = flake-utils.lib.eachDefaultSystemMap (system:
         let
@@ -153,9 +159,22 @@
               hsc2hs
               nil
               nixpkgs-fmt
+              (python3Packages.grip.overrideAttrs (attrs: {
+                src = fetchFromGitHub {
+                  owner = "Antonio-R1";
+                  repo = "grip";
+                  rev = "d2efd3c6a896c01cfd7624b6504107e7b3b4b20f";
+                  hash = "sha256-0wgIM7Ll5WELvAOiu1TLyoNSrhJ22Y1SRbWqa3BDF3k=";
+                };
+                checkPhase = "true";
+                installCheckPhase = "true";
+              }))
             ];
             shellHook = ''
-              export LD_LIBRARY_PATH=${lattice-symmetries.kernels}/lib:$LD_LIBRARY_PATH;
+              if [ ! -f libkernels.so ]; then
+                gcc -shared -o libkernels.so ${lattice-symmetries.kernels}/lib/libkernels.a
+              fi
+              export LD_LIBRARY_PATH=$PWD:$LD_LIBRARY_PATH;
             '';
           };
           chapel = with pkgs; mkShell {
@@ -181,7 +200,12 @@
               export HDF5_LDFLAGS="-L${hdf5}/lib -lhdf5_hl -lhdf5 -lrt"
             '';
           };
-
+          python = with pkgs; lattice-symmetries.python.overrideAttrs (attrs: {
+            nativeBuildInputs = (attrs.nativeBuildInputs or [ ]) ++ [
+              python3Packages.black
+              nodePackages.pyright
+            ];
+          });
         });
     };
 }

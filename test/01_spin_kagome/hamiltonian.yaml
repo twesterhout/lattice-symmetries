@@ -1,0 +1,39 @@
+# Heisenberg antiferromagnet on a 9-site anisotropic Kagome lattice with periodic boundary conditions
+basis:
+  number_spins: 9
+  hamming_weight: 5
+  symmetries: []
+hamiltonian:
+  name: "Heisenberg Hamiltonian"
+  # Cell:
+  #              8
+  #            6   7
+  #          5        
+  #        3   4        
+  #      2        
+  #    0   1        
+  # Boundaries:
+  #            4   0
+  #              8
+  #        1   6   7   3
+  #          5       2
+  #    7   3   4   0    
+  #      2       8
+  # 4  0   1   6    
+  #  8       5
+  terms:
+    # i
+    #  \
+    #   j
+    - expression: "Sˣ₀ Sˣ₁ + Sʸ₀ Sʸ₁ + Sᶻ₀ Sᶻ₁"
+      sites: [[1, 2], [1, 5], [4, 5], [4, 8], [7, 8], [7, 2]]
+    #   j
+    #  /
+    # i
+    - expression: "0.5 (Sˣ₀ Sˣ₁ + Sʸ₀ Sʸ₁ + Sᶻ₀ Sᶻ₁)"
+      sites: [[0, 2], [2, 3], [3, 5], [5, 6], [6, 8], [8, 0]]
+    #
+    # i---j
+    #
+    - expression: "0.5 (Sˣ₀ Sˣ₁ + Sʸ₀ Sʸ₁ + Sᶻ₀ Sᶻ₁)"
+      sites: [[0, 1], [1, 6], [3, 4], [4, 0], [6, 7], [7, 3]]
