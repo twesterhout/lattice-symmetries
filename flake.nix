@@ -189,6 +189,7 @@
               chapelFixupBinary
               gcc
               pkg-config
+              prettierd
             ];
             shellHook = ''
               export LS_KERNELS="${lattice-symmetries.kernels}";
