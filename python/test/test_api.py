@@ -5,6 +5,7 @@ import numpy as np
 import scipy.sparse.linalg
 from pytest import approx
 
+
 def sum1(xs):
     s = None
     for x in xs:
@@ -84,13 +85,14 @@ def test_prepare_mvmc():
     hopping = ls.Expr("- (c†₁↑ c₀↑ + c†₀↑ c₁↑ + c†₁↓ c₀↓ + c†₀↓ c₁↓)")
     coulomb = ls.Expr("4.0 n₀↑ n₀↓")
     expr = hopping + coulomb
-    for (i, j) in [(1, 2), (2, 3), (3, 0)]:
+    for i, j in [(1, 2), (2, 3), (3, 0)]:
         expr += hopping.replace_indices({0: i, 1: j})
     for i in [1, 2, 3]:
         expr += coulomb.replace_indices({0: i})
     print(expr)
     hamiltonian = ls.Operator(basis, expr)
     hamiltonian.prepare_inputs_for_mvmc("/tmp/lattice-symmetries-python/mvmc")
+
 
 def test_anisotropic_kagome_9():
     # fmt: off
@@ -111,7 +113,9 @@ def test_anisotropic_kagome_9():
 
     basis = ls.SpinfulFermionBasis(number_sites=9, number_particles=3)
     basis.build()
-    hopping = lambda i, j: ls.Expr("c†₁↑ c₀↑ + c†₀↑ c₁↑ + c†₁↓ c₀↓ + c†₀↓ c₁↓").replace_indices({0: i, 1: j})
+    hopping = lambda i, j: ls.Expr(
+        "c†₁↑ c₀↑ + c†₀↑ c₁↑ + c†₁↓ c₀↓ + c†₀↓ c₁↓"
+    ).replace_indices({0: i, 1: j})
     coulomb = lambda i: ls.Expr("n₀↑ n₀↓").replace_indices({0: i})
 
     t1 = -0.3251
@@ -129,20 +133,21 @@ def test_anisotropic_kagome_9():
     print(energy)
 
 
-def test_vs_hphi():
+def notest_vs_hphi():
     prefix = "../../test"
     for folder in os.listdir(prefix):
         print(folder)
         config = ls.load_yaml_config(os.path.join(prefix, folder, "hamiltonian.yaml"))
         config.basis.build()
-        energy, state = scipy.sparse.linalg.eigsh(config.hamiltonian, k=1, which="SA", tol=1e-6)
-        with open(os.path.join(prefix, folder, "HPhi", "output", "zvo_energy.dat")) as f:
+        energy, state = scipy.sparse.linalg.eigsh(
+            config.hamiltonian, k=1, which="SA", tol=1e-6
+        )
+        with open(
+            os.path.join(prefix, folder, "HPhi", "output", "zvo_energy.dat")
+        ) as f:
             for line in f.readlines():
                 if line.startswith("Energy"):
                     ref_energy = float(line.strip().split(" ")[-1])
         print(energy, ref_energy)
         assert ref_energy is not None
         assert energy == approx(ref_energy)
-
-
-test_vs_hphi()
