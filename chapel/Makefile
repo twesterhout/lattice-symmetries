@@ -14,7 +14,7 @@ LDFLAGS = -llattice_symmetries_haskell
 PRIMME_CFLAGS = -I$(PRIMME_PATH)/include
 PRIMME_LDFLAGS = -L$(PRIMME_PATH)/lib -lprimme -llapacke -lopenblas -lm -lgomp -lpthread
 
-ifeq ($(UNAME), Linux)
+ifeq ($(shell uname -s), Linux)
   HDF5_CFLAGS ?= $(shell pkg-config --cflags hdf5)
   HDF5_LDFLAGS ?= -lhdf5_hl $(shell pkg-config --libs hdf5)
   SHARED_EXT = so
