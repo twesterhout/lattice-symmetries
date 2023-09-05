@@ -52,8 +52,8 @@ proc ls_internal_operator_apply_off_diag_x1(
     coeffs : c_ptr(complex(128)),
     offsets : c_ptr(c_ptrdiff),
     xs : c_ptrConst(real(64))) {
-  ls_internal_operator_apply_off_diag_x1(c_ptrToConst(op), batch_size, alphas, betas, coeffs, offsets, xs);
-  return;
+  // ls_internal_operator_apply_off_diag_x1(c_ptrToConst(op), batch_size, alphas, betas, coeffs, offsets, xs);
+  // return;
 
   // Nothing to apply
   if (op.off_diag_terms == nil || op.off_diag_terms.deref().number_terms == 0) {
@@ -63,6 +63,8 @@ proc ls_internal_operator_apply_off_diag_x1(
 
   const ref terms = op.off_diag_terms.deref();
   const number_terms = terms.number_terms;
+
+  logDebug("number_terms=", number_terms, ", batch_size=", batch_size);
 
   offsets[0] = 0;
   var offset = 0;
@@ -147,6 +149,7 @@ record BatchedOperator {
     // conceptually 2-dimensional arrays, but we use flattened
     // representations of them.
     applyOffDiagTimer.start();
+    logDebug("_dom=", _dom);
     ls_internal_operator_apply_off_diag_x1(
       matrix.payload.deref(),
       count,
