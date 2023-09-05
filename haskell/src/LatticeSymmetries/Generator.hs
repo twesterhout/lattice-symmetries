@@ -230,7 +230,7 @@ instance HasNonbranchingRepresentation (Generator Int SpinGeneratorType) where
   nonbranchingRepresentation (Generator _ SpinIdentity) =
     NonbranchingTerm 1 zeroBits zeroBits zeroBits zeroBits zeroBits
   nonbranchingRepresentation (Generator i SpinZ) =
-    NonbranchingTerm (-1) zeroBits zeroBits zeroBits zeroBits (bit i)
+    NonbranchingTerm 1 zeroBits zeroBits zeroBits zeroBits (bit i)
   nonbranchingRepresentation (Generator i SpinPlus) =
     NonbranchingTerm 1 (bit i) (bit i) zeroBits (bit i) zeroBits
   nonbranchingRepresentation (Generator i SpinMinus) =

@@ -1053,6 +1053,8 @@ proc localMatrixVector(matrix : Operator,
   assert(representatives.locale == here);
   if matrix.numberDiagTerms() > 0 then
     localDiagonal(matrix, x, y, representatives, timings);
+  else
+    y = 0;
   if matrix.numberOffDiagTerms() > 0 then
     localOffDiagonalNoQueue(matrix, x, y, representatives, timings);
 }

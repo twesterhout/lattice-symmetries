@@ -159,7 +159,6 @@ record BatchedOperator {
     // conceptually 2-dimensional arrays, but we use flattened
     // representations of them.
     applyOffDiagTimer.start();
-    // logDebug("_dom=", _dom);
     ls_internal_operator_apply_off_diag_x1(
       matrix.payload.deref(),
       count,

@@ -69,6 +69,33 @@ def test_operator_apply():
     assert len(hamiltonian.apply_off_diag_to_basis_state(basis.states[1])) == 1
 
 
+def test_simple_spin_expr():
+    sp = np.array([[0, 1], [0, 0]])
+    sm = np.array([[0, 0], [1, 0]])
+    sz = np.diag([1, -1])
+    s0 = np.eye(2)
+
+    def check(number_spins, expression, matrix_ref):
+        basis = ls.SpinBasis(number_spins)
+        basis.build()
+        rows = []
+        for i in range(basis.number_states):
+            v = np.zeros(basis.number_states)
+            v[i] = 1
+            rows.append(ls.Operator(basis, ls.Expr(expression)) @ v)
+        matrix = np.vstack(rows)
+        assert matrix.tolist() == matrix_ref.tolist()
+
+    check(1, "σ⁻₀", sm)
+    check(1, "σ⁺₀", sp)
+    check(1, "σᶻ₀", sz)
+    check(2, "σ⁺₀ σ⁻₁", np.kron(sm, sp))
+    check(2, "σ⁺₀ σᶻ₁", np.kron(sz, sp))
+    check(2, "σ⁻₁", np.kron(sm, s0))
+    check(3, "σ⁺₀ σᶻ₁ σ⁻₂", np.kron(sm, np.kron(sz, sp)))
+    check(3, "σ⁺₀ σ⁻₂", np.kron(sm, np.kron(s0, sp)))
+
+
 def test_prepare_hphi():
     basis = ls.SpinBasis(2)
     expr = ls.Expr("σᶻ₀ σᶻ₁ + 2 σ⁺₀ σ⁻₁ + 2 σ⁻₀ σ⁺₁")
