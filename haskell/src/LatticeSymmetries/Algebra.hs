@@ -18,6 +18,7 @@ module LatticeSymmetries.Algebra
   , Algebra (..)
   , simplifyPolynomial
   , swapGenerators
+  , sortVectorBy
   )
 where
 

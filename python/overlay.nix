@@ -39,7 +39,12 @@ final: prev: {
           runHook postCheck
         '';
 
-        preShellHook = postPatch;
+        preShellHook = ''
+          if test -e setup.py; then
+            rm -rf build/ lattice_symmetries/*.so
+            ${postPatch}
+          fi
+        '';
 
         nativeCheckInputs = with python-final; [ pytestCheckHook ];
       };

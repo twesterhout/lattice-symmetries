@@ -1,5 +1,6 @@
 {-# LANGUAGE CApiFFI #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -75,7 +76,7 @@ getNonbranchingTerms
   -> Vector NonbranchingTerm
 getNonbranchingTerms operator =
   case nonbranchingRepresentation <$> opTermsFlat operator of
-    (Sum v) -> v
+    (Sum v) -> sortVectorBy (comparing (.nbtX)) $ G.filter ((/= 0) . (.nbtV)) v
   where
     opTermsFlat :: Operator t -> Polynomial ComplexRational (Generator Int (GeneratorType t))
     opTermsFlat (Operator basis terms) =

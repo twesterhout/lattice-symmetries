@@ -51,7 +51,8 @@ proc ls_internal_operator_apply_off_diag_x1(
     betas : c_ptr(uint(64)),
     coeffs : c_ptr(complex(128)),
     offsets : c_ptr(c_ptrdiff),
-    xs : c_ptrConst(real(64))) {
+    xs : c_ptrConst(real(64)),
+    bufferSize : int) {
   // ls_internal_operator_apply_off_diag_x1(c_ptrToConst(op), batch_size, alphas, betas, coeffs, offsets, xs);
   // return;
 
@@ -64,21 +65,30 @@ proc ls_internal_operator_apply_off_diag_x1(
   const ref terms = op.off_diag_terms.deref();
   const number_terms = terms.number_terms;
 
-  logDebug("number_terms=", number_terms, ", batch_size=", batch_size);
+  //logDebug("number_terms=", number_terms, ", batch_size=", batch_size);
 
   offsets[0] = 0;
   var offset = 0;
   for batch_idx in 0 ..# batch_size {
+    const minimal_offset = offset;
     for term_idx in 0 ..# number_terms {
       const alpha = alphas[batch_idx];
       const delta = (alpha & terms.m[term_idx]) == terms.r[term_idx];
       if delta {
         const sign = 1 - 2 * parity(alpha & terms.s[term_idx]):int;
         const factor = if xs != nil then sign * xs[batch_idx] else sign;
-        coeffs[offset] = terms.v[term_idx] * factor;
-        betas[offset] = alpha ^ terms.x[term_idx];
-        assert(popCount(betas[offset]) == popCount(alphas[batch_idx]));
-        offset += 1;
+        assert(terms.v[term_idx] != 0);
+        const coeff = terms.v[term_idx] * factor;
+        const beta = alpha ^ terms.x[term_idx];
+        if offset > minimal_offset && betas[offset - 1] == beta {
+          coeffs[offset - 1] += coeff;
+        }
+        else {
+          assert(bufferSize == -1 || offset < bufferSize);
+          coeffs[offset] = coeff;
+          betas[offset] = beta;
+          offset += 1;
+        }
       }
     }
     offsets[batch_idx + 1] = offset;
@@ -149,7 +159,7 @@ record BatchedOperator {
     // conceptually 2-dimensional arrays, but we use flattened
     // representations of them.
     applyOffDiagTimer.start();
-    logDebug("_dom=", _dom);
+    // logDebug("_dom=", _dom);
     ls_internal_operator_apply_off_diag_x1(
       matrix.payload.deref(),
       count,
@@ -157,7 +167,8 @@ record BatchedOperator {
       betas,
       cs,
       offsets,
-      xs);
+      xs,
+      _dom.size);
     applyOffDiagTimer.stop();
 
     // Determine the target locale for every |βᵢⱼ⟩.
@@ -184,7 +195,8 @@ record BatchedOperator {
       betas,
       cs,
       offsets,
-      xs);
+      xs,
+      _dom.size);
     applyOffDiagTimer.stop();
 
     const totalCount = offsets[count];
@@ -220,7 +232,8 @@ record BatchedOperator {
       tempSpins,
       tempCoeffs,
       offsets,
-      xs);
+      xs,
+      _dom.size);
     applyOffDiagTimer.stop();
     const totalCount = offsets[count];
     // We are also interested in norms of alphas, so we append them to tempSpins
@@ -346,7 +359,8 @@ export proc ls_chpl_operator_apply_off_diag(matrixPtr : c_ptr(ls_hs_operator),
       c_ptrTo(_betas[0]),
       c_ptrTo(_cs[0]),
       c_ptrTo(_offsets[0]),
-      nil);
+      nil,
+      -1);
     const betasSize = _offsets[count];
     betas.deref() = convertToExternalArray(_betas);
     coeffs.deref() = convertToExternalArray(_cs);
