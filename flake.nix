@@ -132,7 +132,7 @@
 
       packages = flake-utils.lib.eachDefaultSystemMap (system:
         with (pkgs-for { withPic = true; } system); {
-          inherit (lattice-symmetries) kernels haskell chapel python distributed;
+          inherit (lattice-symmetries) kernels haskell chapel python distributed test-data;
           inherit atomic_queue;
         });
 
@@ -192,13 +192,21 @@
               prettierd
             ];
             shellHook = ''
-              export LS_KERNELS="${lattice-symmetries.kernels}";
-              export LS_HASKELL="${lattice-symmetries.haskell}";
-              export LS_HASKELL_LIB="${lattice-symmetries.haskell.lib}";
-              export CHPL_CFLAGS="-I${lattice-symmetries.kernels}/include"
-              export CHPL_LDFLAGS="-L${lattice-symmetries.haskell.lib}/lib"
-              export HDF5_CFLAGS="-I${hdf5.dev}/include"
-              export HDF5_LDFLAGS="-L${hdf5}/lib -lhdf5_hl -lhdf5 -lrt"
+              export CHPL_COMM=gasnet
+              export CHPL_COMM_SUBSTRATE=smp
+              export CHPL_RT_OVERSUBSCRIBED=yes
+              export CHPL_HOST_MEM=jemalloc
+              export CHPL_TARGET_MEM=jemalloc
+              export CHPL_LAUNCHER=none
+              export OPTIMIZATION=--fast
+              export CHPL_CFLAGS='-I${pkgs.lattice-symmetries.kernels}/include'
+              export CHPL_LDFLAGS='-L${pkgs.lattice-symmetries.haskell.lib}/lib'
+              export HDF5_CFLAGS='-I${pkgs.hdf5.dev}/include'
+              export HDF5_LDFLAGS='-L${pkgs.hdf5}/lib -lhdf5_hl -lhdf5 -lrt'
+              export TEST_DATA='${pkgs.lattice-symmetries.test-data}/share'
+
+              rm -f src/FFI.chpl
+              ln --symbolic ${pkgs.lattice-symmetries.ffi} src/FFI.chpl
             '';
           };
           python = with pkgs; lattice-symmetries.python.overrideAttrs (attrs: {

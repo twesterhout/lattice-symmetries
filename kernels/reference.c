@@ -31,8 +31,12 @@ void ls_hs_set_exception_handler(error_handler_type handler) {
 
 void ls_hs_error(char const *message) {
   error_handler_type handler = atomic_load(&ls_hs_internal_error_handler);
-  LS_CHECK(handler != NULL, "error handler is NULL");
-  (*handler)(message);
+  if (handler == NULL) {
+    default_error_handler(message);
+  }
+  else {
+    (*handler)(message);
+  }
 }
 
 typedef void (*ls_hs_internal_chpl_free_func)(void *);

@@ -15,9 +15,9 @@ hamiltonian:
       sites: *lattice_1
     - expression: "σᶻ₀ σᶻ₁"
       sites: *lattice_1
-    - expression: "0.8 × σˣ₀ σˣ₁"
+    - expression: "0.8 σˣ₀ σˣ₁"
       sites: *lattice_2
-    - expression: "0.8 × σʸ₀ σʸ₁"
+    - expression: "0.8 σʸ₀ σʸ₁"
       sites: *lattice_2
-    - expression: "0.8 × σᶻ₀ σᶻ₁"
+    - expression: "0.8 σᶻ₀ σᶻ₁"
       sites: *lattice_2

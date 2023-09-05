@@ -13,5 +13,5 @@ hamiltonian:
       sites: *lattice
     - expression: "σʸ₀ σʸ₁"
       sites: *lattice
-    # - expression: "σᶻ₀ σᶻ₁"
-    #   sites: *lattice
+    - expression: "σᶻ₀ σᶻ₁"
+      sites: *lattice

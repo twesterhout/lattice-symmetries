@@ -76,6 +76,12 @@ getNonbranchingTerms
   -> Vector NonbranchingTerm
 getNonbranchingTerms operator =
   case nonbranchingRepresentation <$> opTermsFlat operator of
+    -- NOTE: sorting based on nbtX is important!
+    -- Terms with the same nbtX generate the same spin configuration. If they
+    -- appear one after another, we can eliminate the duplicates easily. This
+    -- is done in the off_diag kernel in Chapel.
+    -- If duplicates are not eliminated, we might run into bufer overflows
+    -- since we allocate buffers assuming that there are not duplicates.
     (Sum v) -> sortVectorBy (comparing (.nbtX)) $ G.filter ((/= 0) . (.nbtV)) v
   where
     opTermsFlat :: Operator t -> Polynomial ComplexRational (Generator Int (GeneratorType t))

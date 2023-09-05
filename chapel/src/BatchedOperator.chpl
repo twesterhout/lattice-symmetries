@@ -65,8 +65,6 @@ proc ls_internal_operator_apply_off_diag_x1(
   const ref terms = op.off_diag_terms.deref();
   const number_terms = terms.number_terms;
 
-  //logDebug("number_terms=", number_terms, ", batch_size=", batch_size);
-
   offsets[0] = 0;
   var offset = 0;
   for batch_idx in 0 ..# batch_size {
@@ -77,14 +75,13 @@ proc ls_internal_operator_apply_off_diag_x1(
       if delta {
         const sign = 1 - 2 * parity(alpha & terms.s[term_idx]):int;
         const factor = if xs != nil then sign * xs[batch_idx] else sign;
-        assert(terms.v[term_idx] != 0);
+        // assert(terms.v[term_idx] != 0);
         const coeff = terms.v[term_idx] * factor;
         const beta = alpha ^ terms.x[term_idx];
         if offset > minimal_offset && betas[offset - 1] == beta {
           coeffs[offset - 1] += coeff;
         }
         else {
-          assert(bufferSize == -1 || offset < bufferSize);
           coeffs[offset] = coeff;
           betas[offset] = beta;
           offset += 1;
@@ -93,6 +90,9 @@ proc ls_internal_operator_apply_off_diag_x1(
     }
     offsets[batch_idx + 1] = offset;
   }
+
+  // Make sure we didn't write beyond the available space
+  assert(bufferSize == -1 || offset <= bufferSize);
 }
 
 // A wrapper around the Operator class that allows applying the operator to a
