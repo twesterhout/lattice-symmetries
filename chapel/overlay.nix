@@ -9,16 +9,18 @@ final: prev: {
     test-data = final.stdenv.mkDerivation {
       pname = "lattice-symmetries-test-data";
       inherit version;
-      src = final.fetchurl {
-        url = "https://surfdrive.surf.nl/files/index.php/s/OK5527Awfgl1hT2/download?path=%2Fdata%2Fmatvec ";
-        hash = "sha256-D+SsAaqB/0rH/ZChYBixg+FXcGcp1cIypzVhOJZx5iI=";
+      src = final.fetchzip {
+        url = "https://github.com/twesterhout/lattice-symmetries/releases/download/test-v1/matvec.zip";
+        # https://surfdrive.surf.nl/files/index.php/s/OK5527Awfgl1hT2/download?path=%2Fdata%2Fv3%2Fmatvec";
+        hash = "sha256-DR+HpYZkgxigXooXCkluGZz7ChRy8xqCKeVd4B3nGDQ=";
+        # sha256-laaL7WemYccjGU9B0fPN/SzyBv+vOEdIy7BgJ2JzKRw=";
       };
-      unpackPhase = "unzip $src";
+      # unpackPhase = "unzip $src";
       dontConfigure = true;
       dontBuild = true;
       installPhase = ''
-        mkdir -p $out/share/data
-        cp -r matvec $out/share/data/
+        mkdir -p $out/share/data/matvec
+        cp *.h5 $out/share/data/matvec/
       '';
       nativeBuildInputs = with final; [ unzip ];
     };
@@ -56,8 +58,9 @@ final: prev: {
             '';
             doCheck = target == "TestMatrixVectorProduct";
             checkPhase = ''
+              export GASNET_PSHM_NODES=1
               make ${finalMakeFlags} \
-                   TEST_DATA=${final.lattice-symmetries.test-data} \
+                   TEST_DATA=${final.lattice-symmetries.test-data}/share \
                    CHPL_ARGS='--numLocales=1' \
                    check-matrix-vector-product
             '';
@@ -97,6 +100,7 @@ final: prev: {
           "CHPL_COMM_SUBSTRATE=ibv"
           "CHPL_GASNET_SEGMENT=fast"
         ];
+        test = chapelBuild "TestMatrixVectorProduct" [ "CHPL_COMM=gasnet" "CHPL_COMM_SUBSTRATE=smp" ];
       };
   };
 }

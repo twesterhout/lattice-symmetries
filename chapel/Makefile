@@ -1,11 +1,11 @@
 .RULES:
 .POSIX:
 
-OPTIMIZATION = --fast
-PREFIX = /usr/local
-TEST_DATA = $(PWD)
-CHPL_ARGS =
-CHPL_CFLAGS =
+OPTIMIZATION ?= --fast
+PREFIX ?= /usr/local
+TEST_DATA ?= $(PWD)
+CHPL_ARGS ?=
+CHPL_CFLAGS ?=
 
 CFLAGS = $(OPTIMIZATION) --target-compiler=llvm
 # TODO: enable later to get rid of __primitive calls: -s cPtrToLogicalValue=true
@@ -100,7 +100,7 @@ bin/BenchmarkBlockHashed: benchmark/BenchmarkBlockHashed.chpl $(LIB_MODULES)
 	chpl $(CFLAGS) $(CHPL_CFLAGS) -o $@ --main-module $(@F) $^ $(CHPL_LDFLAGS) $(LDFLAGS)
 
 .PHONY: check-states-enumeration
-check-states-enumeration: bin/TestStatesEnumeration
+check-states-enumeration: bin/TestStatesEnumeration $(TEST_DATA)/data/matvec
 	for yaml_file in $$(cd data/ && ls *.yaml); do \
 		if test -f "$(TEST_DATA)/data/matvec/$${yaml_file%.yaml}.h5"; then \
 			echo "Testing $$yaml_file ..."; \
@@ -111,7 +111,7 @@ check-states-enumeration: bin/TestStatesEnumeration
 	done
 
 .PHONY: check-matrix-vector-product
-check-matrix-vector-product: bin/TestMatrixVectorProduct
+check-matrix-vector-product: bin/TestMatrixVectorProduct $(TEST_DATA)/data/matvec
 	for yaml_file in $$(cd data/ && ls *.yaml); do \
 		if test -f "$(TEST_DATA)/data/matvec/$${yaml_file%.yaml}.h5"; then \
 			echo "Testing $$yaml_file ..."; \

@@ -68,9 +68,12 @@ proc ls_internal_operator_apply_off_diag_x1(
   offsets[0] = 0;
   var offset = 0;
   for batch_idx in 0 ..# batch_size {
-    const minimal_offset = offset;
+    const alpha = alphas[batch_idx];
+    // we know that we can never get alpha again since all terms are off
+    // diagonal, so using alpha as a special state is fine.
+    var old_beta = alpha;
+    var old_coeff : complex(128) = 0;
     for term_idx in 0 ..# number_terms {
-      const alpha = alphas[batch_idx];
       const delta = (alpha & terms.m[term_idx]) == terms.r[term_idx];
       if delta {
         const sign = 1 - 2 * parity(alpha & terms.s[term_idx]):int;
@@ -78,15 +81,32 @@ proc ls_internal_operator_apply_off_diag_x1(
         // assert(terms.v[term_idx] != 0);
         const coeff = terms.v[term_idx] * factor;
         const beta = alpha ^ terms.x[term_idx];
-        if offset > minimal_offset && betas[offset - 1] == beta {
-          coeffs[offset - 1] += coeff;
+        if beta != old_beta {
+          if old_beta != alpha {
+            coeffs[offset] = old_coeff;
+            betas[offset] = old_beta;
+            offset += 1;
+          }
+          old_beta = beta;
+          old_coeff = coeff;
         }
         else {
-          coeffs[offset] = coeff;
-          betas[offset] = beta;
-          offset += 1;
+          old_coeff += coeff;
         }
+        // if offset > minimal_offset && betas[offset - 1] == beta {
+        //   coeffs[offset - 1] += coeff;
+        // }
+        // else {
+        //   coeffs[offset] = coeff;
+        //   betas[offset] = beta;
+        //   offset += 1;
+        // }
       }
+    }
+    if old_beta != alpha {
+      coeffs[offset] = old_coeff;
+      betas[offset] = old_beta;
+      offset += 1;
     }
     offsets[batch_idx + 1] = offset;
   }
