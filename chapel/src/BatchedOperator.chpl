@@ -52,8 +52,8 @@ proc ls_internal_operator_apply_off_diag_x1(
     coeffs : c_ptr(complex(128)),
     offsets : c_ptr(c_ptrdiff),
     xs : c_ptrConst(real(64))) {
-  // ls_internal_operator_apply_off_diag_x1(c_ptrToConst(op), batch_size, alphas, betas, coeffs, offsets, xs);
-  // return;
+  ls_internal_operator_apply_off_diag_x1(c_ptrToConst(op), batch_size, alphas, betas, coeffs, offsets, xs);
+  return;
 
   // Nothing to apply
   if (op.off_diag_terms == nil || op.off_diag_terms.deref().number_terms == 0) {
