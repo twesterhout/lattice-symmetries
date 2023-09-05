@@ -75,6 +75,7 @@ proc ls_internal_operator_apply_off_diag_x1(
         const factor = if xs != nil then sign * xs[batch_idx] else sign;
         coeffs[offset] = terms.v[term_idx] * factor;
         betas[offset] = alpha ^ terms.x[term_idx];
+        assert(popCount(betas[offset]) == popCount(alphas[batch_idx]));
         offset += 1;
       }
     }

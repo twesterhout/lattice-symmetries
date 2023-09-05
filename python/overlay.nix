@@ -4,7 +4,7 @@
 final: prev: {
   pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
     (python-final: python-prev: {
-      lattice-symmetries = python-final.buildPythonPackage {
+      lattice-symmetries = python-final.buildPythonPackage rec {
         pname = "lattice-symmetries";
         inherit version;
         src = ./.;
@@ -38,6 +38,8 @@ final: prev: {
           grep -q -E '(FAILURES|failed)' output.txt && exit 1
           runHook postCheck
         '';
+
+        preShellHook = postPatch;
 
         nativeCheckInputs = with python-final; [ pytestCheckHook ];
       };
