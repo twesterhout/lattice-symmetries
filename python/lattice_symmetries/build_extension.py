@@ -10,6 +10,7 @@ import os
 #         return f[len(prefix) + 1:]
 #     return os.environ.get("LATTICE_SYMMETRIES_PATH")
 
+
 def get_include_dirs():
     return []
     # kernels_path = os.environ.get("LS_KERNELS_PATH")
@@ -25,6 +26,7 @@ def get_include_dirs():
     # else:
     #     return [os.path.join("lattice_symmetries", prefix, "include")]
 
+
 def get_library_dirs():
     return []
     # prefix = get_chapel_lib_path()
@@ -33,6 +35,7 @@ def get_library_dirs():
     #     return []
     # else:
     #     return [os.path.join("lattice_symmetries", prefix, "lib")]
+
 
 def get_runtime_dirs():
     return []
@@ -43,50 +46,53 @@ def get_runtime_dirs():
     # else:
     #     return [os.path.join("$ORIGIN", prefix, "lib")]
 
+
 def get_generated_declarations():
     with open("lattice_symmetries/extracted_declarations.h", "r") as f:
         return f.read()
 
+
 ffibuilder = FFI()
 
 ffibuilder.cdef(
-    get_generated_declarations() + "\n" +
-    """
-    void set_python_exception_handler();
-    ptrdiff_t ls_hs_basis_number_states(ls_hs_basis const* basis);
-    uint64_t const* ls_hs_basis_states(ls_hs_basis const* basis);
-    extern "Python" void python_replace_indices(int, int, int*, int*);
+    get_generated_declarations()
+    + "\n"
+    + """
+void set_python_exception_handler();
+ptrdiff_t ls_hs_basis_number_states(ls_hs_basis const* basis);
+uint64_t const* ls_hs_basis_states(ls_hs_basis const* basis);
+extern "Python" void python_replace_indices(int, int, int*, int*);
 """
 )
 
 ffibuilder.set_source(
     "lattice_symmetries._ls_hs",
     """
-    #define LS_NO_STD_COMPLEX
-    #include "lattice_symmetries_types.h"
-    #include "lattice_symmetries_functions.h"
-    #include <Python.h>
+#define LS_NO_STD_COMPLEX
+#include "lattice_symmetries_types.h"
+#include "lattice_symmetries_functions.h"
+#include <Python.h>
 
-    static void python_exception_handler(char const* message) {
-      PyGILState_STATE gstate = PyGILState_Ensure();
-      // fprintf(stderr, "Calling PyErr_SetString '%s' ...\\n", message);
-      PyErr_SetString(PyExc_RuntimeError, message);
-      // fprintf(stderr, "Returning ...\\n");
-      PyGILState_Release(gstate);
-    }
+static void python_exception_handler(char const* message) {
+    PyGILState_STATE gstate = PyGILState_Ensure();
+    // fprintf(stderr, "Calling PyErr_SetString '%s' ...\\n", message);
+    PyErr_SetString(PyExc_RuntimeError, message);
+    // fprintf(stderr, "Returning ...\\n");
+    PyGILState_Release(gstate);
+}
 
-    static void set_python_exception_handler() {
-      fprintf(stderr, "set_python_exception_handler ...\\n");
-      ls_hs_set_exception_handler(&python_exception_handler);
-    }
+static void set_python_exception_handler() {
+    // fprintf(stderr, "set_python_exception_handler ...\\n");
+    ls_hs_set_exception_handler(&python_exception_handler);
+}
 
-    static ptrdiff_t ls_hs_basis_number_states(ls_hs_basis const* basis) {
-      if (basis->representatives.elts == NULL) { return -1; }
-      return (ptrdiff_t)basis->representatives.num_elts;
-    }
-    static uint64_t const* ls_hs_basis_states(ls_hs_basis const* basis) {
-      return basis->representatives.elts;
-    }
+static ptrdiff_t ls_hs_basis_number_states(ls_hs_basis const* basis) {
+    if (basis->representatives.elts == NULL) { return -1; }
+    return (ptrdiff_t)basis->representatives.num_elts;
+}
+static uint64_t const* ls_hs_basis_states(ls_hs_basis const* basis) {
+    return basis->representatives.elts;
+}
 """,
     include_dirs=get_include_dirs(),
     # [# "../cbits", "/home/tom/src/distributed-matvec/lib/lattice_symmetries_chapel.h"],
@@ -104,4 +110,3 @@ ffibuilder.set_source(
 
 if __name__ == "__main__":
     ffibuilder.compile(verbose=True)
-

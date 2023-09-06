@@ -61,6 +61,9 @@ ls_hs_symmetry_sector = flip withCsymmetry (pure . fromIntegral . symmetrySector
 ls_hs_symmetry_phase :: Ptr Csymmetry -> IO Double
 ls_hs_symmetry_phase = flip withCsymmetry (pure . realToFrac . symmetryPhase)
 
+ls_hs_symmetry_periodicity :: Ptr Csymmetry -> IO CInt
+ls_hs_symmetry_periodicity = flip withCsymmetry (pure . fromIntegral . getPeriodicity . symmetryPermutation)
+
 ls_hs_symmetry_length :: Ptr Csymmetry -> IO CInt
 ls_hs_symmetry_length =
   flip withCsymmetry $ pure . fromIntegral . permutationLength . symmetryPermutation
@@ -184,6 +187,10 @@ ls_hs_basis_number_bits basisPtr =
 ls_hs_basis_number_words :: Ptr Cbasis -> IO CInt
 ls_hs_basis_number_words basisPtr =
   fromIntegral <$> withCbasis basisPtr (foldSomeBasis (pure . getNumberWords))
+
+ls_hs_basis_is_real :: Ptr Cbasis -> IO CBool
+ls_hs_basis_is_real basisPtr =
+  fromIntegral <$> withCbasis basisPtr (foldSomeBasis (pure . fromBool . isBasisReal))
 
 -- foreign export ccall "ls_hs_basis_state_to_string"
 --   ls_hs_basis_state_to_string :: Ptr Cbasis -> Ptr Word64 -> IO CString
@@ -525,6 +532,7 @@ addDeclarations
   , "ls_hs_destroy_symmetry"
   , "ls_hs_symmetry_sector"
   , "ls_hs_symmetry_phase"
+  , "ls_hs_symmetry_periodicity"
   , "ls_hs_symmetry_length"
   , "ls_hs_symmetry_permutation"
   , "ls_hs_destroy_permutation"
@@ -546,6 +554,7 @@ addDeclarations
   , "ls_hs_basis_number_bits"
   , "ls_hs_basis_number_words"
   , "ls_hs_basis_state_to_string"
+  , "ls_hs_basis_is_real"
   , "ls_hs_fixed_hamming_state_to_index"
   , "ls_hs_fixed_hamming_index_to_state"
   , "ls_hs_expr_to_json"

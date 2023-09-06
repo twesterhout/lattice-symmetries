@@ -15,14 +15,14 @@ proc ls_internal_operator_apply_diag_x1(
     const ref op : ls_hs_operator,
     batch_size : int,
     alphas : c_ptrConst(uint(64)),
-    ys : c_ptr(real(64)),
-    xs : c_ptr(real(64))) {
+    ys : c_ptr(?eltType),
+    xs : c_ptr(eltType)) {
   // ls_internal_operator_apply_diag_x1(c_ptrToConst(op), batch_size, alphas, ys, xs);
   // return;
 
   // The diagonal is zero
   if (op.diag_terms == nil || op.diag_terms.deref().number_terms == 0) {
-    POSIX.memset(ys, 0, batch_size:c_size_t * c_sizeof(real(64)));
+    POSIX.memset(ys, 0, batch_size:c_size_t * c_sizeof(eltType));
     return;
   }
 
@@ -30,7 +30,7 @@ proc ls_internal_operator_apply_diag_x1(
   const number_terms = terms.number_terms;
 
   foreach batch_idx in 0 ..# batch_size {
-    var acc : real(64) = 0;
+    var acc : eltType = 0;
     const alpha = alphas[batch_idx];
     for term_idx in 0 ..# number_terms {
       const delta = (alpha & terms.m[term_idx]) == terms.r[term_idx];
@@ -51,7 +51,7 @@ proc ls_internal_operator_apply_off_diag_x1(
     betas : c_ptr(uint(64)),
     coeffs : c_ptr(complex(128)),
     offsets : c_ptr(c_ptrdiff),
-    xs : c_ptrConst(real(64)),
+    xs,
     bufferSize : int) {
   // ls_internal_operator_apply_off_diag_x1(c_ptrToConst(op), batch_size, alphas, betas, coeffs, offsets, xs);
   // return;

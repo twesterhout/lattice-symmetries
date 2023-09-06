@@ -37,7 +37,7 @@ instance Pretty ComplexRational where
     | r == 0 && i == 1 = "ⅈ"
     | r == 0 && i == -1 = "-ⅈ"
     | r == 0 = prettyRational i <> "ⅈ"
-    | otherwise = Pretty.parens $ prettyRational r <> " + " <> prettyRational i <> "ⅈ"
+    | otherwise = Pretty.parens $ prettyRational r <> (if i > 0 then " + " else " - ") <> prettyRational (abs i) <> "ⅈ"
 
 realPart :: ComplexRational -> Rational
 realPart (ComplexRational r _) = r

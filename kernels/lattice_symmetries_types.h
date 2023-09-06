@@ -175,8 +175,8 @@ typedef struct ls_chpl_kernels {
                                   chpl_external_array *, int64_t);
   void (*operator_apply_diag)(ls_hs_operator *, int64_t, uint64_t *,
                               chpl_external_array *, int64_t);
-  void (*matrix_vector_product)(ls_hs_operator *, int, double const *,
-                                double *);
+  void (*matrix_vector_product_f64)(ls_hs_operator *, int, double const *, double *);
+  void (*matrix_vector_product_c128)(ls_hs_operator *, int, ls_hs_scalar const *, ls_hs_scalar *);
 } ls_chpl_kernels;
 /* python-cffi: STOP */
 

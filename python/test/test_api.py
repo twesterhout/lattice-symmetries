@@ -1,6 +1,7 @@
 import glob
 import os
 import lattice_symmetries as ls
+import math
 import numpy as np
 import scipy.sparse.linalg
 from pytest import approx
@@ -48,6 +49,8 @@ def test_kagome_symmetries():
     )
     # top_shift = ls.Symmetry([5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 11, 10], sector=0)
     right_shift = ls.Symmetry([2, 10, 0, 4, 3, 7, 11, 5, 9, 8, 1, 6], sector=1)
+    assert right_shift.periodicity == 2
+    assert right_shift.phase == 0.5
     assert expr == expr.replace_indices(dict(zip(range(12), right_shift.permutation)))
     symmetries = ls.Symmetries([right_shift])
     basis = ls.SpinBasis(
@@ -57,8 +60,11 @@ def test_kagome_symmetries():
     # print(basis.states)
     # print(basis.state_info(basis.states))
     hamiltonian = ls.Operator(basis, expr)
+    assert basis.is_real
+    assert expr.is_real
+    assert hamiltonian.is_real
     energy, state = scipy.sparse.linalg.eigsh(hamiltonian, k=1, which="SA")
-    print(energy)
+    assert energy == approx(-19.95338528)
 
 
 def test_operator_apply():
@@ -94,6 +100,26 @@ def test_simple_spin_expr():
     check(2, "σ⁻₁", np.kron(sm, s0))
     check(3, "σ⁺₀ σᶻ₁ σ⁻₂", np.kron(sm, np.kron(sz, sp)))
     check(3, "σ⁺₀ σ⁻₂", np.kron(sm, np.kron(s0, sp)))
+
+
+def test_complex_spin_expr():
+    sp = np.array([[0, 1], [0, 0]])
+    sm = np.array([[0, 0], [1, 0]])
+    sz = np.diag([1, -1])
+    s0 = np.eye(2)
+
+    def check(number_spins, expression, matrix_ref):
+        basis = ls.SpinBasis(number_spins)
+        basis.build()
+        rows = []
+        for i in range(basis.number_states):
+            v = np.zeros(basis.number_states)
+            v[i] = 1
+            rows.append(ls.Operator(basis, ls.Expr(expression)) @ v)
+        matrix = np.vstack(rows)
+        assert matrix.tolist() == matrix_ref.tolist()
+
+    check(1, "σʸ₀", -1j * sp + 1j * sm)
 
 
 def test_prepare_hphi():

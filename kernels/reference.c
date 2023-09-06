@@ -218,7 +218,8 @@ void ls_hs_unchecked_set_representatives(ls_hs_basis *basis,
 static ls_chpl_kernels global_chpl_kernels = {.enumerate_states = NULL,
                                               .operator_apply_off_diag = NULL,
                                               .operator_apply_diag = NULL,
-                                              .matrix_vector_product = NULL};
+                                              .matrix_vector_product_f64 = NULL,
+                                              .matrix_vector_product_c128 = NULL };
 // static pthread_mutex_t global_chpl_kernels_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 ls_chpl_kernels const *ls_hs_internal_get_chpl_kernels() {

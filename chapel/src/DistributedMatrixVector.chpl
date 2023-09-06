@@ -44,7 +44,6 @@ private proc localDiagonalBatch(indices : range(int, boundKind.both, strideKind.
 }
 
 config const matrixVectorDiagonalNumChunks : int = here.maxTaskPar;
-config const matrixVectorOffDiagonalNumChunks : int = 32 * here.maxTaskPar;
 
 private proc localDiagonal(matrix : Operator,
                            const ref x : [] ?eltType,
@@ -339,11 +338,10 @@ record _RemoteBuffer {
 }
 
 class GlobalPtrStore {
-  var arr : [LocaleSpace] (c_ptr(Basis),
-                           c_ptr(ConcurrentAccessor(real(64))),
-                           c_ptr(_RemoteBuffer(complex(128))),
+  var arr : [LocaleSpace] (c_ptr(_RemoteBuffer(complex(128))),
                            c_ptr(_LocalBuffer(complex(128))),
                            int);
+
 }
 
 var globalPtrStoreNoQueue = new GlobalPtrStore();
@@ -427,10 +425,9 @@ proc _offDiagInitLocalBuffers(numTasks : int, ref localBuffers, const ref ptrSto
   const destLocaleIdx = localBuffers.locale.id;
   coforall loc in Locales do on loc {
     const srcLocaleIdx = loc.id;
-    const (_basis, _accessor, _remoteBufferPtr,
-           _localBufferPtr, _numChunks) = ptrStore[srcLocaleIdx];
+    const (remoteBufferPtr, _localBufferPtr, _numChunks) = ptrStore[srcLocaleIdx];
     for taskIdx in 0 ..# numTasks {
-      ref remoteBuffer = (_remoteBufferPtr + destLocaleIdx * numTasks + taskIdx).deref();
+      ref remoteBuffer = (remoteBufferPtr + destLocaleIdx * numTasks + taskIdx).deref();
       localBuffers[srcLocaleIdx, taskIdx].isFull = c_ptrTo(remoteBuffer.isFull);
     }
   }
@@ -440,10 +437,9 @@ proc _offDiagInitRemoteBuffers(numTasks : int, ref remoteBuffers, const ref ptrS
   const srcLocaleIdx = remoteBuffers.locale.id;
   coforall loc in Locales do on loc {
     const destLocaleIdx = loc.id;
-    const (_basis, _accessor, _remoteBufferPtr,
-           _localBufferPtr, _numChunks) = ptrStore[destLocaleIdx];
+    const (_remoteBufferPtr, localBufferPtr, _numChunks) = ptrStore[destLocaleIdx];
     for taskIdx in 0 ..# numTasks {
-      ref myLocalBuffer = (_localBufferPtr + srcLocaleIdx * numTasks + taskIdx).deref();
+      ref myLocalBuffer = (localBufferPtr + srcLocaleIdx * numTasks + taskIdx).deref();
       ref remoteBuffer = remoteBuffers[destLocaleIdx, taskIdx];
       remoteBuffer.basisStates = myLocalBuffer.basisStates;
       remoteBuffer.coeffs = myLocalBuffer.coeffs;
@@ -851,16 +847,14 @@ private proc localOffDiagonalNoQueue(matrix : Operator,
   // logDebug((c_const_ptrTo(matrix.basis), c_ptrTo(accessor),
   //          c_ptrTo(newRemoteBuffers[0, 0]), c_ptrTo(newLocalBuffers[0, 0]), numChunks));
   // logDebug("before: ", globalPtrStoreNoQueue.arr[here.id]);
-  globalPtrStoreNoQueue.arr[here.id] = (c_const_ptrTo(matrix.basis),
-                                    c_ptrTo(accessor),
-                                    c_ptrTo(newRemoteBuffers[0, 0]),
-                                    c_ptrTo(newLocalBuffers[0, 0]),
-                                    numChunks);
+  globalPtrStoreNoQueue.arr[here.id] = (c_ptrTo(newRemoteBuffers[0, 0]),
+                                        c_ptrTo(newLocalBuffers[0, 0]),
+                                        numChunks);
   // logDebug("after: ", globalPtrStoreNoQueue.arr[here.id]);
   allLocalesBarrier.barrier();
 
   // logDebug("Check #1");
-  const ptrStore : [0 ..# numLocales] globalPtrStoreNoQueue.arr.eltType = globalPtrStoreNoQueue.arr;
+  const ptrStore = globalPtrStoreNoQueue.arr;
   // logDebug("Check #2");
   _offDiagInitLocalBuffers(numProducerTasks, newLocalBuffers, ptrStore);
   // logDebug("Check #3");
@@ -877,9 +871,8 @@ private proc localOffDiagonalNoQueue(matrix : Operator,
   var totalNumberChunks = 0;
   for localeIdx in 0 ..# numLocales {
     if localeIdx != here.id {
-      const (_basis, _accessor, _remoteBufferPtr,
-             _localBufferPtr, _numChunks) = ptrStore[localeIdx];
-      totalNumberChunks += _numChunks;
+      const (_remoteBufferPtr, _localBufferPtr, numChunks) = ptrStore[localeIdx];
+      totalNumberChunks += numChunks;
     }
   }
   // logDebug("Check #7");
@@ -1089,8 +1082,25 @@ proc matrixVectorProduct(const ref matrix : Operator,
   }
 }
 
-export proc ls_chpl_matrix_vector_product(matrixPtr : c_ptr(ls_hs_operator), numVectors : c_int,
-                                          xPtr : c_ptr(real(64)), yPtr : c_ptr(real(64))) {
+export proc ls_chpl_matrix_vector_product_f64(matrixPtr : c_ptr(ls_hs_operator), numVectors : c_int,
+                                              xPtr : c_ptr(real(64)), yPtr : c_ptr(real(64))) {
+  // logDebug("Calling ls_chpl_matrix_vector_product ...");
+  var matrix = new Operator(matrixPtr, owning=false);
+  if matrix.basis.numberWords != 1 then
+    halt("bases with more than 64 bits are not yet implemented");
+  if numVectors != 1 then
+    halt("applying the Operator to more than 1 vector is not yet implemented");
+
+  const ref representatives = matrix.basis.representatives();
+  const numStates = representatives.size;
+  var x = makeArrayFromPtr(xPtr, (numStates,));
+  var y = makeArrayFromPtr(yPtr, (numStates,));
+  localMatrixVector(matrix, x, y, representatives);
+  // logDebug("Done!");
+}
+
+export proc ls_chpl_matrix_vector_product_c128(matrixPtr : c_ptr(ls_hs_operator), numVectors : c_int,
+                                               xPtr : c_ptr(complex(128)), yPtr : c_ptr(complex(128))) {
   // logDebug("Calling ls_chpl_matrix_vector_product ...");
   var matrix = new Operator(matrixPtr, owning=false);
   if matrix.basis.numberWords != 1 then

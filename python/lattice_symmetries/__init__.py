@@ -104,6 +104,14 @@ class Symmetry:
     def sector(self) -> int:
         return lib.ls_hs_symmetry_sector(self._payload)
 
+    @property
+    def phase(self) -> float:
+        return lib.ls_hs_symmetry_phase(self._payload)
+
+    @property
+    def periodicity(self) -> int:
+        return lib.ls_hs_symmetry_periodicity(self._payload)
+
     def __len__(self) -> int:
         return lib.ls_hs_symmetry_length(self._payload)
 
@@ -252,6 +260,10 @@ class Basis:
     @property
     def has_permutation_symmetries(self) -> bool:
         return lib.ls_hs_basis_has_permutation_symmetries(self._payload) != 0
+
+    @property
+    def is_real(self) -> bool:
+        return lib.ls_hs_basis_is_real(self._payload) != 0
 
     @property
     def requires_projection(self) -> bool:
@@ -527,6 +539,10 @@ class Expr(object):
         lib.ls_hs_destroy_string(c_str)
         return s
 
+    @property
+    def is_real(self) -> bool:
+        return lib.ls_hs_expr_is_real(self._payload) != 0
+
     def replace_indices(self, mapping):
         if isinstance(mapping, dict):
             if len(mapping) == 0:
@@ -681,6 +697,9 @@ class Operator(LinearOperator):
     # @property
     # def is_hermitian(self) -> bool:
     #     return lib.ls_hs_operator_is_hermitian(self._payload)
+    @property
+    def is_real(self) -> bool:
+        return self.basis.is_real and self.expression.is_real
 
     def __add__(self, other):
         """Add two operators."""
@@ -741,20 +760,26 @@ class Operator(LinearOperator):
         ]
         return list(zip(coeffs_arr, betas_arr))
 
-    def apply_to_state_vector(self, vector: NDArray[np.float64]) -> NDArray[np.float64]:
+    def apply_to_state_vector(self, vector: NDArray) -> NDArray:
         self._check_basis_is_built("apply_to_state_vector")
-        if vector.dtype != np.float64:
-            raise TypeError(
-                "expected a NDArray[float64], but got {}[{}]"
-                "".format(type(vector).__name__, type(vector.dtype))
-            )
+        kernels = lib.ls_hs_internal_get_chpl_kernels()
+
+        operator_is_real = self.is_real
+        vector_is_real = np.isrealobj(vector)
+
+        if vector_is_real and operator_is_real:
+            vector = np.ascontiguousarray(vector, dtype=np.float64)
+            matrix_vector_product = kernels.matrix_vector_product_f64
+            c_type_str = "double[]"
+        else:
+            vector = np.ascontiguousarray(vector, dtype=np.complex128)
+            matrix_vector_product = kernels.matrix_vector_product_c128
+            c_type_str = "ls_hs_scalar[]"
 
         out = np.empty_like(vector)
-        x_ptr = ffi.from_buffer("double[]", vector, require_writable=False)
-        y_ptr = ffi.from_buffer("double[]", out, require_writable=True)
-
-        kernels = lib.ls_hs_internal_get_chpl_kernels()
-        kernels.matrix_vector_product(self._payload, 1, x_ptr, y_ptr)
+        x_ptr = ffi.from_buffer(c_type_str, vector, require_writable=False)
+        y_ptr = ffi.from_buffer(c_type_str, out, require_writable=True)
+        matrix_vector_product(self._payload, 1, x_ptr, y_ptr)
         return out
 
     def _check_basis_is_built(self, attribute):

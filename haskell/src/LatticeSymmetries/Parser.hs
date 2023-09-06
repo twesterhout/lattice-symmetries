@@ -19,7 +19,7 @@ import LatticeSymmetries.ComplexRational
 import LatticeSymmetries.Generator
 import Text.Megaparsec
 import Text.Megaparsec.Char
-import Text.Megaparsec.Char.Lexer (decimal, float, lexeme)
+import Text.Megaparsec.Char.Lexer (decimal, float, lexeme, signed)
 import Prelude hiding (Product, Sum, many, optional, some, (<|>))
 
 data SFermion
@@ -78,7 +78,34 @@ pProduct = fmap SProduct . NonEmpty.some $ do
     ]
 
 pCoeff :: Parser ℂ
-pCoeff = realToFrac @Double <$> (try float <|> decimal)
+pCoeff =
+  choice
+    [ between (lexeme space (char '(')) (char ')') $
+        -- lexeme space $
+        choice
+          [ try bothP
+          , try ((0 `ComplexRational`) <$> imagP)
+          , (`ComplexRational` 0) <$> realP
+          ]
+    , try $ (0 `ComplexRational`) <$> imagP
+    , (`ComplexRational` 0) <$> realP
+    ]
+  where
+    imaginaryUnit =
+      choice
+        [ string "j"
+        , string "ⅈ"
+        , string "im"
+        ]
+    realP = realToFrac @Double <$> (try float <|> decimal)
+    imagP = do
+      c <- fromMaybe 1 <$> optional (try realP)
+      _ <- imaginaryUnit
+      pure c
+    bothP = do
+      !r <- lexeme space (signed space realP)
+      !i <- lexeme space (signed space imagP)
+      pure (ComplexRational r i)
 
 pPrimitive :: Parser SExpr
 pPrimitive = SPrimitive <$> (pPrimitiveSpin <|> pPrimitiveFermion)

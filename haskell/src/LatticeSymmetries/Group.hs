@@ -7,6 +7,7 @@ module LatticeSymmetries.Group
   , symmetrySector
   , symmetryPermutation
   , symmetryPhase
+  , getPeriodicity
   , Symmetries (..)
   , mkSymmetries
   , areSymmetriesReal
@@ -103,6 +104,15 @@ data Symmetries = Symmetries
   }
   deriving stock (Show, Eq)
 
+getCharacter :: Symmetry -> Complex Double
+getCharacter (symmetryPhase -> φ)
+  | φ == 0 = 1 :+ 0
+  | φ == 1 % 2 = (-1) :+ 0
+  | φ == (-1) % 2 = (-1) :+ 0
+  | φ == 1 % 4 = 0 :+ 1
+  | φ == (-1) % 4 = 0 :+ (-1)
+  | otherwise = cos (-2 * pi * realToFrac φ) :+ sin (-2 * pi * realToFrac φ)
+
 mkSymmetries :: [Symmetry] -> Either Text Symmetries
 mkSymmetries [] = Right emptySymmetries
 mkSymmetries gs@(g : _)
@@ -112,8 +122,9 @@ mkSymmetries gs@(g : _)
           let permutations = G.fromList $ symmetryPermutation <$> symmetries
               permGroup = PermutationGroup permutations
               benesNetwork = mkBatchedBenesNetwork $ G.map toBenesNetwork permutations
-              charactersReal = G.fromList $ (\φ -> cos (-2 * pi * realToFrac φ)) . symmetryPhase <$> symmetries
-              charactersImag = G.fromList $ (\φ -> sin (-2 * pi * realToFrac φ)) . symmetryPhase <$> symmetries
+              characters = getCharacter <$> symmetries
+              charactersReal = G.fromList $ realPart <$> characters
+              charactersImag = G.fromList $ imagPart <$> characters
            in Right $ Symmetries permGroup benesNetwork charactersReal charactersImag
         else Left "incompatible symmetries"
   | otherwise = Left "symmetries have different number of sites"
