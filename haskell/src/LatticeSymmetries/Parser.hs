@@ -66,7 +66,7 @@ pSum = fmap SSum . many $ do
 
 pScaled :: Parser SExpr
 pScaled = do
-  c <- fromMaybe 1 <$> optional (lexeme space pCoeff)
+  c <- fromMaybe 1 <$> optional (lexeme space (try pCoeff))
   p <- lexeme space pProduct
   pure $ SScaled c p
 

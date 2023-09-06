@@ -20,6 +20,8 @@ spec = do
         `shouldBe` "5.0 n₃↑ c†₁₀↑ - 5.0 n₃↑ c†₂↓"
       toPrettyText (mkExpr SpinlessFermionTag "3.25 (c†23-5(c12-n2))")
         `shouldBe` "16.25 n₂ - 16.25 c₁₂ + 3.25 c†₂₃"
+      toPrettyText (mkExpr SpinfulFermionTag "- (c†₁↑ c₀↑ + c†₀↑ c₁↑ + c†₁↓ c₀↓ + c†₀↓ c₁↓)")
+        `shouldBe` "-c†₀↑ c₁↑ + c₀↑ c†₁↑ - c†₀↓ c₁↓ + c₀↓ c†₁↓"
     it "handles complex numbers" $ do
       toPrettyText (mkExpr SpinTag "j σ⁺₅") `shouldBe` "ⅈ σ⁺₅"
       toPrettyText (mkExpr SpinTag "-2im σ⁺₅") `shouldBe` "-2.0ⅈ σ⁺₅"

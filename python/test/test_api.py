@@ -120,6 +120,7 @@ def test_complex_spin_expr():
         assert matrix.tolist() == matrix_ref.tolist()
 
     check(1, "σʸ₀", -1j * sp + 1j * sm)
+    check(3, "3im σ⁺₀ σᶻ₁ σʸ₂", 3j * np.kron((1j * sm - 1j * sp), np.kron(sz, sp)))
 
 
 def test_prepare_hphi():
