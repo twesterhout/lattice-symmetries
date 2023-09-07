@@ -11,12 +11,15 @@ stdenv.mkDerivation {
   src = ./.;
 
   configurePhase = "ln --symbolic ${lattice-symmetries.ffi} src/FFI.chpl";
-  makeFlags = [
-    "PREFIX=$(out)"
-    "OPTIMIZATION=--fast"
-    "CHPL_CFLAGS='-I${lattice-symmetries.kernels}/include'"
-    "CHPL_LDFLAGS='-L${lattice-symmetries.haskell.lib}/lib'"
-  ];
+  preBuild = ''
+    makeFlagsArray+=(
+      PREFIX="$out"
+      OPTIMIZATION="--fast"
+      CHPL_TARGET_CPU="nehalem"
+      CHPL_CFLAGS="--no-ieee-float -I${lattice-symmetries.kernels}/include"
+      CHPL_LDFLAGS="-L${lattice-symmetries.haskell.lib}/lib"
+    )
+  '';
   preInstall = ''
     for f in $(ls lib); do
       chapelFixupBinary lib/$f
