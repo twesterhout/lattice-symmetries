@@ -1,3 +1,7 @@
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedRecordDot #-}
+
 module LatticeSymmetries.Group
   ( PermutationGroup (..)
   , fromGenerators
@@ -18,12 +22,23 @@ module LatticeSymmetries.Group
     -- ** Low-level interface for FFI
   , newCpermutation_group
   , destroyCpermutation_group
+
+    -- * Automorphisms
+  , Hypergraph (..)
+  , cyclicGraph
+  , cyclicGraph3
+  , distancePartition
+  , autsSearchTree
   )
 where
 
+import Control.Exception (assert)
 import Data.Aeson (FromJSON (..), ToJSON (..), object, withObject, (.:), (.=))
 import Data.Complex
 import Data.List qualified
+import Data.List.NonEmpty qualified as NonEmpty
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Data.Ratio
 import Data.Set qualified as Set
 import Data.Vector qualified as B
@@ -88,7 +103,7 @@ mkSymmetry p sector
 symmetryNumberSites :: Symmetry -> Int
 symmetryNumberSites (Symmetry p _) = G.length (unPermutation p)
 
-modOne :: Integral a => Ratio a -> Ratio a
+modOne :: (Integral a) => Ratio a -> Ratio a
 modOne x
   | x >= 1 = x - fromIntegral (numerator x `div` denominator x)
   | otherwise = x
@@ -166,11 +181,11 @@ emptySymmetries = Symmetries (PermutationGroup G.empty) emptyBatchedBenesNetwork
 areSymmetriesReal :: Symmetries -> Bool
 areSymmetriesReal = G.all (== 0) . symmCharactersImag
 
-toSymmetryList :: HasCallStack => Symmetries -> [Symmetry]
+toSymmetryList :: (HasCallStack) => Symmetries -> [Symmetry]
 toSymmetryList (Symmetries (PermutationGroup gs) _ λsRe λsIm) =
   Data.List.zipWith3 toSymmetry (G.toList gs) (G.toList λsRe) (G.toList λsIm)
   where
-    toSymmetry :: HasCallStack => Permutation -> Double -> Double -> Symmetry
+    toSymmetry :: (HasCallStack) => Permutation -> Double -> Double -> Symmetry
     toSymmetry g λRe λIm
       | r ≈ 1 && s' ≈ fromIntegral (round s' :: Int) = mkSymmetry g (round s')
       | otherwise = error $ "failed to reconstruct Symmetry from " <> show (toList g) <> " and λ = " <> show λRe <> " + " <> show λIm <> "j"
@@ -220,3 +235,120 @@ newCpermutation_group x =
 
 destroyCpermutation_group :: Ptr Cpermutation_group -> IO ()
 destroyCpermutation_group = free
+
+data Hypergraph a = Hypergraph {vertices :: !(Set a), hyperedges :: !(Set (Set a))}
+  deriving stock (Eq, Ord, Show)
+
+data SearchTree a = SearchTree !Bool !a [SearchTree a]
+  deriving stock (Eq, Ord, Show, Functor)
+
+newtype Partitioning a = Partitioning (NonEmpty [a])
+  deriving stock (Show, Eq)
+
+allSingletons :: Partitioning a -> Bool
+allSingletons (Partitioning xs) = all p xs
+  where
+    p [_] = True
+    p _ = False
+
+distancePartition
+  :: forall a
+   . (Ord a)
+  => Hypergraph a
+  -- ^ The hypergraph to partition
+  -> a
+  -- ^ A selected vertex
+  -> Partitioning a
+  -- ^ Groups of vertices by their distance to the selected vertex
+distancePartition g v0 =
+  Partitioning . NonEmpty.fromList . fmap Set.toList $
+    go (Set.singleton v0) (Set.toList g.hyperedges)
+  where
+    go :: Set a -> [Set a] -> [Set a]
+    go !seen hyperedges
+      | Set.null boundary = [foldl' Set.union Set.empty others | not (null others)]
+      | otherwise = boundary : go (Set.union seen combined) others
+      where
+        shouldIncludeHyperedge = any (`Set.member` seen) . Set.toList
+        (toBeIncluded, others) = Data.List.partition shouldIncludeHyperedge hyperedges
+        !combined = foldl' Set.union Set.empty toBeIncluded
+        !boundary = combined Set.\\ seen
+
+-- | c n is the cyclic graph on n vertices
+cyclicGraph :: Int -> Hypergraph Int
+cyclicGraph n
+  | n >= 3 = Hypergraph (Set.fromList vs) (Set.fromList (Set.fromList <$> es))
+  | otherwise = error "n must be at least 3"
+  where
+    vs = [0 .. n - 1]
+    es = [[i, (i + 1) `mod` n] | i <- [0 .. n - 1]]
+
+-- cyclic hypergraph with 3-vertex edges
+cyclicGraph3 :: Int -> Hypergraph Int
+cyclicGraph3 n
+  | n >= 3 = Hypergraph (Set.fromList vs) (Set.fromList (Set.fromList <$> es))
+  | otherwise = error "n must be at least 3"
+  where
+    vs = [0 .. (n - 1)]
+    es = [[i, (i + 1) `mod` n, (i + 2) `mod` n] | i <- [0 .. (n - 1)]]
+
+intersectAllToAll :: (Ord a) => Partitioning a -> Partitioning a -> Partitioning a
+intersectAllToAll (Partitioning p1) (Partitioning p2) =
+  Partitioning . NonEmpty.fromList $
+    Data.List.intersect <$> NonEmpty.toList p1 <*> NonEmpty.toList p2
+
+createMappings :: Partitioning a -> Partitioning a -> [Mapping a]
+createMappings (Partitioning (NonEmpty.toList -> src)) (Partitioning (NonEmpty.toList -> tgt)) =
+  zipWith Mapping (concat src) (concat tgt)
+
+pickOne :: (Ord a) => Map a (Partitioning a) -> Partitioning a -> (a, Partitioning a)
+pickOne _ (Partitioning ([] :| _)) = error "pickOne expects a normalized Partitioning"
+pickOne dps (Partitioning ((x : xs) :| rest)) = (x, intersectAllToAll p (dps Map.! x))
+  where
+    p = Partitioning (xs :| rest)
+
+pickAll :: (Ord a) => Map a (Partitioning a) -> Partitioning a -> [(a, Partitioning a)]
+pickAll dps (Partitioning (xss :| rest)) = do
+  (x, xs) <- picks xss
+  let p = Partitioning (xs :| rest)
+  pure (x, intersectAllToAll p (dps Map.! x))
+  where
+    picks :: [a] -> [(a, [a])]
+    picks [] = []
+    picks (x : xs) = (x, xs) : [(y, x : ys) | (y, ys) <- picks xs]
+
+normalizeWhenCompatible :: Partitioning a -> Partitioning a -> Maybe (Partitioning a, Partitioning a)
+normalizeWhenCompatible (Partitioning (NonEmpty.toList -> src)) (Partitioning (NonEmpty.toList -> tgt))
+  | fmap length src == fmap length tgt =
+      let normalize = Partitioning . NonEmpty.fromList . filter (not . null)
+       in Just (normalize src, normalize tgt)
+  | otherwise = Nothing
+
+-- | Generate a SearchTree of graph automorphisms using distance partition
+autsSearchTree :: Hypergraph Int -> SearchTree [Mapping Int]
+autsSearchTree g = dfs [] (Partitioning (vs :| [])) (Partitioning (vs :| []))
+  where
+    dfs :: [Mapping Int] -> Partitioning Int -> Partitioning Int -> SearchTree [Mapping Int]
+    dfs mappings srcPart trgPart
+      -- check compatibility at the final step
+      | allSingletons srcPart =
+          -- isCompatible xys = isAutomorphism g xys
+          assert (allSingletons trgPart) $
+            let p = mappings <> createMappings srcPart trgPart
+             in SearchTree (isAutomorphism g p) p []
+      | otherwise =
+          let (x, srcPart') = pickOne dps srcPart
+              branches = do
+                (y, trgPart') <- pickAll dps trgPart
+                case normalizeWhenCompatible srcPart' trgPart' of
+                  Just (srcPart'', trgPart'') -> pure $ dfs (Mapping x y : mappings) srcPart'' trgPart''
+                  Nothing -> []
+           in SearchTree False mappings branches
+    vs = Set.toAscList g.vertices
+    !dps = Map.fromAscList [(v, distancePartition g v) | v <- vs]
+
+isAutomorphism :: Hypergraph Int -> [Mapping Int] -> Bool
+isAutomorphism g mappings = g.hyperedges == Set.map transformEdge g.hyperedges
+  where
+    i = unPermutation $ permutationFromMappings mappings
+    transformEdge = Set.map (i G.!)

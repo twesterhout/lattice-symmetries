@@ -13,6 +13,8 @@ module LatticeSymmetries.Benes
     BatchedBenesNetwork (..),
     emptyBatchedBenesNetwork,
     mkBatchedBenesNetwork,
+    permutationFromMappings,
+    Mapping (..)
   )
 where
 
@@ -99,6 +101,13 @@ mkPermutation p
 
 instance Semigroup Permutation where
   (<>) x (Permutation ys) = Permutation $ permuteVector x ys
+
+data Mapping a = Mapping !a !a
+  deriving stock (Show, Eq, Ord)
+
+permutationFromMappings :: [Mapping Int] -> Permutation
+permutationFromMappings = Permutation . U.fromList . fmap (\(Mapping _ y) -> y)
+
 
 {-
 randomShuffle :: (RandomGen g, G.Vector v a) => v a -> g -> (v a, g)
