@@ -18,12 +18,12 @@ final: prev: {
       # hash = "sha256-I/rdz4R7fI2kgSw7qlIxr/pvw+M+lXFuJie6U71tXCk=";
 
       # BROKEN Aug 8
-      # rev = "57e4a64aa1de4b8ee6648ab39abba9492783be24";
-      # hash = "sha256-Ql22LRIWgfJua6piJztjTiGRBS/SQr1otBHQePjhqtU=";
+      rev = "57e4a64aa1de4b8ee6648ab39abba9492783be24";
+      hash = "sha256-Ql22LRIWgfJua6piJztjTiGRBS/SQr1otBHQePjhqtU=";
 
       # Fails to compile :/
-      rev = "d0f526b9685d3c651d52f87723b7b23d83c9817a";
-      hash = "sha256-bI8JQMxwI9S41AMpF72wzuAyFwxQ2/DKlfhr9tiZ0z4=";
+      # rev = "d0f526b9685d3c651d52f87723b7b23d83c9817a";
+      # hash = "sha256-bI8JQMxwI9S41AMpF72wzuAyFwxQ2/DKlfhr9tiZ0z4=";
 
       # WORKS Aug 9
       # rev = "038cdee419658caffd906cbcf755a230cd8702e1";

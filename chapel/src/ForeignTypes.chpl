@@ -1,6 +1,7 @@
 module ForeignTypes {
   use FFI;
   use CommonParameters;
+  import Communication;
 
   use CTypes;
   use ByteBufferHelpers;
@@ -24,11 +25,19 @@ module ForeignTypes {
   }
 
   inline proc GET(addr, node, rAddr, size) {
-    __primitive("chpl_comm_get", addr, node, rAddr, size);
+    // __primitive("chpl_comm_get", addr, node, rAddr, size);
+    Communication.get(dest = addr,
+                      src = rAddr,
+                      srcLocID = node,
+                      numBytes = size);
   }
 
   inline proc PUT(addr, node, rAddr, size) {
-    __primitive("chpl_comm_put", addr, node, rAddr, size);
+    // __primitive("chpl_comm_put", addr, node, rAddr, size);
+    Communication.put(dest = rAddr,
+                      src = addr,
+                      destLocID = node,
+                      numBytes = size);
   }
 
   proc unsafeViewAsExternalArray(const ref arr: []): chpl_external_array {
