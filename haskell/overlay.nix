@@ -1,4 +1,5 @@
 { lib
+, stdenv
 , withPic
 }:
 
@@ -28,7 +29,8 @@ self: super: rec {
               '';
             });
       }
-      // lib.optionalAttrs (withPic && (lib.versionAtLeast hsuper.ghc.version "9.6.1")) {
+      # We only need to rebuild all packages with fPIC on Linux, Darwin does it by default (right?)
+      // lib.optionalAttrs (stdenv.isLinux && withPic && (lib.versionAtLeast hsuper.ghc.version "9.6.1")) {
         # Ensure that all Haskell packages are built with -fPIC
         mkDerivation = args: (hsuper.mkDerivation args).overrideAttrs (attrs: {
           configureFlags = (attrs.configureFlags or [ ]) ++ [

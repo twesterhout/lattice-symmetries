@@ -39,9 +39,11 @@
         # these static libraries to build a self-contained shared library.
         (final: prev:
           let
-            ourGhc = prev.haskell.compiler.ghc962.override {
-              enableRelocatedStaticLibs = true;
-            };
+            ourGhc =
+              if prev.stdenv.isLinux then
+                prev.haskell.compiler.ghc962.override { enableRelocatedStaticLibs = true; }
+              else
+                prev.haskell.compiler.ghc962;
           in
           lib.recursiveUpdate prev {
             haskell.packages.ghc962.ghc = ourGhc;
@@ -54,73 +56,6 @@
         overlays = [ (composed-overlay args) ];
       };
 
-      # test-matrix-vector = pkgs.stdenv.mkDerivation {
-      #   pname = "test-matrix-vector";
-      #   inherit version;
-      #   src = ./chapel;
-
-      #   configurePhase = ''
-      #     ln --symbolic ${lattice-symmetries-chapel-ffi} src/FFI.chpl
-      #   '';
-
-      #   buildPhase = ''
-      #     make \
-      #       CHPL_COMM=gasnet \
-      #       CHPL_COMM_SUBSTRATE=smp \
-      #       OPTIMIZATION=--fast \
-      #       CHPL_CFLAGS='-I${lattice-symmetries-kernels}/include' \
-      #       CHPL_LDFLAGS='-L${lattice-symmetries-haskell.lib}/lib' \
-      #       HDF5_CFLAGS='-I${pkgs.hdf5.dev}/include' \
-      #       HDF5_LDFLAGS='-L${pkgs.hdf5}/lib -lhdf5_hl -lhdf5 -lrt' \
-      #       bin/TestMatrixVectorProduct
-
-      #     chapelFixupBinary bin/TestMatrixVectorProduct
-      #     chapelFixupBinary bin/TestMatrixVectorProduct_real
-      #   '';
-
-      #   installPhase = ''
-      #     mkdir -p $out/bin
-      #     install -Dm 755 bin/TestMatrixVectorProduct* $out/bin
-      #   '';
-
-      #   nativeBuildInputs = [ chapel chapelFixupBinary ];
-      # };
-
-      # lattice-symmetries-python = pkgs.python3Packages.buildPythonPackage {
-      #   pname = "lattice-symmetries";
-      #   inherit version;
-      #   src = ./python;
-
-      #   buildInputs = [
-      #     lattice-symmetries-kernels
-      #     lattice-symmetries-haskell
-      #     lattice-symmetries-chapel
-      #   ];
-      #   propagatedBuildInputs = with pkgs.python3Packages; [
-      #     cffi
-      #     loguru
-      #     numpy
-      #     scipy
-      #   ];
-
-      #   postPatch = ''
-      #     awk '/python-cffi: START/{flag=1;next}/python-cffi: STOP/{flag=0}flag' \
-      #       ${lattice-symmetries-kernels}/include/lattice_symmetries_types.h \
-      #       >lattice_symmetries/extracted_declarations.h
-      #     awk '/python-cffi: START/{flag=1;next}/python-cffi: STOP/{flag=0}flag' \
-      #       ${lattice-symmetries-haskell}/include/lattice_symmetries_functions.h \
-      #       >>lattice_symmetries/extracted_declarations.h
-      #   '';
-
-      #   installCheckPhase = ''
-      #     # we want to import the installed module that also contains the compiled library
-      #     rm -rf lattice_symmetries
-      #     runHook pytestCheckPhase
-      #   '';
-      #   nativeCheckInputs = with pkgs.python3Packages; [
-      #     pytestCheckHook
-      #   ];
-      # };
     in
     {
       overlays.default = composed-overlay { withPic = true; };
