@@ -27,8 +27,12 @@ module LatticeSymmetries.Group
   , Hypergraph (..)
   , cyclicGraph
   , cyclicGraph3
+  , rectangularGraph
   , distancePartition
   , autsSearchTree
+  , isAutomorphism
+  , transversalGeneratingSet
+  , groupFromTransversalGeneratingSet
   )
 where
 
@@ -48,6 +52,7 @@ import Foreign.C.Types (CDouble)
 import Foreign.Marshal (free, new)
 import Foreign.Ptr
 import GHC.Exts (IsList (..))
+import LatticeSymmetries.Algebra (sortVectorBy)
 import LatticeSymmetries.Benes
 import LatticeSymmetries.Dense
 import LatticeSymmetries.FFI
@@ -292,6 +297,12 @@ cyclicGraph3 n
     vs = [0 .. (n - 1)]
     es = [[i, (i + 1) `mod` n, (i + 2) `mod` n] | i <- [0 .. (n - 1)]]
 
+rectangularGraph :: Int -> Int -> Hypergraph Int
+rectangularGraph n k = Hypergraph (Set.fromList vs) (Set.fromList (Set.fromList <$> es))
+  where
+    vs = [0 .. n * k - 1]
+    es = [[k * i + j, k * i + ((j + 1) `mod` k)] | i <- [0 .. n - 1], j <- [0 .. k - 1]] ++ [[k * i + j, k * ((i + 1) `mod` n) + j] | i <- [0 .. n - 1], j <- [0 .. k - 1]]
+
 intersectAllToAll :: (Ord a) => Partitioning a -> Partitioning a -> Partitioning a
 intersectAllToAll (Partitioning p1) (Partitioning p2) =
   Partitioning . NonEmpty.fromList $
@@ -317,11 +328,12 @@ pickAll dps (Partitioning (xss :| rest)) = do
     picks [] = []
     picks (x : xs) = (x, xs) : [(y, x : ys) | (y, ys) <- picks xs]
 
-normalizeWhenCompatible :: Partitioning a -> Partitioning a -> Maybe (Partitioning a, Partitioning a)
+normalizeWhenCompatible :: (Ord a) => Partitioning a -> Partitioning a -> Maybe (Partitioning a, Partitioning a)
 normalizeWhenCompatible (Partitioning (NonEmpty.toList -> src)) (Partitioning (NonEmpty.toList -> tgt))
   | fmap length src == fmap length tgt =
       let normalize = Partitioning . NonEmpty.fromList . filter (not . null)
-       in Just (normalize src, normalize tgt)
+       in -- (src', tgt') = unzip $ Data.List.sort $ zip (filter (not . null) src) (filter (not . null) tgt)
+          Just (normalize src, normalize tgt)
   | otherwise = Nothing
 
 -- | Generate a SearchTree of graph automorphisms using distance partition
@@ -341,14 +353,55 @@ autsSearchTree g = dfs [] (Partitioning (vs :| [])) (Partitioning (vs :| []))
               branches = do
                 (y, trgPart') <- pickAll dps trgPart
                 case normalizeWhenCompatible srcPart' trgPart' of
-                  Just (srcPart'', trgPart'') -> pure $ dfs (Mapping x y : mappings) srcPart'' trgPart''
+                  Just (srcPart'', trgPart'') ->
+                    pure $
+                      dfs (Mapping x y : mappings) srcPart'' trgPart''
                   Nothing -> []
            in SearchTree False mappings branches
     vs = Set.toAscList g.vertices
     !dps = Map.fromAscList [(v, distancePartition g v) | v <- vs]
 
+transversalGeneratingSet :: Int -> SearchTree [Mapping Int] -> B.Vector Permutation
+transversalGeneratingSet k = B.fromList . go
+  where
+    go (SearchTree True xys _) =
+      let !p = permutationFromMappings (Just k) xys
+       in [p | not (isIdentityPermutation p)]
+    go (SearchTree False _ []) = []
+    go (SearchTree False _ (t : ts)) = concatMap (take 1 . go) ts <> go t
+
+groupFromTransversalGeneratingSet :: Int -> B.Vector Permutation -> B.Vector Permutation
+groupFromTransversalGeneratingSet k tgs =
+  B.fromList $ Data.List.foldr1 (<>) <$> sequence transversals
+  where
+    transversals =
+      fmap ((identityPermutation k :) . B.toList . fmap fst) $
+        B.groupBy (\g h -> snd g == snd h) $
+          sortVectorBy (comparing snd) $
+            fmap (\p -> (p, minimalSupport p)) tgs
+
+-- strongGeneratingSet :: SearchTree [Mapping Int] -> [[Mapping Int]]
+-- strongGeneratingSet = go []
+--   where
+--     go gs (SearchTree True xys _) = xys : gs
+--     go gs (SearchTree False xys ts) =
+--       case listToMaybe $ reverse $ filter (\(Mapping x y) -> x /= y) xys of -- the first vertex that isn't fixed
+--         Nothing -> Data.List.foldl' (\hs t -> go hs t) gs ts
+--         Just (Mapping x y) ->
+--           if y `elem` (x .^^ gs)
+--             then gs
+--             else find1New gs ts
+--     find1New gs (t : ts) =
+--       let hs = instrongTerminals gs t
+--        in if take 1 gs /= take 1 hs -- we know a new element would be placed at the front
+--             then hs
+--             else find1New gs ts
+--     find1New gs [] = gs
+
 isAutomorphism :: Hypergraph Int -> [Mapping Int] -> Bool
 isAutomorphism g mappings = g.hyperedges == Set.map transformEdge g.hyperedges
   where
-    i = unPermutation $ permutationFromMappings mappings
+    i =
+      unPermutation $
+        permutationFromMappings (Just (Set.size g.vertices)) mappings
     transformEdge = Set.map (i G.!)

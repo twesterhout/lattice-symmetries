@@ -1,41 +1,45 @@
 module LatticeSymmetries.Benes
-  ( Permutation,
-    unPermutation,
-    mkPermutation,
-    permuteVector,
-    identityPermutation,
-    permutationLength,
-    -- randomPermutation,
-    BenesNetwork (..),
-    toBenesNetwork,
-    permuteBits,
-    permuteBits',
-    BatchedBenesNetwork (..),
-    emptyBatchedBenesNetwork,
-    mkBatchedBenesNetwork,
-    permutationFromMappings,
-    Mapping (..)
+  ( Permutation
+  , unPermutation
+  , mkPermutation
+  , permuteVector
+  , identityPermutation
+  , permutationLength
+  -- randomPermutation,
+  , BenesNetwork (..)
+  , toBenesNetwork
+  , permuteBits
+  , permuteBits'
+  , BatchedBenesNetwork (..)
+  , emptyBatchedBenesNetwork
+  , mkBatchedBenesNetwork
+  , permutationFromMappings
+  , isIdentityPermutation
+  , minimalSupport
+  , Mapping (..)
   )
 where
 
 import Control.Monad.ST
 import Data.Aeson (FromJSON (..), ToJSON (..))
 import Data.Bits
-import qualified Data.List as L
-import qualified Data.Primitive.Ptr as P
-import qualified Data.Set as Set
-import qualified Data.Vector as B
+import Data.List qualified as L
+import Data.Primitive.Ptr qualified as P
+import Data.Set qualified as Set
+import Data.Vector qualified as B
 import Data.Vector.Generic ((!))
-import qualified Data.Vector.Generic as G
-import qualified Data.Vector.Generic.Mutable as GM
-import qualified Data.Vector.Storable as S
-import qualified Data.Vector.Storable.Mutable as SM
-import qualified Data.Vector.Unboxed as U
+import Data.Vector.Generic qualified as G
+import Data.Vector.Generic.Mutable qualified as GM
+import Data.Vector.Storable qualified as S
+import Data.Vector.Storable.Mutable qualified as SM
+import Data.Vector.Unboxed qualified as U
+import Data.Vector.Unboxed.Mutable qualified as UM
 import GHC.Exts (IsList (..))
 import LatticeSymmetries.BitString
 import LatticeSymmetries.Dense
 import LatticeSymmetries.Utils
 import System.IO.Unsafe (unsafePerformIO)
+
 -- import System.Random
 import Prelude hiding (cycle)
 
@@ -64,14 +68,14 @@ instance IsList Permutation where
   fromList p = mkPermutation (G.fromList p)
 
 -- | Rearrange elements of the input vector according to the given permutation.
-permuteVector ::
-  (HasCallStack, G.Vector v a) =>
-  -- | Specifies how to order elements
-  Permutation ->
-  -- | Input vector
-  v a ->
-  -- | Rearranged vector
-  v a
+permuteVector
+  :: (HasCallStack, G.Vector v a)
+  => Permutation
+  -- ^ Specifies how to order elements
+  -> v a
+  -- ^ Input vector
+  -> v a
+  -- ^ Rearranged vector
 permuteVector (Permutation p) xs
   | G.length p == G.length xs = G.generate (G.length p) (\i -> G.unsafeIndex xs (G.unsafeIndex p i))
   | otherwise = error $ "length mismatch: " <> show (G.length p) <> " != " <> show (G.length xs)
@@ -82,21 +86,21 @@ permutationLength :: Permutation -> Int
 permutationLength (Permutation p) = G.length p
 
 -- | Generate the identity permutation of given length.
-identityPermutation ::
-  HasCallStack =>
-  -- | Length of the permutation
-  Int ->
-  Permutation
+identityPermutation
+  :: (HasCallStack)
+  => Int
+  -- ^ Length of the permutation
+  -> Permutation
 identityPermutation size
   | size >= 0 = Permutation $ G.generate size id
   | otherwise = error $ "invalid size: " <> show size
 
 -- | Create a permutation from vector.
-mkPermutation :: HasCallStack => U.Vector Int -> Permutation
+mkPermutation :: (HasCallStack) => U.Vector Int -> Permutation
 mkPermutation p
   | Set.toAscList (Set.fromList (G.toList p)) == [0 .. G.length p - 1]
       && not (G.null p) =
-    Permutation p
+      Permutation p
   | otherwise = withFrozenCallStack $ error $ "invalid permutation: " <> show p
 
 instance Semigroup Permutation where
@@ -105,9 +109,20 @@ instance Semigroup Permutation where
 data Mapping a = Mapping !a !a
   deriving stock (Show, Eq, Ord)
 
-permutationFromMappings :: [Mapping Int] -> Permutation
-permutationFromMappings = Permutation . U.fromList . fmap (\(Mapping _ y) -> y)
+permutationFromMappings :: Maybe Int -> [Mapping Int] -> Permutation
+permutationFromMappings maybeN mappings = runST $ do
+  p <- UM.generate n id
+  forM_ mappings $ \(Mapping x y) ->
+    UM.write p x y
+  mkPermutation <$> U.unsafeFreeze p
+  where
+    !n = fromMaybe ((+ 1) . L.maximum $ (\(Mapping x y) -> max x y) <$> mappings) maybeN
 
+minimalSupport :: Permutation -> Maybe Int
+minimalSupport = G.findIndex (uncurry (/=)) . G.indexed . unPermutation
+
+isIdentityPermutation :: Permutation -> Bool
+isIdentityPermutation = G.all (uncurry (==)) . G.indexed . unPermutation
 
 {-
 randomShuffle :: (RandomGen g, G.Vector v a) => v a -> g -> (v a, g)
@@ -218,8 +233,8 @@ solveCycle edges = go [] edges
       | otherwise = error "unsolvable cycle"
     go acc (e₀ : e₁ : es)
       | shouldSwap e₀ e₁ =
-        let (Edge loc₁ pᵢ@(Point i _) pⱼ@(Point j _)) = e₁
-         in go (Swap loc₁ i j : acc) (Edge loc₁ pⱼ pᵢ : es)
+          let (Edge loc₁ pᵢ@(Point i _) pⱼ@(Point j _)) = e₁
+           in go (Swap loc₁ i j : acc) (Edge loc₁ pⱼ pᵢ : es)
       | otherwise = go acc (e₁ : es)
     go _ _ = error "should not have happened"
 
@@ -245,9 +260,9 @@ applySwaps perm swaps = runST $ do
       GM.write inverse pa b
 
 data SolverState = SolverState
-  { ssSource :: !InvertiblePermutation,
-    ssTarget :: !InvertiblePermutation,
-    ssDelta :: !Int
+  { ssSource :: !InvertiblePermutation
+  , ssTarget :: !InvertiblePermutation
+  , ssDelta :: !Int
   }
 
 initialEdges :: SolverState -> [Edge]
@@ -269,8 +284,8 @@ stageCycles s = cycles Set.empty (initialEdges s)
     cycles _ [] = []
     cycles !visited (!e : es)
       | Set.notMember e visited =
-        let cycle = getCycle (ssDelta s) (ssSource s) (ssTarget s) e
-         in cycle : cycles (visited `Set.union` Set.fromList cycle) es
+          let cycle = getCycle (ssDelta s) (ssSource s) (ssTarget s) e
+           in cycle : cycles (visited `Set.union` Set.fromList cycle) es
       | otherwise = cycles visited es
 
 solveStage :: SolverState -> (Integer, Integer, SolverState)
@@ -294,8 +309,8 @@ solve src tgt = unpack $ go s₀
     s₀ = SolverState src tgt 1
     go !s
       | 2 * ssDelta s <= n =
-        let (a, b, s') = solveStage s
-         in (a, b, ssDelta s) : go s'
+          let (a, b, s') = solveStage s
+           in (a, b, ssDelta s) : go s'
       | otherwise = []
 
 data BenesNetwork = BenesNetwork {bnMasks :: !(B.Vector Integer), bnShifts :: !(U.Vector Int)}
@@ -305,9 +320,9 @@ mkBenesNetwork :: [Integer] -> [Integer] -> [Int] -> BenesNetwork
 mkBenesNetwork srcMasks tgtMasks δs
   | null δs = BenesNetwork G.empty G.empty
   | isOkay =
-    BenesNetwork
-      (G.fromList $ L.init srcMasks <> reverse tgtMasks)
-      (G.fromList $ δs <> drop 1 (reverse δs))
+      BenesNetwork
+        (G.fromList $ L.init srcMasks <> reverse tgtMasks)
+        (G.fromList $ δs <> drop 1 (reverse δs))
   | otherwise = error $ "invalid backward masks: " <> show srcMasks <> ", " <> show tgtMasks <> ", " <> show δs
   where
     isOkay = case srcMasks of
@@ -349,13 +364,13 @@ permuteBits' (Permutation p) x = go 0 zeroBits
   where
     go !i !y
       | i < G.length p =
-        let y' = if testBit x (p ! i) then setBit y i else y
-         in go (i + 1) y'
+          let y' = if testBit x (p ! i) then setBit y i else y
+           in go (i + 1) y'
       | otherwise = y
 
 data BatchedBenesNetwork = BatchedBenesNetwork
-  { bbnMasks :: {-# UNPACK #-} !(DenseMatrix S.Vector Word64),
-    bbnShifts :: {-# UNPACK #-} !(S.Vector Word64)
+  { bbnMasks :: {-# UNPACK #-} !(DenseMatrix S.Vector Word64)
+  , bbnShifts :: {-# UNPACK #-} !(S.Vector Word64)
   }
   deriving stock (Show, Eq)
 
@@ -366,15 +381,15 @@ mkBatchedBenesNetwork :: B.Vector BenesNetwork -> BatchedBenesNetwork
 mkBatchedBenesNetwork networks
   | G.null networks = BatchedBenesNetwork (DenseMatrix 0 0 G.empty) G.empty
   | sameShifts = unsafePerformIO $ do
-    masks <- GM.new (numberShifts * numberMasks * numberWords)
-    SM.unsafeWith masks $ \masksPtr ->
-      loopM 0 (< numberShifts) (+ 1) $ \i ->
-        writeManyBitStrings
-          numberWords
-          (P.advancePtr masksPtr (i * numberMasks * numberWords))
-          (getBitStrings i)
-    masks' <- DenseMatrix numberShifts (numberMasks * numberWords) <$> G.unsafeFreeze masks
-    pure $ BatchedBenesNetwork masks' (G.convert (G.map fromIntegral shifts))
+      masks <- GM.new (numberShifts * numberMasks * numberWords)
+      SM.unsafeWith masks $ \masksPtr ->
+        loopM 0 (< numberShifts) (+ 1) $ \i ->
+          writeManyBitStrings
+            numberWords
+            (P.advancePtr masksPtr (i * numberMasks * numberWords))
+            (getBitStrings i)
+      masks' <- DenseMatrix numberShifts (numberMasks * numberWords) <$> G.unsafeFreeze masks
+      pure $ BatchedBenesNetwork masks' (G.convert (G.map fromIntegral shifts))
   | otherwise = error "networks have different shifts"
   where
     getBitStrings i = G.toList $ G.map (\n -> BitString ((bnMasks n) ! i)) networks
