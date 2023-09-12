@@ -1,8 +1,10 @@
 { stdenv
 , chapel
 , chapelFixupBinary
+, lib
 , lattice-symmetries
 , version
+, sse4_2Support ? stdenv.targetPlatform.sse4_2Support
 }:
 
 stdenv.mkDerivation {
@@ -15,11 +17,10 @@ stdenv.mkDerivation {
     makeFlagsArray+=(
       PREFIX="$out"
       OPTIMIZATION="--fast"
-      CHPL_TARGET_CPU="nehalem"
       CHPL_CFLAGS="--no-ieee-float -I${lattice-symmetries.kernels}/include"
       CHPL_LDFLAGS="-L${lattice-symmetries.haskell.lib}/lib"
     )
-  '';
+  '' + lib.optionalString sse4_2Support "makeFlagsArray+=( CHPL_TARGET_CPU=\"nehalem\" )";
   preInstall = ''
     for f in $(ls lib); do
       chapelFixupBinary lib/$f
