@@ -304,8 +304,6 @@ export proc ls_chpl_operator_apply_diag(matrixPtr : c_ptr(ls_hs_operator),
   var matrix = new Operator(matrixPtr, owning=false);
   if matrix.basis.numberWords != 1 then
     halt("bases with more than 64 bits are not yet implemented");
-  if matrix.basis.requiresProjection() then
-    halt("bases that require projection are not yet supported");
 
   var _cs : [0 ..# count] real(64) = noinit;
   ls_internal_operator_apply_diag_x1(
