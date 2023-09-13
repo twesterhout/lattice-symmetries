@@ -46,7 +46,7 @@ final: prev: {
           fi
         '';
 
-        nativeCheckInputs = with python-final; [ pytestCheckHook ];
+        nativeCheckInputs = with python-final; [ pip pytestCheckHook ];
       };
     })
   ];
