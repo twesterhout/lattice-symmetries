@@ -596,8 +596,11 @@ record Producer {
       // Compute a r.size rows of the matrix
       timer.computeOffDiag.start();
       const r : range(int) = rangesPtr[rangeIdx];
-      const (n, basisStatesPtr, coeffsPtr, keysPtr) = batchedOperator.computeOffDiag(
-          r.size, representativesPtr + r.low, xPtr + r.low);
+      const (n, basisStatesPtr, coeffsPtr, keysPtr) =
+        batchedOperator.computeOffDiag(
+          r.size,
+          representativesPtr + r.low,
+          (xPtr + r.low):c_ptrConst(eltType));
       timer.computeOffDiag.stop();
 
       timer.radixOneStep.start();

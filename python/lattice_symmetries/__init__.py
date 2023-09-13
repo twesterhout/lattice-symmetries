@@ -776,6 +776,12 @@ class Operator(LinearOperator):
             matrix_vector_product = kernels.matrix_vector_product_c128
             c_type_str = "ls_hs_scalar[]"
 
+        if vector.shape != (self.basis.number_states,):
+            raise ValueError(
+                "'vector' has invalid shape: {}; expected {}"
+                "".format(vector.shape, (self.basis.number_states,))
+            )
+
         out = np.empty_like(vector)
         x_ptr = ffi.from_buffer(c_type_str, vector, require_writable=False)
         y_ptr = ffi.from_buffer(c_type_str, out, require_writable=True)

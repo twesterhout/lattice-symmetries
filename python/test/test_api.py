@@ -205,3 +205,38 @@ def notest_vs_hphi():
         print(energy, ref_energy)
         assert ref_energy is not None
         assert energy == approx(ref_energy)
+
+
+def test_apply_off_diag_projected():
+    basis1 = ls.SpinBasis(4)
+    basis1.build()
+    expr = ls.Expr(
+        "σᶻ₀ σᶻ₁ + 2 σ⁺₀ σ⁻₁ + 2 σ⁻₀ σ⁺₁",
+        sites=[(0, 1), (1, 2), (2, 3), (3, 0)],
+    )
+    hamiltonian1 = ls.Operator(basis1, expr)
+    assert hamiltonian1.apply_off_diag_to_basis_state(int("0101", base=2)) == [
+        ((2 + 0j), 6),
+        ((2 + 0j), 3),
+        ((2 + 0j), 12),
+        ((2 + 0j), 9),
+    ]
+
+    group = ls.Symmetries([ls.Symmetry([1, 2, 3, 0], sector=0)])
+    basis = ls.SpinBasis(4, symmetries=group)
+    basis.build()
+    hamiltonian = ls.Operator(basis, expr)
+    for c, x in hamiltonian.apply_off_diag_to_basis_state(int("0101", base=2)):
+        assert x == 3
+        assert c == approx(math.sqrt(2))
+
+    group = ls.Symmetries([ls.Symmetry([1, 2, 3, 0], sector=2)])
+    basis = ls.SpinBasis(4, symmetries=group)
+    basis.build()
+    hamiltonian = ls.Operator(basis, expr)
+    assert hamiltonian.apply_off_diag_to_basis_state(int("0101", base=2)) == [
+        (approx(-math.sqrt(2)), 3),
+        (approx(math.sqrt(2)), 3),
+        (approx(math.sqrt(2)), 3),
+        (approx(-math.sqrt(2)), 3),
+    ]

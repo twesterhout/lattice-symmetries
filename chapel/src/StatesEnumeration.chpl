@@ -492,7 +492,6 @@ proc _enumStatesMakeMasksOffsets(counts) {
 proc _enumStatesMakeMasks(counts, totalCounts) {
   const numMasks = + reduce totalCounts;
   const masksBox = {0 ..# numMasks};
-  logDebug(masksBox, " ", totalCounts);
   const masksDom = masksBox dmapped Block(boundingBox=masksBox);
   var masks : [masksDom] uint(8);
   return masks;
