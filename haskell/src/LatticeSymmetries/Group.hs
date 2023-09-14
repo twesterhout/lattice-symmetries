@@ -30,13 +30,19 @@ module LatticeSymmetries.Group
   , rectangularGraph
   , distancePartition
   , autsSearchTree
+  , naiveExtractLeaves
   , isAutomorphism
   , transversalGeneratingSet
   , groupFromTransversalGeneratingSet
+  , mkMultiplicationTable
+  , MultiplicationTable (..)
+  , AbelianSubsetHistory (..)
+  , abelianSubset
   )
 where
 
 import Control.Exception (assert)
+import Control.Monad.ST (ST, runST)
 import Data.Aeson (FromJSON (..), ToJSON (..), object, withObject, (.:), (.=))
 import Data.Complex
 import Data.List qualified
@@ -46,8 +52,11 @@ import Data.Map.Strict qualified as Map
 import Data.Ratio
 import Data.Set qualified as Set
 import Data.Vector qualified as B
+import Data.Vector.Algorithms.Search (binarySearch)
 import Data.Vector.Generic qualified as G
 import Data.Vector.Storable qualified as S
+import Data.Vector.Unboxed qualified as U
+import Data.Vector.Unboxed.Mutable qualified as UM
 import Foreign.C.Types (CDouble)
 import Foreign.Marshal (free, new)
 import Foreign.Ptr
@@ -361,6 +370,12 @@ autsSearchTree g = dfs [] (Partitioning (vs :| [])) (Partitioning (vs :| []))
     vs = Set.toAscList g.vertices
     !dps = Map.fromAscList [(v, distancePartition g v) | v <- vs]
 
+naiveExtractLeaves :: SearchTree [Mapping Int] -> [[Mapping Int]]
+naiveExtractLeaves = go
+  where
+    go (SearchTree True xys _) = [xys]
+    go (SearchTree False _ branches) = concatMap go branches
+
 transversalGeneratingSet :: Int -> SearchTree [Mapping Int] -> B.Vector Permutation
 transversalGeneratingSet k = B.fromList . go
   where
@@ -372,13 +387,78 @@ transversalGeneratingSet k = B.fromList . go
 
 groupFromTransversalGeneratingSet :: Int -> B.Vector Permutation -> B.Vector Permutation
 groupFromTransversalGeneratingSet k tgs =
-  B.fromList $ Data.List.foldr1 (<>) <$> sequence transversals
+  sortVectorBy compare . B.fromList $
+    Data.List.foldr1 (flip (<>)) <$> sequence transversals
   where
     transversals =
       fmap ((identityPermutation k :) . B.toList . fmap fst) $
         B.groupBy (\g h -> snd g == snd h) $
           sortVectorBy (comparing snd) $
             fmap (\p -> (p, minimalSupport p)) tgs
+
+newtype MultiplicationTable = MultiplicationTable {unMultiplicationTable :: DenseMatrix U.Vector Int}
+  deriving stock (Show)
+
+mkMultiplicationTable :: (HasCallStack) => B.Vector Permutation -> MultiplicationTable
+mkMultiplicationTable ps = MultiplicationTable . DenseMatrix n n $ runST $ U.generateM (n * n) $ \k -> do
+  let (i, j) = k `divMod` n
+      x = ps G.! i
+      y = ps G.! j
+      !z = x <> y
+  mps <- G.unsafeThaw ps
+  index <- binarySearch mps z
+  unless (ps G.! index == z) $ error "the group is not closed under <>"
+  pure index
+  where
+    n = G.length ps
+
+data AbelianSubsetHistory = AbelianSubsetHistory
+  { included :: !(U.Vector Bool)
+  , mask :: !(U.Vector Bool)
+  }
+  deriving stock (Show)
+
+commMatrixRow :: MultiplicationTable -> Int -> U.Vector Bool
+commMatrixRow (MultiplicationTable matrix) i = U.generate matrix.dmCols $ \k ->
+  indexDenseMatrix matrix (i, k) == indexDenseMatrix matrix (k, i)
+
+addToAbelianSubsetHistory :: MultiplicationTable -> AbelianSubsetHistory -> Int -> AbelianSubsetHistory
+addToAbelianSubsetHistory t h i = AbelianSubsetHistory included' mask'
+  where
+    included' = G.modify (\v -> UM.write v i True) h.included
+    mask' = G.zipWith (&&) h.mask (commMatrixRow t i)
+
+mergeAbelianSubsetHistories :: [AbelianSubsetHistory] -> [AbelianSubsetHistory]
+mergeAbelianSubsetHistories = fmap go . Data.List.groupBy (\a b -> a.mask == b.mask)
+  where
+    go :: [AbelianSubsetHistory] -> AbelianSubsetHistory
+    go hs = runST $ case hs of
+      (h : rest) -> do
+        mh <- G.thaw h.included
+        forM_ rest $ \h' -> G.iforM_ h'.included $ \i v ->
+          UM.modify mh (|| v) i
+        AbelianSubsetHistory <$> G.unsafeFreeze mh <*> pure h.mask
+      [] -> error "should never happen by construction"
+
+abelianSubset :: MultiplicationTable -> [U.Vector Int]
+abelianSubset t = (\h -> G.map fst . G.filter snd . G.indexed $ h.included) <$> go h0
+  where
+    !n = dmRows . unMultiplicationTable $ t
+    h0 = AbelianSubsetHistory (G.replicate n False) (G.replicate n True)
+
+    getChoices h =
+      G.toList . G.filter (not . (h.included G.!)) . G.map fst . G.filter snd . G.indexed $ h.mask
+
+    go :: AbelianSubsetHistory -> [AbelianSubsetHistory]
+    go h = case getChoices h of
+      [] -> [h]
+      choices ->
+        let hs' =
+              Data.List.sortOn (negate . G.length . G.filter id . (.included))
+                . mergeAbelianSubsetHistories
+                . Data.List.sortOn (.mask)
+                $ addToAbelianSubsetHistory t h <$> choices
+         in concatMap go hs'
 
 -- strongGeneratingSet :: SearchTree [Mapping Int] -> [[Mapping Int]]
 -- strongGeneratingSet = go []
