@@ -42,7 +42,7 @@ module LatticeSymmetries.Group
 where
 
 import Control.Exception (assert)
-import Control.Monad.ST (ST, runST)
+import Control.Monad.ST.Strict (ST, runST)
 import Data.Aeson (FromJSON (..), ToJSON (..), object, withObject, (.:), (.=))
 import Data.Complex
 import Data.List qualified
@@ -51,9 +51,11 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Ratio
 import Data.Set qualified as Set
+import Data.Stream.Monadic (Step (Done, Skip, Yield), Stream (Stream))
 import Data.Vector qualified as B
 import Data.Vector.Algorithms.Search (binarySearch)
 import Data.Vector.Generic qualified as G
+import Data.Vector.Generic.Mutable qualified as GM
 import Data.Vector.Storable qualified as S
 import Data.Vector.Unboxed qualified as U
 import Data.Vector.Unboxed.Mutable qualified as UM
@@ -253,21 +255,20 @@ destroyCpermutation_group = free
 data Hypergraph a = Hypergraph {vertices :: !(Set a), hyperedges :: !(Set (Set a))}
   deriving stock (Eq, Ord, Show)
 
-data SearchTree a = SearchTree !Bool !a [SearchTree a]
+data SearchTree a r
+  = SearchBranch !a [SearchTree a r]
+  | SearchLeaf !(Maybe r)
   deriving stock (Eq, Ord, Show, Functor)
 
-newtype Partitioning a = Partitioning (NonEmpty [a])
+newtype Partitioning a = Partitioning (NonEmpty (U.Vector a))
   deriving stock (Show, Eq)
 
-allSingletons :: Partitioning a -> Bool
-allSingletons (Partitioning xs) = all p xs
-  where
-    p [_] = True
-    p _ = False
+allSingletons :: (UM.Unbox a) => Partitioning a -> Bool
+allSingletons (Partitioning xs) = all ((== 1) . G.length) xs
 
 distancePartition
   :: forall a
-   . (Ord a)
+   . (UM.Unbox a, Ord a)
   => Hypergraph a
   -- ^ The hypergraph to partition
   -> a
@@ -275,7 +276,7 @@ distancePartition
   -> Partitioning a
   -- ^ Groups of vertices by their distance to the selected vertex
 distancePartition g v0 =
-  Partitioning . NonEmpty.fromList . fmap Set.toList $
+  Partitioning . NonEmpty.fromList . fmap (G.fromList . Set.toAscList) $
     go (Set.singleton v0) (Set.toList g.hyperedges)
   where
     go :: Set a -> [Set a] -> [Set a]
@@ -312,84 +313,103 @@ rectangularGraph n k = Hypergraph (Set.fromList vs) (Set.fromList (Set.fromList 
     vs = [0 .. n * k - 1]
     es = [[k * i + j, k * i + ((j + 1) `mod` k)] | i <- [0 .. n - 1], j <- [0 .. k - 1]] ++ [[k * i + j, k * ((i + 1) `mod` n) + j] | i <- [0 .. n - 1], j <- [0 .. k - 1]]
 
-intersectAllToAll :: (Ord a) => Partitioning a -> Partitioning a -> Partitioning a
+intersectSorted :: (G.Vector v a, Ord a) => v a -> v a -> v a
+intersectSorted a b = runST $ do
+  out <- GM.unsafeNew $ min (G.length a) (G.length b)
+  let go !size !i !j
+        | i < G.length a && j < G.length b =
+            let x = G.unsafeIndex a i
+                y = G.unsafeIndex b j
+             in case compare x y of
+                  EQ -> GM.unsafeWrite out size x >> go (size + 1) (i + 1) (j + 1)
+                  LT -> go size (i + 1) j
+                  GT -> go size i (j + 1)
+        | otherwise = pure size
+  size <- go 0 0 0
+  G.unsafeFreeze (GM.take size out)
+{-# SCC intersectSorted #-}
+
+intersectAllToAll :: (UM.Unbox a, Ord a) => Partitioning a -> Partitioning a -> Partitioning a
 intersectAllToAll (Partitioning p1) (Partitioning p2) =
   Partitioning . NonEmpty.fromList $
-    Data.List.intersect <$> NonEmpty.toList p1 <*> NonEmpty.toList p2
+    intersectSorted <$> NonEmpty.toList p1 <*> NonEmpty.toList p2
 
-createMappings :: Partitioning a -> Partitioning a -> [Mapping a]
+createMappings :: (U.Unbox a) => Partitioning a -> Partitioning a -> [Mapping a]
 createMappings (Partitioning (NonEmpty.toList -> src)) (Partitioning (NonEmpty.toList -> tgt)) =
-  zipWith Mapping (concat src) (concat tgt)
+  G.toList $ G.zipWith Mapping (G.concat src) (G.concat tgt)
 
-pickOne :: (Ord a) => Map a (Partitioning a) -> Partitioning a -> (a, Partitioning a)
-pickOne _ (Partitioning ([] :| _)) = error "pickOne expects a normalized Partitioning"
-pickOne dps (Partitioning ((x : xs) :| rest)) = (x, intersectAllToAll p (dps Map.! x))
+pickOne :: (UM.Unbox a, Ord a) => Map a (Partitioning a) -> Partitioning a -> (a, Partitioning a)
+pickOne dps (Partitioning (v :| rest))
+  | G.null v = error "pickOne expects a normalized Partitioning"
+  | otherwise = (x, intersectAllToAll p (dps Map.! x))
   where
-    p = Partitioning (xs :| rest)
+    !x = G.head v
+    p = Partitioning (G.tail v :| rest)
 
-pickAll :: (Ord a) => Map a (Partitioning a) -> Partitioning a -> [(a, Partitioning a)]
+pickAll :: (UM.Unbox a, Ord a) => Map a (Partitioning a) -> Partitioning a -> [(a, Partitioning a)]
 pickAll dps (Partitioning (xss :| rest)) = do
-  (x, xs) <- picks xss
-  let p = Partitioning (xs :| rest)
+  (x, xs) <- picks (G.toList xss)
+  let p = Partitioning (G.fromList xs :| rest)
   pure (x, intersectAllToAll p (dps Map.! x))
   where
     picks :: [a] -> [(a, [a])]
     picks [] = []
     picks (x : xs) = (x, xs) : [(y, x : ys) | (y, ys) <- picks xs]
 
-normalizeWhenCompatible :: (Ord a) => Partitioning a -> Partitioning a -> Maybe (Partitioning a, Partitioning a)
+normalizeWhenCompatible :: (UM.Unbox a, Ord a) => Partitioning a -> Partitioning a -> Maybe (Partitioning a, Partitioning a)
 normalizeWhenCompatible (Partitioning (NonEmpty.toList -> src)) (Partitioning (NonEmpty.toList -> tgt))
-  | fmap length src == fmap length tgt =
-      let normalize = Partitioning . NonEmpty.fromList . filter (not . null)
+  | fmap G.length src == fmap G.length tgt =
+      let normalize = Partitioning . NonEmpty.fromList . filter (not . G.null)
        in -- (src', tgt') = unzip $ Data.List.sort $ zip (filter (not . null) src) (filter (not . null) tgt)
           Just (normalize src, normalize tgt)
   | otherwise = Nothing
+{-# SCC normalizeWhenCompatible #-}
 
 -- | Generate a SearchTree of graph automorphisms using distance partition
-autsSearchTree :: Hypergraph Int -> SearchTree [Mapping Int]
+autsSearchTree :: Hypergraph Int -> SearchTree [Mapping Int] Permutation
 autsSearchTree g = dfs [] (Partitioning (vs :| [])) (Partitioning (vs :| []))
   where
-    dfs :: [Mapping Int] -> Partitioning Int -> Partitioning Int -> SearchTree [Mapping Int]
-    dfs mappings srcPart trgPart
+    dfs :: [Mapping Int] -> Partitioning Int -> Partitioning Int -> SearchTree [Mapping Int] Permutation
+    dfs !mappings !srcPart !trgPart
       -- check compatibility at the final step
       | allSingletons srcPart =
           -- isCompatible xys = isAutomorphism g xys
           assert (allSingletons trgPart) $
-            let p = mappings <> createMappings srcPart trgPart
-             in SearchTree (isAutomorphism g p) p []
+            let p =
+                  permutationFromMappings (Just (Set.size g.vertices)) $
+                    mappings <> createMappings srcPart trgPart
+             in SearchLeaf $ if isAutomorphism g p then Just p else Nothing
       | otherwise =
-          let (x, srcPart') = pickOne dps srcPart
+          let (!x, !srcPart') = pickOne dps srcPart
               branches = do
-                (y, trgPart') <- pickAll dps trgPart
+                (!y, !trgPart') <- pickAll dps trgPart
                 case normalizeWhenCompatible srcPart' trgPart' of
-                  Just (srcPart'', trgPart'') ->
-                    pure $
-                      dfs (Mapping x y : mappings) srcPart'' trgPart''
+                  Just (srcPart'', trgPart'') -> pure $ dfs (Mapping x y : mappings) srcPart'' trgPart''
                   Nothing -> []
-           in SearchTree False mappings branches
-    vs = Set.toAscList g.vertices
-    !dps = Map.fromAscList [(v, distancePartition g v) | v <- vs]
+           in SearchBranch mappings branches
+    vs = G.fromList $ Set.toAscList g.vertices
+    !dps = Map.fromAscList $ (\v -> (v, distancePartition g v)) <$> G.toList vs
+{-# SCC autsSearchTree #-}
 
-naiveExtractLeaves :: SearchTree [Mapping Int] -> [[Mapping Int]]
+naiveExtractLeaves :: SearchTree a Permutation -> [Permutation]
 naiveExtractLeaves = go
   where
-    go (SearchTree True xys _) = [xys]
-    go (SearchTree False _ branches) = concatMap go branches
+    go (SearchLeaf p) = maybe [] pure p
+    go (SearchBranch _ branches) = concatMap go branches
 
-transversalGeneratingSet :: Int -> SearchTree [Mapping Int] -> B.Vector Permutation
-transversalGeneratingSet k = B.fromList . go
+transversalGeneratingSet :: SearchTree a Permutation -> B.Vector Permutation
+transversalGeneratingSet = B.fromList . go
   where
-    go (SearchTree True xys _) =
-      let !p = permutationFromMappings (Just k) xys
-       in [p | not (isIdentityPermutation p)]
-    go (SearchTree False _ []) = []
-    go (SearchTree False _ (t : ts)) = concatMap (take 1 . go) ts <> go t
+    go (SearchLeaf (Just !p)) = [p | not (isIdentityPermutation p)]
+    go (SearchBranch _ (t : ts)) = concatMap (take 1 . go) ts <> go t
+    go _ = []
 
-groupFromTransversalGeneratingSet :: Int -> B.Vector Permutation -> B.Vector Permutation
-groupFromTransversalGeneratingSet k tgs =
+groupFromTransversalGeneratingSet :: B.Vector Permutation -> B.Vector Permutation
+groupFromTransversalGeneratingSet tgs =
   sortVectorBy compare . B.fromList $
     Data.List.foldr1 (flip (<>)) <$> sequence transversals
   where
+    k = permutationLength (G.head tgs)
     transversals =
       fmap ((identityPermutation k :) . B.toList . fmap fst) $
         B.groupBy (\g h -> snd g == snd h) $
@@ -478,10 +498,8 @@ abelianSubset t = (\h -> G.map fst . G.filter snd . G.indexed $ h.included) <$> 
 --             else find1New gs ts
 --     find1New gs [] = gs
 
-isAutomorphism :: Hypergraph Int -> [Mapping Int] -> Bool
-isAutomorphism g mappings = g.hyperedges == Set.map transformEdge g.hyperedges
+isAutomorphism :: Hypergraph Int -> Permutation -> Bool
+isAutomorphism g p = g.hyperedges == Set.map transformEdge g.hyperedges
   where
-    i =
-      unPermutation $
-        permutationFromMappings (Just (Set.size g.vertices)) mappings
+    i = unPermutation p
     transformEdge = Set.map (i G.!)

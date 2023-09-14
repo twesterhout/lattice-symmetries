@@ -1,3 +1,5 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 module LatticeSymmetries.Benes
   ( Permutation
   , unPermutation
@@ -33,6 +35,7 @@ import Data.Vector.Generic.Mutable qualified as GM
 import Data.Vector.Storable qualified as S
 import Data.Vector.Storable.Mutable qualified as SM
 import Data.Vector.Unboxed qualified as U
+import Data.Vector.Unboxed.Deriving (derivingUnbox)
 import Data.Vector.Unboxed.Mutable qualified as UM
 import GHC.Exts (IsList (..))
 import LatticeSymmetries.BitString
@@ -108,6 +111,12 @@ instance Semigroup Permutation where
 
 data Mapping a = Mapping !a !a
   deriving stock (Show, Eq, Ord)
+
+derivingUnbox
+  "Mapping"
+  [t|forall a. (UM.Unbox a) => Mapping a -> (a, a)|]
+  [|\(Mapping a b) -> (a, b)|]
+  [|\(!a, !b) -> Mapping a b|]
 
 permutationFromMappings :: Maybe Int -> [Mapping Int] -> Permutation
 permutationFromMappings maybeN mappings = runST $ do

@@ -23,6 +23,11 @@ flag no-standalone
   manual:      True
   default:     False
 
+flag no-foreign-lib
+  description: Disable building of the foreign-library
+  manual:      True
+  default:     False
+
 common common-options
   build-depends:
     , base    >=4.13.0.0 && <5
@@ -101,6 +106,8 @@ library
     , unliftio-core
     , vector
     , vector-algorithms
+    , vector-stream
+    , vector-th-unbox
     , yaml
 
   -- , binary
@@ -139,14 +146,14 @@ library
   if (os(linux) && !flag(no-standalone))
     ghc-options: -fPIC -fexternal-dynamic-refs
 
--- foreign-library foo_bar
---   type:           native-shared
---   options: standalone
---   hs-source-dirs: lib
---   other-modules:  FooBar
---   default-language: GHC2021
---   build-depends:
---     , base
+executable group
+  import:         common-options
+  hs-source-dirs: app
+  main-is:        Main.hs
+  ghc-options:   -threaded -rtsopts
+  build-depends:
+    , lattice-symmetries-haskell
+    , vector
 
 foreign-library lattice_symmetries_haskell
   import:         common-options
@@ -186,7 +193,8 @@ foreign-library lattice_symmetries_haskell
     , text
     , vector
 
-  buildable:      True
+  if flag(no-foreign-lib)
+    buildable: False
 
 test-suite lattice-symmetries-haskell-test
   import:         common-options

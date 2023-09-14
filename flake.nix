@@ -23,31 +23,34 @@
 
       kernels-overlay = import ./kernels/overlay.nix { inherit version; };
       haskell-overlay = { withPic }: import ./haskell/overlay.nix { inherit lib withPic; };
+      haskell-profiling-overlay = import ./haskell/profiling.nix { inherit lib; };
       chapel-overlay = import ./chapel/overlay.nix { inherit version; };
       python-overlay = import ./python/overlay.nix { inherit version; };
 
-      composed-overlay = { withPic }: lib.foldl' lib.composeExtensions (_: _: { }) ([
-        nix-chapel.overlays.default
-        kernels-overlay
-        (haskell-overlay { inherit withPic; })
-        chapel-overlay
-        python-overlay
-      ]
-      ++ lib.optionals withPic [
-        # An overlay to replace ghc96 with a custom one that has
-        # the static RTS libraries compiled with -fPIC. This lets us use
-        # these static libraries to build a self-contained shared library.
-        (final: prev:
-          let
-            ourGhc = prev.haskell.compiler.ghc962.override {
-              enableRelocatedStaticLibs = true;
-            };
-          in
-          lib.recursiveUpdate prev {
-            haskell.packages.ghc962.ghc = ourGhc;
-            haskell.compiler.ghc962 = ourGhc;
-          })
-      ]);
+      composed-overlay = { withPic, enableProfiling ? false }:
+        lib.foldl' lib.composeExtensions (_: _: { }) ([
+          nix-chapel.overlays.default
+          kernels-overlay
+          (haskell-overlay { inherit withPic; })
+          chapel-overlay
+          python-overlay
+        ]
+        ++ lib.optionals withPic [
+          # An overlay to replace ghc96 with a custom one that has
+          # the static RTS libraries compiled with -fPIC. This lets us use
+          # these static libraries to build a self-contained shared library.
+          (final: prev:
+            let
+              ourGhc = prev.haskell.compiler.ghc962.override {
+                enableRelocatedStaticLibs = true;
+              };
+            in
+            lib.recursiveUpdate prev {
+              haskell.packages.ghc962.ghc = ourGhc;
+              haskell.compiler.ghc962 = ourGhc;
+            })
+        ]
+        ++ lib.optional enableProfiling haskell-profiling-overlay);
 
       pkgs-for = args: system: import nixpkgs {
         inherit system;
@@ -139,7 +142,7 @@
       devShells = flake-utils.lib.eachDefaultSystemMap (system:
         let
           pkgs = pkgs-for { withPic = true; } system;
-          pkgsNoPic = pkgs-for { withPic = false; } system;
+          pkgsNoPic = pkgs-for { withPic = false; enableProfiling = true; } system;
         in
         {
           default = self.outputs.devShells.${system}.haskell;
