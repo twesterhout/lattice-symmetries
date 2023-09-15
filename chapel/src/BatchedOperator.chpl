@@ -243,6 +243,104 @@ private inline proc computeOffDiagGeneric(const ref matrix : Operator,
   }
 }
 
+extern {
+  #include <stdlib.h>
+  #include <stdint.h>
+
+  // int qsort_s( void *ptr, size_t count, size_t size,
+  //              int (*comp)(const void *, const void *, void *),
+  //              void *context );
+
+  int ls_internal_comp_int64(const void* _a, const void* _b, void* _ctx);
+  void ls_internal_qsort_int64(int64_t* xs, size_t count, uint64_t const* keys);
+
+  int ls_internal_comp_int64(const void* _a, const void* _b, void* _ctx) {
+    int64_t const a = *(int64_t const*)_a;
+    int64_t const b = *(int64_t const*)_b;
+    uint64_t const* keys = (uint64_t const*)_ctx;
+    uint64_t const key_a = keys[a];
+    uint64_t const key_b = keys[b];
+    return (key_a > key_b) - (key_a < key_b);
+  }
+
+  void ls_internal_qsort_int64(int64_t* xs, size_t const count, uint64_t const* keys) {
+    qsort_r(xs, count, sizeof(int64_t), ls_internal_comp_int64, (void*)keys);
+  }
+}
+
+
+private proc csrGeneratePart(count : int,
+                             betas : c_ptrConst(uint(64)),
+                             coeffs : c_ptrConst(complex(128)),
+                             offsets : c_ptrConst(int(64)),
+                             diag : c_ptrConst(real(64)),
+                             rowOffsets : c_ptr(int(64)),
+                             colIndices : c_ptr(int(64)),
+                             matrixElements : c_ptr(?eltType),
+                             const ref basis : Basis,
+                             numberOffDiagTerms : int) {
+  var order : [0 ..# numberOffDiagTerms] int;
+  var indices : [0 ..# numberOffDiagTerms] int;
+  var numberNonZero : int = 0;
+
+  for rowIndex in 0 ..# count {
+    rowOffsets[rowIndex] = numberNonZero;
+
+    const b = offsets[rowIndex];
+    const e = offsets[rowIndex + 1];
+    const n = e - b;
+
+    // Reset the order
+    foreach i in 0 ..# n do order[i] = i;
+    // Sort according to betas
+    ls_internal_qsort_int64(c_ptrTo(order[0]), n, c_ptrToConst(betas[b]));
+    // Convert betas to indices
+    if numLocales == 1 && basis.isStateIndexIdentity()
+      then POSIX.memcpy(c_ptrTo(indices[0]), c_ptrToConst(betas[b]), n:c_size_t * c_sizeof(int(64)));
+      else ls_hs_state_index(basis.payload, n, c_ptrToConst(betas[b]), 1, c_ptrTo(indices[0]), 1);
+
+    // Sum duplicates
+    var diagonalWritten = false;
+    var k : int = 0;
+    while k < n {
+      var colIndex = indices[order[k]];
+      var acc = coeffs[b + order[k]];
+      k += 1;
+      while k < n && indices[order[k]] == colIndex {
+        acc += coeffs[b + order[k]];
+        k += 1;
+      }
+      if colIndex == rowIndex then
+        acc += diag[rowIndex];
+
+      if acc != 0 {
+        if !diagonalWritten && colIndex > rowIndex {
+          const diagonal = diag[rowIndex];
+          if diagonal != 0 {
+            colIndices[numberNonZero] = rowIndex;
+            matrixElements[numberNonZero] = diagonal;
+            numberNonZero += 1;
+          }
+          diagonalWritten = true;
+        }
+        colIndices[numberNonZero] = colIndex;
+        matrixElements[numberNonZero] = acc;
+        numberNonZero += 1;
+      }
+    }
+    if !diagonalWritten {
+      const diagonal = diag[rowIndex];
+      if diagonal != 0 {
+        colIndices[numberNonZero] = rowIndex;
+        matrixElements[numberNonZero] = diagonal;
+        numberNonZero += 1;
+      }
+    }
+  }
+  rowOffsets[count] = numberNonZero;
+}
+
+
 class BatchedOperatorTimers {
   var totalTimer : stopwatch;
   var applyOffDiagTimer : stopwatch;
@@ -393,6 +491,46 @@ export proc ls_chpl_operator_apply_off_diag(matrixPtr : c_ptr(ls_hs_operator),
   betas.deref() = convertToExternalArray(batchedOperator._spins);
   coeffs.deref() = convertToExternalArray(batchedOperator._coeffs);
   offsets.deref() = convertToExternalArray(batchedOperator._offsets);
+}
+
+export proc ls_chpl_operator_to_csr(matrixPtr : c_ptr(ls_hs_operator),
+                                    rowOffsets : c_ptr(chpl_external_array),
+                                    colIndices : c_ptr(chpl_external_array),
+                                    matrixElements : c_ptr(chpl_external_array),
+                                    numTasks : int) {
+  assert(matrixPtr != nil);
+  var matrix = new Operator(matrixPtr, owning=false);
+  const ref basis = matrix.basis;
+  const ref representatives = basis.representatives();
+  const count = representatives.size;
+  const representativesPtr = c_ptrToConst(representatives);
+  var batchedOperator = new BatchedOperator(matrix, max(1, count));
+
+  const (totalCount, betas, coeffs, _keys) =
+    batchedOperator.computeOffDiag(count, representativesPtr, nil);
+
+  var _diagonal : [0 ..# count] real(64) = noinit;
+  ls_internal_operator_apply_diag_x1(
+    matrixPtr.deref(), count, representativesPtr, c_ptrTo(_diagonal), nil);
+
+  var _rowOffsets : [0 ..# count + 1] int(64);
+  var _colIndices : [0 ..# count + totalCount] int(64);
+  var _matrixElements : [0 ..# count + totalCount] complex(128);
+
+  csrGeneratePart(count,
+                  betas,
+                  coeffs,
+                  batchedOperator.pointers.offsets,
+                  c_ptrTo(_diagonal),
+                  c_ptrTo(_rowOffsets),
+                  c_ptrTo(_colIndices),
+                  c_ptrTo(_matrixElements),
+                  basis,
+                  batchedOperator.numberOffDiagTerms);
+
+  rowOffsets.deref() = convertToExternalArray(_rowOffsets);
+  colIndices.deref() = convertToExternalArray(_colIndices);
+  matrixElements.deref() = convertToExternalArray(_matrixElements);
 }
 
 } // end module BatchedOperator

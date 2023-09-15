@@ -84,12 +84,15 @@ def test_simple_spin_expr():
     def check(number_spins, expression, matrix_ref):
         basis = ls.SpinBasis(number_spins)
         basis.build()
+        operator = ls.Operator(basis, ls.Expr(expression))
         rows = []
         for i in range(basis.number_states):
             v = np.zeros(basis.number_states)
             v[i] = 1
-            rows.append(ls.Operator(basis, ls.Expr(expression)) @ v)
+            rows.append(operator @ v)
         matrix = np.vstack(rows)
+        assert matrix.tolist() == matrix_ref.tolist()
+        matrix = operator.to_csr().todense()
         assert matrix.tolist() == matrix_ref.tolist()
 
     check(1, "σ⁻₀", sm)
@@ -100,24 +103,6 @@ def test_simple_spin_expr():
     check(2, "σ⁻₁", np.kron(sm, s0))
     check(3, "σ⁺₀ σᶻ₁ σ⁻₂", np.kron(sm, np.kron(sz, sp)))
     check(3, "σ⁺₀ σ⁻₂", np.kron(sm, np.kron(s0, sp)))
-
-
-def test_complex_spin_expr():
-    sp = np.array([[0, 1], [0, 0]])
-    sm = np.array([[0, 0], [1, 0]])
-    sz = np.diag([1, -1])
-    s0 = np.eye(2)
-
-    def check(number_spins, expression, matrix_ref):
-        basis = ls.SpinBasis(number_spins)
-        basis.build()
-        rows = []
-        for i in range(basis.number_states):
-            v = np.zeros(basis.number_states)
-            v[i] = 1
-            rows.append(ls.Operator(basis, ls.Expr(expression)) @ v)
-        matrix = np.vstack(rows)
-        assert matrix.tolist() == matrix_ref.tolist()
 
     check(1, "σʸ₀", -1j * sp + 1j * sm)
     check(3, "3im σ⁺₀ σᶻ₁ σʸ₂", 3j * np.kron((1j * sm - 1j * sp), np.kron(sz, sp)))
@@ -167,9 +152,9 @@ def test_anisotropic_kagome_9():
 
     basis = ls.SpinfulFermionBasis(number_sites=9, number_particles=3)
     basis.build()
-    hopping = lambda i, j: ls.Expr(
-        "c†₁↑ c₀↑ + c†₀↑ c₁↑ + c†₁↓ c₀↓ + c†₀↓ c₁↓"
-    ).replace_indices({0: i, 1: j})
+    hopping = lambda i, j: ls.Expr("c†₁↑ c₀↑ + c†₀↑ c₁↑ + c†₁↓ c₀↓ + c†₀↓ c₁↓").replace_indices(
+        {0: i, 1: j}
+    )
     coulomb = lambda i: ls.Expr("n₀↑ n₀↓").replace_indices({0: i})
 
     t1 = -0.3251
@@ -193,12 +178,8 @@ def notest_vs_hphi():
         print(folder)
         config = ls.load_yaml_config(os.path.join(prefix, folder, "hamiltonian.yaml"))
         config.basis.build()
-        energy, state = scipy.sparse.linalg.eigsh(
-            config.hamiltonian, k=1, which="SA", tol=1e-6
-        )
-        with open(
-            os.path.join(prefix, folder, "HPhi", "output", "zvo_energy.dat")
-        ) as f:
+        energy, state = scipy.sparse.linalg.eigsh(config.hamiltonian, k=1, which="SA", tol=1e-6)
+        with open(os.path.join(prefix, folder, "HPhi", "output", "zvo_energy.dat")) as f:
             for line in f.readlines():
                 if line.startswith("Energy"):
                     ref_energy = float(line.strip().split(" ")[-1])
@@ -240,3 +221,41 @@ def test_apply_off_diag_projected():
         (approx(math.sqrt(2)), 3),
         (approx(-math.sqrt(2)), 3),
     ]
+
+
+def get_csr_hamiltonian(hamiltonian):
+    basis = hamiltonian.basis
+    states, coeffs, row_idxs = hamiltonian.apply_off_diag_to_basis_state(basis.states)
+    columns = basis.index(states)
+    off_diagonal_matrix = scipy.sparse.csr_matrix(
+        (coeffs, columns, row_idxs),
+        shape=(basis.number_states, basis.number_states),
+    )
+    diagonal = scipy.sparse.diags(hamiltonian.apply_diag_to_basis_state(basis.states))
+    return off_diagonal_matrix + diagonal
+
+
+def test_convert_to_csr():
+    basis = ls.SpinBasis(2)
+    basis.build()
+    expr = ls.Expr("σᶻ₀ σᶻ₁ + 2 σ⁺₀ σ⁻₁ + 2 σ⁻₀ σ⁺₁")
+    hamiltonian = ls.Operator(basis, expr)
+    matrix = hamiltonian.to_csr()
+    assert matrix.has_canonical_format
+    assert (matrix != get_csr_hamiltonian(hamiltonian)).nnz == 0
+    x = np.random.rand(basis.number_states)
+    assert np.allclose(hamiltonian @ x, matrix @ x)
+
+    group = ls.Symmetries([ls.Symmetry([1, 2, 3, 0], sector=0)])
+    basis = ls.SpinBasis(4, symmetries=group)
+    basis.build()
+    expr = ls.Expr(
+        "σᶻ₀ σᶻ₁ + 2 σ⁺₀ σ⁻₁ + 2 σ⁻₀ σ⁺₁",
+        sites=[(0, 1), (1, 2), (2, 3), (3, 0)],
+    )
+    hamiltonian = ls.Operator(basis, expr)
+    matrix = hamiltonian.to_csr()
+    assert matrix.has_canonical_format
+    assert (matrix != get_csr_hamiltonian(hamiltonian)).nnz == 0
+    x = np.random.rand(basis.number_states)
+    assert np.allclose(hamiltonian @ x, matrix @ x)

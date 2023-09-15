@@ -524,7 +524,7 @@ proc _enumStatesPrepareDescriptors(const ref masks, counts, totalCounts) {
     const loc = masksDom.distribution.dsiIndexToLocale(firstIndex);
     // The range firstIndex .. lastIndex crosses the locale boundary in masks
     // array.
-    if loc != masksDom.dist.dsiIndexToLocale(lastIndex) then
+    if loc != masksDom.distribution.dsiIndexToLocale(lastIndex) then
       masksDescriptors[i] = (firstIndex, nil);
     else {
       const ptrOffset = firstIndex - masksDom.localSubdomain(loc).low;
