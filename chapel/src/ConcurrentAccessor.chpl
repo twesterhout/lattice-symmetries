@@ -36,7 +36,7 @@ record ConcurrentAccessor {
     this.eltType = t;
     // We go via c_void_ptr, because otherwise chpl issues a warning that we're
     // casting to a non-equivalent pointer type
-    this._data = c_ptrTo(arr[arr.domain.low]):c_void_ptr
+    this._data = c_ptrTo(arr[arr.domain.low]):c_ptr(void)
                                              :c_ptr(chpl__processorAtomicType(realType(eltType)));
     this._numElts = arr.size;
   }

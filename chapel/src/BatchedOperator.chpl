@@ -16,7 +16,7 @@ proc ls_internal_operator_apply_diag_x1(
     batch_size : int,
     alphas : c_ptrConst(uint(64)),
     ys : c_ptr(?eltType),
-    xs : c_ptr(eltType)) {
+    xs : c_ptrConst(eltType)) {
   // ls_internal_operator_apply_diag_x1(c_ptrToConst(op), batch_size, alphas, ys, xs);
   // return;
 
@@ -131,112 +131,86 @@ private proc computeKeys(totalCount, betas, keys, ref keysTimer) {
 private proc computeOffDiagNoProjection(const ref matrix : Operator,
                                         count : int,
                                         alphas : c_ptrConst(uint(64)),
-                                        xs : c_ptrConst(?eltType),
-                                        betas : c_ptr(uint(64)),
-                                        cs : c_ptr(complex(128)),
-                                        offsets : c_ptr(int),
-                                        _timers : c_ptr(BatchedOperatorTimers)) {
-  // const betas = c_pointer_return(_spins1[0]);
-  // const cs = c_pointer_return(_coeffs1[0]);
-  // const offsets = c_pointer_return(_offsets[0]);
-  // const keys = c_pointer_return(_localeIdxs[0]);
-
-  // We compute H|αᵢ⟩ = ∑ⱼ cᵢⱼ|βᵢⱼ⟩ for each |αᵢ⟩ where i ∈ {0 ..# count}
-  // at this point j ∈ {0 ..# _numberOffDiagTerms}. Both cᵢⱼ and |βᵢⱼ⟩ are
-  // conceptually 2-dimensional arrays, but we use flattened
-  // representations of them.
-  if _timers != nil then _timers.deref().applyOffDiagTimer.start();
+                                        xs,
+                                        const ref others : BatchedOperatorPointers,
+                                        in timers : BatchedOperatorTimers?) {
+  // We compute H|αᵢ⟩ = ∑ⱼ cᵢⱼ|βᵢⱼ⟩ for each |αᵢ⟩ where i ∈ {0 ..# count} and
+  // j ∈ {0 ..# numberOffDiagTerms}. Both cᵢⱼ and |βᵢⱼ⟩ are conceptually
+  // 2-dimensional arrays, but we use flattened representations of them.
+  if timers != nil then timers!.applyOffDiagTimer.start();
   ls_internal_operator_apply_off_diag_x1(
     matrix.payload.deref(),
     count,
     alphas,
-    betas,
-    cs,
-    offsets,
+    others.betas,
+    others.coeffs,
+    others.offsets,
     xs);
-  if _timers != nil then _timers.deref().applyOffDiagTimer.stop();
+  if timers != nil then timers!.applyOffDiagTimer.stop();
 }
 private proc computeOffDiagOnlyInversion(const ref matrix : Operator,
                                          count : int,
                                          alphas : c_ptrConst(uint(64)),
-                                         xs : c_ptrConst(?eltType),
-                                         betas : c_ptr(uint(64)),
-                                         cs : c_ptr(complex(128)),
-                                         offsets : c_ptr(int),
-                                         _timers : c_ptr(BatchedOperatorTimers)) {
-  // const betas = c_pointer_return(_spins1[0]);
-  // const cs = c_pointer_return(_coeffs1[0]);
-  // const offsets = c_pointer_return(_offsets[0]);
-  // const keys = c_pointer_return(_localeIdxs[0]);
+                                         xs,
+                                         const ref others : BatchedOperatorPointers,
+                                         in timers : BatchedOperatorTimers?) {
+  computeOffDiagNoProjection(matrix, count, alphas, xs, others, timers);
 
-  // We compute H|αᵢ⟩ = ∑ⱼ cᵢⱼ|βᵢⱼ⟩ for each |αᵢ⟩ where i ∈ {0 ..# count}
-  // at this point j ∈ {0 ..# _numberOffDiagTerms}. Both cᵢⱼ and |βᵢⱼ⟩ are
-  // conceptually 2-dimensional arrays, but we use flattened
-  // representations of them.
-  computeOffDiagNoProjection(matrix, count, alphas, xs, betas, cs, offsets, _timers);
-
-  const totalCount = offsets[count];
+  const totalCount = others.offsets[count];
   const mask = (1:uint(64) << matrix.basis.numberSites()) - 1;
   const character = matrix.basis.spinInversion;
   assert(character != 0);
 
-  if _timers != nil then _timers.deref().stateInfoTimer.start();
+  if timers != nil then timers!.stateInfoTimer.start();
   foreach i in 0 ..# totalCount {
-    const current = betas[i];
+    const current = others.betas[i];
     const inverted = current ^ mask;
     if inverted < current {
-      betas[i] = inverted;
-      cs[i] *= character;
+      others.betas[i] = inverted;
+      others.coeffs[i] *= character;
     }
   }
-  if _timers != nil then _timers.deref().stateInfoTimer.stop();
+  if timers != nil then timers!.stateInfoTimer.stop();
 }
 private proc computeOffDiagWithProjection(const ref matrix : Operator,
                                           count : int,
                                           alphas : c_ptrConst(uint(64)),
-                                          xs : c_ptrConst(?eltType),
-                                          betas : c_ptr(uint(64)),
-                                          cs : c_ptr(complex(128)),
-                                          norms : c_ptr(real(64)),
-                                          offsets : c_ptr(int),
-                                          tempSpins : c_ptr(uint(64)),
-                                          tempCoeffs : c_ptr(complex(128)),
-                                          _timers : c_ptr(BatchedOperatorTimers)) {
-  // const tempSpins = c_pointer_return(_spins2[0]);
-  // const tempCoeffs = c_pointer_return(_coeffs2[0]);
-  // const offsets = c_pointer_return(_offsets[0]);
-  assert(norms != nil && tempSpins != nil && tempCoeffs != nil);
-  computeOffDiagNoProjection(matrix, count, alphas, xs,
-                             tempSpins, tempCoeffs, offsets,
-                             _timers);
+                                          xs,
+                                          ref others : BatchedOperatorPointers,
+                                          in timers : BatchedOperatorTimers?) {
+  assert(others.tempNorms != nil && others.tempSpins != nil && others.tempCoeffs != nil);
+  // computeOffDiagNoProjection stores its results in others.betas and others.coeffs,
+  // but we need them in others.tempSpins and others.tempCoeffs
+  others.betas <=> others.tempSpins;
+  others.coeffs <=> others.tempCoeffs;
+  computeOffDiagNoProjection(matrix, count, alphas, xs, others, timers);
+  // revert the swaps
+  others.betas <=> others.tempSpins;
+  others.coeffs <=> others.tempCoeffs;
 
-  const totalCount = offsets[count];
+  const totalCount = others.offsets[count];
   // We are also interested in norms of alphas, so we append them to tempSpins
-  if _timers != nil then _timers.deref().memcpyTimer.start();
-  // assert(totalCount + count <= _dom.size);
-  POSIX.memcpy(tempSpins + totalCount, alphas, count:c_size_t * c_sizeof(uint(64)));
-  if _timers != nil then _timers.deref().memcpyTimer.stop();
+  if timers != nil then timers!.memcpyTimer.start();
+  POSIX.memcpy(others.tempSpins + totalCount, alphas, count:c_size_t * c_sizeof(uint(64)));
+  if timers != nil then timers!.memcpyTimer.stop();
 
-  // const betas = c_pointer_return(_spins1[0]);
-  // const cs = c_pointer_return(_coeffs1[0]);
-  // const norms = c_pointer_return(_norms[0]);
-  if _timers != nil then _timers.deref().stateInfoTimer.start();
+  if timers != nil then timers!.stateInfoTimer.start();
   ls_hs_state_info(
     matrix.basis.payload,
     totalCount + count,
-    tempSpins, 1,
-    betas, 1,
-    cs,
-    norms);
-  if _timers != nil then _timers.deref().stateInfoTimer.stop();
+    others.tempSpins, 1,
+    others.betas, 1,
+    others.coeffs,
+    others.tempNorms);
+  if timers != nil then timers!.stateInfoTimer.stop();
 
-  if _timers != nil then _timers.deref().coeffTimer.start();
+  if timers != nil then timers!.coeffTimer.start();
   foreach i in 0 ..# count {
-    foreach k in offsets[i] ..< offsets[i + 1] {
-      cs[k] *= tempCoeffs[k] * norms[k] / norms[totalCount + i];
+    foreach k in others.offsets[i] ..< others.offsets[i + 1] {
+      others.coeffs[k] *= others.tempCoeffs[k] * others.tempNorms[k] / others.tempNorms[totalCount + i];
     }
   }
-  if _timers != nil then _timers.deref().coeffTimer.stop();
+  if timers != nil then timers!.coeffTimer.stop();
 }
 
 // Given `count` basis vectors `alphas` with corresponding coefficients `xs`,
@@ -248,44 +222,44 @@ private proc computeOffDiagWithProjection(const ref matrix : Operator,
 //
 // where the number of cⱼ coefficients depends on the basis vector |α⟩, but is
 // bounded by `_numberOffDiagTerms`.
-proc computeOffDiagGeneric(const ref matrix : Operator,
-                           count : int,
-                           alphas : c_ptrConst(uint(64)),
-                           xs : c_ptrConst(?eltType),
-                           betas : c_ptr(uint(64)),
-                           cs : c_ptr(complex(128)),
-                           norms : c_ptr(real(64)),
-                           offsets : c_ptr(int),
-                           tempSpins : c_ptr(uint(64)),
-                           tempCoeffs : c_ptr(complex(128)),
-                           _timers : c_ptr(BatchedOperatorTimers)) {
-  // totalTimer.start();
-  // defer totalTimer.stop();
-
+private inline proc computeOffDiagGeneric(const ref matrix : Operator,
+                                          count : int,
+                                          alphas : c_ptrConst(uint(64)),
+                                          xs,
+                                          ref others : BatchedOperatorPointers,
+                                          in timers : BatchedOperatorTimers?) {
   // Simple case when no symmetries are used
   if !matrix.basis.requiresProjection() {
-    computeOffDiagNoProjection(matrix, count, alphas, xs, betas, cs, offsets, _timers);
+    computeOffDiagNoProjection(matrix, count, alphas, xs, others, timers);
   }
-  // Another simple case when no permutations were given, only the spin
-  // inversion
+  // Another simple case when no permutations were given, only the spin inversion
   else if !matrix.basis.hasPermutationSymmetries()
             && matrix.basis.hasSpinInversionSymmetry() {
-    computeOffDiagOnlyInversion(matrix, count, alphas, xs, betas, cs, offsets, _timers);
+    computeOffDiagOnlyInversion(matrix, count, alphas, xs, others, timers);
   }
   // The tricky case when we have to project betas first
   else {
-    computeOffDiagWithProjection(matrix, count, alphas, xs, betas, cs, norms, offsets,
-                                 tempSpins, tempCoeffs, _timers);
+    computeOffDiagWithProjection(matrix, count, alphas, xs, others, timers);
   }
 }
 
-record BatchedOperatorTimers {
+class BatchedOperatorTimers {
   var totalTimer : stopwatch;
   var applyOffDiagTimer : stopwatch;
   var stateInfoTimer : stopwatch;
   var memcpyTimer : stopwatch;
   var coeffTimer : stopwatch;
   var keysTimer : stopwatch;
+}
+
+record BatchedOperatorPointers {
+  var betas  : c_ptr(uint(64));
+  var coeffs : c_ptr(complex(128));
+  var offsets : c_ptr(int);
+  var tempSpins : c_ptr(uint(64));
+  var tempCoeffs : c_ptr(complex(128));
+  var tempNorms : c_ptr(real(64));
+  var localeIdxs : c_ptr(uint(8));
 }
 
 // A wrapper around the Operator class that allows applying the operator to a
@@ -296,191 +270,92 @@ record BatchedOperatorTimers {
 // Operations on this record are not thread-safe, so each task should keep a separate copy of BatchedOperator.
 record BatchedOperator {
   var _matrixPtr : c_ptrConst(Operator);
+  var pointers : BatchedOperatorPointers;
   var batchSize : int;
-  var _numberOffDiagTerms : int;
+  var numberOffDiagTerms : int;
   var _dom : domain(1);
-  var _spins1 : [_dom] uint(64);
-  var _spins2 : [_dom] uint(64);
-  var _coeffs1 : [_dom] complex(128);
-  var _coeffs2 : [_dom] complex(128);
-  var _norms : [_dom] real(64);
-  var _localeIdxs : [_dom] uint(8);
+  var _spins : [_dom] uint(64);
+  var _coeffs : [_dom] complex(128);
   var _offsets : [0 ..# batchSize + 1] int;
-  var _timers : BatchedOperatorTimers;
+  var _localeIdxs : [_dom] uint(8);
+  var _domTemp : domain(1);
+  var _spinsTemp : [_domTemp] uint(64);
+  var _coeffsTemp : [_domTemp] complex(128);
+  var _normsTemp : [_domTemp] real(64);
+  var timers : owned BatchedOperatorTimers;
+
+  proc initPointers() {
+    pointers.betas = c_ptrTo(_spins);
+    pointers.coeffs = c_ptrTo(_coeffs);
+    pointers.offsets = c_ptrTo(_offsets);
+    pointers.tempSpins = if _domTemp.size != 0 then c_ptrTo(_spinsTemp) else nil;
+    pointers.tempCoeffs = if _domTemp.size != 0 then c_ptrTo(_coeffsTemp) else nil;
+    pointers.tempNorms = if _domTemp.size != 0 then c_ptrTo(_normsTemp) else nil;
+    pointers.localeIdxs = c_ptrTo(_localeIdxs);
+  }
 
   proc init(const ref matrix : Operator, batchSize : int) {
     this._matrixPtr = c_addrOfConst(matrix);
     this.batchSize = batchSize;
-    this._numberOffDiagTerms = matrix.numberOffDiagTerms();
-    const numberTerms = max(_numberOffDiagTerms, 1);
-    this._dom = {0 ..# (batchSize * (numberTerms + 1))};
+    this.numberOffDiagTerms = matrix.numberOffDiagTerms();
+    const numberTerms = max(numberOffDiagTerms, 1);
+    this._dom = {0 ..# batchSize * numberTerms};
+    this._domTemp =
+      if _matrixPtr.deref().basis.hasPermutationSymmetries()
+        // It is important to have numberTerms + 1 here. See the POSIX.memcpy
+        // call in computeOffDiagWithProjection for why.
+        then {0 ..# (batchSize * (numberTerms + 1))}
+        else {0 .. -1};
+    this.timers = new BatchedOperatorTimers();
+    complete();
+    initPointers();
   }
   proc init=(const ref other : BatchedOperator) {
     assert(other.locale == here);
     this._matrixPtr = other._matrixPtr;
     this.batchSize = other.batchSize;
-    this._numberOffDiagTerms = other._numberOffDiagTerms;
+    this.numberOffDiagTerms = other.numberOffDiagTerms;
     this._dom = other._dom;
+    this._domTemp = other._domTemp;
+    this.timers = new BatchedOperatorTimers();
+    complete();
+    initPointers();
   }
 
   inline proc matrix ref { return _matrixPtr.deref(); }
   inline proc basis ref { return matrix.basis; }
 
-  /*
-  proc computeOffDiagNoProjection(count, alphas, xs) {
-    const betas = c_pointer_return(_spins1[0]);
-    const cs = c_pointer_return(_coeffs1[0]);
-    const offsets = c_pointer_return(_offsets[0]);
-    const keys = c_pointer_return(_localeIdxs[0]);
-    // We compute H|αᵢ⟩ = ∑ⱼ cᵢⱼ|βᵢⱼ⟩ for each |αᵢ⟩ where i ∈ {0 ..# count}
-    // at this point j ∈ {0 ..# _numberOffDiagTerms}. Both cᵢⱼ and |βᵢⱼ⟩ are
-    // conceptually 2-dimensional arrays, but we use flattened
-    // representations of them.
-    applyOffDiagTimer.start();
-    ls_internal_operator_apply_off_diag_x1(
-      matrix.payload.deref(),
-      count,
-      alphas,
-      betas,
-      cs,
-      offsets,
-      xs,
-      _dom.size);
-    applyOffDiagTimer.stop();
-
-    // Determine the target locale for every |βᵢⱼ⟩.
-    const totalCount = offsets[count];
-    computeKeys(totalCount, betas, keys);
-
-    return (totalCount, betas, cs, keys);
-  }
-
-  proc computeOffDiagOnlyInversion(count, alphas, xs) {
-    const betas = c_pointer_return(_spins1[0]);
-    const cs = c_pointer_return(_coeffs1[0]);
-    const offsets = c_pointer_return(_offsets[0]);
-    const keys = c_pointer_return(_localeIdxs[0]);
-    // We compute H|αᵢ⟩ = ∑ⱼ cᵢⱼ|βᵢⱼ⟩ for each |αᵢ⟩ where i ∈ {0 ..# count}
-    // at this point j ∈ {0 ..# _numberOffDiagTerms}. Both cᵢⱼ and |βᵢⱼ⟩ are
-    // conceptually 2-dimensional arrays, but we use flattened
-    // representations of them.
-    applyOffDiagTimer.start();
-    ls_internal_operator_apply_off_diag_x1(
-      matrix.payload.deref(),
-      count,
-      alphas,
-      betas,
-      cs,
-      offsets,
-      xs,
-      _dom.size);
-    applyOffDiagTimer.stop();
-
-    const totalCount = offsets[count];
-    const mask = (1:uint(64) << matrix.basis.numberSites()) - 1;
-    const character = matrix.basis.spinInversion;
-    assert(character != 0);
-
-    stateInfoTimer.start();
-    foreach i in 0 ..# totalCount {
-      const current = betas[i];
-      const inverted = current ^ mask;
-      if inverted < current {
-        betas[i] = inverted;
-        cs[i] *= character;
-      }
-    }
-    stateInfoTimer.stop();
-
-    computeKeys(totalCount, betas, keys);
-
-    return (totalCount, betas, cs, keys);
-  }
-
-  proc computeOffDiagWithProjection(count, alphas, xs) {
-    const tempSpins = c_pointer_return(_spins2[0]);
-    const tempCoeffs = c_pointer_return(_coeffs2[0]);
-    const offsets = c_pointer_return(_offsets[0]);
-    applyOffDiagTimer.start();
-    ls_internal_operator_apply_off_diag_x1(
-      matrix.payload.deref(),
-      count,
-      alphas,
-      tempSpins,
-      tempCoeffs,
-      offsets,
-      xs,
-      _dom.size);
-    applyOffDiagTimer.stop();
-    const totalCount = offsets[count];
-    // We are also interested in norms of alphas, so we append them to tempSpins
-    memcpyTimer.start();
-    assert(totalCount + count <= _dom.size);
-    POSIX.memcpy(tempSpins + totalCount, alphas, count:c_size_t * c_sizeof(uint(64)));
-    memcpyTimer.stop();
-
-    const betas = c_pointer_return(_spins1[0]);
-    const cs = c_pointer_return(_coeffs1[0]);
-    const norms = c_pointer_return(_norms[0]);
-    stateInfoTimer.start();
-    ls_hs_state_info(
-      basis.payload,
-      totalCount + count,
-      tempSpins, 1,
-      betas, 1,
-      cs,
-      norms);
-    stateInfoTimer.stop();
-
-    coeffTimer.start();
-    foreach i in 0 ..# count {
-      foreach k in offsets[i] ..< offsets[i + 1] {
-        cs[k] *= tempCoeffs[k] * norms[k] / norms[totalCount + i];
-      }
-    }
-    coeffTimer.stop();
-
-    const keys = c_pointer_return(_localeIdxs[0]);
-    computeKeys(totalCount, betas, keys);
-
-    return (totalCount, betas, cs, keys);
-  }
-  */
-
-  proc computeOffDiag(count : int,
-                      alphas : c_ptrConst(uint(64)),
-                      xs : c_ptrConst(?eltType))
+  proc computeOffDiag(count : int, alphas : c_ptrConst(uint(64)), xs)
       : (int, c_ptr(uint(64)), c_ptr(complex(128)), c_ptr(uint(8))) {
 
-    assert(count <= batchSize);
-    _timers.totalTimer.start();
-    defer _timers.totalTimer.stop();
+    assert(count <= batchSize, "buffer overflow in BatchedOperator");
+    if count == 0 {
+      pointers.offsets[0] = 0;
+      return (0, nil, nil, nil);
+    }
+    if numberOffDiagTerms == 0 {
+      POSIX.memset(pointers.offsets, 0, (count + 1):c_size_t * c_sizeof(int));
+      return (0, nil, nil, nil);
+    }
 
-    const betas = c_pointer_return(_spins1[0]);
-    const cs = c_pointer_return(_coeffs1[0]);
-    const norms = c_pointer_return(_norms[0]);
-    const tempSpins = c_pointer_return(_spins2[0]);
-    const tempCoeffs = c_pointer_return(_coeffs2[0]);
-    const offsets = c_pointer_return(_offsets[0]);
-    const keys = c_pointer_return(_localeIdxs[0]);
+    timers.totalTimer.start();
+    defer timers.totalTimer.stop();
 
-    computeOffDiagGeneric(matrix, count, alphas, xs, betas, cs, norms, offsets,
-                          tempSpins, tempCoeffs, c_ptrTo(_timers));
-    const totalCount = offsets[count];
-    computeKeys(totalCount, betas, keys, _timers.keysTimer);
+    computeOffDiagGeneric(matrix, count, alphas, xs, pointers, timers.borrow());
+    const totalCount = pointers.offsets[count];
+    computeKeys(totalCount, pointers.betas, pointers.localeIdxs, timers.keysTimer);
 
-    return (totalCount, betas, cs, keys);
-
+    return (totalCount, pointers.betas, pointers.coeffs, pointers.localeIdxs);
   }
 
   proc getTimings() {
     var tree = timingTree(
-      "BatchedOperator.computeOffDiag", _timers.totalTimer.elapsed(),
-      [ ("ls_internal_operator_apply_off_diag_x1", _timers.applyOffDiagTimer.elapsed())
-      , ("memcpy", _timers.memcpyTimer.elapsed())
-      , ("ls_hs_state_info", _timers.stateInfoTimer.elapsed())
-      , ("rescale coeffs", _timers.coeffTimer.elapsed())
-      , ("localeIdxOf", _timers.keysTimer.elapsed())
+      "BatchedOperator.computeOffDiag", timers.totalTimer.elapsed(),
+      [ ("ls_internal_operator_apply_off_diag_x1", timers.applyOffDiagTimer.elapsed())
+      , ("memcpy", timers.memcpyTimer.elapsed())
+      , ("ls_hs_state_info", timers.stateInfoTimer.elapsed())
+      , ("rescale coeffs", timers.coeffTimer.elapsed())
+      , ("localeIdxOf", timers.keysTimer.elapsed())
       ]
     );
     return tree;
@@ -492,7 +367,6 @@ export proc ls_chpl_operator_apply_diag(matrixPtr : c_ptr(ls_hs_operator),
                                         alphas : c_ptr(uint(64)),
                                         coeffs : c_ptr(chpl_external_array),
                                         numTasks : int) {
-  // logDebug("Calling ls_chpl_operator_apply_diag ...");
   var matrix = new Operator(matrixPtr, owning=false);
   if matrix.basis.numberWords != 1 then
     halt("bases with more than 64 bits are not yet implemented");
@@ -502,7 +376,6 @@ export proc ls_chpl_operator_apply_diag(matrixPtr : c_ptr(ls_hs_operator),
     matrix.payload.deref(), count, alphas, c_ptrTo(_cs[0]), nil);
 
   coeffs.deref() = convertToExternalArray(_cs);
-  // logDebug("Done! Returning ...");
 }
 
 export proc ls_chpl_operator_apply_off_diag(matrixPtr : c_ptr(ls_hs_operator),
@@ -512,56 +385,14 @@ export proc ls_chpl_operator_apply_off_diag(matrixPtr : c_ptr(ls_hs_operator),
                                             coeffs : c_ptr(chpl_external_array),
                                             offsets : c_ptr(chpl_external_array),
                                             numTasks : int) {
+  assert(matrixPtr != nil);
   var matrix = new Operator(matrixPtr, owning=false);
-  if matrix.basis.numberWords != 1 then
-    halt("bases with more than 64 bits are not yet implemented");
-  const numberOffDiagTerms = matrix.numberOffDiagTerms();
-  var _offsets : [0 ..# count + 1] int;
+  var batchedOperator = new BatchedOperator(matrix, max(1, count));
 
-  if numberOffDiagTerms == 0 {
-    betas.deref() = new chpl_external_array(nil, 0, nil);
-    coeffs.deref() = new chpl_external_array(nil, 0, nil);
-    offsets.deref() = convertToExternalArray(_offsets);
-    return;
-  }
-
-  const dom = {0 ..# count * (numberOffDiagTerms + 1)};
-  var _betas   : [dom] uint(64);
-  var _cs      : [dom] complex(128);
-
-  if !matrix.basis.requiresProjection() {
-    computeOffDiagGeneric(matrix=matrix,
-                          count=count,
-                          alphas=alphas,
-                          xs=nil:c_ptrConst(real(64)),
-                          betas=c_ptrTo(_betas),
-                          cs=c_ptrTo(_cs),
-                          norms=nil:c_ptr(real(64)),
-                          offsets=c_ptrTo(_offsets),
-                          tempSpins=nil:c_ptr(uint(64)),
-                          tempCoeffs=nil:c_ptr(complex(128)),
-                          _timers=nil:c_ptr(BatchedOperatorTimers));
-  }
-  else {
-    var tempSpins : [dom] uint(64);
-    var tempCoeffs : [dom] complex(128);
-    var norms : [dom] real(64);
-    computeOffDiagGeneric(matrix=matrix,
-                          count=count,
-                          alphas=alphas,
-                          xs=nil:c_ptrConst(real(64)),
-                          betas=c_ptrTo(_betas),
-                          cs=c_ptrTo(_cs),
-                          norms=c_ptrTo(norms),
-                          offsets=c_ptrTo(_offsets),
-                          tempSpins=c_ptrTo(tempSpins),
-                          tempCoeffs=c_ptrTo(tempCoeffs),
-                          _timers=nil:c_ptr(BatchedOperatorTimers));
-  }
-
-  betas.deref() = convertToExternalArray(_betas);
-  coeffs.deref() = convertToExternalArray(_cs);
-  offsets.deref() = convertToExternalArray(_offsets);
+  batchedOperator.computeOffDiag(count, alphas, nil);
+  betas.deref() = convertToExternalArray(batchedOperator._spins);
+  coeffs.deref() = convertToExternalArray(batchedOperator._coeffs);
+  offsets.deref() = convertToExternalArray(batchedOperator._offsets);
 }
 
 } // end module BatchedOperator
