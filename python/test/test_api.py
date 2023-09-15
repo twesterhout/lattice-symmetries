@@ -259,3 +259,16 @@ def test_convert_to_csr():
     assert (matrix != get_csr_hamiltonian(hamiltonian)).nnz == 0
     x = np.random.rand(basis.number_states)
     assert np.allclose(hamiltonian @ x, matrix @ x)
+
+
+def test_csr_matvec():
+    basis = ls.SpinBasis(2)
+    basis.build()
+    expr = ls.Expr("σᶻ₀ σᶻ₁ + 2 σ⁺₀ σ⁻₁ + 2 σ⁻₀ σ⁺₁")
+    hamiltonian = ls.Operator(basis, expr)
+    matrix = hamiltonian.to_csr()
+    x = np.random.rand(basis.number_states).astype(np.complex128)
+    assert np.allclose(hamiltonian @ x, ls.matrix_vector_product_csr(matrix, x))
+
+
+test_csr_matvec()

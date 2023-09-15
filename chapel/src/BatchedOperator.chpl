@@ -10,6 +10,7 @@ use FFI;
 use Utils;
 use ForeignTypes;
 use StatesEnumeration;
+import CSR;
 
 proc ls_internal_operator_apply_diag_x1(
     const ref op : ls_hs_operator,
@@ -272,18 +273,18 @@ extern {
 private proc csrGeneratePart(count : int,
                              betas : c_ptrConst(uint(64)),
                              coeffs : c_ptrConst(complex(128)),
-                             offsets : c_ptrConst(int(64)),
+                             offsets : c_ptrConst(int),
                              diag : c_ptrConst(real(64)),
-                             rowOffsets : c_ptr(int(64)),
-                             colIndices : c_ptr(int(64)),
+                             rowOffsets : c_ptr(?idxType),
+                             colIndices : c_ptr(idxType),
                              matrixElements : c_ptr(?eltType),
                              const ref basis : Basis,
                              numberOffDiagTerms : int) {
   var order : [0 ..# numberOffDiagTerms] int;
   var indices : [0 ..# numberOffDiagTerms] int;
-  var numberNonZero : int = 0;
+  var numberNonZero : idxType = 0;
 
-  for rowIndex in 0 ..# count {
+  for rowIndex in (0:idxType) ..# (count:idxType) {
     rowOffsets[rowIndex] = numberNonZero;
 
     const b = offsets[rowIndex];
@@ -301,9 +302,9 @@ private proc csrGeneratePart(count : int,
 
     // Sum duplicates
     var diagonalWritten = false;
-    var k : int = 0;
+    var k : idxType = 0;
     while k < n {
-      var colIndex = indices[order[k]];
+      var colIndex = indices[order[k]]:idxType;
       var acc = coeffs[b + order[k]];
       k += 1;
       while k < n && indices[order[k]] == colIndex {
@@ -513,8 +514,8 @@ export proc ls_chpl_operator_to_csr(matrixPtr : c_ptr(ls_hs_operator),
   ls_internal_operator_apply_diag_x1(
     matrixPtr.deref(), count, representativesPtr, c_ptrTo(_diagonal), nil);
 
-  var _rowOffsets : [0 ..# count + 1] int(64);
-  var _colIndices : [0 ..# count + totalCount] int(64);
+  var _rowOffsets : [0 ..# count + 1] int(32);
+  var _colIndices : [0 ..# count + totalCount] int(32);
   var _matrixElements : [0 ..# count + totalCount] complex(128);
 
   csrGeneratePart(count,
@@ -531,6 +532,21 @@ export proc ls_chpl_operator_to_csr(matrixPtr : c_ptr(ls_hs_operator),
   rowOffsets.deref() = convertToExternalArray(_rowOffsets);
   colIndices.deref() = convertToExternalArray(_colIndices);
   matrixElements.deref() = convertToExternalArray(_matrixElements);
+}
+
+export proc ls_chpl_matrix_vector_product_csr_i32_c128(
+    numberRows : int, numberCols : int,
+    numberNonZero : int, matrixElements : c_ptrConst(complex(128)),
+    rowOffsets : c_ptrConst(int(32)), colIndices : c_ptrConst(int(32)),
+    x : c_ptrConst(complex(128)), y : c_ptr(complex(128)), numTasks : int) {
+  const matrix = new CSR.CSR(eltType=complex(128), idxType=int(32),
+                             matrixElements=matrixElements,
+                             rowOffsets=rowOffsets,
+                             colIndices=colIndices,
+                             numberRows=numberRows,
+                             numberCols=numberCols,
+                             numberNonZero=numberNonZero);
+  CSR.csrMatvec(matrix, x, y, if numTasks <= 0 then here.maxTaskPar else numTasks);
 }
 
 } // end module BatchedOperator

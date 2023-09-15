@@ -21,7 +21,8 @@ module LatticeSymmetries {
       operator_apply_diag=c_ptrTo(ls_chpl_operator_apply_diag),
       matrix_vector_product_f64=c_ptrTo(ls_chpl_matrix_vector_product_f64),
       matrix_vector_product_c128=c_ptrTo(ls_chpl_matrix_vector_product_c128),
-      operator_to_csr=c_ptrTo(ls_chpl_operator_to_csr)
+      operator_to_csr=c_ptrTo(ls_chpl_operator_to_csr),
+      matrix_vector_product_csr_i32_c128=c_ptrTo(ls_chpl_matrix_vector_product_csr_i32_c128)
     );
     // logDebug("Initializing chpl_kernels ...");
     ls_hs_internal_set_chpl_kernels(c_ptrTo(kernels));

@@ -821,8 +821,8 @@ class Operator(LinearOperator):
         kernels = lib.ls_hs_internal_get_chpl_kernels()
         kernels.operator_to_csr(self._payload, row_offsets, col_indices, matrix_elements, 0)
 
-        offsets_arr = _chpl_external_array_as_ndarray(row_offsets, np.int64)
-        indices_arr = _chpl_external_array_as_ndarray(col_indices, np.int64)
+        offsets_arr = _chpl_external_array_as_ndarray(row_offsets, np.int32)
+        indices_arr = _chpl_external_array_as_ndarray(col_indices, np.int32)
         coeffs_arr = _chpl_external_array_as_ndarray(matrix_elements, np.complex128)
         size = offsets_arr[-1]
         dim = self.basis.number_states
@@ -901,10 +901,37 @@ def load_yaml_config(filename: str):
     Config = namedtuple("Config", ["basis", "hamiltonian", "observables"], defaults=[None, None])
     return Config(basis, hamiltonian)
 
-    # def test_01():
-    #     basis = SpinBasis(2)
-    #     basis.build()
-    #     a = Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁")
-    #     h = Operator(basis, a)
-    #     (e, v) = scipy.sparse.linalg.eigsh(h, k=3, which="SA")
-    #     return h, e, v
+
+def matrix_vector_product_csr(
+    matrix: scipy.sparse.csr_matrix,
+    x: NDArray[np.complex128],
+    out: None | NDArray[np.complex128] = None,
+):
+    data = np.require(matrix.data, dtype=np.complex128, requirements=["C"])
+    indptr = np.require(matrix.indptr, dtype=np.int32, requirements=["C"])
+    indices = np.require(matrix.indices, dtype=np.int32, requirements=["C"])
+    matrix_elements = ffi.from_buffer("ls_hs_scalar[]", matrix.data, require_writable=False)
+    row_offsets = ffi.from_buffer("int32_t[]", matrix.indptr, require_writable=False)
+    col_indices = ffi.from_buffer("int32_t[]", matrix.indices, require_writable=False)
+
+    x = np.asarray(x, order="C", dtype=np.complex128)
+    x_ptr = ffi.from_buffer("ls_hs_scalar[]", x, require_writable=False)
+    if out is None:
+        out = np.empty_like(x)
+    else:
+        out = np.asarray(out, order="C", dtype=np.complex128)
+    y_ptr = ffi.from_buffer("ls_hs_scalar[]", out, require_writable=True)
+
+    kernels = lib.ls_hs_internal_get_chpl_kernels()
+    kernels.matrix_vector_product_csr_i32_c128(
+        matrix.shape[0],
+        matrix.shape[1],
+        matrix.nnz,
+        matrix_elements,
+        row_offsets,
+        col_indices,
+        x_ptr,
+        y_ptr,
+        -1,
+    )
+    return out

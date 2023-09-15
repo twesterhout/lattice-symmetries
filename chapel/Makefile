@@ -34,6 +34,7 @@ LIB_MODULES = src/LatticeSymmetries.chpl \
               src/BatchedOperator.chpl \
               src/DistributedMatrixVector.chpl \
               src/CommonParameters.chpl \
+              src/CSR.chpl \
               src/Utils.chpl
 
 APP_MODULES = $(LIB_MODULES) \
