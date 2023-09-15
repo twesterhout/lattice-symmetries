@@ -96,6 +96,7 @@ library
     , inline-c
     , megaparsec
     , mtl
+    , parallel
     , parser-combinators
     , prettyprinter       >=1.7
     , primitive

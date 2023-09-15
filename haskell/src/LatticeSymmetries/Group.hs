@@ -43,6 +43,7 @@ where
 
 import Control.Exception (assert)
 import Control.Monad.ST.Strict (ST, runST)
+import Control.Parallel.Strategies (parListChunk, parMap, rdeepseq, rpar, rparWith, runEval)
 import Data.Aeson (FromJSON (..), ToJSON (..), object, withObject, (.:), (.=))
 import Data.Complex
 import Data.List qualified
@@ -401,7 +402,8 @@ transversalGeneratingSet :: SearchTree a Permutation -> B.Vector Permutation
 transversalGeneratingSet = B.fromList . go
   where
     go (SearchLeaf (Just !p)) = [p | not (isIdentityPermutation p)]
-    go (SearchBranch _ (t : ts)) = concatMap (take 1 . go) ts <> go t
+    go (SearchBranch _ (t : ts)) = concatMap (force . take 1 . go) ts <> go t
+    -- \| d < (1 :: Int) = concat (parMap (rparWith rdeepseq) (take 1 . go (d + 1)) ts) <> go (d + 1) t
     go _ = []
 
 groupFromTransversalGeneratingSet :: B.Vector Permutation -> B.Vector Permutation
@@ -420,17 +422,21 @@ newtype MultiplicationTable = MultiplicationTable {unMultiplicationTable :: Dens
   deriving stock (Show)
 
 mkMultiplicationTable :: (HasCallStack) => B.Vector Permutation -> MultiplicationTable
-mkMultiplicationTable ps = MultiplicationTable . DenseMatrix n n $ runST $ U.generateM (n * n) $ \k -> do
-  let (i, j) = k `divMod` n
-      x = ps G.! i
-      y = ps G.! j
-      !z = x <> y
-  mps <- G.unsafeThaw ps
-  index <- binarySearch mps z
-  unless (ps G.! index == z) $ error "the group is not closed under <>"
-  pure index
+mkMultiplicationTable ps = MultiplicationTable . DenseMatrix n n $ U.generate (n * n) compute
   where
-    n = G.length ps
+    compute !k =
+      let (i, j) = k `divMod` n
+          x = ps G.! i
+          y = ps G.! j
+          !z = x <> y
+       in search z
+    search !z = runST $ do
+      mps <- G.unsafeThaw ps
+      index <- binarySearch mps z
+      unless (ps G.! index == z) $
+        error "the group is not closed under <>"
+      pure index
+    !n = G.length ps
 
 data AbelianSubsetHistory = AbelianSubsetHistory
   { included :: !(U.Vector Bool)

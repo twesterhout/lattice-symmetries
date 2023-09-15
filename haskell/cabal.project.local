@@ -9,4 +9,4 @@ package lattice-symmetries-haskell
   ghc-options: -g2
   -- -fprof-auto
   -- profiling: True
-  -- optimization: 2
+  optimization: 2

@@ -57,7 +57,8 @@ import Prelude hiding (cycle)
 
 -- | A permutation of numbers @[0 .. N - 1]@.
 newtype Permutation = Permutation {unPermutation :: U.Vector Int}
-  deriving stock (Show, Eq, Ord)
+  deriving stock (Show, Eq, Ord, Generic)
+  deriving anyclass (NFData)
 
 instance ToJSON Permutation where
   toJSON (Permutation p) = toJSON p
