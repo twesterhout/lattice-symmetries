@@ -5,7 +5,8 @@ main :: IO ()
 main = do
   let !g =
         groupFromTransversalGeneratingSet . transversalGeneratingSet $
-          autsSearchTree (rectangularGraph 16 16)
+          autsSearchTree (rectangularGraph 10 10)
   let !t = mkMultiplicationTable g
+  print $ G.length . fst $ abelianization t
   -- print (G.length g)
-  print $ G.length <$> take 16 (abelianSubset t)
+  -- print $ G.length <$> take 16 (abelianSubset t)

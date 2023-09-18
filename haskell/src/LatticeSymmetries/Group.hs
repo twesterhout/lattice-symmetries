@@ -38,6 +38,16 @@ module LatticeSymmetries.Group
   , MultiplicationTable (..)
   , AbelianSubsetHistory (..)
   , abelianSubset
+  , GroupElement (..)
+  , shrinkMultiplicationTable
+  , getGroupElements
+  , selectPrimeElements
+  , groupGenerators
+  , groupElementCycle
+  , groupElementOrder
+  , Coset (..)
+  , abelianization
+  , commutatorSubgroup
   )
 where
 
@@ -46,7 +56,9 @@ import Control.Monad.ST.Strict (ST, runST)
 import Control.Parallel.Strategies (parListChunk, parMap, rdeepseq, rpar, rparWith, runEval)
 import Data.Aeson (FromJSON (..), ToJSON (..), object, withObject, (.:), (.=))
 import Data.Complex
+import Data.IntSet qualified as IntSet
 import Data.List qualified
+import Data.List.NonEmpty qualified
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -55,6 +67,7 @@ import Data.Set qualified as Set
 import Data.Stream.Monadic (Step (Done, Skip, Yield), Stream (Stream))
 import Data.Vector qualified as B
 import Data.Vector.Algorithms.Search (binarySearch)
+import Data.Vector.Generic ((!))
 import Data.Vector.Generic qualified as G
 import Data.Vector.Generic.Mutable qualified as GM
 import Data.Vector.Storable qualified as S
@@ -69,7 +82,7 @@ import LatticeSymmetries.Benes
 import LatticeSymmetries.Dense
 import LatticeSymmetries.FFI
 import LatticeSymmetries.Utils
-import Prelude hiding (identity, permutations, toList)
+import Prelude hiding (identity, permutations, second, toList)
 
 newtype PermutationGroup = PermutationGroup (B.Vector Permutation)
   deriving stock (Show, Eq)
@@ -422,20 +435,10 @@ newtype MultiplicationTable = MultiplicationTable {unMultiplicationTable :: Dens
   deriving stock (Show)
 
 mkMultiplicationTable :: (HasCallStack) => B.Vector Permutation -> MultiplicationTable
-mkMultiplicationTable ps = MultiplicationTable . DenseMatrix n n $ U.generate (n * n) compute
+mkMultiplicationTable ps =
+  MultiplicationTable . generateDenseMatrix n n $ \i j ->
+    binarySearch' ps (ps ! i <> ps ! j)
   where
-    compute !k =
-      let (i, j) = k `divMod` n
-          x = ps G.! i
-          y = ps G.! j
-          !z = x <> y
-       in search z
-    search !z = runST $ do
-      mps <- G.unsafeThaw ps
-      index <- binarySearch mps z
-      unless (ps G.! index == z) $
-        error "the group is not closed under <>"
-      pure index
     !n = G.length ps
 
 data AbelianSubsetHistory = AbelianSubsetHistory
@@ -467,7 +470,7 @@ mergeAbelianSubsetHistories = fmap go . Data.List.groupBy (\a b -> a.mask == b.m
       [] -> error "should never happen by construction"
 
 abelianSubset :: MultiplicationTable -> [U.Vector Int]
-abelianSubset t = (\h -> G.map fst . G.filter snd . G.indexed $ h.included) <$> go h0
+abelianSubset t = (\h -> sortVectorBy compare . G.map fst . G.filter snd . G.indexed $ h.included) <$> go h0
   where
     !n = dmRows . unMultiplicationTable $ t
     h0 = AbelianSubsetHistory (G.replicate n False) (G.replicate n True)
@@ -485,6 +488,172 @@ abelianSubset t = (\h -> G.map fst . G.filter snd . G.indexed $ h.included) <$> 
                 . Data.List.sortOn (.mask)
                 $ addToAbelianSubsetHistory t h <$> choices
          in concatMap go hs'
+
+data GroupElement = GroupElement {index :: !Int, table :: !MultiplicationTable}
+  deriving stock (Show)
+
+instance Semigroup GroupElement where
+  -- NOTE: a.table and b.table should be the same
+  a <> b = GroupElement index' a.table
+    where
+      index' = unsafeIndexDenseMatrix (unMultiplicationTable a.table) (a.index, b.index)
+
+binarySearch' :: (HasCallStack, G.Vector v a, Ord a) => v a -> a -> Int
+binarySearch' !v !x = runST $ do
+  mv <- G.unsafeThaw v
+  index <- binarySearch mv x
+  unless (v ! index == x) $ error "element not found"
+  pure index
+
+shrinkMultiplicationTable :: MultiplicationTable -> U.Vector Int -> MultiplicationTable
+shrinkMultiplicationTable (MultiplicationTable matrix) indices =
+  MultiplicationTable . generateDenseMatrix n n $ \i j ->
+    binarySearch' indices $ indexDenseMatrix matrix (indices ! i, indices ! j)
+  where
+    n = G.length indices
+
+getGroupElements :: MultiplicationTable -> [GroupElement]
+getGroupElements t@(MultiplicationTable (DenseMatrix n _ _)) =
+  [GroupElement i t | i <- [0 .. n - 1]]
+
+primeFactors :: Int -> [Int]
+primeFactors = go 2
+  where
+    go :: Int -> Int -> [Int]
+    go !d !n
+      | n <= 1 = []
+      | d * d > n = [n]
+      | n `mod` d == 0 = d : go d (n `div` d)
+      | otherwise = go (d + 1) n
+
+combineFactors :: [Int] -> [(Int, Int)]
+combineFactors xs = (\l -> (head l, length l)) <$> Data.List.NonEmpty.group xs
+
+groupElementOrder :: GroupElement -> Int
+groupElementOrder x0 = go (x0 <> x0)
+  where
+    go !x
+      | x.index == x0.index = 1
+      | otherwise = 1 + go (x <> x0)
+
+groupElementCycle :: GroupElement -> [GroupElement]
+groupElementCycle x0 = x0 : go (x0 <> x0)
+  where
+    go !x
+      | x.index == x0.index = []
+      | otherwise = x : go (x <> x0)
+
+isIdentity :: GroupElement -> Bool
+isIdentity x = (x <> x).index == x.index
+
+selectPrimeElements :: [GroupElement] -> [(GroupElement, Int, Int)]
+selectPrimeElements = mapMaybe getInfo
+  where
+    getInfo x =
+      let !order = groupElementOrder x
+       in case combineFactors $ primeFactors order of
+            [(p, n)] -> Just (x, p, n)
+            _ -> Nothing
+
+groupGenerators :: [GroupElement] -> [GroupElement]
+groupGenerators group0 = go factors0 [] (selectPrimeElements group0) []
+  where
+    factors0 = combineFactors . primeFactors . length $ group0
+
+    go [] gens _ _ = gens
+    go ((p, n) : otherFactors) gens candidates subgroup =
+      go factors' gens' candidates' subgroup'
+      where
+        (g, _, n') =
+          Data.List.maximumBy (comparing third) $
+            filter ((== p) . second) candidates
+        factors'
+          | n == n' = otherFactors
+          | otherwise = (p, n - n') : otherFactors
+        gens' = g : gens
+        subgroup'
+          | null subgroup = groupElementCycle g
+          | otherwise = [a <> b | a <- subgroup, b <- groupElementCycle g]
+        candidates' =
+          let seen = IntSet.fromList $ (.index) <$> subgroup'
+           in flip filter candidates $ \(cg, cp, cn) ->
+                not (IntSet.member cg.index seen)
+                  && cn <= Data.List.maximum [fn | (fp, fn) <- factors', fp == cp]
+
+        second (_, b, _) = b
+        third (_, _, c) = c
+
+newtype Representation = Representation (B.Vector (Ratio Int))
+
+groupRepresentations :: B.Vector GroupElement -> [Representation]
+groupRepresentations generators =
+  fmap (Representation . G.fromList) . mapM phases $ G.toList orders
+  where
+    orders = G.map groupElementOrder generators
+    phases n = [i % n | i <- [0 .. n - 1]]
+
+newtype Coset = Coset {unCoset :: IntSet.IntSet}
+  deriving stock (Eq, Ord, Show)
+
+getTimes :: MultiplicationTable -> Int -> Int -> Int
+getTimes (MultiplicationTable matrix) = curry (unsafeIndexDenseMatrix matrix)
+
+getInvert :: MultiplicationTable -> Int -> Int
+getInvert t@(MultiplicationTable matrix) =
+  \i ->
+    case G.find (\j -> i `times` j == identityIndex) (U.generate n id) of
+      Just j -> j
+      Nothing -> error "group element has no inverse"
+  where
+    !n = matrix.dmRows
+    !times = getTimes t
+    !identityIndex =
+      case G.find (\j -> isIdentity (GroupElement j t)) (U.generate n id) of
+        Just k -> k
+        Nothing -> error "the group has no or multiple identities"
+
+commutatorSubgroup :: MultiplicationTable -> IntSet
+commutatorSubgroup t =
+  IntSet.fromList
+    [ g `times` h `times` (inverses ! g) `times` (inverses ! h)
+    | g <- [0 .. n - 1]
+    , h <- [0 .. n - 1]
+    ]
+  where
+    !n = t.unMultiplicationTable.dmRows
+    !times = getTimes t
+    !invert = getInvert t
+    !inverses = U.generate n invert
+
+abelianization :: MultiplicationTable -> (B.Vector Coset, MultiplicationTable)
+abelianization t = (cosets, cosetMultiplicationTable t cosets)
+  where
+    n = t.unMultiplicationTable.dmRows
+    cgs = commutatorSubgroup t
+    times = getTimes t
+    coset g = Coset $ IntSet.fromList [g `times` h | h <- IntSet.toList cgs]
+    !cosets = go [] IntSet.empty [0 .. n - 1]
+    go !cs !seen (g : gs)
+      | g `IntSet.member` seen = go cs seen gs
+      | otherwise =
+          let !c' = coset g
+              seen' = unCoset c' `IntSet.union` seen
+           in go (c' : cs) seen' gs
+    go cs _ [] = G.fromList cs
+
+-- !cosets = B.fromList . Set.toAscList . Set.fromList $ coset <$> [0 .. n - 1]
+
+cosetMultiplicationTable :: MultiplicationTable -> B.Vector Coset -> MultiplicationTable
+cosetMultiplicationTable t cosets =
+  MultiplicationTable . generateDenseMatrix n n $ \i j ->
+    let x = Data.List.head . IntSet.elems . unCoset $ cosets ! i
+        y = Data.List.head . IntSet.elems . unCoset $ cosets ! j
+        !z = getTimes t x y
+     in case G.findIndex (\(Coset coset) -> z `IntSet.member` coset) cosets of
+          Just k -> k
+          Nothing -> error "G/[G, G] is not closed under <>"
+  where
+    n = G.length cosets
 
 -- strongGeneratingSet :: SearchTree [Mapping Int] -> [[Mapping Int]]
 -- strongGeneratingSet = go []
