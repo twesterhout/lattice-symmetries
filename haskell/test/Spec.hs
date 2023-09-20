@@ -9,6 +9,7 @@ import LatticeSymmetries.ComplexRationalSpec qualified
 import LatticeSymmetries.ConversionSpec qualified
 import LatticeSymmetries.DenseSpec qualified
 import LatticeSymmetries.GeneratorSpec qualified
+import LatticeSymmetries.GroupSpec qualified
 import LatticeSymmetries.NonbranchingTermSpec qualified
 import LatticeSymmetries.ParserSpec qualified
 import Test.Hspec
@@ -23,6 +24,7 @@ main = hspec $ do
   describe "NonbranchingTerm" LatticeSymmetries.NonbranchingTermSpec.spec
   describe "Benes" LatticeSymmetries.BenesSpec.spec
   describe "Generator" LatticeSymmetries.GeneratorSpec.spec
+  describe "Group" LatticeSymmetries.GroupSpec.spec
 
 -- it "encodes Symmetry" $ do
 --   Aeson.encode (mkSymmetry [0, 1, 2, 3, 4] 0) `shouldBe` "{\"sector\":0,\"permutation\":[0,1,2,3,4]}"

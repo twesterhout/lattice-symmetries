@@ -94,7 +94,10 @@ modOne x
   | otherwise = x
 
 instance Semigroup Symmetry where
-  (<>) (Symmetry pa λa) (Symmetry pb λb) = Symmetry (pa <> pb) (modOne (λa + λb))
+  (<>) (Symmetry pa λa) (Symmetry pb λb) =
+    let !p = pa <> pb
+        !λ = modOne (λa + λb)
+     in Symmetry p λ
 
 data Symmetries = Symmetries
   { symmGroup :: !PermutationGroup
@@ -107,10 +110,9 @@ data Symmetries = Symmetries
 getCharacter :: Symmetry -> Complex Double
 getCharacter (symmetryPhase -> φ)
   | φ == 0 = 1 :+ 0
+  | φ == 1 % 4 = 0 :+ (-1)
   | φ == 1 % 2 = (-1) :+ 0
-  | φ == (-1) % 2 = (-1) :+ 0
-  | φ == 1 % 4 = 0 :+ 1
-  | φ == (-1) % 4 = 0 :+ (-1)
+  | φ == 3 % 4 = 0 :+ 1
   | otherwise = cos (-2 * pi * realToFrac φ) :+ sin (-2 * pi * realToFrac φ)
 
 mkSymmetries :: [Symmetry] -> Either Text Symmetries
