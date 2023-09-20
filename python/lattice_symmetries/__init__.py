@@ -336,7 +336,7 @@ class Basis:
     @staticmethod
     def from_json(json_string: str) -> "Basis":
         _assert_subtype(json_string, str)
-        return Basis(**json.loads(json_string))
+        return Basis(json_string)
 
     def to_json(self) -> str:
         c_str = lib.ls_hs_basis_to_json(self._payload)
