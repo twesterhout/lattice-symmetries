@@ -39,6 +39,7 @@
         nix-chapel.overlays.default
         kernels-overlay
         haskell-overlay
+        haskell-overlay
         chapel-overlay
         python-overlay
       ];
@@ -50,7 +51,7 @@
 
     in
     {
-      overlays.default = composed-overlay { withPic = true; };
+      overlays.default = composed-overlay;
 
       templates.default = {
         path = builtins.toPath "${./.}/template";
