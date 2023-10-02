@@ -9,18 +9,20 @@ final: prev: {
     test-data = final.stdenv.mkDerivation {
       pname = "lattice-symmetries-test-data";
       inherit version;
-      src = final.fetchzip {
-        url = "https://github.com/twesterhout/lattice-symmetries/releases/download/test-v1/matvec.zip";
+      src = final.fetchurl {
+        url = "https://surfdrive.surf.nl/files/index.php/s/jyaDzuXyTPI1HUs/download";
+        hash = "sha256-BUGgD8PYOW5s039PkuATeyRIvSGEIn3PGRcDNE1j5hs=";
+        # url = "https://github.com/twesterhout/lattice-symmetries/releases/download/test-v1/matvec.zip";
+        # hash = "sha256-DR+HpYZkgxigXooXCkluGZz7ChRy8xqCKeVd4B3nGDQ=";
         # https://surfdrive.surf.nl/files/index.php/s/OK5527Awfgl1hT2/download?path=%2Fdata%2Fv3%2Fmatvec";
-        hash = "sha256-DR+HpYZkgxigXooXCkluGZz7ChRy8xqCKeVd4B3nGDQ=";
         # sha256-laaL7WemYccjGU9B0fPN/SzyBv+vOEdIy7BgJ2JzKRw=";
       };
-      # unpackPhase = "unzip $src";
+      unpackPhase = "unzip $src";
       dontConfigure = true;
       dontBuild = true;
       installPhase = ''
         mkdir -p $out/share/data/matvec
-        cp *.h5 $out/share/data/matvec/
+        cp v4/*.{yaml,h5} $out/share/data/matvec/
       '';
       nativeBuildInputs = with final; [ unzip ];
     };

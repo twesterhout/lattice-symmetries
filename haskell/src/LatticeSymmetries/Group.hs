@@ -2,12 +2,13 @@ module LatticeSymmetries.Group
   ( PermutationGroup (..)
   , fromGenerators
   , pgLength
-  , Symmetry
+  , Symmetry (..)
   , mkSymmetry
   , symmetrySector
   , symmetryPermutation
   , symmetryPhase
   , getPeriodicity
+  , getCharacter
   , Symmetries (..)
   , mkSymmetries
   , areSymmetriesReal
@@ -88,7 +89,7 @@ mkSymmetry p sector
 symmetryNumberSites :: Symmetry -> Int
 symmetryNumberSites (Symmetry p _) = G.length (unPermutation p)
 
-modOne :: Integral a => Ratio a -> Ratio a
+modOne :: (Integral a) => Ratio a -> Ratio a
 modOne x
   | x >= 1 = x - fromIntegral (numerator x `div` denominator x)
   | otherwise = x
@@ -113,7 +114,11 @@ getCharacter (symmetryPhase -> φ)
   | φ == 1 % 4 = 0 :+ (-1)
   | φ == 1 % 2 = (-1) :+ 0
   | φ == 3 % 4 = 0 :+ 1
-  | otherwise = cos (-2 * pi * realToFrac φ) :+ sin (-2 * pi * realToFrac φ)
+  | 0 <= φ && φ < 1 % 4 = cos (2 * pi * realToFrac φ) :+ (-sin (2 * pi * realToFrac φ))
+  | 1 % 4 <= φ && φ < 1 % 2 = (-cos (2 * pi * realToFrac (1 % 2 - φ))) :+ (-sin (2 * pi * realToFrac (1 % 2 - φ)))
+  | 1 % 2 <= φ && φ < 3 % 4 = (-cos (2 * pi * realToFrac (φ - 1 % 2))) :+ sin (2 * pi * realToFrac (φ - 1 % 2))
+  | 3 % 4 <= φ && φ < 1 = cos (2 * pi * realToFrac (1 - φ)) :+ sin (2 * pi * realToFrac (1 - φ))
+  | otherwise = error "should never happen"
 
 mkSymmetries :: [Symmetry] -> Either Text Symmetries
 mkSymmetries [] = Right emptySymmetries
@@ -168,11 +173,11 @@ emptySymmetries = Symmetries (PermutationGroup G.empty) emptyBatchedBenesNetwork
 areSymmetriesReal :: Symmetries -> Bool
 areSymmetriesReal = G.all (== 0) . symmCharactersImag
 
-toSymmetryList :: HasCallStack => Symmetries -> [Symmetry]
+toSymmetryList :: (HasCallStack) => Symmetries -> [Symmetry]
 toSymmetryList (Symmetries (PermutationGroup gs) _ λsRe λsIm) =
   Data.List.zipWith3 toSymmetry (G.toList gs) (G.toList λsRe) (G.toList λsIm)
   where
-    toSymmetry :: HasCallStack => Permutation -> Double -> Double -> Symmetry
+    toSymmetry :: (HasCallStack) => Permutation -> Double -> Double -> Symmetry
     toSymmetry g λRe λIm
       | r ≈ 1 && s' ≈ fromIntegral (round s' :: Int) = mkSymmetry g (round s')
       | otherwise = error $ "failed to reconstruct Symmetry from " <> show (toList g) <> " and λ = " <> show λRe <> " + " <> show λIm <> "j"

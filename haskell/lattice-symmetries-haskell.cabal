@@ -203,6 +203,7 @@ test-suite lattice-symmetries-haskell-test
     LatticeSymmetries.GroupSpec
     LatticeSymmetries.NonbranchingTermSpec
     LatticeSymmetries.ParserSpec
+    Utils
 
   build-depends:
     , aeson
@@ -211,6 +212,7 @@ test-suite lattice-symmetries-haskell-test
     , megaparsec
     , prettyprinter
     , QuickCheck
+    , HUnit
     , text
     , vector
     , yaml

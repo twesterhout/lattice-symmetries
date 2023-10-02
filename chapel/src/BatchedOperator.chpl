@@ -311,8 +311,10 @@ private proc csrGeneratePart(count : int,
         acc += coeffs[b + order[k]];
         k += 1;
       }
-      if colIndex == rowIndex then
+      if colIndex == rowIndex {
         acc += diag[rowIndex];
+        diagonalWritten = true;
+      }
 
       if acc != 0 {
         if !diagonalWritten && colIndex > rowIndex {
