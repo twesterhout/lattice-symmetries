@@ -305,6 +305,9 @@ private proc csrGeneratePart(count : int,
     var k : idxType = 0;
     while k < n {
       var colIndex = indices[order[k]]:idxType;
+      if colIndex < 0 then
+        halt("invalid index: " + colIndex:string + " for state " + betas[order[k]]:string);
+
       var acc = coeffs[b + order[k]];
       k += 1;
       while k < n && indices[order[k]] == colIndex {
