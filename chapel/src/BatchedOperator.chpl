@@ -45,17 +45,15 @@ proc ls_internal_operator_apply_diag_x1(
   }
 }
 
-proc ls_internal_operator_apply_off_diag_x1(
+proc applyOffDiagKernel(
     const ref op : ls_hs_operator,
     batch_size : int,
     alphas : c_ptrConst(uint(64)),
     betas : c_ptr(uint(64)),
     coeffs : c_ptr(complex(128)),
     offsets : c_ptr(c_ptrdiff),
-    xs) {
-  // ls_internal_operator_apply_off_diag_x1(c_ptrToConst(op), batch_size, alphas, betas, coeffs, offsets, xs);
-  // return;
-
+    xs,
+    param left : bool = false) {
   // Nothing to apply
   if (op.off_diag_terms == nil || op.off_diag_terms.deref().number_terms == 0) {
     POSIX.memset(offsets, 0, (batch_size + 1):c_size_t * c_sizeof(c_ptrdiff));
@@ -74,11 +72,13 @@ proc ls_internal_operator_apply_off_diag_x1(
     var old_beta = alpha;
     var old_coeff : complex(128) = 0;
     for term_idx in 0 ..# number_terms {
-      const delta = (alpha & terms.m[term_idx]) == terms.r[term_idx];
+      // Right: T|α> = v * δ_{α^m,r} * (−1)^{h(α^s)} |α⊕x>,
+      // Left:  <α|T = v * δ_{α^m,l} * (−1)^{h(α^s)} <α⊕x|,
+      const l_or_r = if left then terms.l[term_idx] else terms.r[term_idx];
+      const delta = (alpha & terms.m[term_idx]) == l_or_r;
       if delta {
         const sign = 1 - 2 * parity(alpha & terms.s[term_idx]):int;
         const factor = if xs != nil then sign * xs[batch_idx] else sign;
-        // assert(terms.v[term_idx] != 0);
         const coeff = terms.v[term_idx] * factor;
         const beta = alpha ^ terms.x[term_idx];
         if beta != old_beta {
@@ -93,14 +93,6 @@ proc ls_internal_operator_apply_off_diag_x1(
         else {
           old_coeff += coeff;
         }
-        // if offset > minimal_offset && betas[offset - 1] == beta {
-        //   coeffs[offset - 1] += coeff;
-        // }
-        // else {
-        //   coeffs[offset] = coeff;
-        //   betas[offset] = beta;
-        //   offset += 1;
-        // }
       }
     }
     if old_beta != alpha {
@@ -134,19 +126,21 @@ private proc computeOffDiagNoProjection(const ref matrix : Operator,
                                         alphas : c_ptrConst(uint(64)),
                                         xs,
                                         const ref others : BatchedOperatorPointers,
+                                        param left : bool,
                                         in timers : BatchedOperatorTimers?) {
   // We compute H|αᵢ⟩ = ∑ⱼ cᵢⱼ|βᵢⱼ⟩ for each |αᵢ⟩ where i ∈ {0 ..# count} and
   // j ∈ {0 ..# numberOffDiagTerms}. Both cᵢⱼ and |βᵢⱼ⟩ are conceptually
   // 2-dimensional arrays, but we use flattened representations of them.
   if timers != nil then timers!.applyOffDiagTimer.start();
-  ls_internal_operator_apply_off_diag_x1(
+  applyOffDiagKernel(
     matrix.payload.deref(),
     count,
     alphas,
     others.betas,
     others.coeffs,
     others.offsets,
-    xs);
+    xs,
+    left);
   if timers != nil then timers!.applyOffDiagTimer.stop();
 }
 private proc computeOffDiagOnlyInversion(const ref matrix : Operator,
@@ -154,8 +148,9 @@ private proc computeOffDiagOnlyInversion(const ref matrix : Operator,
                                          alphas : c_ptrConst(uint(64)),
                                          xs,
                                          const ref others : BatchedOperatorPointers,
+                                         param left : bool,
                                          in timers : BatchedOperatorTimers?) {
-  computeOffDiagNoProjection(matrix, count, alphas, xs, others, timers);
+  computeOffDiagNoProjection(matrix, count, alphas, xs, others, left, timers);
 
   const totalCount = others.offsets[count];
   const mask = (1:uint(64) << matrix.basis.numberSites()) - 1;
@@ -178,13 +173,14 @@ private proc computeOffDiagWithProjection(const ref matrix : Operator,
                                           alphas : c_ptrConst(uint(64)),
                                           xs,
                                           ref others : BatchedOperatorPointers,
+                                          param left : bool,
                                           in timers : BatchedOperatorTimers?) {
   assert(others.tempNorms != nil && others.tempSpins != nil && others.tempCoeffs != nil);
   // computeOffDiagNoProjection stores its results in others.betas and others.coeffs,
   // but we need them in others.tempSpins and others.tempCoeffs
   others.betas <=> others.tempSpins;
   others.coeffs <=> others.tempCoeffs;
-  computeOffDiagNoProjection(matrix, count, alphas, xs, others, timers);
+  computeOffDiagNoProjection(matrix, count, alphas, xs, others, left, timers);
   // revert the swaps
   others.betas <=> others.tempSpins;
   others.coeffs <=> others.tempCoeffs;
@@ -208,7 +204,8 @@ private proc computeOffDiagWithProjection(const ref matrix : Operator,
   if timers != nil then timers!.coeffTimer.start();
   foreach i in 0 ..# count {
     foreach k in others.offsets[i] ..< others.offsets[i + 1] {
-      others.coeffs[k] *= others.tempCoeffs[k] * others.tempNorms[k] / others.tempNorms[totalCount + i];
+      const c = if left then conj(others.coeffs[k]) else others.coeffs[k];
+      others.coeffs[k] = c * others.tempCoeffs[k] * others.tempNorms[k] / others.tempNorms[totalCount + i];
     }
   }
   if timers != nil then timers!.coeffTimer.stop();
@@ -228,19 +225,20 @@ private inline proc computeOffDiagGeneric(const ref matrix : Operator,
                                           alphas : c_ptrConst(uint(64)),
                                           xs,
                                           ref others : BatchedOperatorPointers,
+                                          param left : bool,
                                           in timers : BatchedOperatorTimers?) {
   // Simple case when no symmetries are used
   if !matrix.basis.requiresProjection() {
-    computeOffDiagNoProjection(matrix, count, alphas, xs, others, timers);
+    computeOffDiagNoProjection(matrix, count, alphas, xs, others, left, timers);
   }
   // Another simple case when no permutations were given, only the spin inversion
   else if !matrix.basis.hasPermutationSymmetries()
             && matrix.basis.hasSpinInversionSymmetry() {
-    computeOffDiagOnlyInversion(matrix, count, alphas, xs, others, timers);
+    computeOffDiagOnlyInversion(matrix, count, alphas, xs, others, left, timers);
   }
   // The tricky case when we have to project betas first
   else {
-    computeOffDiagWithProjection(matrix, count, alphas, xs, others, timers);
+    computeOffDiagWithProjection(matrix, count, alphas, xs, others, left, timers);
   }
 }
 
@@ -305,8 +303,6 @@ private proc csrGeneratePart(count : int,
     var k : idxType = 0;
     while k < n {
       var colIndex = indices[order[k]]:idxType;
-      if colIndex < 0 then
-        halt("invalid index: " + colIndex:string + " for state " + betas[order[k]]:string);
 
       var acc = coeffs[b + order[k]];
       k += 1;
@@ -328,6 +324,9 @@ private proc csrGeneratePart(count : int,
             numberNonZero += 1;
           }
           diagonalWritten = true;
+        }
+        else if colIndex < 0 {
+          halt("invalid index: " + colIndex:string + " for state " + betas[b + order[k - 1]]:string);
         }
         colIndices[numberNonZero] = colIndex;
         matrixElements[numberNonZero] = acc;
@@ -429,7 +428,7 @@ record BatchedOperator {
   inline proc matrix ref { return _matrixPtr.deref(); }
   inline proc basis ref { return matrix.basis; }
 
-  proc computeOffDiag(count : int, alphas : c_ptrConst(uint(64)), xs)
+  proc computeOffDiag(count : int, alphas : c_ptrConst(uint(64)), xs, param left : bool)
       : (int, c_ptr(uint(64)), c_ptr(complex(128)), c_ptr(uint(8))) {
 
     assert(count <= batchSize, "buffer overflow in BatchedOperator");
@@ -445,7 +444,7 @@ record BatchedOperator {
     timers.totalTimer.start();
     defer timers.totalTimer.stop();
 
-    computeOffDiagGeneric(matrix, count, alphas, xs, pointers, timers.borrow());
+    computeOffDiagGeneric(matrix, count, alphas, xs, pointers, left, timers.borrow());
     const totalCount = pointers.offsets[count];
     computeKeys(totalCount, pointers.betas, pointers.localeIdxs, timers.keysTimer);
 
@@ -455,7 +454,7 @@ record BatchedOperator {
   proc getTimings() {
     var tree = timingTree(
       "BatchedOperator.computeOffDiag", timers.totalTimer.elapsed(),
-      [ ("ls_internal_operator_apply_off_diag_x1", timers.applyOffDiagTimer.elapsed())
+      [ ("applyOffDiagKernel", timers.applyOffDiagTimer.elapsed())
       , ("memcpy", timers.memcpyTimer.elapsed())
       , ("ls_hs_state_info", timers.stateInfoTimer.elapsed())
       , ("rescale coeffs", timers.coeffTimer.elapsed())
@@ -493,7 +492,7 @@ export proc ls_chpl_operator_apply_off_diag(matrixPtr : c_ptr(ls_hs_operator),
   var matrix = new Operator(matrixPtr, owning=false);
   var batchedOperator = new BatchedOperator(matrix, max(1, count));
 
-  batchedOperator.computeOffDiag(count, alphas, nil);
+  batchedOperator.computeOffDiag(count, alphas, nil, left=false);
   betas.deref() = convertToExternalArray(batchedOperator._spins);
   coeffs.deref() = convertToExternalArray(batchedOperator._coeffs);
   offsets.deref() = convertToExternalArray(batchedOperator._offsets);
@@ -513,7 +512,7 @@ export proc ls_chpl_operator_to_csr(matrixPtr : c_ptr(ls_hs_operator),
   var batchedOperator = new BatchedOperator(matrix, max(1, count));
 
   const (totalCount, betas, coeffs, _keys) =
-    batchedOperator.computeOffDiag(count, representativesPtr, nil);
+    batchedOperator.computeOffDiag(count, representativesPtr, nil, left=false);
 
   var _diagonal : [0 ..# count] real(64) = noinit;
   ls_internal_operator_apply_diag_x1(

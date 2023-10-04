@@ -133,10 +133,13 @@ public:
     _character(i, q) = undef<double>();
     _character(i, 0) = reduction_scalar(i)[1];
     _character(i, 1) = reduction_scalar(i)[2];
+    auto const cutoff = Expr{1024 * std::numeric_limits<double>::epsilon()};
+    auto const n = abs(reduction_scalar(i)[3]);
+    auto const rounded = select(n < cutoff, cast<double>(0), n);
     if (_spin_inversion == 0) {
-      _norm(i) = sqrt(reduction_scalar(i)[3] / number_masks);
+      _norm(i) = sqrt(rounded / number_masks);
     } else {
-      _norm(i) = sqrt(reduction_scalar(i)[3] / (2 * number_masks));
+      _norm(i) = sqrt(rounded / (2 * number_masks));
     }
 
     auto batch_size = _x.dim(0).extent();

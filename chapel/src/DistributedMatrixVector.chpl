@@ -587,7 +587,8 @@ record Producer {
         batchedOperator.computeOffDiag(
           r.size,
           representativesPtr + r.low,
-          (xPtr + r.low):c_ptrConst(eltType));
+          (xPtr + r.low):c_ptrConst(eltType),
+          left=true);
       timer.computeOffDiag.stop();
 
       timer.radixOneStep.start();

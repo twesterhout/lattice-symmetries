@@ -85,12 +85,12 @@ def test_simple_spin_expr():
         basis = ls.SpinBasis(number_spins)
         basis.build()
         operator = ls.Operator(basis, ls.Expr(expression))
-        rows = []
+        cols = []
         for i in range(basis.number_states):
             v = np.zeros(basis.number_states)
             v[i] = 1
-            rows.append(operator @ v)
-        matrix = np.vstack(rows)
+            cols.append(operator @ v)
+        matrix = np.vstack(cols).T
         assert matrix.tolist() == matrix_ref.tolist()
         matrix = operator.to_csr().todense()
         assert matrix.tolist() == matrix_ref.tolist()
@@ -239,45 +239,104 @@ def get_csr_hamiltonian(hamiltonian):
     return off_diagonal_matrix + diagonal
 
 
-def test_convert_to_csr():
-    basis = ls.SpinBasis(2)
+def test_correct_imag_part():
+    expr = ls.Expr(
+        # "σᶻ₀ σᶻ₁ +
+        "2 σ⁺₀ σ⁻₁"
+        # + 2 σ⁻₀ σ⁺₁"
+        ,
+        sites=[(0, 1), (1, 2), (2, 3), (3, 4), (4, 0)],
+    )
+    basis = ls.SpinBasis(5, hamming_weight=2)
     basis.build()
-    expr = ls.Expr("σᶻ₀ σᶻ₁ + 2 σ⁺₀ σ⁻₁ + 2 σ⁻₀ σ⁺₁")
     hamiltonian = ls.Operator(basis, expr)
-    matrix = hamiltonian.to_csr()
-    assert matrix.has_canonical_format
-    assert (matrix != get_csr_hamiltonian(hamiltonian)).nnz == 0
-    x = np.random.rand(basis.number_states)
-    assert np.allclose(hamiltonian @ x, matrix @ x)
+
+    x = np.zeros(basis.number_states, dtype=complex)
+    #                  43210
+    x[basis.index(int("00011", base=2))] += 1.0
+    x[basis.index(int("00110", base=2))] += np.exp(+2j * np.pi * 1 / 5)
+    x[basis.index(int("01100", base=2))] += np.exp(+2j * np.pi * 2 / 5)
+    x[basis.index(int("11000", base=2))] += np.exp(+2j * np.pi * 3 / 5)
+    x[basis.index(int("10001", base=2))] += np.exp(+2j * np.pi * 4 / 5)
+    x /= np.linalg.norm(x)
+
+    y = np.zeros(basis.number_states, dtype=complex)
+    y[basis.index(int("00101", base=2))] += 1.0
+    y[basis.index(int("01010", base=2))] += np.exp(+2j * np.pi * 1 / 5)
+    y[basis.index(int("10100", base=2))] += np.exp(+2j * np.pi * 2 / 5)
+    y[basis.index(int("01001", base=2))] += np.exp(+2j * np.pi * 3 / 5)
+    y[basis.index(int("10010", base=2))] += np.exp(+2j * np.pi * 4 / 5)
+    y /= np.linalg.norm(y)
+
+    matrix = np.array(
+        [
+            [np.vdot(x, hamiltonian @ x), np.vdot(x, hamiltonian @ y)],
+            [np.vdot(y, hamiltonian @ x), np.vdot(y, hamiltonian @ y)],
+        ]
+    )
+
+    group = ls.Symmetries([ls.Symmetry([4, 0, 1, 2, 3], sector=1)])
+    basis = ls.SpinBasis(5, hamming_weight=2, symmetries=group)
+    hamiltonian = ls.Operator(basis, expr)
+    basis.build()
+
+    cols = []
+    for i in range(basis.number_states):
+        v = np.zeros(basis.number_states)
+        v[i] = 1
+        cols.append(hamiltonian @ v)
+    matrix2 = np.vstack(cols).T
+    assert np.allclose(matrix, matrix2)
+
+    matrix3 = hamiltonian.to_csr().todense()
+    assert np.allclose(matrix, matrix3)
+
+
+def test_convert_to_csr():
+    def check(basis, expr):
+        assert expr == expr.adjoint()
+        hamiltonian = ls.Operator(basis, expr)
+        basis.build()
+        matrix = hamiltonian.to_csr()
+        assert matrix.has_canonical_format
+        assert (matrix != get_csr_hamiltonian(hamiltonian)).nnz == 0
+        np.random.seed(42)
+        for i in range(5):
+            x = np.random.rand(basis.number_states)  # + 1j * np.random.rand(basis.number_states)
+            y1 = hamiltonian @ x
+            y2 = matrix @ x
+            if not np.allclose(y1, y2):
+                print(y1.tolist()[:10])
+                print(y2.tolist()[:10])
+            assert np.allclose(y1, y2)
+
+    basis = ls.SpinBasis(2)
+    expr = ls.Expr("σᶻ₀ σᶻ₁ + 2 σ⁺₀ σ⁻₁ + 2 σ⁻₀ σ⁺₁")
+    check(basis, expr)
 
     group = ls.Symmetries([ls.Symmetry([1, 2, 3, 0], sector=0)])
     basis = ls.SpinBasis(4, symmetries=group)
-    basis.build()
     expr = ls.Expr(
         "σᶻ₀ σᶻ₁ + 2 σ⁺₀ σ⁻₁ + 2 σ⁻₀ σ⁺₁",
         sites=[(0, 1), (1, 2), (2, 3), (3, 0)],
     )
-    hamiltonian = ls.Operator(basis, expr)
-    matrix = hamiltonian.to_csr()
-    assert matrix.has_canonical_format
-    assert (matrix != get_csr_hamiltonian(hamiltonian)).nnz == 0
-    x = np.random.rand(basis.number_states)
-    assert np.allclose(hamiltonian @ x, matrix @ x)
+    check(basis, expr)
 
     basis = ls.Basis.from_json(
         '{"hamming_weight":null,"number_spins":9,"particle":"spin-1/2","spin_inversion":null,"symmetries":[{"permutation":[0,1,2,3,4,5,6,7,8],"sector":0},{"permutation":[1,2,0,4,5,3,7,8,6],"sector":0},{"permutation":[2,0,1,5,3,4,8,6,7],"sector":0},{"permutation":[3,4,5,6,7,8,0,1,2],"sector":0},{"permutation":[4,5,3,7,8,6,1,2,0],"sector":0},{"permutation":[5,3,4,8,6,7,2,0,1],"sector":0},{"permutation":[6,7,8,0,1,2,3,4,5],"sector":0},{"permutation":[7,8,6,1,2,0,4,5,3],"sector":0},{"permutation":[8,6,7,2,0,1,5,3,4],"sector":0}]}'
     )
-    basis.build()
     expr = ls.Expr(
         "-σᶻ₀ σᶻ₁ - σᶻ₀ σᶻ₂ - σᶻ₀ σᶻ₃ - σᶻ₀ σᶻ₆ - 2.0 σ⁺₀ σ⁻₁ - 2.0 σ⁺₀ σ⁻₂ - 2.0 σ⁺₀ σ⁻₃ - 2.0 σ⁺₀ σ⁻₆ - 2.0 σ⁻₀ σ⁺₁ - 2.0 σ⁻₀ σ⁺₂ - 2.0 σ⁻₀ σ⁺₃ - 2.0 σ⁻₀ σ⁺₆ - σᶻ₁ σᶻ₂ - σᶻ₁ σᶻ₄ - σᶻ₁ σᶻ₇ - 2.0 σ⁺₁ σ⁻₂ - 2.0 σ⁺₁ σ⁻₄ - 2.0 σ⁺₁ σ⁻₇ - 2.0 σ⁻₁ σ⁺₂ - 2.0 σ⁻₁ σ⁺₄ - 2.0 σ⁻₁ σ⁺₇ - σᶻ₂ σᶻ₅ - σᶻ₂ σᶻ₈ - 2.0 σ⁺₂ σ⁻₅ - 2.0 σ⁺₂ σ⁻₈ - 2.0 σ⁻₂ σ⁺₅ - 2.0 σ⁻₂ σ⁺₈ - σᶻ₃ σᶻ₄ - σᶻ₃ σᶻ₅ - σᶻ₃ σᶻ₆ - 2.0 σ⁺₃ σ⁻₄ - 2.0 σ⁺₃ σ⁻₅ - 2.0 σ⁺₃ σ⁻₆ - 2.0 σ⁻₃ σ⁺₄ - 2.0 σ⁻₃ σ⁺₅ - 2.0 σ⁻₃ σ⁺₆ - σᶻ₄ σᶻ₅ - σᶻ₄ σᶻ₇ - 2.0 σ⁺₄ σ⁻₅ - 2.0 σ⁺₄ σ⁻₇ - 2.0 σ⁻₄ σ⁺₅ - 2.0 σ⁻₄ σ⁺₇ - σᶻ₅ σᶻ₈ - 2.0 σ⁺₅ σ⁻₈ - 2.0 σ⁻₅ σ⁺₈ - σᶻ₆ σᶻ₇ - σᶻ₆ σᶻ₈ - 2.0 σ⁺₆ σ⁻₇ - 2.0 σ⁺₆ σ⁻₈ - 2.0 σ⁻₆ σ⁺₇ - 2.0 σ⁻₆ σ⁺₈ - σᶻ₇ σᶻ₈ - 2.0 σ⁺₇ σ⁻₈ - 2.0 σ⁻₇ σ⁺₈"
     )
-    hamiltonian = ls.Operator(basis, expr)
-    matrix = hamiltonian.to_csr()
-    assert matrix.has_canonical_format
-    assert (matrix != get_csr_hamiltonian(hamiltonian)).nnz == 0
-    for i in range(5):
-        x = np.random.rand(basis.number_states)
-        assert np.allclose(hamiltonian @ x, matrix @ x)
+    check(basis, expr)
+
+    basis = ls.Basis.from_json(
+        '{"hamming_weight":null,"number_spins":14,"particle":"spin-1/2","spin_inversion":null,"symmetries":[{"permutation":[0,1,2,3,4,5,6,7,8,9,10,11,12,13],"sector":0},{"permutation":[1,2,3,4,5,6,7,8,9,10,11,12,13,0],"sector":11},{"permutation":[2,3,4,5,6,7,8,9,10,11,12,13,0,1],"sector":4},{"permutation":[3,4,5,6,7,8,9,10,11,12,13,0,1,2],"sector":5},{"permutation":[4,5,6,7,8,9,10,11,12,13,0,1,2,3],"sector":1},{"permutation":[5,6,7,8,9,10,11,12,13,0,1,2,3,4],"sector":13},{"permutation":[6,7,8,9,10,11,12,13,0,1,2,3,4,5],"sector":5},{"permutation":[7,8,9,10,11,12,13,0,1,2,3,4,5,6],"sector":1},{"permutation":[8,9,10,11,12,13,0,1,2,3,4,5,6,7],"sector":2},{"permutation":[9,10,11,12,13,0,1,2,3,4,5,6,7,8],"sector":1},{"permutation":[10,11,12,13,0,1,2,3,4,5,6,7,8,9],"sector":6},{"permutation":[11,12,13,0,1,2,3,4,5,6,7,8,9,10],"sector":9},{"permutation":[12,13,0,1,2,3,4,5,6,7,8,9,10,11],"sector":3},{"permutation":[13,0,1,2,3,4,5,6,7,8,9,10,11,12],"sector":3}]}'
+    )
+    expr = ls.Expr(
+        "-σᶻ₀ σᶻ₁ - σᶻ₀ σᶻ₁₃ - 2.0 σ⁺₀ σ⁻₁ - 2.0 σ⁺₀ σ⁻₁₃ - 2.0 σ⁻₀ σ⁺₁ - 2.0 σ⁻₀ σ⁺₁₃ - σᶻ₁ σᶻ₂ - 2.0 σ⁺₁ σ⁻₂ - 2.0 σ⁻₁ σ⁺₂ - σᶻ₂ σᶻ₃ - 2.0 σ⁺₂ σ⁻₃ - 2.0 σ⁻₂ σ⁺₃ - σᶻ₃ σᶻ₄ - 2.0 σ⁺₃ σ⁻₄ - 2.0 σ⁻₃ σ⁺₄ - σᶻ₄ σᶻ₅ - 2.0 σ⁺₄ σ⁻₅ - 2.0 σ⁻₄ σ⁺₅ - σᶻ₅ σᶻ₆ - 2.0 σ⁺₅ σ⁻₆ - 2.0 σ⁻₅ σ⁺₆ - σᶻ₆ σᶻ₇ - 2.0 σ⁺₆ σ⁻₇ - 2.0 σ⁻₆ σ⁺₇ - σᶻ₇ σᶻ₈ - 2.0 σ⁺₇ σ⁻₈ - 2.0 σ⁻₇ σ⁺₈ - σᶻ₈ σᶻ₉ - 2.0 σ⁺₈ σ⁻₉ - 2.0 σ⁻₈ σ⁺₉ - σᶻ₉ σᶻ₁₀ - 2.0 σ⁺₉ σ⁻₁₀ - 2.0 σ⁻₉ σ⁺₁₀ - σᶻ₁₀ σᶻ₁₁ - 2.0 σ⁺₁₀ σ⁻₁₁ - 2.0 σ⁻₁₀ σ⁺₁₁ - σᶻ₁₁ σᶻ₁₂ - 2.0 σ⁺₁₁ σ⁻₁₂ - 2.0 σ⁻₁₁ σ⁺₁₂ - σᶻ₁₂ σᶻ₁₃ - 2.0 σ⁺₁₂ σ⁻₁₃ - 2.0 σ⁻₁₂ σ⁺₁₃"
+    )
+    check(basis, expr)
 
 
 def test_csr_matvec():
@@ -288,6 +347,3 @@ def test_csr_matvec():
     matrix = hamiltonian.to_csr()
     x = np.random.rand(basis.number_states).astype(np.complex128)
     assert np.allclose(hamiltonian @ x, ls.matrix_vector_product_csr(matrix, x))
-
-
-test_convert_to_csr()
