@@ -251,9 +251,11 @@ public:
               scalar_reduction(i)[1] && temp(i, number_chunks, m_tail)[1]};
 
     // Save results
-    _norm(i) = scalar_reduction(i)[0];
-    _is_representative(i) = select(scalar_reduction(i)[0] > 0,
-                                   cast<uint8_t>(scalar_reduction(i)[1]), 0);
+    auto const cutoff = Expr{1024 * std::numeric_limits<double>::epsilon()};
+    auto const n = scalar_reduction(i)[0];
+    auto const rounded = select(n < cutoff, cast<double>(0), n);
+    _norm(i) = rounded;
+    _is_representative(i) = select(rounded > 0, cast<uint8_t>(scalar_reduction(i)[1]), 0);
 
     // Shapes & strides
     _x.dim(0).set_min(0).set_stride(1);

@@ -256,7 +256,7 @@ private proc _enumerateStatesProjected(r : range(uint(64)), const ref basis : Ba
     isRepresentative(basis, buffer[0 ..# written], flags[0 ..# written], norms[0 ..# written]);
 
     for i in 0 ..# written do
-      if flags[i]:bool && norms[i] > 0 then
+      if flags[i]:bool then
         outStates.pushBack(buffer[i]);
 
     const last = buffer[written - 1];
