@@ -871,7 +871,7 @@ class Operator(LinearOperator):
     @property
     def dtype(self):
         self._check_basis_is_built("dtype")
-        return np.dtype("float64")
+        return np.dtype("float64") if self.is_real else np.dtype("complex128")
 
     @property
     def shape(self):
