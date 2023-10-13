@@ -632,7 +632,7 @@ unFlattenIndex basis i = case basis of
   SpinBasis {} -> i
   SpinlessFermionBasis {} -> i
   SpinfulFermionBasis n _
-    | i > n -> (SpinDown, i - n)
+    | i >= n -> (SpinDown, i - n)
     | otherwise -> (SpinUp, i)
 
 getNumberSites :: Basis t -> Int

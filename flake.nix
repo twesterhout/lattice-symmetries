@@ -155,7 +155,6 @@
             packages = ps: [ ps.lattice-symmetries-haskell ];
             withHoogle = true;
             nativeBuildInputs = with haskellPackages; [
-              cabal-fmt
               cabal-install
               fourmolu
               haskell-language-server

@@ -14,6 +14,7 @@ module LatticeSymmetries.Group
   , getPeriodicity
   , Symmetries (..)
   , mkSymmetries
+  , mkSymmetriesFromRepresentation
   , areSymmetriesReal
   , nullSymmetries
   , emptySymmetries
@@ -25,19 +26,23 @@ module LatticeSymmetries.Group
 
     -- * Automorphisms
   , Hypergraph (..)
+  , hypergraphAutomorphisms
+  , mkMultiplicationTable
+  , abelianSubgroup
+  , Representation (..)
+  , groupRepresentations
   , cyclicGraph
   , cyclicGraph3
   , rectangularGraph
-  , distancePartition
-  , autsSearchTree
-  , naiveExtractLeaves
-  , isAutomorphism
-  , transversalGeneratingSet
-  , groupFromTransversalGeneratingSet
-  , mkMultiplicationTable
+  -- , distancePartition
+  -- , autsSearchTree
+  -- , naiveExtractLeaves
+  -- , isAutomorphism
+  -- , transversalGeneratingSet
+  -- , groupFromTransversalGeneratingSet
   , MultiplicationTable (..)
   , AbelianSubsetHistory (..)
-  , abelianSubset
+  -- , abelianSubset
   , GroupElement (..)
   , shrinkMultiplicationTable
   , getGroupElements
@@ -187,6 +192,10 @@ mkSymmetries gs@(g : _)
       where
         set = Set.fromList symmetries
 
+mkSymmetriesFromRepresentation :: (HasCallStack) => PermutationGroup -> Representation -> Symmetries
+mkSymmetriesFromRepresentation (PermutationGroup g) (Representation r) =
+  either error id $ mkSymmetries . G.toList $ G.zipWith Symmetry g r
+
 instance FromJSON Symmetries where
   parseJSON xs = do
     r <- mkSymmetries <$> parseJSON xs
@@ -324,7 +333,8 @@ cyclicGraph3 n
 rectangularGraph :: Int -> Int -> Hypergraph Int
 rectangularGraph n k = Hypergraph (Set.fromList vs) (Set.fromList (Set.fromList <$> es))
   where
-    vs = [0 .. n * k - 1]
+    -- vs contains an extra element that does not enter any edge in es
+    vs = [0 .. n * k]
     es = [[k * i + j, k * i + ((j + 1) `mod` k)] | i <- [0 .. n - 1], j <- [0 .. k - 1]] ++ [[k * i + j, k * ((i + 1) `mod` n) + j] | i <- [0 .. n - 1], j <- [0 .. k - 1]]
 
 intersectSorted :: (G.Vector v a, Ord a) => v a -> v a -> v a
@@ -419,9 +429,9 @@ transversalGeneratingSet = B.fromList . go
     -- \| d < (1 :: Int) = concat (parMap (rparWith rdeepseq) (take 1 . go (d + 1)) ts) <> go (d + 1) t
     go _ = []
 
-groupFromTransversalGeneratingSet :: B.Vector Permutation -> B.Vector Permutation
+groupFromTransversalGeneratingSet :: B.Vector Permutation -> PermutationGroup
 groupFromTransversalGeneratingSet tgs =
-  sortVectorBy compare . B.fromList $
+  PermutationGroup . sortVectorBy compare . B.fromList $
     Data.List.foldr1 (flip (<>)) <$> sequence transversals
   where
     k = permutationLength (G.head tgs)
@@ -431,11 +441,23 @@ groupFromTransversalGeneratingSet tgs =
           sortVectorBy (comparing snd) $
             fmap (\p -> (p, minimalSupport p)) tgs
 
+hypergraphAutomorphisms :: Hypergraph Int -> PermutationGroup
+hypergraphAutomorphisms =
+  groupFromTransversalGeneratingSet . transversalGeneratingSet . autsSearchTree
+
+abelianSubgroup :: PermutationGroup -> MultiplicationTable -> (PermutationGroup, MultiplicationTable)
+abelianSubgroup (PermutationGroup g) t = (g', t')
+  where
+    -- abelianSubset returns candidates; we consider the first 100 and select the largest
+    indices = Data.List.maximumBy (comparing G.length) . take 100 $ abelianSubset t
+    t' = shrinkMultiplicationTable t indices
+    g' = PermutationGroup . G.map (g G.!) . G.convert $ indices
+
 newtype MultiplicationTable = MultiplicationTable {unMultiplicationTable :: DenseMatrix U.Vector Int}
   deriving stock (Show)
 
-mkMultiplicationTable :: (HasCallStack) => B.Vector Permutation -> MultiplicationTable
-mkMultiplicationTable ps =
+mkMultiplicationTable :: PermutationGroup -> MultiplicationTable
+mkMultiplicationTable (PermutationGroup ps) =
   MultiplicationTable . generateDenseMatrix n n $ \i j ->
     binarySearch' ps (ps ! i <> ps ! j)
   where
@@ -585,12 +607,16 @@ groupGenerators group0 = go factors0 [] (selectPrimeElements group0) []
 
 newtype Representation = Representation (B.Vector (Ratio Int))
 
-groupRepresentations :: B.Vector GroupElement -> [Representation]
-groupRepresentations generators =
+groupRepresentationsFromGenerators :: B.Vector GroupElement -> [Representation]
+groupRepresentationsFromGenerators generators =
   fmap (Representation . G.fromList) . mapM phases $ G.toList orders
   where
     orders = G.map groupElementOrder generators
     phases n = [i % n | i <- [0 .. n - 1]]
+
+groupRepresentations :: MultiplicationTable -> [Representation]
+groupRepresentations =
+  groupRepresentationsFromGenerators . G.fromList . groupGenerators . getGroupElements
 
 newtype Coset = Coset {unCoset :: IntSet.IntSet}
   deriving stock (Eq, Ord, Show)

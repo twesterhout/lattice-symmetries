@@ -137,6 +137,8 @@ typedef struct ls_hs_expr ls_hs_expr;
 typedef void (*ls_hs_index_replacement_type)(int spin, int site, int *new_spin,
                                              int *new_site);
 
+typedef void (*ls_hs_process_symmetries)(ls_hs_symmetries* object);
+
 typedef struct ls_hs_nonbranching_terms {
   int number_terms;
   int number_bits;
@@ -232,7 +234,7 @@ void ls_hs_build_representatives(ls_hs_basis *basis, uint64_t const lower,
                                  uint64_t const upper);
 void ls_hs_unchecked_set_representatives(ls_hs_basis *basis,
                                          chpl_external_array const *states,
-					 int cache_bits);
+                                         int cache_bits);
 /* python-cffi: STOP */
 
 void ls_internal_operator_apply_diag_x1(ls_hs_operator const * op,

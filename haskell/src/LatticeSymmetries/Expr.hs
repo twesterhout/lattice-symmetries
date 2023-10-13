@@ -26,6 +26,7 @@ module LatticeSymmetries.Expr
   -- mapCoeffs,
   , simplifyExpr
   , replicateSiteIndices
+  , exprToHypergraph
 
     -- ** FFI helpers
   , Cexpr (..)
@@ -50,6 +51,7 @@ import LatticeSymmetries.Algebra
 import LatticeSymmetries.Basis
 import LatticeSymmetries.ComplexRational
 import LatticeSymmetries.Generator
+import LatticeSymmetries.Group
 import LatticeSymmetries.Parser
 import LatticeSymmetries.Utils
 import Prettyprinter (Pretty (..))
@@ -78,10 +80,10 @@ mapGeneratorsM f =
 mapIndices :: (IndexType t -> IndexType t) -> Expr t -> Expr t
 mapIndices f = mapGenerators (\(Generator i g) -> Generator (f i) g)
 
-mapIndicesM :: Monad m => (IndexType t -> m (IndexType t)) -> Expr t -> m (Expr t)
+mapIndicesM :: (Monad m) => (IndexType t -> m (IndexType t)) -> Expr t -> m (Expr t)
 mapIndicesM f = mapGeneratorsM (\(Generator i g) -> Generator <$> f i <*> pure g)
 
-collectIndices :: Ord (IndexType t) => Expr t -> [IndexType t]
+collectIndices :: (Ord (IndexType t)) => Expr t -> [IndexType t]
 collectIndices = List.nub . List.sort . collectSum . unExpr
   where
     collectSum (Sum v) = concatMap collectScaled (G.toList v)
@@ -105,7 +107,7 @@ conjugateExpr = simplifyExpr . Expr . conjugateSum . unExpr
     conjugateScaled (Scaled c p) = Scaled (conjugate c) (conjugateProduct p)
     conjugateProduct (Product gs) = Product . G.reverse $ conjugateGenerator <$> gs
 
-isIdentityExpr :: Algebra (GeneratorType t) => Expr t -> Bool
+isIdentityExpr :: (Algebra (GeneratorType t)) => Expr t -> Bool
 isIdentityExpr = isIdentitySum . unExpr
   where
     isIdentitySum (Sum terms) = G.length terms == 1 && isIdentityScaled (G.head terms)
@@ -135,7 +137,7 @@ instance CanScale ComplexRational (Expr t) where
     | c == 0 = Expr []
     | otherwise = Expr $ c `scale` unExpr a
 
-instance Pretty (Generator (IndexType t) (GeneratorType t)) => Pretty (Expr t) where
+instance (Pretty (Generator (IndexType t) (GeneratorType t))) => Pretty (Expr t) where
   pretty (Expr (Sum terms)) = prettySum (G.toList terms)
     where
       prettyScaled (Scaled c g)
@@ -167,24 +169,24 @@ instance Pretty SomeExpr where
   pretty (SomeExpr SpinfulFermionTag expr) = pretty expr
 
 data SomeExpr where
-  SomeExpr :: IsBasis t => !(ParticleTag t) -> !(Expr t) -> SomeExpr
+  SomeExpr :: (IsBasis t) => !(ParticleTag t) -> !(Expr t) -> SomeExpr
 
 withSomeExpr
   :: SomeExpr
-  -> (forall t. IsBasis t => Expr t -> a)
+  -> (forall t. (IsBasis t) => Expr t -> a)
   -> a
 withSomeExpr (SomeExpr SpinTag a) f = f a
 withSomeExpr (SomeExpr SpinfulFermionTag a) f = f a
 withSomeExpr (SomeExpr SpinlessFermionTag a) f = f a
 
 foldSomeExpr
-  :: (forall t. IsBasis t => Expr t -> a)
+  :: (forall t. (IsBasis t) => Expr t -> a)
   -> SomeExpr
   -> a
 foldSomeExpr f expr = withSomeExpr expr f
 
 mapSomeExpr
-  :: (forall t. IsBasis t => Expr t -> Expr t)
+  :: (forall t. (IsBasis t) => Expr t -> Expr t)
   -> SomeExpr
   -> SomeExpr
 mapSomeExpr f expr = case expr of
@@ -199,7 +201,7 @@ instance Eq SomeExpr where
   (==) _ _ = False
 
 binaryOp
-  :: HasCallStack
+  :: (HasCallStack)
   => (forall t. (Algebra (GeneratorType t), Ord (IndexType t)) => Expr t -> Expr t -> Expr t)
   -> SomeExpr
   -> SomeExpr
@@ -264,7 +266,7 @@ instance ToJSON SomeExpr where
 --     toSpinfulIndex (s : i : rest) = (toEnum (fromIntegral s), fromIntegral i) : toSpinfulIndex rest
 --     toSpinfulIndex _ = error "this cannot happen by construction"
 
-collectSiteIndices :: forall t. HasProperIndexType t => Expr t -> [Int]
+collectSiteIndices :: forall t. (HasProperIndexType t) => Expr t -> [Int]
 collectSiteIndices = Set.toList . Set.fromList . fmap getSiteIndex . collectIndices
 
 replicateSiteIndices
@@ -369,7 +371,7 @@ mkSomeExprEither tp s = do
     SpinlessFermionTy -> SomeExpr SpinlessFermionTag <$> fromSExpr SpinlessFermionTag sexpr
     SpinfulFermionTy -> SomeExpr SpinfulFermionTag <$> fromSExpr SpinfulFermionTag sexpr
 
-mkSomeExpr :: HasCallStack => Maybe ParticleTy -> Text -> SomeExpr
+mkSomeExpr :: (HasCallStack) => Maybe ParticleTy -> Text -> SomeExpr
 mkSomeExpr tp s = either error id $ mkSomeExprEither tp s
 
 exprFromJSON :: (Maybe ParticleTy -> Text -> Either Text a) -> ([[Int]] -> a -> a) -> Value -> Parser a
@@ -384,7 +386,7 @@ exprFromJSON f expand = withObject "Expr" $ \v -> do
     Left e -> parserThrowError [Key "expression"] (toString e)
     Right x -> pure x
 
-instance IsBasis t => FromJSON (Expr t) where
+instance (IsBasis t) => FromJSON (Expr t) where
   parseJSON = exprFromJSON (exprParserConcrete (particleDispatch @t)) replicateSiteIndices
     where
       exprParserConcrete :: ParticleTag t -> Maybe ParticleTy -> Text -> Either Text (Expr t)
@@ -398,3 +400,11 @@ instance FromJSON SomeExpr where
     where
       expandSomeExpr :: [[Int]] -> SomeExpr -> SomeExpr
       expandSomeExpr indices = mapSomeExpr (replicateSiteIndices indices)
+
+exprToHypergraph :: (IsBasis t) => Expr t -> Hypergraph (IndexType t)
+exprToHypergraph (Expr (Sum terms)) =
+  Hypergraph (Set.fromList $ concat hyperedges) (Set.fromList . fmap Set.fromList $ hyperedges)
+  where
+    hyperedges = G.toList $ fmap scaledToSet terms
+    scaledToSet (Scaled _ p) = productToSet p
+    productToSet (Product v) = G.toList $ (\(Generator i _) -> i) <$> v

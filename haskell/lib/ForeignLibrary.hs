@@ -190,7 +190,7 @@ ls_hs_basis_number_words basisPtr =
 
 ls_hs_basis_is_real :: Ptr Cbasis -> IO CBool
 ls_hs_basis_is_real basisPtr =
-  fromIntegral <$> withCbasis basisPtr (foldSomeBasis (pure . fromBool . isBasisReal))
+  withCbasis basisPtr (foldSomeBasis (pure . fromBool . isBasisReal))
 
 -- foreign export ccall "ls_hs_basis_state_to_string"
 --   ls_hs_basis_state_to_string :: Ptr Cbasis -> Ptr Word64 -> IO CString
@@ -397,6 +397,19 @@ ls_hs_operator_get_expr opPtr =
 ls_hs_operator_get_basis :: Ptr Coperator -> IO (MutablePtr Cbasis)
 ls_hs_operator_get_basis = ls_hs_clone_basis . coperator_basis <=< peek
 
+type Cprocess_symmetries = Ptr Csymmetries -> IO ()
+
+foreign import ccall "dynamic"
+  mkCprocess_symmetries :: FunPtr Cprocess_symmetries -> Cprocess_symmetries
+
+ls_hs_operator_abelian_representations :: Ptr Coperator -> FunPtr Cprocess_symmetries -> IO ()
+ls_hs_operator_abelian_representations opPtr funPtr = do
+  withCoperator opPtr $ \someOp ->
+    withSomeOperator someOp $ \op -> do
+      let callback = mkCprocess_symmetries funPtr
+      forM_ (operatorAbelianRepresentations op) $
+        callback <=< newCsymmetries
+
 -- foreign export ccall "ls_hs_load_hamiltonian_from_yaml"
 --   ls_hs_load_hamiltonian_from_yaml :: CString -> IO (Ptr Coperator)
 --
@@ -501,6 +514,7 @@ typesTable
   , ([t|Cbasis|], "ls_hs_basis")
   , ([t|Cexpr|], "ls_hs_expr")
   , ([t|Creplace_index|], "ls_hs_index_replacement_type")
+  , ([t|Cprocess_symmetries|], "ls_hs_process_symmetries")
   , ([t|Cscalar|], "ls_hs_scalar")
   , ([t|Coperator|], "ls_hs_operator")
   , ([t|Cyaml_config|], "ls_hs_yaml_config")
@@ -577,6 +591,7 @@ addDeclarations
   , "ls_hs_operator_max_number_off_diag"
   , "ls_hs_operator_get_expr"
   , "ls_hs_operator_get_basis"
+  , "ls_hs_operator_abelian_representations"
   , "ls_hs_prepare_hphi"
   , "ls_hs_prepare_mvmc"
   , "ls_hs_load_yaml_config"

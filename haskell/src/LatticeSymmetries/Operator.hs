@@ -11,6 +11,10 @@ module LatticeSymmetries.Operator
   , withSomeOperator
   , foldSomeOperator
   , maxNumberOffDiag
+  , operatorSymmetryGroup
+  , operatorAbelianRepresentations
+  , isInvariant
+  , applyPermutation
 
     -- ** Helpers for FFI
   , newCoperator
@@ -23,6 +27,7 @@ where
 import Data.Primitive.Ptr qualified as P
 import Data.Set qualified as Set
 import Data.Vector (Vector)
+import Data.Vector qualified as B
 import Data.Vector.Generic qualified as G
 import Foreign.Marshal
 import Foreign.Ptr
@@ -31,11 +36,13 @@ import Foreign.Storable
 import GHC.Show qualified
 import LatticeSymmetries.Algebra
 import LatticeSymmetries.Basis
+import LatticeSymmetries.Benes (Permutation (unPermutation))
 import LatticeSymmetries.BitString
 import LatticeSymmetries.ComplexRational
 import LatticeSymmetries.Expr
 import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
+import LatticeSymmetries.Group (Hypergraph (Hypergraph), PermutationGroup (PermutationGroup), Symmetries, abelianSubgroup, groupRepresentations, hypergraphAutomorphisms, mkMultiplicationTable, mkSymmetriesFromRepresentation)
 import LatticeSymmetries.NonbranchingTerm
 import LatticeSymmetries.Utils
 import Prelude hiding (Product, Sum)
@@ -50,28 +57,28 @@ deriving stock instance
   => Show (Operator t)
 
 data SomeOperator where
-  SomeOperator :: IsBasis t => ParticleTag t -> Operator t -> SomeOperator
+  SomeOperator :: (IsBasis t) => ParticleTag t -> Operator t -> SomeOperator
 
 instance Show SomeOperator where
   show (SomeOperator SpinTag x) = show x
   show (SomeOperator SpinlessFermionTag x) = show x
   show (SomeOperator SpinfulFermionTag x) = show x
 
-withSomeOperator :: SomeOperator -> (forall t. IsBasis t => Operator t -> a) -> a
+withSomeOperator :: SomeOperator -> (forall t. (IsBasis t) => Operator t -> a) -> a
 withSomeOperator x f = case x of
   SomeOperator _ operator -> f operator
 {-# INLINE withSomeOperator #-}
 
-foldSomeOperator :: (forall t. IsBasis t => Operator t -> a) -> SomeOperator -> a
+foldSomeOperator :: (forall t. (IsBasis t) => Operator t -> a) -> SomeOperator -> a
 foldSomeOperator f x = case x of
   SomeOperator _ operator -> f operator
 {-# INLINE foldSomeOperator #-}
 
-mkOperator :: IsBasis t => Basis t -> Expr t -> Operator t
+mkOperator :: (IsBasis t) => Basis t -> Expr t -> Operator t
 mkOperator = Operator
 
 getNonbranchingTerms
-  :: HasNonbranchingRepresentation (Generator Int (GeneratorType t))
+  :: (HasNonbranchingRepresentation (Generator Int (GeneratorType t)))
   => Operator t
   -> Vector NonbranchingTerm
 getNonbranchingTerms operator =
@@ -178,12 +185,12 @@ newCoperator maybeBasisPtr x = do
 withCoperator :: Ptr Coperator -> (SomeOperator -> IO a) -> IO a
 withCoperator p f = f =<< (deRefStablePtr . castPtrToStablePtr . coperator_haskell_payload) =<< peek p
 
-cloneCoperator :: HasCallStack => Ptr Coperator -> IO (Ptr Coperator)
+cloneCoperator :: (HasCallStack) => Ptr Coperator -> IO (Ptr Coperator)
 cloneCoperator p = do
   _ <- operatorIncRefCount p
   pure p
 
-destroyCoperator :: HasCallStack => Ptr Coperator -> IO ()
+destroyCoperator :: (HasCallStack) => Ptr Coperator -> IO ()
 destroyCoperator p = do
   refcount <- operatorDecRefCount p
   when (refcount == 1) $ do
@@ -194,7 +201,37 @@ destroyCoperator p = do
     freeStablePtr . castPtrToStablePtr $ coperator_haskell_payload x
     free p
 
-maxNumberOffDiag :: IsBasis t => Operator t -> Int
+maxNumberOffDiag :: (IsBasis t) => Operator t -> Int
 maxNumberOffDiag op = Set.size $ Set.fromList . G.toList . G.map nbtX $ offDiag
   where
     (_, offDiag) = G.partition nbtIsDiagonal (getNonbranchingTerms op)
+
+operatorToHypergraph :: (IsBasis t) => Operator t -> Hypergraph Int
+operatorToHypergraph (Operator basis expr) = flattenHypergraph $ exprToHypergraph expr
+  where
+    flattenHypergraph (Hypergraph vertices hyperedges) =
+      Hypergraph
+        (Set.map (flattenIndex basis) vertices)
+        (Set.map (Set.map (flattenIndex basis)) hyperedges)
+
+applyPermutation :: (IsBasis t) => Permutation -> Operator t -> Operator t
+applyPermutation (unPermutation -> p) (Operator basis expr) =
+  Operator basis . simplifyExpr $ mapIndices remap expr
+  where
+    remap i = unFlattenIndex basis $ p G.! flattenIndex basis i
+
+isInvariant :: (IsBasis t) => Operator t -> Permutation -> Bool
+isInvariant operator permutation =
+  (applyPermutation permutation operator).opTerms == operator.opTerms
+
+operatorSymmetryGroup :: (IsBasis t) => Operator t -> PermutationGroup
+operatorSymmetryGroup operator = PermutationGroup $ B.filter (isInvariant operator) automorphisms
+  where
+    (PermutationGroup automorphisms) = hypergraphAutomorphisms . operatorToHypergraph $ operator
+
+operatorAbelianRepresentations :: (IsBasis t) => Operator t -> [Symmetries]
+operatorAbelianRepresentations operator = mkSymmetriesFromRepresentation g' <$> reps
+  where
+    g = operatorSymmetryGroup operator
+    (g', t') = abelianSubgroup g (mkMultiplicationTable g)
+    reps = groupRepresentations t'
