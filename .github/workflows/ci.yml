@@ -1,201 +1,31 @@
 name: CI
 
-# Trigger the workflow on push or pull request, but only for the master branch
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [master]
 
-env:
-  HL_VERSION: "14.0.0"
-  HL_HASH: "6b9ed2afd1d6d0badf04986602c943e287d44e46"
-  HL_BITS: 64
-  
 jobs:
   build:
-    name: Building on ${{ matrix.os }} with ghc-${{ matrix.ghc }}
+    name: Building on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
           - os: ubuntu-latest
-            cabal: latest
-            ghc: "8.10.7"
-            HL_ARCH: "x86"
-            HL_OS: "linux"
           - os: macos-latest
-            cabal: latest
-            ghc: "8.10.7"
-            HL_ARCH: "x86"
-            HL_OS: "osx"
     steps:
-    - uses: actions/checkout@v2
-    - uses: haskell/actions/setup@v1
-      name: Setup Haskell
+    - uses: actions/checkout@v3
+    - uses: cachix/install-nix-action@v23
+    - uses: cachix/cachix-action@v12
       with:
-        ghc-version: ${{ matrix.ghc }}
-        cabal-version: ${{ matrix.cabal }}
-    # - name: Install GHC with -fPIC on Linux
-    #   if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
-    #   run: |
-    #     ghcup install ghc \
-    #       --url https://github.com/twesterhout/ghc-fpic-bindist/releases/download/v0.0.2/ghc-${{ matrix.ghc }}-x86_64-linux-ubuntu-18.04-b6241f3a.tar.xz \
-    #       --force \
-    #       ${{ matrix.ghc }}
-    - uses: actions/cache@v3
-      # if: matrix.os == 'macos-latest'
-      name: Cache ~/.cabal/store
-      with:
-        path: ~/.cabal/store
-        key: ${{ runner.os }}-${{ matrix.ghc }}-new-cabal
-    # - name: Clean cache (Linux) # REMOVE ME
-    #   if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
-    #   run: |
-    #     rm -rf ~/.cabal/store
-    # - name: Install system dependencies (Linux)
-    #   if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
-    #   run: |
-    #     # sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
-    #     sudo apt-get update
-    #     sudo apt-get install -y --no-install-recommends libnuma-dev libgmp-dev
-    # - name: Install system dependencies (MacOS)
-    #   if: matrix.os == 'macos-latest'
-    #   run: |
-    #     brew install libomp
-
-    - name: Install Halide
-      run: |
-        mkdir -p third_party && cd third_party
-        export HL_BASENAME=Halide-${HL_VERSION}-${{ matrix.HL_ARCH }}-${HL_BITS}-${{ matrix.HL_OS }}-${HL_HASH}
-        echo "HL_BASENAME=$HL_BASENAME"
-        curl -L -O https://github.com/halide/Halide/releases/download/v${HL_VERSION}/${HL_BASENAME}.tar.gz
-        tar -xf ${HL_BASENAME}.tar.gz
-        rm ${HL_BASENAME}.tar.gz
-        mv Halide-${HL_VERSION}-${{ matrix.HL_ARCH }}-${HL_BITS}-${{ matrix.HL_OS }} Halide
-
+        name: twesterhout-chapel
+        authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
     - name: Build
       run: |
-        make
-
-    - name: Test
-      run: |
-        make check
-
-    # - uses: conda-incubator/setup-miniconda@v2
-    #   if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
-    #   with:
-    #     mamba-version: "*"
-    #     miniforge-version: latest
-    #     channels: conda-forge,defaults
-    #     channel-priority: true
-    #     auto-activate-base: false
-
-        # - uses: actions/cache@v3
-        #   name: Cache ~/hdf5
-        #   id: cache-hdf5
-        #   with:
-        #     path: ~/hdf5
-        #     key: ${{ runner.os }}-${{ matrix.ghc }}-hdf5-v1
-        # - name: Restore pre-built HDF5
-        #   if: steps.cache-hdf5.outputs.cache-hit == 'true'
-        #   run: |
-        #     mkdir -p third_party
-        #     cp -r ~/hdf5 third_party/
-        # - name: Build HDF5
-        #   if: steps.cache-hdf5.outputs.cache-hit != 'true'
-        #   run: |
-        #     make hdf5
-        # - name: Save pre-built HDF5
-        #   if: steps.cache-hdf5.outputs.cache-hit != 'true'
-        #   run: |
-        #     mkdir -p third_party
-        #     cp -r third_party/hdf5 ~/
-    # - name: Test Conda installation
-    #   if: matrix.os == 'ubuntu-18.04' || matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-latest'
-    #   run: |
-    #     mamba env create -f conda-ci-linux.yml
-    #     conda info
-    #     conda env list
-    #     conda run -n ci_devel bash -c "which \${CC}"
-    #     conda run -n ci_devel bash -c "echo \${CONDA_PREFIX}"
-
-    # - name: Package
-    #   run: |
-    #     make release
-    #     # COMMIT=$(git rev-parse --short HEAD)
-    #     # PREFIX=lattice-symmetries-haskell-$COMMIT
-    #     # mkdir $PREFIX
-    #     # mkdir $PREFIX/include
-    #     # mkdir $PREFIX/lib
-    #     # cp cbits/lattice_symmetries_haskell.h $PREFIX/include/
-    #     # if [[ ${{ matrix.os }} == "macos-latest" ]]; then
-    #     #   export SHARED_LIB_EXTENSION=dylib
-    #     # else
-    #     #   export SHARED_LIB_EXTENSION=so
-    #     # fi
-    #     # cp kernels/build/liblattice_symmetries_core.$SHARED_LIB_EXTENSION $PREFIX/lib/
-    #     # find dist-newstyle -name "liblattice_symmetries_haskell.$SHARED_LIB_EXTENSION" \
-    #     #                    -exec cp {} $PREFIX/lib/ \;
-    #     # # On Linux, bundle libffi
-    #     # if [[ ${{ matrix.os }} != "macos-latest" ]]; then
-    #     #   LIBFFI=$(ldd $PREFIX/lib/liblattice_symmetries_haskell.so | grep libffi | sed -E 's:.*=>\s+(.*/libffi.so.[6-8]).*:\1:')
-    #     #   cp ${LIBFFI}* $PREFIX/lib/
-    #     # fi
-
-    #     COMMIT=$(git rev-parse --short HEAD)
-    #     PACKAGE=lattice-symmetries-haskell-$COMMIT
-    #     mv -v $PACKAGE.tar.bz2 $PACKAGE-${{ matrix.os }}.tar.bz2
-    #     # tar -cf ${PREFIX}-${{ matrix.os }}.tar $PREFIX/
-    #     # bzip2 ${PREFIX}-${{ matrix.os }}.tar
-
-    # - uses: actions/upload-artifact@v3
-    #   with:
-    #     name: lattice-symmetries-haskell-${{ matrix.os }}
-    #     path: lattice-symmetries-haskell-*-${{ matrix.os }}.tar.bz2
-
-  build_for_conda:
-    name: Compiling for Conda
-    # needs: [build]
-    runs-on: ubuntu-latest
-    container:
-      image: twesterhout/lattice-symmetries-haskell:latest
-    steps:
-    - uses: actions/checkout@v2
-
-    - name: Build
-      run: |
-        git config --global safe.directory '*'
-        make HALIDE_PATH=/opt/Halide bundle
-
-    - name: Package
-      run: |
-        COMMIT=$(git rev-parse --short HEAD)
-        PACKAGE=lattice-symmetries-haskell-$COMMIT
-        mv bundle $PACKAGE
-        tar -czf ${PACKAGE}-${{ matrix.os }}.tar.gz $PACKAGE/
-
-    - uses: actions/upload-artifact@v3
-      with:
-        name: lattice-symmetries-haskell-${{ matrix.os }}
-        path: lattice-symmetries-haskell-*-${{ matrix.os }}.tar.gz
-
-  release:
-    name: Creating a release
-    needs: [build_for_conda]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v2
-      - name: Install dependencies
-        run: |
-          sudo apt install libfuse2
-      - name: Inspect directory after downloading artifacts
-        run: |
-          ls -alFR
-      - name: Create release and upload artifacts
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          wget -q https://github.com/TheAssassin/pyuploadtool/releases/download/continuous/pyuploadtool-x86_64.AppImage
-          chmod +x pyuploadtool-x86_64.AppImage
-          ./pyuploadtool-x86_64.AppImage **/lattice-symmetries-haskell-*.tar.gz
+        nix build \
+          --accept-flake-config \
+          --print-build-logs \
+          .#haskell \
+          .#chapel \
+          .#python

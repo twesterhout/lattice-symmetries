@@ -19,31 +19,18 @@ use ForeignTypes;
 use ConcurrentAccessor;
 use BatchedOperator;
 
-private proc meanAndErrString(timings : [] real) {
-  const mean = (+ reduce timings) / timings.size:real;
-  const variance =
-    (1.0 / timings.size:real)
-      * (+ reduce ([i in timings.domain]
-                     (timings[i] - mean) * (timings[i] - mean)));
-  const err = round(100 * sqrt(variance)) / 100;
-  return mean:string + " ± " + err:string;
-}
+config const matrixVectorDiagonalNumChunks : int = here.maxTaskPar;
 
-/* 
- */
 private proc localDiagonalBatch(indices : range(int, boundKind.both, strideKind.one),
                                 matrix : Operator, const ref x : [] ?eltType, ref y : [] eltType,
                                 const ref representatives : [] uint(64)) {
-  const batchSize = indices.size;
   ls_internal_operator_apply_diag_x1(
     matrix.payload.deref(),
-    batchSize,
-    c_const_ptrTo(representatives[indices.low]),
+    indices.size,
+    c_ptrToConst(representatives[indices.low]),
     c_ptrTo(y[indices.low]),
-    c_const_ptrTo(x[indices.low]));
+    c_ptrToConst(x[indices.low]));
 }
-
-config const matrixVectorDiagonalNumChunks : int = here.maxTaskPar;
 
 private proc localDiagonal(matrix : Operator,
                            const ref x : [] ?eltType,
@@ -57,7 +44,7 @@ private proc localDiagonal(matrix : Operator,
 
   const totalSize = representatives.size;
   // const batchSize = (totalSize + numChunks - 1) / numChunks;
-  var ranges : [0 ..# numChunks] range(int, boundKind.both, strideKind.one) =
+  const ranges : [0 ..# numChunks] range(int, boundKind.both, strideKind.one) =
     chunks(0 ..# totalSize, numChunks);
   // var workspace : [0 ..# batchSize] complex(128) = noinit;
   forall r in ranges {
@@ -471,12 +458,12 @@ record Producer {
   var numProducerTasks : int;
 
   var batchedOperator : BatchedOperator;
-  var basisPtr : c_ptr(Basis);
+  var basisPtr : c_ptrConst(Basis);
   var accessorPtr : c_ptr(ConcurrentAccessor(eltType));
-  var representativesPtr : c_ptr(uint(64));
-  var xPtr : c_ptr(eltType);
+  var representativesPtr : c_ptrConst(uint(64));
+  var xPtr : c_ptrConst(eltType);
 
-  var rangesPtr : c_ptr(range(int));
+  var rangesPtr : c_ptrConst(range(int));
   var moreWorkPtr : c_ptr(atomic bool);
   var currentChunkIdxPtr : c_ptr(atomic int);
 
@@ -506,11 +493,11 @@ record Producer {
     this.numChunks = numChunks;
     this.numProducerTasks = remoteBuffers.domain.dim(1).size;
     this.batchedOperator = batchedOperator;
-    this.basisPtr = c_const_ptrTo(this.batchedOperator._matrixPtr.deref().basis);
+    this.basisPtr = c_ptrToConst(this.batchedOperator._matrixPtr.deref().basis);
     this.accessorPtr = c_ptrTo(accessor);
-    this.representativesPtr = c_const_ptrTo(representatives);
-    this.xPtr = c_const_ptrTo(x);
-    this.rangesPtr = c_const_ptrTo(ranges);
+    this.representativesPtr = c_ptrToConst(representatives);
+    this.xPtr = c_ptrToConst(x);
+    this.rangesPtr = c_ptrToConst(ranges);
     this.moreWorkPtr = c_ptrTo(moreWork);
     this.currentChunkIdxPtr = c_ptrTo(currentChunkIdx);
     this.remoteBuffersPtr = c_ptrTo(remoteBuffers);
@@ -596,8 +583,12 @@ record Producer {
       // Compute a r.size rows of the matrix
       timer.computeOffDiag.start();
       const r : range(int) = rangesPtr[rangeIdx];
-      const (n, basisStatesPtr, coeffsPtr, keysPtr) = batchedOperator.computeOffDiag(
-          r.size, representativesPtr + r.low, xPtr + r.low);
+      const (n, basisStatesPtr, coeffsPtr, keysPtr) =
+        batchedOperator.computeOffDiag(
+          r.size,
+          representativesPtr + r.low,
+          (xPtr + r.low):c_ptrConst(eltType),
+          left=true);
       timer.computeOffDiag.stop();
 
       timer.radixOneStep.start();
@@ -701,7 +692,7 @@ record Consumer {
 
   var slots;
 
-  var basisPtr : c_ptr(Basis);
+  var basisPtr : c_ptrConst(Basis);
   var accessorPtr : c_ptr(ConcurrentAccessor(eltType));
 
   var totalNumberChunks : int;
@@ -751,7 +742,7 @@ record Consumer {
       this.slots = pairs;
     }
 
-    this.basisPtr = c_const_ptrTo(basis);
+    this.basisPtr = c_ptrToConst(basis);
     this.accessorPtr = c_ptrTo(accessor);
     this.totalNumberChunks = totalNumberChunks;
     this.numProcessedPtr = c_ptrTo(numProcessedChunks);

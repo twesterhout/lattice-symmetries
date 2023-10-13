@@ -256,7 +256,7 @@ private proc _enumerateStatesProjected(r : range(uint(64)), const ref basis : Ba
     isRepresentative(basis, buffer[0 ..# written], flags[0 ..# written], norms[0 ..# written]);
 
     for i in 0 ..# written do
-      if flags[i]:bool && norms[i] > 0 then
+      if flags[i]:bool then
         outStates.pushBack(buffer[i]);
 
     const last = buffer[written - 1];
@@ -355,7 +355,7 @@ proc prefixSum(arr : [] ?eltType) {
   return sums;
 }
 
-proc permuteBasedOnMasks(arrSize : int, masks : c_ptr(?maskType), arr : c_ptr(?eltType),
+proc permuteBasedOnMasks(arrSize : int, masks : c_ptrConst(?maskType), arr : c_ptrConst(?eltType),
                          counts : [] int, destOffsets : [] int,
                          destPtrs : [] c_ptr(eltType)) {
   var offsets : [0 ..# numLocales] int = prefixSum(counts);
@@ -433,7 +433,7 @@ proc _enumStatesComputeCounts(ref buckets,
       //                                                 outStates, outMasks);
       // Copy computed chunks back to locale 0. We use low-level PUT, because
       // Chapel generates bad code otherwise
-      const myCountsPtr = c_const_ptrTo(myCounts[0]);
+      const myCountsPtr = c_ptrToConst(myCounts[0]);
       const destPtr = countsPtr + chunkIdx * numLocales;
       const destSize = numLocales:c_size_t * c_sizeof(int);
       PUT(myCountsPtr, 0, destPtr, destSize);
@@ -492,7 +492,6 @@ proc _enumStatesMakeMasksOffsets(counts) {
 proc _enumStatesMakeMasks(counts, totalCounts) {
   const numMasks = + reduce totalCounts;
   const masksBox = {0 ..# numMasks};
-  logDebug(masksBox, " ", totalCounts);
   const masksDom = masksBox dmapped Block(boundingBox=masksBox);
   var masks : [masksDom] uint(8);
   return masks;
@@ -522,10 +521,10 @@ proc _enumStatesPrepareDescriptors(const ref masks, counts, totalCounts) {
     const lastIndex = if i < numChunks - 1
                         then masksOffsets[i + 1] - 1
                         else numMasks - 1;
-    const loc = masksDom.dist.dsiIndexToLocale(firstIndex);
+    const loc = masksDom.distribution.dsiIndexToLocale(firstIndex);
     // The range firstIndex .. lastIndex crosses the locale boundary in masks
     // array.
-    if loc != masksDom.dist.dsiIndexToLocale(lastIndex) then
+    if loc != masksDom.distribution.dsiIndexToLocale(lastIndex) then
       masksDescriptors[i] = (firstIndex, nil);
     else {
       const ptrOffset = firstIndex - masksDom.localSubdomain(loc).low;
@@ -546,7 +545,7 @@ proc _enumStatesDistribute(const ref buckets, ref masks,
   var distributeTimer = new stopwatch();
   distributeTimer.start();
 
-  const basisStatesPtrsPtr = c_const_ptrTo(basisStatesPtrs);
+  const basisStatesPtrsPtr = c_ptrToConst(basisStatesPtrs);
   const mainLocaleIdx = here.id;
   const numChunks = counts.shape[0];
   coforall loc in Locales do on loc {
@@ -569,8 +568,8 @@ proc _enumStatesDistribute(const ref buckets, ref masks,
         // Distributing states
         const copyTime =
           permuteBasedOnMasks(myStates.size,
-                              c_const_ptrTo(myMasks[0]),
-                              c_const_ptrTo(myStates[0]),
+                              c_ptrToConst(myMasks[0]),
+                              c_ptrToConst(myStates[0]),
                               myCounts[bucketIdx, ..],
                               myOffsets[bucketIdx, ..],
                               myDestPtrs);
@@ -582,7 +581,7 @@ proc _enumStatesDistribute(const ref buckets, ref masks,
         const (localeOrOffset, targetPtr) = myMasksDescriptors[bucketIdx];
         if targetPtr != nil {
           const targetLocaleIdx = localeOrOffset;
-          PUT(c_const_ptrTo(myMasks._arr[0]), targetLocaleIdx, targetPtr,
+          PUT(c_ptrToConst(myMasks._arr[0]), targetLocaleIdx, targetPtr,
               myMasks.size:c_size_t * c_sizeof(uint(8)));
         }
         else {
@@ -639,7 +638,7 @@ proc enumerateStates(ranges : [] range(uint(64)), const ref basis : Basis, out _
   // if enableSegFault then
   //   basisStatesPtrs = basisStates._dataPtrs;
   // else
-  POSIX.memcpy(c_ptrTo(basisStatesPtrs), c_const_ptrTo(basisStates._dataPtrs),
+  POSIX.memcpy(c_ptrTo(basisStatesPtrs), c_ptrToConst(basisStates._dataPtrs),
            numLocales:c_size_t * c_sizeof(c_ptr(uint(64))));
   // logDebug("634: nope it didn't");
 

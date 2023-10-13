@@ -14,119 +14,43 @@
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.flake-utils.follows = "flake-utils";
     };
+    haskell-python-tools = {
+      url = "github:twesterhout/haskell-python-tools.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, nix-chapel }:
+  outputs = { self, nixpkgs, flake-utils, nix-chapel, haskell-python-tools }:
     let
       inherit (nixpkgs) lib;
+      inherit (haskell-python-tools.lib)
+        doInstallForeignLibs
+        doEnableRelocatedStaticLibs;
       version = "2.2.0";
 
       kernels-overlay = import ./kernels/overlay.nix { inherit version; };
-      haskell-overlay = { withPic }: import ./haskell/overlay.nix { inherit lib withPic; };
-      haskell-profiling-overlay = import ./haskell/profiling.nix { inherit lib; };
+      haskell-overlay = import ./haskell/overlay.nix {
+        inherit lib doInstallForeignLibs doEnableRelocatedStaticLibs;
+      };
       chapel-overlay = import ./chapel/overlay.nix { inherit version; };
       python-overlay = import ./python/overlay.nix { inherit version; };
 
-      composed-overlay = { withPic, enableProfiling ? false }:
-        lib.foldl' lib.composeExtensions (_: _: { }) ([
-          nix-chapel.overlays.default
-          kernels-overlay
-          (haskell-overlay { inherit withPic; })
-          chapel-overlay
-          python-overlay
-        ]
-        ++ lib.optionals withPic [
-          # An overlay to replace ghc96 with a custom one that has
-          # the static RTS libraries compiled with -fPIC. This lets us use
-          # these static libraries to build a self-contained shared library.
-          (final: prev:
-            let
-              ourGhc = prev.haskell.compiler.ghc962.override {
-                enableRelocatedStaticLibs = true;
-              };
-            in
-            lib.recursiveUpdate prev {
-              haskell.packages.ghc962.ghc = ourGhc;
-              haskell.compiler.ghc962 = ourGhc;
-            })
-        ]
-        ++ lib.optional enableProfiling haskell-profiling-overlay);
+      composed-overlay = lib.composeManyExtensions [
+        nix-chapel.overlays.default
+        kernels-overlay
+        haskell-overlay
+        chapel-overlay
+        python-overlay
+      ];
 
-      pkgs-for = args: system: import nixpkgs {
+      pkgs-for = system: import nixpkgs {
         inherit system;
-        overlays = [ (composed-overlay args) ];
+        overlays = [ composed-overlay ];
       };
 
-      # test-matrix-vector = pkgs.stdenv.mkDerivation {
-      #   pname = "test-matrix-vector";
-      #   inherit version;
-      #   src = ./chapel;
-
-      #   configurePhase = ''
-      #     ln --symbolic ${lattice-symmetries-chapel-ffi} src/FFI.chpl
-      #   '';
-
-      #   buildPhase = ''
-      #     make \
-      #       CHPL_COMM=gasnet \
-      #       CHPL_COMM_SUBSTRATE=smp \
-      #       OPTIMIZATION=--fast \
-      #       CHPL_CFLAGS='-I${lattice-symmetries-kernels}/include' \
-      #       CHPL_LDFLAGS='-L${lattice-symmetries-haskell.lib}/lib' \
-      #       HDF5_CFLAGS='-I${pkgs.hdf5.dev}/include' \
-      #       HDF5_LDFLAGS='-L${pkgs.hdf5}/lib -lhdf5_hl -lhdf5 -lrt' \
-      #       bin/TestMatrixVectorProduct
-
-      #     chapelFixupBinary bin/TestMatrixVectorProduct
-      #     chapelFixupBinary bin/TestMatrixVectorProduct_real
-      #   '';
-
-      #   installPhase = ''
-      #     mkdir -p $out/bin
-      #     install -Dm 755 bin/TestMatrixVectorProduct* $out/bin
-      #   '';
-
-      #   nativeBuildInputs = [ chapel chapelFixupBinary ];
-      # };
-
-      # lattice-symmetries-python = pkgs.python3Packages.buildPythonPackage {
-      #   pname = "lattice-symmetries";
-      #   inherit version;
-      #   src = ./python;
-
-      #   buildInputs = [
-      #     lattice-symmetries-kernels
-      #     lattice-symmetries-haskell
-      #     lattice-symmetries-chapel
-      #   ];
-      #   propagatedBuildInputs = with pkgs.python3Packages; [
-      #     cffi
-      #     loguru
-      #     numpy
-      #     scipy
-      #   ];
-
-      #   postPatch = ''
-      #     awk '/python-cffi: START/{flag=1;next}/python-cffi: STOP/{flag=0}flag' \
-      #       ${lattice-symmetries-kernels}/include/lattice_symmetries_types.h \
-      #       >lattice_symmetries/extracted_declarations.h
-      #     awk '/python-cffi: START/{flag=1;next}/python-cffi: STOP/{flag=0}flag' \
-      #       ${lattice-symmetries-haskell}/include/lattice_symmetries_functions.h \
-      #       >>lattice_symmetries/extracted_declarations.h
-      #   '';
-
-      #   installCheckPhase = ''
-      #     # we want to import the installed module that also contains the compiled library
-      #     rm -rf lattice_symmetries
-      #     runHook pytestCheckPhase
-      #   '';
-      #   nativeCheckInputs = with pkgs.python3Packages; [
-      #     pytestCheckHook
-      #   ];
-      # };
     in
     {
-      overlays.default = composed-overlay { withPic = true; };
+      overlays.default = composed-overlay;
 
       templates.default = {
         path = builtins.toPath "${./.}/template";
@@ -134,15 +58,15 @@
       };
 
       packages = flake-utils.lib.eachDefaultSystemMap (system:
-        with (pkgs-for { withPic = true; } system); {
+        with pkgs-for system; {
           inherit (lattice-symmetries) kernels haskell chapel python distributed test-data;
           inherit atomic_queue;
+          inherit haskellPackages;
         });
 
       devShells = flake-utils.lib.eachDefaultSystemMap (system:
         let
-          pkgs = pkgs-for { withPic = true; } system;
-          pkgsNoPic = pkgs-for { withPic = false; enableProfiling = true; } system;
+          pkgs = pkgs-for system;
         in
         {
           default = self.outputs.devShells.${system}.haskell;
@@ -151,7 +75,7 @@
             nativeBuildInputs = [ gnumake gcc ];
             shellHook = "export HALIDE_PATH=${halide}";
           };
-          haskell = with pkgsNoPic; haskellPackages.shellFor {
+          haskell = with pkgs; haskellPackages.shellFor {
             packages = ps: [ ps.lattice-symmetries-haskell ];
             withHoogle = true;
             nativeBuildInputs = with haskellPackages; [

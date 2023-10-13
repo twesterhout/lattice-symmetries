@@ -1,34 +1,43 @@
 module ForeignTypes {
   use FFI;
   use CommonParameters;
+  import Communication;
 
   use CTypes;
   use ByteBufferHelpers;
   use IO;
   use Time;
 
-  pragma "fn synchronization free"
-  private extern proc c_pointer_return(const ref x : ?t) : c_ptr(t);
+  // pragma "fn synchronization free"
+  // private extern proc c_pointer_return(const ref x : ?t) : c_ptr(t);
 
-  inline proc c_const_ptrTo(const ref arr: []) {
-    if (!arr.isRectangular() || !arr.domain.dist._value.dsiIsLayout()) then
-      compilerError("Only single-locale rectangular arrays support c_ptrTo() at present");
+  // inline proc c_const_ptrTo(const ref arr: []) {
+  //   if (!arr.isRectangular() || !arr.domain.dist._value.dsiIsLayout()) then
+  //     compilerError("Only single-locale rectangular arrays support c_ptrTo() at present");
 
-    if (arr._value.locale != here) then
-      halt("c_ptrTo() can only be applied to an array from the locale on which it lives (array is on locale "
-           + arr._value.locale.id:string + ", call was made on locale " + here.id:string + ")");
-    return c_pointer_return(arr[arr.domain.low]);
-  }
-  inline proc c_const_ptrTo(const ref x) {
-    return c_pointer_return(x);
-  }
+  //   if (arr._value.locale != here) then
+  //     halt("c_ptrTo() can only be applied to an array from the locale on which it lives (array is on locale "
+  //          + arr._value.locale.id:string + ", call was made on locale " + here.id:string + ")");
+  //   return c_pointer_return(arr[arr.domain.low]);
+  // }
+  // inline proc c_const_ptrTo(const ref x) {
+  //   return c_pointer_return(x);
+  // }
 
   inline proc GET(addr, node, rAddr, size) {
-    __primitive("chpl_comm_get", addr, node, rAddr, size);
+    // __primitive("chpl_comm_get", addr, node, rAddr, size);
+    Communication.get(dest = addr,
+                      src = rAddr,
+                      srcLocID = node,
+                      numBytes = size);
   }
 
   inline proc PUT(addr, node, rAddr, size) {
-    __primitive("chpl_comm_put", addr, node, rAddr, size);
+    // __primitive("chpl_comm_put", addr, node, rAddr, size);
+    Communication.put(dest = rAddr,
+                      src = addr,
+                      destLocID = node,
+                      numBytes = size);
   }
 
   proc unsafeViewAsExternalArray(const ref arr: []): chpl_external_array {
@@ -231,7 +240,7 @@ module ForeignTypes {
     ls_hs_is_representative(
       basis.payload,
       batchSize,
-      c_const_ptrTo(alphas), 1,
+      c_ptrToConst(alphas), 1,
       c_ptrTo(are_representatives),
       c_ptrTo(norms)
     );

@@ -6,12 +6,13 @@ module LatticeSymmetries.Group
   ( PermutationGroup (..)
   , fromGenerators
   , pgLength
-  , Symmetry
+  , Symmetry (..)
   , mkSymmetry
   , symmetrySector
   , symmetryPermutation
   , symmetryPhase
   , getPeriodicity
+  , getCharacter
   , Symmetries (..)
   , mkSymmetries
   , mkSymmetriesFromRepresentation
@@ -144,7 +145,10 @@ modOne x
   | otherwise = x
 
 instance Semigroup Symmetry where
-  (<>) (Symmetry pa λa) (Symmetry pb λb) = Symmetry (pa <> pb) (modOne (λa + λb))
+  (<>) (Symmetry pa λa) (Symmetry pb λb) =
+    let !p = pa <> pb
+        !λ = modOne (λa + λb)
+     in Symmetry p λ
 
 data Symmetries = Symmetries
   { symmGroup :: !PermutationGroup
@@ -157,11 +161,14 @@ data Symmetries = Symmetries
 getCharacter :: Symmetry -> Complex Double
 getCharacter (symmetryPhase -> φ)
   | φ == 0 = 1 :+ 0
+  | φ == 1 % 4 = 0 :+ (-1)
   | φ == 1 % 2 = (-1) :+ 0
-  | φ == (-1) % 2 = (-1) :+ 0
-  | φ == 1 % 4 = 0 :+ 1
-  | φ == (-1) % 4 = 0 :+ (-1)
-  | otherwise = cos (-2 * pi * realToFrac φ) :+ sin (-2 * pi * realToFrac φ)
+  | φ == 3 % 4 = 0 :+ 1
+  | 0 <= φ && φ < 1 % 4 = cos (2 * pi * realToFrac φ) :+ (-sin (2 * pi * realToFrac φ))
+  | 1 % 4 <= φ && φ < 1 % 2 = (-cos (2 * pi * realToFrac (1 % 2 - φ))) :+ (-sin (2 * pi * realToFrac (1 % 2 - φ)))
+  | 1 % 2 <= φ && φ < 3 % 4 = (-cos (2 * pi * realToFrac (φ - 1 % 2))) :+ sin (2 * pi * realToFrac (φ - 1 % 2))
+  | 3 % 4 <= φ && φ < 1 = cos (2 * pi * realToFrac (1 - φ)) :+ sin (2 * pi * realToFrac (1 - φ))
+  | otherwise = error "should never happen"
 
 mkSymmetries :: [Symmetry] -> Either Text Symmetries
 mkSymmetries [] = Right emptySymmetries
