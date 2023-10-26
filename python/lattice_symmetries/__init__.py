@@ -598,6 +598,9 @@ class Expr(object):
         _assert_subtype(other, Expr)
         return Expr(lib.ls_hs_expr_minus(self._payload, other._payload))
 
+    def __neg__(self) -> "Expr":
+        return (-1) * self
+
     def scale(self, coeff: complex) -> "Expr":
         coeff = complex(coeff)
         c_coeff = ffi.new("ls_hs_scalar const*", [coeff.real, coeff.imag])
