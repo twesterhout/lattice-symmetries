@@ -123,17 +123,27 @@ class Symmetry:
         return {"permutation": self.permutation.tolist(), "sector": self.sector}
 
 
+def from_haskell_string(c_str):
+    s = ffi.string(c_str).decode("utf-8")
+    lib.ls_hs_destroy_string(c_str)
+    return s
+
+
 class Symmetries:
     _payload: ffi.CData
     _finalizer: weakref.finalize
     _generators: List[Symmetry]
 
     def __init__(self, generators: List[Symmetry] = []):
-        json_string = json.dumps([g.json_object() for g in generators]).encode("utf-8")
-        self._payload = lib.ls_hs_symmetries_from_json(json_string)
+        if isinstance(generators, ffi.CData):
+            self._payload = generators
+            self._generators = None
+        else:
+            json_string = json.dumps([g.json_object() for g in generators]).encode("utf-8")
+            self._payload = lib.ls_hs_symmetries_from_json(json_string)
+            self._generators = generators
         assert self._payload != 0
         self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_symmetries, self._payload)
-        self._generators = generators
 
     def __len__(self) -> int:
         return len(self.generators)
@@ -144,6 +154,9 @@ class Symmetries:
 
     def json_object(self):
         return [g.json_object() for g in self.generators]
+
+    def to_json(self) -> str:
+        return from_haskell_string(lib.ls_hs_symmetries_to_json(self._payload))
 
 
 def _basis_state_to_array(state: int, number_words: int) -> ffi.CData:
@@ -604,6 +617,15 @@ class Expr(object):
 # str(ls.Expr("5 σ⁺₀ σ⁻₁ + (8 + 3im) σ⁻₁"))
 # str(ls.Expr("-2 (c†₀ c₁ + c†₁ c₀)"))
 
+process_symmetries_impl = None
+process_symmetries_impl_lock = threading.Lock()
+
+
+@ffi.def_extern()
+def python_process_symmetries(s_ptr):
+    assert process_symmetries_impl is not None
+    process_symmetries_impl(s_ptr)
+
 
 class Operator(LinearOperator):
     _payload: ffi.CData
@@ -753,7 +775,7 @@ class Operator(LinearOperator):
 
     def apply_diag_to_basis_state(
         self, alphas: int | NDArray[np.uint64]
-    ) -> float | NDArray[np.uint64]:
+    ) -> float | NDArray[np.float64]:
         if isinstance(alphas, (int, np.integer)):
             is_scalar = True
             count = 1
@@ -887,6 +909,15 @@ class Operator(LinearOperator):
 
     def prepare_inputs_for_mvmc(self, folder: str) -> None:
         lib.ls_hs_prepare_mvmc(self._payload, folder.encode("utf-8"))
+
+    def abelian_representations(self):
+        with process_symmetries_impl_lock:
+            global process_symmetries_impl
+            representations = []
+            process_symmetries_impl = lambda p: representations.append(Symmetries(p))
+            lib.ls_hs_operator_abelian_representations(self._payload, lib.python_process_symmetries)
+            process_symmetries_impl = None
+            return representations
 
 
 def load_yaml_config(filename: str):

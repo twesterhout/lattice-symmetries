@@ -218,6 +218,7 @@ test-suite lattice-symmetries-haskell-test
         , hspec
         , lattice-symmetries-haskell
         , megaparsec
+        , HUnit
         , prettyprinter
         , QuickCheck
         , text

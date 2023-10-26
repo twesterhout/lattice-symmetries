@@ -347,3 +347,16 @@ def test_csr_matvec():
     matrix = hamiltonian.to_csr()
     x = np.random.rand(basis.number_states).astype(np.complex128)
     assert np.allclose(hamiltonian @ x, ls.matrix_vector_product_csr(matrix, x))
+
+
+def test_abelian_representations():
+    basis = ls.SpinBasis(3)
+    basis.build()
+    expr = ls.Expr("σᶻ₀ σᶻ₁ + 2 σ⁺₀ σ⁻₁ + 2 σ⁻₀ σ⁺₁", sites=[[0, 1], [1, 2], [2, 0]])
+    hamiltonian = ls.Operator(basis, expr)
+    print(hamiltonian.to_csr().todense().real)
+    # for r in hamiltonian.abelian_representations():
+    #     print(r.to_json())
+
+
+test_abelian_representations()

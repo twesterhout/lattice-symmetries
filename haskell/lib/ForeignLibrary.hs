@@ -94,6 +94,10 @@ destroyCsymmetries p = do
 ls_hs_symmetries_from_json :: CString -> IO (MutablePtr Csymmetries)
 ls_hs_symmetries_from_json cStr = propagateErrorToC nullPtr $ newCsymmetries =<< decodeCString cStr
 
+ls_hs_symmetries_to_json :: Ptr Csymmetries -> IO CString
+ls_hs_symmetries_to_json =
+  (newCString . toStrict . Data.Aeson.encode) <=< (deRefStablePtr . unCsymmetries) <=< peek
+
 ls_hs_destroy_symmetries :: MutablePtr Csymmetries -> IO ()
 ls_hs_destroy_symmetries = destroyCsymmetries
 
@@ -551,6 +555,7 @@ addDeclarations
   , "ls_hs_symmetry_permutation"
   , "ls_hs_destroy_permutation"
   , "ls_hs_symmetries_from_json"
+  , "ls_hs_symmetries_to_json"
   , "ls_hs_destroy_symmetries"
   , "ls_hs_clone_basis"
   , "ls_hs_destroy_basis"

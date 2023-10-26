@@ -62,6 +62,7 @@ void set_python_exception_handler();
 ptrdiff_t ls_hs_basis_number_states(ls_hs_basis const* basis);
 uint64_t const* ls_hs_basis_states(ls_hs_basis const* basis);
 extern "Python" void python_replace_indices(int, int, int*, int*);
+extern "Python" void python_process_symmetries(ls_hs_symmetries*);
 """
 )
 

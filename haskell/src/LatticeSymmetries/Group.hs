@@ -183,7 +183,7 @@ mkSymmetries gs@(g : _)
               charactersReal = G.fromList $ realPart <$> characters
               charactersImag = G.fromList $ imagPart <$> characters
            in Right $ Symmetries permGroup benesNetwork charactersReal charactersImag
-        else Left "incompatible symmetries"
+        else Left $ "incompatible symmetries: " <> show gs
   | otherwise = Left "symmetries have different number of sites"
   where
     n = symmetryNumberSites g
@@ -453,7 +453,7 @@ hypergraphAutomorphisms =
   groupFromTransversalGeneratingSet . transversalGeneratingSet . autsSearchTree
 
 abelianSubgroup :: PermutationGroup -> MultiplicationTable -> (PermutationGroup, MultiplicationTable)
-abelianSubgroup (PermutationGroup g) t = (g', t')
+abelianSubgroup (PermutationGroup g) t = traceShow (g', t') (g', t')
   where
     -- abelianSubset returns candidates; we consider the first 100 and select the largest
     indices = Data.List.maximumBy (comparing G.length) . take 100 $ abelianSubset t
@@ -543,7 +543,8 @@ shrinkMultiplicationTable (MultiplicationTable matrix) indices =
 
 getGroupElements :: MultiplicationTable -> [GroupElement]
 getGroupElements t@(MultiplicationTable (DenseMatrix n _ _)) =
-  [GroupElement i t | i <- [0 .. n - 1]]
+  let r = [GroupElement i t | i <- [0 .. n - 1]]
+   in traceShow r r
 
 primeFactors :: Int -> [Int]
 primeFactors = go 2
@@ -613,12 +614,14 @@ groupGenerators group0 = go factors0 [] (selectPrimeElements group0) []
         third (_, _, c) = c
 
 newtype Representation = Representation (B.Vector (Ratio Int))
+  deriving stock (Show)
 
 groupRepresentationsFromGenerators :: B.Vector GroupElement -> [Representation]
 groupRepresentationsFromGenerators generators =
-  fmap (Representation . G.fromList) . mapM phases $ G.toList orders
+  let r = fmap (Representation . G.fromList) . mapM phases $ G.toList orders
+   in traceShow r $ traceShow orders $ r
   where
-    orders = G.map groupElementOrder generators
+    orders = G.map groupElementOrder $ trace ("generators" <> show generators) generators
     phases n = [i % n | i <- [0 .. n - 1]]
 
 groupRepresentations :: MultiplicationTable -> [Representation]
