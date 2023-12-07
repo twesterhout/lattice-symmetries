@@ -5,6 +5,7 @@
 
 lib.composeManyExtensions [
   (doEnableRelocatedStaticLibs "ghc962")
+  (doEnableRelocatedStaticLibs "ghc963")
 
   (self: super: rec {
     haskell = super.haskell // {
