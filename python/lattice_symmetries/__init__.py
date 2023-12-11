@@ -40,7 +40,6 @@ from loguru import logger
 from numpy.typing import ArrayLike, NDArray
 from scipy.sparse.linalg import LinearOperator
 
-import lattice_symmetries
 from lattice_symmetries._ls_hs import ffi, lib
 
 __version__ = "2.2.0"
@@ -69,7 +68,7 @@ _runtime_init = _RuntimeInitializer()
 
 
 class Symmetry:
-    """Symmetry operator.
+    """Lattice symmetry.
 
     >>> # Lattice momentum with eigenvalue -ⅈ for a chain of 4 spins.
     >>> p = lattice_symmetries.Symmetry([1, 2, 3, 0], sector=1)
@@ -79,84 +78,92 @@ class Symmetry:
     [1, 2, 3, 0]
     """
 
-    _payload: ffi.CData
-    _finalizer: weakref.finalize
+    permutation: NDArray[np.int32]
+    sector: int
 
-    @singledispatchmethod
     def __init__(self, permutation: ArrayLike, sector: int):
-        permutation = np.asarray(permutation, dtype=int).tolist()
-        sector = int(sector)
-        json_object = {"permutation": permutation, "sector": sector}
-        self._payload = lib.ls_hs_symmetry_from_json(json.dumps(json_object).encode("utf-8"))
-        assert self._payload != 0
-        self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_symmetry, self._payload)
+        self.permutation = np.asarray(permutation, dtype=np.int32)
+        self.sector = int(sector)
 
-    @__init__.register
-    def _(self, payload: ffi.CData, finalizer: weakref.finalize):
-        self._payload = payload
-        self._finalizer = finalizer
+    def __repr__(self) -> str:
+        return "Symmetry(permutation={}, sector={})".format(self.permutation, self.sector)
 
-    @property
-    def sector(self) -> int:
-        return lib.ls_hs_symmetry_sector(self._payload)
-
-    @property
-    def phase(self) -> float:
-        return lib.ls_hs_symmetry_phase(self._payload)
+    def __len__(self) -> int:
+        return len(self.permutation)
 
     @property
     def periodicity(self) -> int:
-        return lib.ls_hs_symmetry_periodicity(self._payload)
-
-    def __len__(self) -> int:
-        return lib.ls_hs_symmetry_length(self._payload)
+        return self.more_info()["periodicity"]
 
     @property
-    def permutation(self) -> NDArray[np.int32]:
-        p = lib.ls_hs_symmetry_permutation(self._payload)
-        buffer = ffi.buffer(p, len(self) * ffi.sizeof("int"))
-        array = np.copy(np.frombuffer(buffer, dtype=np.int32))
-        lib.ls_hs_destroy_permutation(p)
-        return array
+    def phase(self) -> float:
+        return self.more_info()["phase"]
 
-    def json_object(self):
-        return {"permutation": self.permutation.tolist(), "sector": self.sector}
+    def more_info(self) -> dict:
+        return _from_json(lib.ls_hs_symmetry_more_info(_to_json(self)))
+
+
+class Symmetries:
+    """Lattice symmetry group representation."""
+
+    elements: List[Symmetry]
+
+    def __init__(self, generators: List[Symmetry] = []):
+        # TODO: add a Haskell function that expects a list of generators rather
+        # than a JSON representation of Symmetries to avoid recursive calls
+        self.elements = _from_json(lib.ls_hs_symmetries_from_generators(_to_json(generators)))
+
+    def __repr__(self):
+        return "Symmetries({})".format(self.elements)
+
+    def __len__(self):
+        return len(self.elements)
+
+    def __iter__(self):
+        return iter(self.elements)
+
+
+class LatticeSymmetriesEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Symmetry):
+            return {
+                "__type__": "Symmetry",
+                "permutation": obj.permutation.tolist(),
+                "sector": obj.sector,
+            }
+        if isinstance(obj, Symmetries):
+            return obj.elements
+
+        return json.JSONEncoder.default(self, obj)
+
+
+def lattice_symmetries_object_hook(obj):
+    tp = obj.get("__type__")
+    if tp is None:
+        return obj
+
+    if tp == "Symmetry":
+        return Symmetry(permutation=obj["permutation"], sector=obj["sector"])
+    if tp == "Symmetries":
+        return Symmetries(generators=obj["elements"])
+
+    return obj
+
+
+def _to_json(obj) -> bytes:
+    return json.dumps(obj, cls=LatticeSymmetriesEncoder).encode("utf-8")
+
+
+def _from_json(obj) -> Any:
+    if isinstance(obj, ffi.CData):
+        obj = from_haskell_string(obj)
+    return json.loads(obj, object_hook=lattice_symmetries_object_hook)
 
 
 def from_haskell_string(c_str):
     s = ffi.string(c_str).decode("utf-8")
     lib.ls_hs_destroy_string(c_str)
     return s
-
-
-class Symmetries:
-    _payload: ffi.CData
-    _finalizer: weakref.finalize
-    _generators: List[Symmetry]
-
-    def __init__(self, generators: List[Symmetry] = []):
-        if isinstance(generators, ffi.CData):
-            self._payload = generators
-            self._generators = None
-        else:
-            json_string = json.dumps([g.json_object() for g in generators]).encode("utf-8")
-            self._payload = lib.ls_hs_symmetries_from_json(json_string)
-            self._generators = generators
-        assert self._payload != 0
-        self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_symmetries, self._payload)
-
-    def __len__(self) -> int:
-        return len(self.generators)
-
-    @property
-    def generators(self) -> List[Symmetry]:
-        return self._generators
-
-    def json_object(self):
-        return [g.json_object() for g in self.generators]
-
-    def to_json(self) -> str:
-        return from_haskell_string(lib.ls_hs_symmetries_to_json(self._payload))
 
 
 def _basis_state_to_array(state: int, number_words: int) -> ffi.CData:
@@ -170,42 +177,38 @@ def _basis_state_to_array(state: int, number_words: int) -> ffi.CData:
 
 class Basis:
     _payload: ffi.CData
-    _finalizer: Optional[weakref.finalize]
-    _unchecked_states: Optional[NDArray[np.uint64]]
+    _finalizer: weakref.finalize
 
-    @singledispatchmethod
-    def __init__(self, arg, *args, **kwargs):
-        raise NotImplementedError("Invalid argument type: {}".format(type(arg)))
+    @overload
+    def __init__(self, payload: ffi.CData):
+        ...
 
-    @__init__.register
-    def _(self, payload: ffi.CData, owner: bool = True):
-        self._payload = payload
-        if owner:
-            self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_basis, self._payload)
-        else:
-            self._finalizer = None
-        self._unchecked_states = None
+    @overload
+    def __init__(self, json_string: bytes):
+        ...
 
-    @__init__.register
-    def _(self, json_string: str):
-        self._payload = lib.ls_hs_basis_from_json(json_string.encode("utf-8"))
-        assert self._payload != 0
+    def _init_from_json(self, json_string: bytes):
+        print("_init_from_json:", json_string.decode("utf-8"))
+        self._payload = lib.ls_hs_basis_from_json(json_string)
+        assert self._payload != ffi.NULL
         self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_basis, self._payload)
-        self._unchecked_states = None
 
-    # @__init__.register
-    # def _(self, json_object: dict):
-    #     self.__init__(json.dumps(json_object))
+    def _init_from_payload(self, payload: ffi.CData):
+        self._payload = payload
+        assert self._payload != ffi.NULL
+        self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_basis, self._payload)
 
-    # def __init__(self, **kwargs):
-    #     json_string = json.dumps(kwargs).encode("utf-8")
-    #     self._payload = lib.ls_hs_basis_from_json(json_string)
-    #     self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_basis, self._payload)
-    #     self._representatives = None
+    def __init__(self, *args, **kwargs):
+        if "json_string" in kwargs:
+            self._init_from_json(*args, **kwargs)
+        elif "payload" in kwargs:
+            self._init_from_payload(*args, **kwargs)
+        else:
+            raise NotImplementedError("Invalid arguments: {}, {}".format(args, kwargs))
 
     @property
     def is_built(self) -> bool:
-        return lib.ls_hs_basis_is_built(self._payload)
+        return self._payload.representatives.elts != ffi.NULL
 
     def check_is_built(self):
         if not self.is_built:
@@ -223,24 +226,28 @@ class Basis:
             lib.ls_hs_basis_build(self._payload)
         assert self.is_built
 
-        # def unchecked_set_representatives(self, states: NDArray[np.uint64]) -> None:
-        #     self._unchecked_states = np.asarray(states, order="C", dtype=np.uint64)
-        #     chpl_array = ffi.new("chpl_external_array *")
-        #     chpl_array.elts = ffi.from_buffer("uint64_t[]", self._unchecked_states, require_writable=False)
-        #     chpl_array.num_elts = self._unchecked_states.size
-        #     lib.ls_hs_unchecked_set_representatives(self._payload, chpl_array, 22)
-
     @property
     def number_states(self) -> int:
         self.check_is_built()
-        return lib.ls_hs_basis_number_states(self._payload)
+        return int(self._payload.representatives.num_elts)
 
     @property
     def states(self) -> NDArray[np.uint64]:
         n = self.number_states
-        p = lib.ls_hs_basis_states(self._payload)
-        buffer = ffi.buffer(p, n * ffi.sizeof("uint64_t"))
-        return np.frombuffer(buffer, dtype=np.uint64)
+        p = int(ffi.cast("uintptr_t", self._payload.representatives.elts))
+        # int(ffi.cast("uintptr_t", lib.ls_hs_basis_states(self._payload)))
+
+        class StatesWrapper(object):
+            def __init__(self, wrapped):
+                self.wrapped = wrapped
+                self.__array_interface__ = {
+                    "version": 3,
+                    "typestr": "u8",
+                    "data": (p, True),
+                    "shape": (n,),
+                }
+
+        return np.array(StatesWrapper(self), copy=False)
 
     @property
     def min_state_estimate(self) -> int:
@@ -349,7 +356,7 @@ class Basis:
     @staticmethod
     def from_json(json_string: str) -> "Basis":
         _assert_subtype(json_string, str)
-        return Basis(json_string)
+        return Basis(json_string=json_string.encode("utf-8"))
 
     def to_json(self) -> str:
         c_str = lib.ls_hs_basis_to_json(self._payload)
@@ -368,13 +375,13 @@ class SpinBasis(Basis):
     ):
         """Create a Hilbert space basis for `number_spins` spin-1/2 particles."""
         super().__init__(
-            json.dumps(
+            json_string=_to_json(
                 {
                     "particle": "spin-1/2",
                     "number_spins": number_spins,
                     "hamming_weight": hamming_weight,
                     "spin_inversion": spin_inversion,
-                    "symmetries": symmetries.json_object() if symmetries is not None else [],
+                    "symmetries": symmetries if symmetries is not None else Symmetries(),
                 }
             )
         )
@@ -399,7 +406,7 @@ class SpinlessFermionBasis(Basis):
         `number_sites` sites. The number of fermions may be optionally specified by the
         `number_particles` argument."""
         super().__init__(
-            json.dumps(
+            json_string=_to_json(
                 {
                     "particle": "spinless-fermion",
                     "number_sites": number_sites,
@@ -421,7 +428,7 @@ class SpinfulFermionBasis(Basis):
         down can be specified separately by setting `number_particles` to a tuple
         `(N_up, N_down)`."""
         super().__init__(
-            json.dumps(
+            json_string=_to_json(
                 {
                     "particle": "spinful-fermion",
                     "number_sites": number_sites,
@@ -682,7 +689,7 @@ class Operator(LinearOperator):
 
     @property
     def basis(self):
-        return Basis(lib.ls_hs_operator_get_basis(self._payload))
+        return Basis(payload=lib.ls_hs_operator_get_basis(self._payload))
 
     @property
     def expression(self):
@@ -914,18 +921,21 @@ class Operator(LinearOperator):
         lib.ls_hs_prepare_mvmc(self._payload, folder.encode("utf-8"))
 
     def abelian_representations(self):
-        with process_symmetries_impl_lock:
-            global process_symmetries_impl
-            representations = []
-            process_symmetries_impl = lambda p: representations.append(Symmetries(p))
-            lib.ls_hs_operator_abelian_representations(self._payload, lib.python_process_symmetries)
-            process_symmetries_impl = None
-            return representations
+        # with process_symmetries_impl_lock:
+        #     global process_symmetries_impl
+        #     representations = []
+        #     process_symmetries_impl = lambda p: representations.append(Symmetries(p))
+        r = json.loads(
+            from_haskell_string(lib.ls_hs_operator_abelian_representations(self._payload)),
+            object_hook=lattice_symmetries_object_hook,
+        )
+        print(r)
+        return r
 
 
 def load_yaml_config(filename: str):
     config = lib.ls_hs_load_yaml_config(filename.encode("utf-8"))
-    basis = Basis(lib.ls_hs_clone_basis(config.basis))
+    basis = Basis(payload=lib.ls_hs_clone_basis(config.basis))
     hamiltonian = None
     if config.hamiltonian != 0:
         hamiltonian = Operator(lib.ls_hs_clone_operator(config.hamiltonian))

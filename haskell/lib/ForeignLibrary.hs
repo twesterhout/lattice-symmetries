@@ -10,15 +10,13 @@ import Data.Aeson qualified
 import Data.Vector.Generic qualified as G
 import Foreign.C.String (CString)
 import Foreign.C.Types (CBool (..), CInt (..), CPtrdiff (..))
-import Foreign.Marshal (alloca, free, fromBool, malloc, new, newArray)
+import Foreign.Marshal (alloca, free, fromBool, malloc, newArray)
 import Foreign.Ptr (FunPtr, Ptr, nullPtr)
-import Foreign.StablePtr
 import Foreign.Storable (Storable (..))
 import GHC.Exts (IsList (..))
 import HeaderFileGeneration
 import LatticeSymmetries.Algebra
 import LatticeSymmetries.Basis
-import LatticeSymmetries.Benes
 import LatticeSymmetries.BitString
 import LatticeSymmetries.ComplexRational (ComplexRational, fromComplexDouble)
 import LatticeSymmetries.Conversion
@@ -32,76 +30,31 @@ import LatticeSymmetries.Yaml
 import Type.Reflection
 import Prelude hiding (state, toList)
 
--- {{{ Symmetry
+ls_hs_destroy_string :: CString -> IO ()
+ls_hs_destroy_string = free
 
-newtype Csymmetry = Csymmetry {unCsymmetry :: StablePtr Symmetry}
-  deriving stock (Eq)
-  deriving newtype (Storable)
+newCencoded :: (HasCallStack, Data.Aeson.ToJSON a) => a -> IO CString
+newCencoded = newCString . toStrict . Data.Aeson.encode
 
-newCsymmetry :: Symmetry -> IO (Ptr Csymmetry)
-newCsymmetry symm = new . Csymmetry =<< newStablePtr symm
+data SymmetryInfo = SymmetryInfo
+  { periodicity :: !Int
+  , phase :: !Double
+  }
+  deriving stock (Generic)
+  deriving anyclass (Data.Aeson.ToJSON)
 
-destroyCsymmetry :: Ptr Csymmetry -> IO ()
-destroyCsymmetry p = do
-  freeStablePtr . unCsymmetry =<< peek p
-  free p
+ls_hs_symmetry_more_info :: CString -> IO CString
+ls_hs_symmetry_more_info jsonString = propagateErrorToC nullPtr $ do
+  !(symm :: Symmetry) <- decodeCString jsonString
+  newCencoded $
+    SymmetryInfo
+      { periodicity = getPeriodicity symm.permutation
+      , phase = realToFrac symm.phase
+      }
 
-withCsymmetry :: Ptr Csymmetry -> (Symmetry -> IO a) -> IO a
-withCsymmetry p f = f =<< deRefStablePtr . unCsymmetry =<< peek p
-
-ls_hs_symmetry_from_json :: CString -> IO (MutablePtr Csymmetry)
-ls_hs_symmetry_from_json cStr = propagateErrorToC nullPtr $ newCsymmetry =<< decodeCString cStr
-
-ls_hs_destroy_symmetry :: MutablePtr Csymmetry -> IO ()
-ls_hs_destroy_symmetry = destroyCsymmetry
-
-ls_hs_symmetry_sector :: Ptr Csymmetry -> IO CInt
-ls_hs_symmetry_sector = flip withCsymmetry (pure . fromIntegral . symmetrySector)
-
-ls_hs_symmetry_phase :: Ptr Csymmetry -> IO Double
-ls_hs_symmetry_phase = flip withCsymmetry (pure . realToFrac . symmetryPhase)
-
-ls_hs_symmetry_periodicity :: Ptr Csymmetry -> IO CInt
-ls_hs_symmetry_periodicity = flip withCsymmetry (pure . fromIntegral . getPeriodicity . symmetryPermutation)
-
-ls_hs_symmetry_length :: Ptr Csymmetry -> IO CInt
-ls_hs_symmetry_length =
-  flip withCsymmetry $ pure . fromIntegral . permutationLength . symmetryPermutation
-
-ls_hs_symmetry_permutation :: Ptr Csymmetry -> IO (MutablePtr CInt)
-ls_hs_symmetry_permutation =
-  flip withCsymmetry $ newArray . fmap fromIntegral . toList . symmetryPermutation
-
-ls_hs_destroy_permutation :: MutablePtr CInt -> IO ()
-ls_hs_destroy_permutation = free
-
--- }}}
-
--- {{{ Symmetries
-
-newtype Csymmetries = Csymmetries {unCsymmetries :: StablePtr Symmetries}
-  deriving stock (Eq)
-  deriving newtype (Storable)
-
-newCsymmetries :: Symmetries -> IO (Ptr Csymmetries)
-newCsymmetries symm = new . Csymmetries =<< newStablePtr symm
-
-destroyCsymmetries :: Ptr Csymmetries -> IO ()
-destroyCsymmetries p = do
-  freeStablePtr . unCsymmetries =<< peek p
-  free p
-
-ls_hs_symmetries_from_json :: CString -> IO (MutablePtr Csymmetries)
-ls_hs_symmetries_from_json cStr = propagateErrorToC nullPtr $ newCsymmetries =<< decodeCString cStr
-
-ls_hs_symmetries_to_json :: Ptr Csymmetries -> IO CString
-ls_hs_symmetries_to_json =
-  (newCString . toStrict . Data.Aeson.encode) <=< (deRefStablePtr . unCsymmetries) <=< peek
-
-ls_hs_destroy_symmetries :: MutablePtr Csymmetries -> IO ()
-ls_hs_destroy_symmetries = destroyCsymmetries
-
--- }}}
+ls_hs_symmetries_from_generators :: CString -> IO CString
+ls_hs_symmetries_from_generators jsonString = propagateErrorToC nullPtr $ do
+  newCencoded . toList . either error id . groupRepresentationFromGenerators =<< decodeCString jsonString
 
 -- {{{ Basis
 
@@ -112,16 +65,12 @@ ls_hs_destroy_basis :: MutablePtr Cbasis -> IO ()
 ls_hs_destroy_basis = destroyCbasis
 
 ls_hs_basis_to_json :: Ptr Cbasis -> IO CString
-ls_hs_basis_to_json cBasis = do
-  withCbasis cBasis $ \basis -> do
-    newCString $ toStrict (Data.Aeson.encode basis)
+ls_hs_basis_to_json cBasis = withCbasis cBasis newCencoded
 
 ls_hs_basis_from_json :: CString -> IO (MutablePtr Cbasis)
-ls_hs_basis_from_json cStr = propagateErrorToC nullPtr $ do
-  foldSomeBasis newCbasis =<< decodeCString cStr
-
-ls_hs_destroy_string :: CString -> IO ()
-ls_hs_destroy_string = free
+ls_hs_basis_from_json cStr =
+  propagateErrorToC nullPtr $
+    foldSomeBasis newCbasis =<< decodeCString cStr
 
 ls_hs_min_state_estimate :: Ptr Cbasis -> IO Word64
 ls_hs_min_state_estimate p = propagateErrorToC 0 $
@@ -301,9 +250,9 @@ ls_hs_replace_indices exprPtr fPtr =
                   <*> (fromIntegral <$> peek sitePtr)
       newCexpr =<< case expr of
         SomeExpr SpinTag terms ->
-          SomeExpr SpinTag . simplifyExpr <$> mapIndicesM (\i -> snd <$> f 0 i) terms
+          SomeExpr SpinTag . simplifyExpr <$> mapIndicesM (fmap snd . f 0) terms
         SomeExpr SpinlessFermionTag terms ->
-          SomeExpr SpinlessFermionTag . simplifyExpr <$> mapIndicesM (\i -> snd <$> f 0 i) terms
+          SomeExpr SpinlessFermionTag . simplifyExpr <$> mapIndicesM (fmap snd . f 0) terms
         SomeExpr SpinfulFermionTag terms ->
           let f' (s, i) = do
                 (s', i') <- f (fromEnum s) i
@@ -401,18 +350,12 @@ ls_hs_operator_get_expr opPtr =
 ls_hs_operator_get_basis :: Ptr Coperator -> IO (MutablePtr Cbasis)
 ls_hs_operator_get_basis = ls_hs_clone_basis . coperator_basis <=< peek
 
-type Cprocess_symmetries = Ptr Csymmetries -> IO ()
-
-foreign import ccall "dynamic"
-  mkCprocess_symmetries :: FunPtr Cprocess_symmetries -> Cprocess_symmetries
-
-ls_hs_operator_abelian_representations :: Ptr Coperator -> FunPtr Cprocess_symmetries -> IO ()
-ls_hs_operator_abelian_representations opPtr funPtr = do
+ls_hs_operator_abelian_representations :: Ptr Coperator -> IO CString
+ls_hs_operator_abelian_representations opPtr = do
   withCoperator opPtr $ \someOp ->
-    withSomeOperator someOp $ \op -> do
-      let callback = mkCprocess_symmetries funPtr
-      forM_ (operatorAbelianRepresentations op) $
-        callback <=< newCsymmetries
+    withSomeOperator someOp $ \op ->
+      newCString . toStrict . Data.Aeson.encode $
+        operatorAbelianRepresentations op
 
 -- foreign export ccall "ls_hs_load_hamiltonian_from_yaml"
 --   ls_hs_load_hamiltonian_from_yaml :: CString -> IO (Ptr Coperator)
@@ -513,12 +456,9 @@ typesTable
   , ([t|CPtrdiff|], "ptrdiff_t")
   , ([t|Double|], "double")
   , ([t|CString|], "char const *")
-  , ([t|Csymmetry|], "ls_hs_symmetry")
-  , ([t|Csymmetries|], "ls_hs_symmetries")
   , ([t|Cbasis|], "ls_hs_basis")
   , ([t|Cexpr|], "ls_hs_expr")
   , ([t|Creplace_index|], "ls_hs_index_replacement_type")
-  , ([t|Cprocess_symmetries|], "ls_hs_process_symmetries")
   , ([t|Cscalar|], "ls_hs_scalar")
   , ([t|Coperator|], "ls_hs_operator")
   , ([t|Cyaml_config|], "ls_hs_yaml_config")
@@ -546,17 +486,15 @@ addVerbatimSuffix
   ]
 
 addDeclarations
-  [ "ls_hs_symmetry_from_json"
-  , "ls_hs_destroy_symmetry"
-  , "ls_hs_symmetry_sector"
-  , "ls_hs_symmetry_phase"
-  , "ls_hs_symmetry_periodicity"
-  , "ls_hs_symmetry_length"
-  , "ls_hs_symmetry_permutation"
-  , "ls_hs_destroy_permutation"
-  , "ls_hs_symmetries_from_json"
-  , "ls_hs_symmetries_to_json"
-  , "ls_hs_destroy_symmetries"
+  [ "ls_hs_symmetry_more_info"
+  , -- , "ls_hs_destroy_symmetry"
+    -- , "ls_hs_symmetry_sector"
+    -- , "ls_hs_symmetry_phase"
+    -- , "ls_hs_symmetry_periodicity"
+    -- , "ls_hs_symmetry_length"
+    -- , "ls_hs_symmetry_permutation"
+    -- "ls_hs_destroy_permutation"
+    "ls_hs_symmetries_from_generators"
   , "ls_hs_clone_basis"
   , "ls_hs_destroy_basis"
   , "ls_hs_basis_from_json"

@@ -60,6 +60,8 @@ common common-options
         TypeApplications
         TypeFamilies
         ViewPatterns
+        OverloadedRecordDot
+        DuplicateRecordFields
 
 library
     import:          common-options
@@ -77,6 +79,7 @@ library
         LatticeSymmetries.FFI
         LatticeSymmetries.Generator
         LatticeSymmetries.Group
+        LatticeSymmetries.Lowering
         LatticeSymmetries.NonbranchingTerm
         LatticeSymmetries.Operator
         LatticeSymmetries.Parser
@@ -105,6 +108,7 @@ library
         , template-haskell
         , text
         , unliftio-core
+        , validity
         , vector
         , vector-algorithms
         , vector-stream

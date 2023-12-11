@@ -22,11 +22,6 @@ def test_symmetry():
     assert a.sector == 0
     assert len(a) == 3
     assert a.permutation.tolist() == [0, 1, 2]
-    b = ls.Symmetry(a._payload, None)
-    assert b.sector == 0
-    assert len(b) == 3
-    assert b.permutation.tolist() == [0, 1, 2]
-    del b
     del a
 
 
@@ -286,9 +281,11 @@ def test_correct_imag_part():
         v[i] = 1
         cols.append(hamiltonian @ v)
     matrix2 = np.vstack(cols).T
-    assert np.allclose(matrix, matrix2)
-
     matrix3 = hamiltonian.to_csr().todense()
+    print(matrix)
+    print(matrix2)
+    print(matrix3)
+    assert np.allclose(matrix, matrix2)
     assert np.allclose(matrix, matrix3)
 
 
@@ -354,9 +351,27 @@ def test_abelian_representations():
     basis.build()
     expr = ls.Expr("σᶻ₀ σᶻ₁ + 2 σ⁺₀ σ⁻₁ + 2 σ⁻₀ σ⁺₁", sites=[[0, 1], [1, 2], [2, 0]])
     hamiltonian = ls.Operator(basis, expr)
-    print(hamiltonian.to_csr().todense().real)
-    # for r in hamiltonian.abelian_representations():
-    #     print(r.to_json())
+    # print(hamiltonian.to_csr().todense().real)
+    for r in hamiltonian.abelian_representations():
+        print(r)
 
 
-test_abelian_representations()
+def test_ground_state_in_abelian_representations():
+    basis = ls.SpinBasis(10)
+    basis.build()
+    expr = ls.Expr(
+        "σᶻ₀ σᶻ₁ + 2 σ⁺₀ σ⁻₁ + 2 σ⁻₀ σ⁺₁",
+        sites=[(i, (i + 1) % basis.number_bits) for i in range(basis.number_bits)],
+    )
+    hamiltonian = ls.Operator(basis, expr)
+    real_energy, _ = scipy.sparse.linalg.eigsh(hamiltonian, k=1, which="SA")
+
+    energies = []
+    for r in hamiltonian.abelian_representations():
+        symm_basis = ls.SpinBasis(basis.number_bits, symmetries=r)
+        symm_basis.build()
+        symm_hamiltonian = ls.Operator(symm_basis, expr)
+        e, _ = scipy.sparse.linalg.eigsh(symm_hamiltonian, k=1, which="SA")
+        energies.append(e)
+
+    assert np.any(np.isclose(real_energy, energies))

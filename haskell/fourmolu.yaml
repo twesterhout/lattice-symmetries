@@ -9,6 +9,6 @@ haddock-style: single-line
 haddock-style-module: single-line
 let-style: auto
 in-style: right-align
-unicode: never
 respectful: true
+single-constraint-parens: never
 fixities: []

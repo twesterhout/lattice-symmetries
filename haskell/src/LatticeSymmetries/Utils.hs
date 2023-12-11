@@ -17,6 +17,7 @@ module LatticeSymmetries.Utils
   , newCString
   , decodeCString
   , toPrettyText
+  , eitherToParser
 
     -- ** Testing utilities
   , ApproxEq (..)
@@ -25,6 +26,7 @@ where
 
 import Control.Exception.Safe (handleAnyDeep)
 import Data.Aeson
+import Data.Aeson.Types (Parser)
 import Data.ByteString (packCString, useAsCString)
 import Data.ByteString.Internal (ByteString (..))
 import Data.Complex
@@ -39,7 +41,7 @@ import Prettyprinter (Pretty (..))
 import Prettyprinter qualified as Pretty
 import Prettyprinter.Render.Text (renderStrict)
 
-loopM :: Monad m => i -> (i -> Bool) -> (i -> i) -> (i -> m ()) -> m ()
+loopM :: (Monad m) => i -> (i -> Bool) -> (i -> i) -> (i -> m ()) -> m ()
 loopM i₀ cond inc action = go i₀
   where
     go !i
@@ -47,7 +49,7 @@ loopM i₀ cond inc action = go i₀
       | otherwise = pure ()
 {-# INLINE loopM #-}
 
-iFoldM :: Monad m => i -> (i -> Bool) -> (i -> i) -> a -> (a -> i -> m a) -> m a
+iFoldM :: (Monad m) => i -> (i -> Bool) -> (i -> i) -> a -> (a -> i -> m a) -> m a
 iFoldM i₀ cond inc x₀ action = go x₀ i₀
   where
     go !x !i
@@ -59,7 +61,7 @@ foreign import ccall unsafe "ls_hs_error"
   ls_hs_error :: CString -> IO ()
 
 -- | Invoke the 'ls_hs_error' error handling function with the given message.
-throwC :: HasCallStack => a -> Text -> IO a
+throwC :: (HasCallStack) => a -> Text -> IO a
 throwC def msg = do
   useAsCString (encodeUtf8 msg) ls_hs_error
   pure def
@@ -105,5 +107,8 @@ decodeCString cStr = do
     Right x -> pure x
     Left msg -> error (toText msg)
 
-toPrettyText :: Pretty a => a -> Text
+eitherToParser :: Either Text a -> Parser a
+eitherToParser = either (fail . toString) pure
+
+toPrettyText :: (Pretty a) => a -> Text
 toPrettyText = renderStrict . Pretty.layoutPretty (Pretty.LayoutOptions Pretty.Unbounded) . pretty

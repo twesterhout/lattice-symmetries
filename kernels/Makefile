@@ -159,6 +159,10 @@ install: all
 
 # GENERATOR_ENVIRONMENT = LD_LIBRARY_PATH=$(HALIDE_PATH)/lib DYLD_LIBRARY_PATH=$(HALIDE_PATH)/lib
 
+$(BIN_DIR)/jit_test: jit.cpp 
+	@echo Building jit_test ...
+	@mkdir -p $(@D)
+	$(CXX) $(HL_CXXFLAGS) $< -o $@ $(HL_LDFLAGS)
 
 # Build the Halide generator for our kernels
 $(BIN_DIR)/generator: generator.cpp 

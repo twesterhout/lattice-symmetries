@@ -112,6 +112,8 @@ typedef struct ls_internal_halide_kernel_data {
 ls_internal_halide_kernel_data *
 ls_internal_create_halide_kernel_data(ls_hs_permutation_group const *g,
                                       int const spin_inversion) {
+  LS_CHECK(g != NULL, "g should not be NULL");
+
   ls_internal_halide_kernel_data *self =
       malloc(sizeof(ls_internal_halide_kernel_data));
   if (self == NULL) {

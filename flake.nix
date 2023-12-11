@@ -72,7 +72,7 @@
           default = self.outputs.devShells.${system}.haskell;
           kernels = with pkgs; mkShell {
             buildInputs = [ halide ];
-            nativeBuildInputs = [ gnumake gcc ];
+            nativeBuildInputs = [ gnumake cmake clang clang-tools ];
             shellHook = "export HALIDE_PATH=${halide}";
           };
           haskell = with pkgs; haskellPackages.shellFor {
@@ -139,6 +139,7 @@
             nativeBuildInputs = (attrs.nativeBuildInputs or [ ]) ++ [
               python3Packages.black
               nodePackages.pyright
+              gdb
             ];
           });
         });

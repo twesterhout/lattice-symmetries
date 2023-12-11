@@ -42,7 +42,7 @@ import LatticeSymmetries.ComplexRational
 import LatticeSymmetries.Expr
 import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
-import LatticeSymmetries.Group (Hypergraph (Hypergraph), PermutationGroup (PermutationGroup), Symmetries, abelianSubgroup, groupRepresentations, hypergraphAutomorphisms, mkMultiplicationTable, mkSymmetriesFromRepresentation)
+import LatticeSymmetries.Group
 import LatticeSymmetries.NonbranchingTerm
 import LatticeSymmetries.Utils
 import Prelude hiding (Product, Sum)
@@ -225,13 +225,9 @@ isInvariant operator permutation =
   (applyPermutation permutation operator).opTerms == operator.opTerms
 
 operatorSymmetryGroup :: (IsBasis t) => Operator t -> PermutationGroup
-operatorSymmetryGroup operator = PermutationGroup $ B.filter (isInvariant operator) automorphisms
-  where
-    (PermutationGroup automorphisms) = hypergraphAutomorphisms . operatorToHypergraph $ operator
+operatorSymmetryGroup operator = hypergraphAutomorphisms (isInvariant operator) . operatorToHypergraph $ operator
 
-operatorAbelianRepresentations :: (IsBasis t) => Operator t -> [Symmetries]
-operatorAbelianRepresentations operator = mkSymmetriesFromRepresentation g' <$> reps
+operatorAbelianRepresentations :: (IsBasis t) => Operator t -> [Vector Symmetry]
+operatorAbelianRepresentations operator = abelianRepresentations g (mkMultiplicationTable g)
   where
     g = operatorSymmetryGroup operator
-    (g', t') = abelianSubgroup g (mkMultiplicationTable g)
-    reps = groupRepresentations t'

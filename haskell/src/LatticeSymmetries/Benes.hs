@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module LatticeSymmetries.Benes
@@ -5,25 +6,26 @@ module LatticeSymmetries.Benes
   , unPermutation
   , mkPermutation
   , permuteVector
+  , permuteBits
   , identityPermutation
-  , permutationLength
+  , isIdentityPermutation
+  , Mapping (..)
+  , permutationFromMappings
+  , minimalSupport
   -- randomPermutation,
   , BenesNetwork (..)
-  , toBenesNetwork
-  , permuteBits
-  , permuteBits'
+  , permutationToBenesNetwork
+  , benesPermuteBits
+
+    -- * Hm...
   , BatchedBenesNetwork (..)
   , emptyBatchedBenesNetwork
   , mkBatchedBenesNetwork
-  , permutationFromMappings
-  , isIdentityPermutation
-  , minimalSupport
-  , Mapping (..)
   )
 where
 
 import Control.Monad.ST
-import Data.Aeson (FromJSON (..), ToJSON (..))
+import Data.Aeson (FromJSON (..), ToJSON (..), object, (.=))
 import Data.Bits
 import Data.List qualified as L
 import Data.Primitive.Ptr qualified as P
@@ -44,6 +46,10 @@ import LatticeSymmetries.Utils
 import System.IO.Unsafe (unsafePerformIO)
 
 -- import System.Random
+
+import Control.Arrow qualified
+import Data.Validity (Validity (validate), check, prettyValidate)
+import GHC.Records (HasField (getField))
 import Prelude hiding (cycle)
 
 -- auto const n = _info.source.size();
@@ -64,12 +70,12 @@ instance ToJSON Permutation where
   toJSON (Permutation p) = toJSON p
 
 instance FromJSON Permutation where
-  parseJSON = fmap mkPermutation . parseJSON
+  parseJSON = (eitherToParser . mkPermutation) <=< parseJSON
 
 instance IsList Permutation where
   type Item Permutation = Int
   toList (Permutation p) = G.toList p
-  fromList p = mkPermutation (G.fromList p)
+  fromList p = either error id $ mkPermutation (G.fromList p)
 
 -- | Rearrange elements of the input vector according to the given permutation.
 permuteVector
@@ -81,13 +87,22 @@ permuteVector
   -> v a
   -- ^ Rearranged vector
 permuteVector (Permutation p) xs
-  | G.length p == G.length xs = G.generate (G.length p) (\i -> G.unsafeIndex xs (G.unsafeIndex p i))
+  | G.length p == G.length xs = G.generate (G.length p) (G.unsafeIndex xs . G.unsafeIndex p)
   | otherwise = error $ "length mismatch: " <> show (G.length p) <> " != " <> show (G.length xs)
 
--- | Get the length of the permutation. If we are given a permutation of numbers @[0 .. N-1]@, then
--- this function will return @N@.
-permutationLength :: Permutation -> Int
-permutationLength (Permutation p) = G.length p
+permuteBits :: Permutation -> Integer -> Integer
+permuteBits (Permutation p) x = go 0 zeroBits
+  where
+    go !i !y
+      | i < G.length p =
+          let y' = if testBit x (p ! i) then setBit y i else y
+           in go (i + 1) y'
+      | otherwise = y
+
+instance HasField "length" Permutation Int where
+  -- \| Get the length of the permutation. If we are given a permutation of numbers @[0 .. N-1]@, then
+  -- this function will return @N@.
+  getField (Permutation p) = G.length p
 
 -- | Generate the identity permutation of given length.
 identityPermutation
@@ -100,12 +115,17 @@ identityPermutation size
   | otherwise = error $ "invalid size: " <> show size
 
 -- | Create a permutation from vector.
-mkPermutation :: (HasCallStack) => U.Vector Int -> Permutation
-mkPermutation p
-  | Set.toAscList (Set.fromList (G.toList p)) == [0 .. G.length p - 1]
-      && not (G.null p) =
-      Permutation p
-  | otherwise = withFrozenCallStack $ error $ "invalid permutation: " <> show p
+mkPermutation :: U.Vector Int -> Either Text Permutation
+mkPermutation p = Control.Arrow.left fromString $ prettyValidate (Permutation p)
+
+instance Validity Permutation where
+  validate (Permutation p) =
+    mconcat
+      [ check (not (G.null p)) "p is not empty"
+      , check
+          (Set.toAscList (Set.fromList (G.toList p)) == [0 .. G.length p - 1])
+          ("p is a permutation of [0 .. " <> show (G.length p - 1) <> "]")
+      ]
 
 instance Semigroup Permutation where
   (<>) x (Permutation ys) = Permutation $ permuteVector x ys
@@ -119,12 +139,14 @@ derivingUnbox
   [|\(Mapping a b) -> (a, b)|]
   [|\(!a, !b) -> Mapping a b|]
 
-permutationFromMappings :: Maybe Int -> [Mapping Int] -> Permutation
+-- | Create a permutation from a list of index mappings, e.g. [1->2, 3->5, 2->1].
+-- Assumes that the list of mappings is well-formed.
+permutationFromMappings :: (HasCallStack) => Maybe Int -> [Mapping Int] -> Permutation
 permutationFromMappings maybeN mappings = runST $ do
   p <- UM.generate n id
   forM_ mappings $ \(Mapping x y) ->
     UM.write p x y
-  mkPermutation <$> U.unsafeFreeze p
+  either error id . mkPermutation <$> U.unsafeFreeze p
   where
     !n = fromMaybe ((+ 1) . L.maximum $ (\(Mapping x y) -> max x y) <$> mappings) maybeN
 
@@ -232,7 +254,7 @@ data Swap = Swap !Focus !Index !Index
   deriving stock (Show, Eq)
 
 solveCycle :: [Edge] -> [Swap]
-solveCycle edges = go [] edges
+solveCycle = go []
   where
     shouldSwap (Edge _ (Point _ a) (Point _ b)) (Edge _ (Point _ c) (Point _ d))
       | a == c || b == d = False
@@ -249,7 +271,7 @@ solveCycle edges = go [] edges
     go _ _ = error "should not have happened"
 
 getMask :: [Swap] -> Integer
-getMask swaps = go zeroBits swaps
+getMask = go zeroBits
   where
     go !acc [] = acc
     go !acc ((Swap _ (Index i) (Index j)) : others) = go (setBit acc (min i j)) others
@@ -324,7 +346,11 @@ solve src tgt = unpack $ go s₀
       | otherwise = []
 
 data BenesNetwork = BenesNetwork {bnMasks :: !(B.Vector Integer), bnShifts :: !(U.Vector Int)}
-  deriving stock (Show)
+  deriving stock (Show, Eq, Generic)
+  deriving anyclass (NFData)
+
+instance ToJSON BenesNetwork where
+  toJSON x = object ["masks" .= x.bnMasks, "shifts" .= x.bnShifts]
 
 mkBenesNetwork :: [Integer] -> [Integer] -> [Int] -> BenesNetwork
 mkBenesNetwork srcMasks tgtMasks δs
@@ -340,20 +366,20 @@ mkBenesNetwork srcMasks tgtMasks δs
       _ -> L.last srcMasks == zeroBits
 
 extendToPowerOfTwo :: Permutation -> Permutation
-extendToPowerOfTwo (Permutation p) = mkPermutation (G.generate n f)
+extendToPowerOfTwo (Permutation p) = Permutation (G.generate n f)
   where
     !n = ((2 :: Int) ^) $ (ceiling :: Double -> Int) $ logBase 2 (fromIntegral (G.length p))
     f !i
       | i < G.length p = p G.! i
       | otherwise = i
 
-toBenesNetwork :: Permutation -> BenesNetwork
-toBenesNetwork p = mkBenesNetwork srcMasks tgtMasks shifts
+permutationToBenesNetwork :: Permutation -> BenesNetwork
+permutationToBenesNetwork p = mkBenesNetwork srcMasks tgtMasks shifts
   where
     p' = extendToPowerOfTwo p
     (srcMasks, tgtMasks, shifts) =
       solve
-        (mkInvertiblePermutation (identityPermutation (permutationLength p')))
+        (mkInvertiblePermutation (identityPermutation p'.length))
         (mkInvertiblePermutation p')
 
 bitPermuteStep :: Integer -> Integer -> Int -> Integer
@@ -361,22 +387,13 @@ bitPermuteStep x θ δ = (x `xor` y) `xor` (y `shiftL` δ)
   where
     y = ((x `shiftR` δ) `xor` x) .&. θ
 
-permuteBits :: BenesNetwork -> Integer -> Integer
-permuteBits (BenesNetwork masks δs) = go 0
+benesPermuteBits :: BenesNetwork -> Integer -> Integer
+benesPermuteBits (BenesNetwork masks δs) = go 0
   where
     n = G.length δs
     go !i !x
       | i < n = go (i + 1) (bitPermuteStep x (G.unsafeIndex masks i) (G.unsafeIndex δs i))
       | otherwise = x
-
-permuteBits' :: Permutation -> Integer -> Integer
-permuteBits' (Permutation p) x = go 0 zeroBits
-  where
-    go !i !y
-      | i < G.length p =
-          let y' = if testBit x (p ! i) then setBit y i else y
-           in go (i + 1) y'
-      | otherwise = y
 
 data BatchedBenesNetwork = BatchedBenesNetwork
   { bbnMasks :: {-# UNPACK #-} !(DenseMatrix S.Vector Word64)
@@ -402,7 +419,7 @@ mkBatchedBenesNetwork networks
       pure $ BatchedBenesNetwork masks' (G.convert (G.map fromIntegral shifts))
   | otherwise = error "networks have different shifts"
   where
-    getBitStrings i = G.toList $ G.map (\n -> BitString ((bnMasks n) ! i)) networks
+    getBitStrings i = G.toList $ G.map (\n -> BitString (n.bnMasks ! i)) networks
     sameShifts = G.all ((== shifts) . bnShifts) networks
     shifts = bnShifts (G.head networks)
     numberShifts = G.length shifts

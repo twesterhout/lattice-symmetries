@@ -16,6 +16,10 @@ import Test.Hspec.QuickCheck
 import Test.QuickCheck
 import Utils
 
+syms :: [Either Text Symmetry] -> IO Symmetries
+syms xs = fmap compileGroupRepresentation . (extractRight . groupRepresentationFromGenerators) =<< sequence (extractRight <$> xs)
+
+
 spec :: Spec
 spec = do
   -- describe "mkSymmetries" $ do
@@ -29,26 +33,28 @@ spec = do
   prop "getCharacter" $ \(p :: Int) (q :: Int) ->
     when (q /= 0) $ do
       let x = abs p % abs q - fromIntegral (abs p `div` abs q)
-          z = getCharacter (Symmetry (identityPermutation 1) x)
+          z = (Symmetry (identityPermutation 1) x).character
       realPart z `shouldBeApprox` cos (-2 * pi * realToFrac @_ @Double x)
       imagPart z `shouldBeApprox` sin (-2 * pi * realToFrac @_ @Double x)
 
   describe "FromJSON Symmetry" $ do
     it "parses Symmetry" $ do
-      Aeson.decode "{\"permutation\": [1, 2, 3, 0], \"sector\": 2}" `shouldBe` Just (mkSymmetry [1, 2, 3, 0] 2)
-      Aeson.decode "{\"permutation\": [0, 1], \"sector\": 0}" `shouldBe` Just (mkSymmetry [0, 1] 0)
+      Aeson.decode "{\"permutation\": [1, 2, 3, 0], \"sector\": 2}"
+        `shouldBe` Just (either error id $ mkSymmetry [1, 2, 3, 0] 2)
+      Aeson.decode "{\"permutation\": [0, 1], \"sector\": 0}"
+        `shouldBe` Just (either error id $ mkSymmetry [0, 1] 0)
   -- Empty permutations are not supported
   -- Aeson.decode "{\"permutation\": [], \"sector\": 0}" `shouldBe` Just (mkSymmetry [] 0)
   describe "FromJSON Symmetries" $ do
     it "parses Symmetries" $ do
-      Aeson.decode "[{\"permutation\": [1, 2, 0], \"sector\": 1}]"
-        `shouldBe` Just ([mkSymmetry [1, 2, 0] 1] :: Symmetries)
+      expected1 <- syms [mkSymmetry [1, 2, 0] 1]
+      Aeson.decode "[{\"permutation\": [1, 2, 0], \"sector\": 1}]" `shouldBe` Just expected1
+      expected2 <- syms [mkSymmetry [1, 2, 3, 0] 0, mkSymmetry [3, 2, 1, 0] 0]
       Aeson.decode
-        "[{\"permutation\": [1, 2, 3, 0], \"sector\": 0}, \
-        \ {\"permutation\": [3, 2, 1, 0], \"sector\": 0}]"
-        `shouldBe` Just ([mkSymmetry [1, 2, 3, 0] 0, mkSymmetry [3, 2, 1, 0] 0] :: Symmetries)
+        "[{\"permutation\": [1, 2, 3, 0], \"sector\": 0}, {\"permutation\": [3, 2, 1, 0], \"sector\": 0}]"
+        `shouldBe` Just expected2
   describe "mkSymmetries" $ do
     it "builds cycles" $ do
-      let g1 = mkSymmetry [1, 2, 3, 0, 5, 6, 7, 4, 9, 10, 11, 8, 13, 14, 15, 12] 1
-      fmap (.symmCharactersReal) (mkSymmetries [g1]) `shouldBe` Right [1, 0, -1, 0]
-      fmap (.symmCharactersImag) (mkSymmetries [g1]) `shouldBe` Right [0, -1, 0, 1]
+      g <- syms [mkSymmetry [1, 2, 3, 0, 5, 6, 7, 4, 9, 10, 11, 8, 13, 14, 15, 12] 1]
+      g.symmCharactersReal `shouldBe` [1, 0, -1, 0]
+      g.symmCharactersImag `shouldBe` [0, -1, 0, 1]

@@ -74,8 +74,10 @@ __attribute__((noreturn)) void ls_hs_fatal_error(char const *func, int line,
   ((cond) ? ((void)0) : ls_hs_fatal_error(__func__, __LINE__, msg))
 
 /* python-cffi: START */
+// Representation of a group element (i.e. permutation + character).
 typedef struct ls_hs_symmetry ls_hs_symmetry;
 
+// A group representation.
 typedef struct ls_hs_symmetries ls_hs_symmetries;
 
 typedef enum ls_hs_particle_type {
