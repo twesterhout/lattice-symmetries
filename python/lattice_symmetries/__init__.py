@@ -54,6 +54,7 @@ class _RuntimeInitializer:
         logger.trace("Setting Python exception handler...")
         lib.set_python_exception_handler()
 
+
     def __del__(self):
         # NOTE: The order of these should actually be reversed, but ls_chpl_finalize calls exit(0) :/
         logger.trace("Deinitializing Haskell runtime...")
@@ -76,31 +77,28 @@ class Symmetry:
     1
     >>> p.permutation
     [1, 2, 3, 0]
+    >>> p.phase
+    0.25
     """
 
     permutation: NDArray[np.int32]
     sector: int
+    phase: float
+    periodicity: int
+    character: complex
+
 
     def __init__(self, permutation: ArrayLike, sector: int):
         self.permutation = np.asarray(permutation, dtype=np.int32)
         self.sector = int(sector)
+        for (name, value) in _from_json(lib.ls_hs_symmetry_more_info(_to_json(self))).items():
+            setattr(self, name, value)
 
     def __repr__(self) -> str:
         return "Symmetry(permutation={}, sector={})".format(self.permutation, self.sector)
 
     def __len__(self) -> int:
         return len(self.permutation)
-
-    @property
-    def periodicity(self) -> int:
-        return self.more_info()["periodicity"]
-
-    @property
-    def phase(self) -> float:
-        return self.more_info()["phase"]
-
-    def more_info(self) -> dict:
-        return _from_json(lib.ls_hs_symmetry_more_info(_to_json(self)))
 
 
 class Symmetries:
@@ -125,29 +123,41 @@ class Symmetries:
 
 class LatticeSymmetriesEncoder(json.JSONEncoder):
     def default(self, obj):
-        if isinstance(obj, Symmetry):
-            return {
-                "__type__": "Symmetry",
-                "permutation": obj.permutation.tolist(),
-                "sector": obj.sector,
-            }
-        if isinstance(obj, Symmetries):
-            return obj.elements
+        name = type(obj).__name__
+        try:
+            encoder = getattr(self, f"encode_{name}")
+        except AttributeError:
+            super().default(obj)
+        else:
+            encoded = encoder(obj)
+            if isinstance(encoded, dict):
+                encoded["__type__"] = name
+            return encoded
 
-        return json.JSONEncoder.default(self, obj)
+    def encode_Symmetry(self, obj: Symmetry):
+        return { "permutation": obj.permutation.tolist(), "sector": obj.sector }
 
+    def encode_Symmetries(self, obj: Symmetries):
+        return obj.elements
 
-def lattice_symmetries_object_hook(obj):
-    tp = obj.get("__type__")
-    if tp is None:
-        return obj
+    def encode_complex(self, obj: complex):
+        return { "real": obj.real, "imag": obj.imag }
 
-    if tp == "Symmetry":
+class LatticeSymmetriesDecoder(object):
+    def object_hook(self, obj):
+        try:
+            name = obj["__type__"]
+            decoder = getattr(self, f"decode_{name}")
+        except (KeyError, AttributeError):
+            return obj
+        else:
+            return decoder(obj)
+
+    def decode_Symmetry(self, obj):
         return Symmetry(permutation=obj["permutation"], sector=obj["sector"])
-    if tp == "Symmetries":
-        return Symmetries(generators=obj["elements"])
 
-    return obj
+    def decode_Complex(self, obj):
+        return complex(obj["real"], obj["imag"])
 
 
 def _to_json(obj) -> bytes:
@@ -157,7 +167,7 @@ def _to_json(obj) -> bytes:
 def _from_json(obj) -> Any:
     if isinstance(obj, ffi.CData):
         obj = from_haskell_string(obj)
-    return json.loads(obj, object_hook=lattice_symmetries_object_hook)
+    return json.loads(obj, object_hook=LatticeSymmetriesDecoder().object_hook)
 
 
 def from_haskell_string(c_str):
@@ -500,12 +510,12 @@ replace_indices_impl = None
 replace_indices_impl_lock = threading.Lock()
 
 
-@ffi.def_extern()
-def python_replace_indices(s, i, new_s_ptr, new_i_ptr):
-    assert replace_indices_impl is not None
-    (new_s, new_i) = replace_indices_impl(s, i)
-    new_s_ptr[0] = new_s
-    new_i_ptr[0] = new_i
+# @ffi.def_extern()
+# def python_replace_indices(s, i, new_s_ptr, new_i_ptr):
+#     assert replace_indices_impl is not None
+#     (new_s, new_i) = replace_indices_impl(s, i)
+#     new_s_ptr[0] = new_s
+#     new_i_ptr[0] = new_i
 
 
 class Expr(object):
@@ -546,49 +556,10 @@ class Expr(object):
         return lib.ls_hs_expr_is_real(self._payload) != 0
 
     def replace_indices(self, mapping):
-        if isinstance(mapping, dict):
-            if len(mapping) == 0:
-                return self
-            element = next(iter(mapping))
-            if isinstance(element, int):
-                # Mapping over site indices
-                def f(s, i):
-                    if i in mapping:
-                        return (s, mapping[i])
-                    else:
-                        return (s, i)
-
-            elif isinstance(element, str):
-                # Mapping over spin indices
-                def f(s, i):
-                    k = _to_spin_index(s)
-                    if k in mapping:
-                        return (_from_spin_index(mapping[k]), i)
-                    else:
-                        return (s, i)
-
-            elif isinstance(element, tuple):
-                # Mapping over both
-                def f(s, i):
-                    k = (_to_spin_index(s), i)
-                    if k in mapping:
-                        (new_s, new_i) = mapping[k]
-                        return (_from_spin_index(new_s), new_i)
-                    else:
-                        return (s, i)
-
-            else:
-                raise ValueError("invalid mapping: {}".format(mapping))
-
-            with replace_indices_impl_lock:
-                global replace_indices_impl
-                replace_indices_impl = f
-                r = Expr(lib.ls_hs_replace_indices(self._payload, lib.python_replace_indices))
-                replace_indices_impl = None
-                return r
-
-        else:
-            raise NotImplementedError
+        if len(mapping) == 0:
+            return self
+        mapping = [(int(k), int(v)) for k, v in mapping.items()]
+        return Expr(lib.ls_hs_replace_site_indices(self._payload, _to_json(mapping)))
 
     def adjoint(self) -> "Expr":
         return Expr(lib.ls_hs_expr_adjoint(self._payload))
@@ -631,10 +602,10 @@ process_symmetries_impl = None
 process_symmetries_impl_lock = threading.Lock()
 
 
-@ffi.def_extern()
-def python_process_symmetries(s_ptr):
-    assert process_symmetries_impl is not None
-    process_symmetries_impl(s_ptr)
+# @ffi.def_extern()
+# def python_process_symmetries(s_ptr):
+#     assert process_symmetries_impl is not None
+#     process_symmetries_impl(s_ptr)
 
 
 class Operator(LinearOperator):
@@ -925,12 +896,7 @@ class Operator(LinearOperator):
         #     global process_symmetries_impl
         #     representations = []
         #     process_symmetries_impl = lambda p: representations.append(Symmetries(p))
-        r = json.loads(
-            from_haskell_string(lib.ls_hs_operator_abelian_representations(self._payload)),
-            object_hook=lattice_symmetries_object_hook,
-        )
-        print(r)
-        return r
+        return _from_json(lib.ls_hs_operator_abelian_representations(self._payload))
 
 
 def load_yaml_config(filename: str):

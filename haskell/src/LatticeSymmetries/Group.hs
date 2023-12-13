@@ -51,9 +51,9 @@ module LatticeSymmetries.Group
   )
 where
 
+import Control.Arrow (left)
 import Control.Exception (assert)
 import Control.Monad.ST.Strict (runST)
-import Control.Arrow (left)
 import Data.Aeson (FromJSON (..), ToJSON (..), object, withObject, (.:), (.=))
 import Data.Complex
 import Data.IntSet qualified as IntSet
@@ -137,26 +137,22 @@ instance FromJSON Symmetry where
     either (fail . toString) pure =<< (mkSymmetry <$> v .: "permutation" <*> v .: "sector")
 
 instance ToJSON Symmetry where
-  toJSON s =
-    object
-      [ "__type__" .= ("Symmetry" :: Text)
-      , "permutation" .= s.permutation
-      , "sector" .= s.sector
-      ]
+  toJSON s = object ["__type__" .= ("Symmetry" :: Text), "permutation" .= s.permutation, "sector" .= s.sector]
 
 -- | Create a new 'Symmetry'.
 mkSymmetry :: Permutation -> Int -> Either Text Symmetry
-mkSymmetry p k = Control.Arrow.left fromString . prettyValidate $ Symmetry p (k % getPeriodicity p)
+mkSymmetry p k = Control.Arrow.left fromString . prettyValidate $ Symmetry p (modOne (k % getPeriodicity p))
 
 instance Validity Symmetry where
   validate (Symmetry p φ) =
-    validate p
-      <> check (φ >= 0) "phase is non-negative"
+      check (φ >= 0) "phase φ is non-negative"
+      <> check (φ < 1) "phase φ is less than one"
       <> check (denominator (φ * fromIntegral (getPeriodicity p)) == 1) "phase is consistent with periodicity"
 
 modOne :: (Integral a) => Ratio a -> Ratio a
 modOne x
   | x >= 1 = x - fromIntegral (numerator x `div` denominator x)
+  | x < 0 = modOne (x + fromIntegral (denominator x))
   | otherwise = x
 
 instance Semigroup Symmetry where
@@ -180,11 +176,12 @@ groupRepresentationFromGenerators gs@(g : _)
       s₁ <- symmetries
       s₂ <- symmetries
       let s₃@(Symmetry p₃ λ₃) = s₁ <> s₂
+          context = " (where g₁ = " <> show s₁ <> ", g₂ = " <> show s₂ <> ", g₁g₂ = " <> show s₃ <> ")"
       if not (Set.member s₃ set)
-        then pure $ "generators are incompatible: " <> show s₁ <> " <> " <> show s₂ <> " = " <> show s₃ <> " does not belong to the group"
+        then pure $ "generators are incompatible: g₁g₂ does not belong to the group" <> context
         else
           if denominator (λ₃ * fromIntegral (getPeriodicity p₃)) /= 1
-            then pure $ "generators are incompatible: " <> show s₁ <> " <> " <> show s₂ <> " = " <> show s₃ <> " has an invalid phase for periodicity" <> show (getPeriodicity p₃)
+            then pure $ "generators are incompatible: g₁g₂ has an invalid phase for periodicity " <> show (getPeriodicity p₃) <> context
             else []
 
 data Symmetries = Symmetries
@@ -197,7 +194,7 @@ data Symmetries = Symmetries
   deriving stock (Show, Eq)
 
 compileGroupRepresentation :: B.Vector Symmetry -> Symmetries
-compileGroupRepresentation symmetries 
+compileGroupRepresentation symmetries
   | G.null symmetries = emptySymmetries
   | otherwise = Symmetries permGroup benesNetwork charactersReal charactersImag symmetries
   where
@@ -214,13 +211,18 @@ compileGroupRepresentation symmetries
 --   where
 --     gs = let (PermutationGroup g) = group in (\(x, φ) -> (g ! x.index, φ)) <$> r
 
-instance FromJSON Symmetries where
-  parseJSON =
-    either (fail . toString) (pure . compileGroupRepresentation)
-      <=< fmap groupRepresentationFromGenerators . parseJSON
+-- instance FromJSON Symmetries where
+--   parseJSON =
+--     either (fail . toString) (pure . compileGroupRepresentation)
+--       <=< fmap groupRepresentationFromGenerators . parseJSON
 
+-- instance ToJSON Symmetries where
+--   toJSON s = toJSON s.symmOriginal
 instance ToJSON Symmetries where
-  toJSON s = toJSON s.symmOriginal
+  toJSON s = object 
+    [ "symmOriginal" .= s.symmOriginal,
+      "symmNetwork" .= s.symmNetwork
+    ]
 
 -- instance IsList Symmetries where
 --   type Item Symmetries = Symmetry

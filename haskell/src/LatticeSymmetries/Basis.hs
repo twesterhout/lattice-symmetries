@@ -292,7 +292,7 @@ basisHeaderToJSON x
         , "number_spins" .= n
         , "hamming_weight" .= h
         , "spin_inversion" .= i
-        , "symmetries" .= g
+        , "symmetries" .= g.symmOriginal
         ]
   | (SpinfulFermionBasis n o) <- x =
       object $
@@ -311,7 +311,7 @@ basisHeaderFromJSON = withObject "Basis" $ \v -> do
           <$> (v .: "number_spins")
           <*> (v .:? "hamming_weight")
           <*> (v .:? "spin_inversion")
-          <*> (v .:! "symmetries" .!= emptySymmetries)
+          <*> (eitherToParser . fmap compileGroupRepresentation . groupRepresentationFromGenerators =<< (v .:! "symmetries" .!= []))
     SpinlessFermionTy ->
       fmap SomeBasis $
         SpinlessFermionBasis <$> (v .: "number_sites") <*> (v .:? "number_particles")

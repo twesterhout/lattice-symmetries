@@ -4,7 +4,7 @@ import lattice_symmetries as ls
 import math
 import numpy as np
 import scipy.sparse.linalg
-from pytest import approx
+from pytest import approx, raises
 
 
 def sum1(xs):
@@ -24,11 +24,21 @@ def test_symmetry():
     assert a.permutation.tolist() == [0, 1, 2]
     del a
 
+    a = ls.Symmetry(list(range(10)), sector=123)
+    assert a.phase == 0
+
+    a = ls.Symmetry(list(range(10)), sector=-1)
+    assert a.phase == 0
+
 
 def test_symmetries():
     a = ls.Symmetry([1, 2, 3, 0], sector=0)
     b = ls.Symmetry([3, 2, 1, 0], sector=0)
     c = ls.Symmetries([a, b])
+    assert len(c) == 8
+
+    with raises(SystemError):
+        ls.Symmetries([ls.Symmetry([1, 2, 0], sector=1), ls.Symmetry([1, 2, 0], sector=2)])
 
 
 def test_index():
@@ -58,7 +68,7 @@ def test_kagome_symmetries():
     assert basis.is_real
     assert expr.is_real
     assert hamiltonian.is_real
-    energy, state = scipy.sparse.linalg.eigsh(hamiltonian, k=1, which="SA")
+    energy, _ = scipy.sparse.linalg.eigsh(hamiltonian, k=1, which="SA")
     assert energy == approx(-19.95338528)
 
 

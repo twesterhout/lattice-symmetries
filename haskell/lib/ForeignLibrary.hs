@@ -7,6 +7,7 @@
 module ForeignLibrary () where
 
 import Data.Aeson qualified
+import Data.Complex
 import Data.Vector.Generic qualified as G
 import Foreign.C.String (CString)
 import Foreign.C.Types (CBool (..), CInt (..), CPtrdiff (..))
@@ -29,6 +30,7 @@ import LatticeSymmetries.Utils
 import LatticeSymmetries.Yaml
 import Type.Reflection
 import Prelude hiding (state, toList)
+import Data.IntMap qualified as IntMap
 
 ls_hs_destroy_string :: CString -> IO ()
 ls_hs_destroy_string = free
@@ -36,25 +38,39 @@ ls_hs_destroy_string = free
 newCencoded :: (HasCallStack, Data.Aeson.ToJSON a) => a -> IO CString
 newCencoded = newCString . toStrict . Data.Aeson.encode
 
+receivingJSON :: (Data.Aeson.FromJSON a, NFData b) => b -> (a -> IO b) -> CString -> IO b
+receivingJSON def f jsonString = propagateErrorToC def $ decodeCString jsonString >>= f
+
+returningJSON :: (Data.Aeson.ToJSON b) => b -> IO CString
+returningJSON x = propagateErrorToC nullPtr $ newCencoded x
+
+viaJSON :: (Data.Aeson.FromJSON a, Data.Aeson.ToJSON b) => (a -> IO b) -> CString -> IO CString
+viaJSON f jsonString = propagateErrorToC nullPtr $ newCencoded =<< f =<< decodeCString jsonString
+
 data SymmetryInfo = SymmetryInfo
   { periodicity :: !Int
   , phase :: !Double
+  , character :: !(Complex Double)
   }
   deriving stock (Generic)
   deriving anyclass (Data.Aeson.ToJSON)
 
 ls_hs_symmetry_more_info :: CString -> IO CString
-ls_hs_symmetry_more_info jsonString = propagateErrorToC nullPtr $ do
-  !(symm :: Symmetry) <- decodeCString jsonString
-  newCencoded $
-    SymmetryInfo
-      { periodicity = getPeriodicity symm.permutation
-      , phase = realToFrac symm.phase
-      }
+ls_hs_symmetry_more_info = viaJSON $ \ !(symm :: Symmetry) ->
+    pure
+      SymmetryInfo
+        { periodicity = getPeriodicity symm.permutation
+        , phase = realToFrac symm.phase
+        , character = symm.character
+        }
 
 ls_hs_symmetries_from_generators :: CString -> IO CString
-ls_hs_symmetries_from_generators jsonString = propagateErrorToC nullPtr $ do
-  newCencoded . toList . either error id . groupRepresentationFromGenerators =<< decodeCString jsonString
+ls_hs_symmetries_from_generators = viaJSON $
+  pure . toList . either error id . groupRepresentationFromGenerators
+
+ls_hs_compile_symmetries :: CString -> IO CString
+ls_hs_compile_symmetries = viaJSON $
+  pure . compileGroupRepresentation . either error id . groupRepresentationFromGenerators
 
 -- {{{ Basis
 
@@ -233,34 +249,18 @@ ls_hs_expr_scale c_z c_a =
       z <- fromComplexDouble <$> peek c_z
       newCexpr $ scale (z :: ComplexRational) a
 
--- foreign export ccall "ls_hs_replace_indices"
---   ls_hs_replace_indices :: Ptr Cexpr -> FunPtr Creplace_index -> IO (Ptr Cexpr)
-
-ls_hs_replace_indices :: Ptr Cexpr -> FunPtr Creplace_index -> IO (MutablePtr Cexpr)
-ls_hs_replace_indices exprPtr fPtr =
+ls_hs_replace_site_indices :: Ptr Cexpr -> CString -> IO (MutablePtr Cexpr)
+ls_hs_replace_site_indices exprPtr jsonString =
   propagateErrorToC nullPtr $
     withCexpr exprPtr $ \expr -> do
-      let f :: Int -> Int -> IO (Int, Int)
-          f !s !i =
-            alloca $ \spinPtr ->
-              alloca $ \sitePtr -> do
-                mkCreplace_index fPtr (fromIntegral s) (fromIntegral i) spinPtr sitePtr
-                (,)
-                  <$> (fromIntegral <$> peek spinPtr)
-                  <*> (fromIntegral <$> peek sitePtr)
+      (mapping :: IntMap Int) <- IntMap.fromList <$> decodeCString jsonString
       newCexpr =<< case expr of
         SomeExpr SpinTag terms ->
-          SomeExpr SpinTag . simplifyExpr <$> mapIndicesM (fmap snd . f 0) terms
+          pure . SomeExpr SpinTag . simplifyExpr $ mapIndices (\i -> fromMaybe i (IntMap.lookup i mapping)) terms
         SomeExpr SpinlessFermionTag terms ->
-          SomeExpr SpinlessFermionTag . simplifyExpr <$> mapIndicesM (fmap snd . f 0) terms
+          pure . SomeExpr SpinlessFermionTag . simplifyExpr $ mapIndices (\i -> fromMaybe i (IntMap.lookup i mapping)) terms
         SomeExpr SpinfulFermionTag terms ->
-          let f' (s, i) = do
-                (s', i') <- f (fromEnum s) i
-                pure (toEnum s', i')
-           in SomeExpr SpinfulFermionTag . simplifyExpr <$> mapIndicesM f' terms
-
--- foreign export ccall "ls_hs_expr_equal"
---   ls_hs_expr_equal :: Ptr Cexpr -> Ptr Cexpr -> IO CBool
+          pure . SomeExpr SpinfulFermionTag . simplifyExpr $ mapIndices (\(s, i) -> (s, fromMaybe i (IntMap.lookup i mapping))) terms
 
 ls_hs_expr_equal :: Ptr Cexpr -> Ptr Cexpr -> IO CBool
 ls_hs_expr_equal aPtr bPtr =
@@ -458,7 +458,6 @@ typesTable
   , ([t|CString|], "char const *")
   , ([t|Cbasis|], "ls_hs_basis")
   , ([t|Cexpr|], "ls_hs_expr")
-  , ([t|Creplace_index|], "ls_hs_index_replacement_type")
   , ([t|Cscalar|], "ls_hs_scalar")
   , ([t|Coperator|], "ls_hs_operator")
   , ([t|Cyaml_config|], "ls_hs_yaml_config")
@@ -495,6 +494,7 @@ addDeclarations
     -- , "ls_hs_symmetry_permutation"
     -- "ls_hs_destroy_permutation"
     "ls_hs_symmetries_from_generators"
+  , "ls_hs_compile_symmetries"
   , "ls_hs_clone_basis"
   , "ls_hs_destroy_basis"
   , "ls_hs_basis_from_json"
@@ -522,7 +522,7 @@ addDeclarations
   , "ls_hs_expr_minus"
   , "ls_hs_expr_times"
   , "ls_hs_expr_scale"
-  , "ls_hs_replace_indices"
+  , "ls_hs_replace_site_indices"
   , "ls_hs_expr_equal"
   , "ls_hs_expr_adjoint"
   , "ls_hs_expr_is_hermitian"

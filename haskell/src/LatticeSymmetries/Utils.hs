@@ -30,6 +30,7 @@ import Data.Aeson.Types (Parser)
 import Data.ByteString (packCString, useAsCString)
 import Data.ByteString.Internal (ByteString (..))
 import Data.Complex
+import qualified Data.Vector.Generic as G
 import Foreign.C.String (CString)
 import Foreign.C.Types (CChar, CDouble (..))
 import Foreign.ForeignPtr (withForeignPtr)
@@ -40,6 +41,8 @@ import Foreign.Storable (Storable (..))
 import Prettyprinter (Pretty (..))
 import Prettyprinter qualified as Pretty
 import Prettyprinter.Render.Text (renderStrict)
+import qualified Data.Aeson as Aeson
+import qualified Data.Aeson.Types as Aeson
 
 loopM :: (Monad m) => i -> (i -> Bool) -> (i -> i) -> (i -> m ()) -> m ()
 loopM i₀ cond inc action = go i₀
@@ -112,3 +115,11 @@ eitherToParser = either (fail . toString) pure
 
 toPrettyText :: (Pretty a) => a -> Text
 toPrettyText = renderStrict . Pretty.layoutPretty (Pretty.LayoutOptions Pretty.Unbounded) . pretty
+
+instance FromJSON a => FromJSON (Complex a) where
+  parseJSON (Aeson.Object v) = (:+) <$> v .: "real" <*> v .: "imag"
+  parseJSON (Aeson.Array (G.toList -> [r, i])) = (:+) <$> parseJSON r <*> parseJSON i
+  parseJSON invalid = Aeson.prependFailure "parsing Complex failed, " (Aeson.typeMismatch "Object or Array" invalid)
+
+instance ToJSON a => ToJSON (Complex a) where
+  toJSON (a :+ b) = object ["real" .= a, "imag" .= b]

@@ -401,6 +401,12 @@ data BatchedBenesNetwork = BatchedBenesNetwork
   }
   deriving stock (Show, Eq)
 
+instance ToJSON BatchedBenesNetwork where
+  toJSON x = object [
+      "bbnMasks" .= denseMatrixToList x.bbnMasks,
+      "bbnShifts" .= G.toList x.bbnShifts
+    ]
+
 emptyBatchedBenesNetwork :: BatchedBenesNetwork
 emptyBatchedBenesNetwork = mkBatchedBenesNetwork G.empty
 

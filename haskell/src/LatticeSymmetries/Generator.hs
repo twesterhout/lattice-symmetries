@@ -100,7 +100,7 @@ particleDispatch
 withConstraint
   :: forall (c :: ParticleTy -> Constraint) (t :: ParticleTy) a
    . (HasCallStack, Typeable t, c 'SpinTy, c 'SpinfulFermionTy, c 'SpinlessFermionTy)
-  => (c t => a)
+  => ((c t) => a)
   -> a
 withConstraint f = case particleDispatch @t of
   SpinTag -> f
@@ -127,6 +127,17 @@ instance Enum SpinIndex where
 instance Pretty SpinIndex where
   pretty SpinUp = "↑"
   pretty SpinDown = "↓"
+
+instance FromJSON SpinIndex where
+  parseJSON (Data.Aeson.String t)
+    | t == "↑" || Text.toLower t == "up" = pure SpinUp
+    | t == "↓" || Text.toLower t == "down" = pure SpinDown
+  parseJSON x = do
+    (k :: Int) <- parseJSON x
+    case k of
+      0 -> pure SpinUp
+      1 -> pure SpinDown
+      _ -> fail $ "invalid spin index: " <> show k
 
 -- | Generators for the algebra of spin-1/2 particles.
 data SpinGeneratorType
@@ -176,13 +187,13 @@ type family GeneratorType (t :: ParticleTy) where
   GeneratorType 'SpinfulFermionTy = FermionGeneratorType
   GeneratorType 'SpinlessFermionTy = FermionGeneratorType
 
-class IsGeneratorType (GeneratorType t) => HasProperGeneratorType t
+class (IsGeneratorType (GeneratorType t)) => HasProperGeneratorType t
 
-instance IsGeneratorType (GeneratorType t) => HasProperGeneratorType t
+instance (IsGeneratorType (GeneratorType t)) => HasProperGeneratorType t
 
-class IsIndexType (IndexType t) => HasProperIndexType t
+class (IsIndexType (IndexType t)) => HasProperIndexType t
 
-instance IsIndexType (IndexType t) => HasProperIndexType t
+instance (IsIndexType (IndexType t)) => HasProperIndexType t
 
 type IsGeneratorType g = (Eq g, Ord g, Pretty g, HasNonbranchingRepresentation (Generator Int g))
 
@@ -205,7 +216,7 @@ instance HasSiteIndex (SpinIndex, Int) where
   getSiteIndex (_, i) = i
   mapSiteIndex f (σ, i) = (σ, f i)
 
-toSubscript :: HasCallStack => Int -> Text
+toSubscript :: (HasCallStack) => Int -> Text
 toSubscript n = Text.map h (show n)
   where
     h '0' = '₀'
@@ -220,10 +231,10 @@ toSubscript n = Text.map h (show n)
     h '9' = '₉'
     h _ = error "invalid character"
 
-instance Pretty g => Pretty (Generator Int g) where
+instance (Pretty g) => Pretty (Generator Int g) where
   pretty (Generator i g) = pretty g <> pretty (toSubscript i)
 
-instance Pretty g => Pretty (Generator (SpinIndex, Int) g) where
+instance (Pretty g) => Pretty (Generator (SpinIndex, Int) g) where
   pretty (Generator (σ, i) g) = pretty g <> pretty (toSubscript i) <> pretty σ
 
 instance HasNonbranchingRepresentation (Generator Int SpinGeneratorType) where

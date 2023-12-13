@@ -45,14 +45,14 @@ spec = do
         `shouldBe` Just (either error id $ mkSymmetry [0, 1] 0)
   -- Empty permutations are not supported
   -- Aeson.decode "{\"permutation\": [], \"sector\": 0}" `shouldBe` Just (mkSymmetry [] 0)
-  describe "FromJSON Symmetries" $ do
-    it "parses Symmetries" $ do
-      expected1 <- syms [mkSymmetry [1, 2, 0] 1]
-      Aeson.decode "[{\"permutation\": [1, 2, 0], \"sector\": 1}]" `shouldBe` Just expected1
-      expected2 <- syms [mkSymmetry [1, 2, 3, 0] 0, mkSymmetry [3, 2, 1, 0] 0]
-      Aeson.decode
-        "[{\"permutation\": [1, 2, 3, 0], \"sector\": 0}, {\"permutation\": [3, 2, 1, 0], \"sector\": 0}]"
-        `shouldBe` Just expected2
+  -- describe "FromJSON Symmetries" $ do
+  --   it "parses Symmetries" $ do
+  --     expected1 <- syms [mkSymmetry [1, 2, 0] 1]
+  --     Aeson.decode "[{\"permutation\": [1, 2, 0], \"sector\": 1}]" `shouldBe` Just expected1
+  --     expected2 <- syms [mkSymmetry [1, 2, 3, 0] 0, mkSymmetry [3, 2, 1, 0] 0]
+  --     Aeson.decode
+  --       "[{\"permutation\": [1, 2, 3, 0], \"sector\": 0}, {\"permutation\": [3, 2, 1, 0], \"sector\": 0}]"
+  --       `shouldBe` Just expected2
   describe "mkSymmetries" $ do
     it "builds cycles" $ do
       g <- syms [mkSymmetry [1, 2, 3, 0, 5, 6, 7, 4, 9, 10, 11, 8, 13, 14, 15, 12] 1]
