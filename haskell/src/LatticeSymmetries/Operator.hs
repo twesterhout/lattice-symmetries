@@ -1,7 +1,9 @@
 {-# LANGUAGE CApiFFI #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module LatticeSymmetries.Operator
@@ -10,16 +12,17 @@ module LatticeSymmetries.Operator
   , SomeOperator (..)
   , withSomeOperator
   , foldSomeOperator
-  , maxNumberOffDiag
-  , operatorSymmetryGroup
-  , operatorAbelianRepresentations
-  , isInvariant
-  , applyPermutation
+  -- , maxNumberOffDiag
+  -- , operatorSymmetryGroup
+  -- , operatorAbelianRepresentations
+  -- , isInvariant
+  -- , applyPermutation
 
     -- ** Helpers for FFI
-  , newCoperator
-  , cloneCoperator
-  , destroyCoperator
+
+  -- , newCoperator
+  -- , cloneCoperator
+  -- , destroyCoperator
   , withCoperator
   )
 where
@@ -34,18 +37,23 @@ import Foreign.Ptr
 import Foreign.StablePtr
 import Foreign.Storable
 import GHC.Show qualified
+import Language.C.Inline.Unsafe qualified as CU
 import LatticeSymmetries.Algebra
+import LatticeSymmetries.Automorphisms
 import LatticeSymmetries.Basis
-import LatticeSymmetries.Benes (Permutation (unPermutation))
 import LatticeSymmetries.BitString
 import LatticeSymmetries.ComplexRational
+import LatticeSymmetries.Context
 import LatticeSymmetries.Expr
 import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
 import LatticeSymmetries.Group
 import LatticeSymmetries.NonbranchingTerm
+import LatticeSymmetries.Permutation (Permutation (unPermutation))
 import LatticeSymmetries.Utils
 import Prelude hiding (Product, Sum)
+
+importLS
 
 data Operator (t :: ParticleTy) = Operator
   { opBasis :: !(Basis t)
@@ -57,43 +65,43 @@ deriving stock instance
   => Show (Operator t)
 
 data SomeOperator where
-  SomeOperator :: (IsBasis t) => ParticleTag t -> Operator t -> SomeOperator
+  SomeOperator :: IsBasis t => ParticleTag t -> Operator t -> SomeOperator
 
 instance Show SomeOperator where
   show (SomeOperator SpinTag x) = show x
   show (SomeOperator SpinlessFermionTag x) = show x
   show (SomeOperator SpinfulFermionTag x) = show x
 
-withSomeOperator :: SomeOperator -> (forall t. (IsBasis t) => Operator t -> a) -> a
+withSomeOperator :: SomeOperator -> (forall t. IsBasis t => Operator t -> a) -> a
 withSomeOperator x f = case x of
   SomeOperator _ operator -> f operator
 {-# INLINE withSomeOperator #-}
 
-foldSomeOperator :: (forall t. (IsBasis t) => Operator t -> a) -> SomeOperator -> a
+foldSomeOperator :: (forall t. IsBasis t => Operator t -> a) -> SomeOperator -> a
 foldSomeOperator f x = case x of
   SomeOperator _ operator -> f operator
 {-# INLINE foldSomeOperator #-}
 
-mkOperator :: (IsBasis t) => Basis t -> Expr t -> Operator t
+mkOperator :: IsBasis t => Basis t -> Expr t -> Operator t
 mkOperator = Operator
 
-getNonbranchingTerms
-  :: (HasNonbranchingRepresentation (Generator Int (GeneratorType t)))
-  => Operator t
-  -> Vector NonbranchingTerm
-getNonbranchingTerms operator =
-  case nonbranchingRepresentation <$> opTermsFlat operator of
-    -- NOTE: sorting based on nbtX is important!
-    -- Terms with the same nbtX generate the same spin configuration. If they
-    -- appear one after another, we can eliminate the duplicates easily. This
-    -- is done in the off_diag kernel in Chapel.
-    -- If duplicates are not eliminated, we might run into bufer overflows
-    -- since we allocate buffers assuming that there are not duplicates.
-    (Sum v) -> sortVectorBy (comparing (.nbtX)) $ G.filter ((/= 0) . (.nbtV)) v
-  where
-    opTermsFlat :: Operator t -> Polynomial ComplexRational (Generator Int (GeneratorType t))
-    opTermsFlat (Operator basis terms) =
-      fmap (fmap (fmap (\(Generator i g) -> Generator (flattenIndex basis i) g))) (unExpr terms)
+-- getNonbranchingTerms
+--   :: HasNonbranchingRepresentation (Generator Int (GeneratorType t))
+--   => Operator t
+--   -> Vector NonbranchingTerm
+-- getNonbranchingTerms operator =
+--   case nonbranchingRepresentation <$> opTermsFlat operator of
+--     -- NOTE: sorting based on nbtX is important!
+--     -- Terms with the same nbtX generate the same spin configuration. If they
+--     -- appear one after another, we can eliminate the duplicates easily. This
+--     -- is done in the off_diag kernel in Chapel.
+--     -- If duplicates are not eliminated, we might run into bufer overflows
+--     -- since we allocate buffers assuming that there are not duplicates.
+--     (Sum v) -> sortVectorBy (comparing (.nbtX)) $ G.filter ((/= 0) . (.nbtV)) v
+--   where
+--     opTermsFlat :: Operator t -> Polynomial ComplexRational (Generator Int (GeneratorType t))
+--     opTermsFlat (Operator basis terms) =
+--       fmap (fmap (fmap (\(Generator i g) -> Generator (flattenIndex basis i) g))) (unExpr terms)
 
 -- typedef struct ls_hs_nonbranching_terms {
 --   int number_terms;
@@ -120,114 +128,117 @@ getNonbranchingTerms operator =
 --         go (i + 1) (nextWord x)
 --       | otherwise = pure ()
 
-createCnonbranching_terms :: Int -> Vector NonbranchingTerm -> IO (Ptr Cnonbranching_terms)
-createCnonbranching_terms numberBits terms
-  | G.null terms = pure nullPtr
-  | otherwise = do
-      let numberTerms = G.length terms
-          numberWords = (numberBits + 63) `div` 64
-      -- NOTE: the following is not exception-safe :/
-      -- TODO: fix it
-      vPtr <- mallocBytes (numberTerms * sizeOf (undefined :: Cscalar))
-      let mkArray = mallocBytes (numberTerms * numberWords * sizeOf (undefined :: Word64))
-      mPtr <- mkArray
-      lPtr <- mkArray
-      rPtr <- mkArray
-      xPtr <- mkArray
-      sPtr <- mkArray
-      loopM 0 (< numberTerms) (+ 1) $ \i -> do
-        let (NonbranchingTerm v m l r x s) = (G.!) terms i
-        pokeElemOff vPtr i (toComplexDouble v)
-        writeBitString numberWords (P.advancePtr mPtr (i * numberWords)) m
-        writeBitString numberWords (P.advancePtr lPtr (i * numberWords)) l
-        writeBitString numberWords (P.advancePtr rPtr (i * numberWords)) r
-        writeBitString numberWords (P.advancePtr xPtr (i * numberWords)) x
-        writeBitString numberWords (P.advancePtr sPtr (i * numberWords)) s
-      let c_terms = Cnonbranching_terms (fromIntegral numberTerms) (fromIntegral numberBits) vPtr mPtr lPtr rPtr xPtr sPtr
-      p <- malloc
-      poke p c_terms
-      pure p
+-- createCnonbranching_terms :: Int -> Vector NonbranchingTerm -> IO (Ptr Cnonbranching_terms)
+-- createCnonbranching_terms numberBits terms
+--   | G.null terms = pure nullPtr
+--   | otherwise = do
+--       let numberTerms = G.length terms
+--           numberWords = (numberBits + 63) `div` 64
+--       -- NOTE: the following is not exception-safe :/
+--       -- TODO: fix it
+--       vPtr <- mallocBytes (numberTerms * sizeOf (undefined :: Cscalar))
+--       let mkArray = mallocBytes (numberTerms * numberWords * sizeOf (undefined :: Word64))
+--       mPtr <- mkArray
+--       lPtr <- mkArray
+--       rPtr <- mkArray
+--       xPtr <- mkArray
+--       sPtr <- mkArray
+--       loopM 0 (< numberTerms) (+ 1) $ \i -> do
+--         let (NonbranchingTerm v m l r x s) = (G.!) terms i
+--         pokeElemOff vPtr i (toComplexDouble v)
+--         writeBitString numberWords (P.advancePtr mPtr (i * numberWords)) m
+--         writeBitString numberWords (P.advancePtr lPtr (i * numberWords)) l
+--         writeBitString numberWords (P.advancePtr rPtr (i * numberWords)) r
+--         writeBitString numberWords (P.advancePtr xPtr (i * numberWords)) x
+--         writeBitString numberWords (P.advancePtr sPtr (i * numberWords)) s
+--       let c_terms = Cnonbranching_terms (fromIntegral numberTerms) (fromIntegral numberBits) vPtr mPtr lPtr rPtr xPtr sPtr
+--       p <- malloc
+--       poke p c_terms
+--       pure p
+--
+-- destroyCnonbranching_terms :: Ptr Cnonbranching_terms -> IO ()
+-- destroyCnonbranching_terms p
+--   | p /= nullPtr = do
+--       Cnonbranching_terms _ _ vPtr mPtr lPtr rPtr xPtr sPtr <- peek p
+--       free vPtr
+--       free mPtr
+--       free lPtr
+--       free rPtr
+--       free xPtr
+--       free sPtr
+--       free p
+--   | otherwise = pure ()
 
-destroyCnonbranching_terms :: Ptr Cnonbranching_terms -> IO ()
-destroyCnonbranching_terms p
-  | p /= nullPtr = do
-      Cnonbranching_terms _ _ vPtr mPtr lPtr rPtr xPtr sPtr <- peek p
-      free vPtr
-      free mPtr
-      free lPtr
-      free rPtr
-      free xPtr
-      free sPtr
-      free p
-  | otherwise = pure ()
-
-newCoperator :: (IsBasis t, HasCallStack) => Maybe (Ptr Cbasis) -> Operator t -> IO (Ptr Coperator)
-newCoperator maybeBasisPtr x = do
-  let (diag, offDiag) = G.partition nbtIsDiagonal (getNonbranchingTerms x)
-      numberBits = getNumberBits . opBasis $ x
-  diag_terms <- createCnonbranching_terms numberBits diag
-  off_diag_terms <- createCnonbranching_terms numberBits offDiag
-  basis <- case maybeBasisPtr of
-    Just p -> cloneCbasis p
-    Nothing -> newCbasis (opBasis x)
-  payload <- newStablePtr (SomeOperator (getParticleTag . opBasis $ x) x)
-  new $
-    Coperator
-      { coperator_refcount = AtomicCInt 1
-      , coperator_basis = basis
-      , coperator_off_diag_terms = off_diag_terms
-      , coperator_diag_terms = diag_terms
-      , -- coperator_apply_off_diag_cxt = nullPtr,
-        -- coperator_apply_diag_cxt = nullPtr,
-        coperator_haskell_payload = castStablePtrToPtr payload
-      }
+-- newCoperator :: (IsBasis t, HasCallStack) => Maybe (Ptr Cbasis) -> Operator t -> IO (Ptr Coperator)
+-- newCoperator maybeBasisPtr x = do
+--   let (diag, offDiag) = G.partition nbtIsDiagonal (getNonbranchingTerms x)
+--       numberBits = getNumberBits . opBasis $ x
+--   diag_terms <- createCnonbranching_terms numberBits diag
+--   off_diag_terms <- createCnonbranching_terms numberBits offDiag
+--   basis <- case maybeBasisPtr of
+--     Just p -> cloneCbasis p
+--     Nothing -> newCbasis (opBasis x)
+--   payload <- newStablePtr (SomeOperator (getParticleTag . opBasis $ x) x)
+--   new $
+--     Coperator
+--       { coperator_refcount = AtomicCInt 1
+--       , coperator_basis = basis
+--       , coperator_off_diag_terms = off_diag_terms
+--       , coperator_diag_terms = diag_terms
+--       , -- coperator_apply_off_diag_cxt = nullPtr,
+--         -- coperator_apply_diag_cxt = nullPtr,
+--         coperator_haskell_payload = castStablePtrToPtr payload
+--       }
 
 withCoperator :: Ptr Coperator -> (SomeOperator -> IO a) -> IO a
-withCoperator p f = f =<< (deRefStablePtr . castPtrToStablePtr . coperator_haskell_payload) =<< peek p
+withCoperator p f =
+  f
+    =<< (deRefStablePtr . castPtrToStablePtr)
+    =<< [CU.exp| void* { $(ls_hs_operator* p)->base.haskell_payload } |]
 
-cloneCoperator :: (HasCallStack) => Ptr Coperator -> IO (Ptr Coperator)
-cloneCoperator p = do
-  _ <- operatorIncRefCount p
-  pure p
+-- cloneCoperator :: (HasCallStack) => Ptr Coperator -> IO (Ptr Coperator)
+-- cloneCoperator p = do
+--   _ <- operatorIncRefCount p
+--   pure p
+--
+-- destroyCoperator :: (HasCallStack) => Ptr Coperator -> IO ()
+-- destroyCoperator p = do
+--   refcount <- operatorDecRefCount p
+--   when (refcount == 1) $ do
+--     x <- peek p
+--     destroyCbasis (coperator_basis x)
+--     destroyCnonbranching_terms (coperator_off_diag_terms x)
+--     destroyCnonbranching_terms (coperator_diag_terms x)
+--     freeStablePtr . castPtrToStablePtr $ coperator_haskell_payload x
+--     free p
 
-destroyCoperator :: (HasCallStack) => Ptr Coperator -> IO ()
-destroyCoperator p = do
-  refcount <- operatorDecRefCount p
-  when (refcount == 1) $ do
-    x <- peek p
-    destroyCbasis (coperator_basis x)
-    destroyCnonbranching_terms (coperator_off_diag_terms x)
-    destroyCnonbranching_terms (coperator_diag_terms x)
-    freeStablePtr . castPtrToStablePtr $ coperator_haskell_payload x
-    free p
+-- maxNumberOffDiag :: IsBasis t => Operator t -> Int
+-- maxNumberOffDiag op = Set.size $ Set.fromList . G.toList . G.map nbtX $ offDiag
+--   where
+--     (_, offDiag) = G.partition nbtIsDiagonal (getNonbranchingTerms op)
 
-maxNumberOffDiag :: (IsBasis t) => Operator t -> Int
-maxNumberOffDiag op = Set.size $ Set.fromList . G.toList . G.map nbtX $ offDiag
-  where
-    (_, offDiag) = G.partition nbtIsDiagonal (getNonbranchingTerms op)
-
-operatorToHypergraph :: (IsBasis t) => Operator t -> Hypergraph Int
-operatorToHypergraph (Operator basis expr) = flattenHypergraph $ exprToHypergraph expr
-  where
-    flattenHypergraph (Hypergraph vertices hyperedges) =
-      Hypergraph
-        (Set.map (flattenIndex basis) vertices)
-        (Set.map (Set.map (flattenIndex basis)) hyperedges)
-
-applyPermutation :: (IsBasis t) => Permutation -> Operator t -> Operator t
-applyPermutation (unPermutation -> p) (Operator basis expr) =
-  Operator basis . simplifyExpr $ mapIndices remap expr
-  where
-    remap i = unFlattenIndex basis $ p G.! flattenIndex basis i
-
-isInvariant :: (IsBasis t) => Operator t -> Permutation -> Bool
-isInvariant operator permutation =
-  (applyPermutation permutation operator).opTerms == operator.opTerms
-
-operatorSymmetryGroup :: (IsBasis t) => Operator t -> PermutationGroup
-operatorSymmetryGroup operator = hypergraphAutomorphisms (isInvariant operator) . operatorToHypergraph $ operator
-
-operatorAbelianRepresentations :: (IsBasis t) => Operator t -> [Vector Symmetry]
-operatorAbelianRepresentations operator = abelianRepresentations g (mkMultiplicationTable g)
-  where
-    g = operatorSymmetryGroup operator
+-- operatorToHypergraph :: IsBasis t => Operator t -> Hypergraph Int
+-- operatorToHypergraph (Operator basis expr) = flattenHypergraph $ exprToHypergraph expr
+--   where
+--     flattenHypergraph (Hypergraph vertices hyperedges) =
+--       Hypergraph
+--         (Set.map (flattenIndex basis) vertices)
+--         (Set.map (Set.map (flattenIndex basis)) hyperedges)
+--
+-- applyPermutation :: IsBasis t => Permutation -> Operator t -> Operator t
+-- applyPermutation (unPermutation -> p) (Operator basis expr) =
+--   Operator basis . simplifyExpr $ mapIndices remap expr
+--   where
+--     remap i = unFlattenIndex basis $ p G.! flattenIndex basis i
+--
+-- isInvariant :: IsBasis t => Operator t -> Permutation -> Bool
+-- isInvariant operator permutation =
+--   (applyPermutation permutation operator).opTerms == operator.opTerms
+--
+-- operatorSymmetryGroup :: IsBasis t => Operator t -> PermutationGroup
+-- operatorSymmetryGroup operator = hypergraphAutomorphisms (isInvariant operator) . operatorToHypergraph $ operator
+--
+-- operatorAbelianRepresentations :: IsBasis t => Operator t -> [Vector Symmetry]
+-- operatorAbelianRepresentations operator = abelianRepresentations g (mkMultiplicationTable g)
+--   where
+--     g = operatorSymmetryGroup operator

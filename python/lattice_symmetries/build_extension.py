@@ -1,5 +1,6 @@
 from cffi import FFI
 
+
 def get_generated_declarations():
     with open("lattice_symmetries/extracted_declarations.h", "r") as f:
         return f.read()
@@ -33,8 +34,11 @@ static void set_python_exception_handler() {
     ls_hs_set_exception_handler(&python_exception_handler);
 }
 """,
-    extra_compile_args=["-Wall", "-Wextra"],
-    libraries=["lattice_symmetries_chapel", "lattice_symmetries_haskell"],
+    extra_compile_args=["-Wall", "-Wextra", "-DPYTHON_CFFI=1"],
+    libraries=[
+        # "lattice_symmetries_chapel",
+        "lattice_symmetries_haskell"
+    ],
 )
 
 if __name__ == "__main__":

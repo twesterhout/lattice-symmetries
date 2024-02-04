@@ -12,3 +12,10 @@ result
 
 .nixie
 result
+chapel/bin
+chapel/src/FFI.chpl
+python/lattice_symmetries/extracted_declarations.h
+.envrc
+haskell/lattice_symmetries_functions.h
+result
+result-*

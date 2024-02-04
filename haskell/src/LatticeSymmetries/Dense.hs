@@ -14,7 +14,7 @@ module LatticeSymmetries.Dense
   )
 where
 
-import Data.Vector.Generic ((!))
+import Data.Aeson (ToJSON (toJSON))
 import Data.Vector.Generic qualified as G
 import GHC.Exts qualified as GHC (IsList (..))
 
@@ -29,6 +29,9 @@ data DenseMatrix v a = DenseMatrix
   }
   deriving stock (Show, Eq, Generic)
   deriving anyclass (NFData)
+
+instance (G.Vector v a, ToJSON a) => ToJSON (DenseMatrix v a) where
+  toJSON m = toJSON (denseMatrixToList m)
 
 -- | Get matrix shape
 dmShape :: DenseMatrix v a -> (Int, Int)
@@ -53,14 +56,14 @@ denseMatrixFromList rs
       (r : _) -> length r
     elements = G.fromListN (nRows * nCols) $ mconcat rs
 
-denseMatrixToList :: (G.Vector v a) => DenseMatrix v a -> [[a]]
+denseMatrixToList :: G.Vector v a => DenseMatrix v a -> [[a]]
 denseMatrixToList (DenseMatrix nRows nCols v) = go 0 (G.toList v)
   where
     go !i elements
       | i < nRows = let (row, rest) = splitAt nCols elements in row : go (i + 1) rest
       | otherwise = []
 
-instance (G.Vector v a) => GHC.IsList (DenseMatrix v a) where
+instance G.Vector v a => GHC.IsList (DenseMatrix v a) where
   type Item (DenseMatrix v a) = [a]
   fromList = denseMatrixFromList
   toList = denseMatrixToList
@@ -86,11 +89,11 @@ indexDenseMatrix m@(DenseMatrix nRows nCols _) (i, j)
   | i < nRows && j < nCols = unsafeIndexDenseMatrix m (i, j)
   | otherwise = error $ "invalid index " <> show (i, j) <> " for a matrix of shape " <> show (nRows, nCols)
 
-generateDenseMatrix :: (G.Vector v a) => Int -> Int -> (Int -> Int -> a) -> DenseMatrix v a
+generateDenseMatrix :: G.Vector v a => Int -> Int -> (Int -> Int -> a) -> DenseMatrix v a
 generateDenseMatrix nRows nCols f =
-  DenseMatrix nRows nCols $
-    G.generate (nRows * nCols) $
-      \k -> let (!i, !j) = k `divMod` nCols in f i j
+  DenseMatrix nRows nCols
+    $ G.generate (nRows * nCols)
+    $ \k -> let (!i, !j) = k `divMod` nCols in f i j
 
 -- extractDiagonal :: (HasCallStack, G.Vector v a, G.Vector v Int) => DenseMatrix v a -> v a
 -- extractDiagonal m@(DenseMatrix nRows nCols _)

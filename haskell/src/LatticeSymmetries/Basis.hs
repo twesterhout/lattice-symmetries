@@ -1,16 +1,18 @@
--- {-# LANGUAGE CApiFFI #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeOperators #-}
 
 module LatticeSymmetries.Basis
   ( -- * High-level interface
-    ParticleTy (..)
-  , BasisState (..)
+    BasisState (..)
   , Basis (..)
   -- BasisHeader (..),
   , SpinfulOccupation (..)
@@ -41,33 +43,39 @@ module LatticeSymmetries.Basis
   , requiresProjection
   , getParticleTag
   , isBasisReal
-  , fixedHammingStateToIndex
-  , fixedHammingIndexToState
 
     -- ** Low-level interface
-  , Cbasis (..)
+  , newCbasis
+  , ls_hs_basis_from_json
+  , ls_hs_basis_to_json
+  , ls_hs_destroy_basis
+  , ls_hs_init_basis_info
+  , ls_hs_init_is_representative_kernel
+  , ls_hs_init_state_info_kernel
+  , ls_hs_init_state_to_index_kernel
+  -- , Cbasis (..)
   -- basisFromYAML,
   -- objectFromYAML,
   -- Factor,
   -- borrowCbasis,
-  , newCbasis
-  , cloneCbasis
-  , destroyCbasis
+  -- , newCbasis
+  -- , cloneCbasis
+  -- , destroyCbasis
   , withCbasis
   -- Cparticle_type (..),
   -- Cbasis_kernels (..),
   -- createCbasis_kernels,
   -- destroyCbasis_kernels,
   -- stateIndex,
-  , flattenIndex
-  , unFlattenIndex
+  -- , flattenIndex
+  -- , unFlattenIndex
   , matchParticleType2
   -- withParticleType,
   -- withReconstructedBasis,
   )
 where
 
-import Control.Exception.Safe (bracket)
+import Control.Monad.ST
 import Data.Aeson
 import Data.Aeson.Types (Pair)
 import Data.Bits
@@ -76,138 +84,29 @@ import Data.Vector.Generic qualified as G
 import Data.Vector.Generic.Mutable qualified as GM
 import Data.Vector.Unboxed qualified as U
 import Data.Yaml.Aeson
+import Foreign (fromBool)
+import Foreign.C (CString)
 import Foreign.C.Types
 import Foreign.Marshal.Alloc
-import Foreign.Marshal.Utils (fromBool, new, with)
 import Foreign.Ptr
 import Foreign.StablePtr
-import Foreign.Storable
-import LatticeSymmetries.Algebra (Algebra (..))
+import Language.C.Inline.Unsafe qualified as CU
+import LatticeSymmetries.Algebra
 import LatticeSymmetries.BitString
+import LatticeSymmetries.Context
 import LatticeSymmetries.Dense
 import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
 import LatticeSymmetries.Group
+import LatticeSymmetries.Lowering
+import LatticeSymmetries.Permutation (Permutation)
 import LatticeSymmetries.Utils
-import Prettyprinter (Doc, Pretty (..))
-import System.IO.Unsafe (unsafePerformIO)
-import Type.Reflection
 import Prelude hiding (state)
 
--- | Hilbert space basis vector parametrized by the particle type.
-data BasisState (t :: ParticleTy) = BasisState {-# UNPACK #-} !Int !BitString
-  deriving stock (Show, Eq, Ord)
-
-unsafeCastBasisState :: BasisState t1 -> BasisState t2
-unsafeCastBasisState (BasisState n bits) = BasisState n bits
-
-prettyBitString :: Int -> Integer -> Doc ann
-prettyBitString n bits = mconcat $ prettyBool . testBit bits <$> reverse [0 .. n - 1]
-  where
-    prettyBool True = "1"
-    prettyBool False = "0"
-
-matchParticleType2
-  :: forall (t1 :: ParticleTy) (t2 :: ParticleTy) proxy1 proxy2
-   . (Typeable t1, Typeable t2)
-  => proxy1 t1
-  -> proxy2 t2
-  -> Maybe (t1 :~~: t2)
-matchParticleType2 _ _ = case eqTypeRep (typeRep @t1) (typeRep @t2) of
-  Just HRefl -> Just HRefl
-  Nothing -> Nothing
-
-instance (Typeable t) => Pretty (BasisState t) where
-  pretty x =
-    case particleDispatch @t of
-      SpinTag -> prettySpin x
-      SpinfulFermionTag -> prettyFermion x
-      SpinlessFermionTag ->
-        let (BasisState n bits) = x
-         in prettySpin (BasisState n bits :: BasisState 'SpinTy)
-    where
-      prettySpin (BasisState n bits) = "|" <> prettyBitString n (unBitString bits) <> "⟩"
-      prettyFermion (BasisState n bits) =
-        let up = unBitString bits `shiftR` (n `div` 2)
-         in mconcat
-              [ "|"
-              , prettyBitString (n `div` 2) up
-              , "⟩"
-              , "|"
-              , prettyBitString (n `div` 2) (unBitString bits)
-              , "⟩"
-              ]
-
--- instance Pretty (BasisState 'SpinTy) where
---   pretty (BasisState n bits) = "|" <> prettyBitString n (unBitString bits) <> "⟩"
---
--- instance Pretty (BasisState 'SpinfulFermionTy)
---
--- instance Pretty (BasisState 'SpinlessFermionTy) where
---   pretty (BasisState n bits) = pretty (BasisState n bits :: BasisState 'SpinTy)
-
--- instance Typeable t => Pretty (BasisState t) where
---   pretty (BasisState n bits)
---     | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinTy) =
---         "|" <> prettyBitString n (unBitString bits) <> "⟩"
---     | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinfulFermionTy) =
---         let up = unBitString bits `shiftR` (n `div` 2)
---          in mconcat
---               [ "|",
---                 prettyBitString (n `div` 2) up,
---                 "⟩",
---                 "|",
---                 prettyBitString (n `div` 2) (unBitString bits),
---                 "⟩"
---               ]
---     | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinlessFermionTy) =
---         pretty (BasisState n bits :: BasisState 'SpinTy)
---     | otherwise = error "this cannot happen by construction"
-
-class
-  ( -- Enum (GeneratorType t),
-    -- Bounded (GeneratorType t),
-    -- HasMatrixRepresentation (GeneratorType t),
-    -- HasNonbranchingRepresentation (Generator Int (GeneratorType t)),
-    Typeable t
-  , Algebra (GeneratorType t)
-  , Pretty (Generator (IndexType t) (GeneratorType t))
-  , HasProperGeneratorType t
-  , HasProperIndexType t
-  -- Ord (IndexType t),
-  -- HasSiteIndex (IndexType t),
-  -- Pretty (IndexType t),
-  -- Pretty (GeneratorType t),
-  -- Pretty (BasisState t),
-  -- HasSiteIndex (IndexType t),
-  ) =>
-  IsBasis t
-
-instance IsBasis 'SpinTy
-
-instance IsBasis 'SpinfulFermionTy
-
-instance IsBasis 'SpinlessFermionTy
-
--- isBasisDict :: proxy (t :: ParticleTy) -> Dict (IsBasis t)
--- isBasisDict _
---   | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinTy) =
---     "|" <> prettyBitString n (unBitString bits) <> "⟩"
---   | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinfulFermionTy) =
---     let up = unBitString bits `shiftR` (n `div` 2)
---      in mconcat
---           [ "|",
---             prettyBitString (n `div` 2) up,
---             "⟩",
---             "|",
---             prettyBitString (n `div` 2) (unBitString bits),
---             "⟩"
---           ]
---   | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinlessFermionTy) =
---     pretty (BasisState n bits :: BasisState 'SpinTy)
+importLS
 
 data Basis (t :: ParticleTy) where
-  SpinBasis :: !Int -> !(Maybe Int) -> !(Maybe Int) -> !Symmetries -> Basis 'SpinTy
+  SpinBasis :: !Int -> !(Maybe Int) -> !(Maybe Int) -> !(Representation Permutation) -> Basis 'SpinTy
   SpinfulFermionBasis :: !Int -> !SpinfulOccupation -> Basis 'SpinfulFermionTy
   SpinlessFermionBasis :: !Int -> !(Maybe Int) -> Basis 'SpinlessFermionTy
 
@@ -215,35 +114,32 @@ deriving stock instance Show (Basis t)
 
 deriving stock instance Eq (Basis t)
 
--- data Basis t = Basis
---   { basisHeader :: !(BasisHeader t),
---     basisContents :: !(ForeignPtr Cbasis)
---   }
---   deriving stock (Show)
-
 data SomeBasis where
-  SomeBasis :: (IsBasis t) => Basis t -> SomeBasis
-
--- data SomeBasis where
---   SomeBasis :: IsBasis t => Basis t -> SomeBasis
+  SomeBasis :: IsBasis t => Basis t -> SomeBasis
 
 deriving stock instance Show SomeBasis
 
 instance Eq SomeBasis where
   (==) (SomeBasis a@(SpinBasis {})) (SomeBasis b@(SpinBasis {})) = a == b
-  (==) (SomeBasis (SpinBasis {})) (SomeBasis _) = False
-  (==) (SomeBasis a@(SpinfulFermionBasis _ _)) (SomeBasis b@(SpinfulFermionBasis _ _)) = a == b
-  (==) (SomeBasis (SpinfulFermionBasis _ _)) (SomeBasis _) = False
-  (==) (SomeBasis a@(SpinlessFermionBasis _ _)) (SomeBasis b@(SpinlessFermionBasis _ _)) = a == b
-  (==) (SomeBasis (SpinlessFermionBasis _ _)) (SomeBasis _) = False
+  (==) (SomeBasis a@(SpinfulFermionBasis {})) (SomeBasis b@(SpinfulFermionBasis {})) = a == b
+  (==) (SomeBasis a@(SpinlessFermionBasis {})) (SomeBasis b@(SpinlessFermionBasis {})) = a == b
+  (==) _ _ = False
 
-withSomeBasis :: SomeBasis -> (forall t. (IsBasis t) => Basis t -> a) -> a
+withSomeBasis :: SomeBasis -> (forall t. IsBasis t => Basis t -> a) -> a
 withSomeBasis x f = case x of SomeBasis basis -> f basis
 {-# INLINE withSomeBasis #-}
 
-foldSomeBasis :: (forall t. (IsBasis t) => Basis t -> a) -> SomeBasis -> a
+foldSomeBasis :: (forall t. IsBasis t => Basis t -> a) -> SomeBasis -> a
 foldSomeBasis f x = withSomeBasis x f
 {-# INLINE foldSomeBasis #-}
+
+-- mapSomeBasisM :: Monad m => (forall t. IsBasis t => Basis t -> m (Basis t)) -> SomeBasis -> m SomeBasis
+-- mapSomeBasisM f x = case x of SomeBasis basis -> SomeBasis <$> f basis
+-- {-# INLINE mapSomeBasisM #-}
+
+-- mapSomeBasis :: (forall t. IsBasis t => Basis t -> Basis t) -> SomeBasis -> SomeBasis
+-- mapSomeBasis f x = case x of SomeBasis basis -> SomeBasis (f basis)
+-- {-# INLINE mapSomeBasis #-}
 
 -- withSomeBasisHeader :: SomeBasisHeader -> (forall t. IsBasis t => BasisHeader t -> a) -> a
 -- withSomeBasisHeader x f = case x of
@@ -292,11 +188,12 @@ basisHeaderToJSON x
         , "number_spins" .= n
         , "hamming_weight" .= h
         , "spin_inversion" .= i
-        , "symmetries" .= g.symmOriginal
+        , "symmetries" .= unRepresentation g
         ]
   | (SpinfulFermionBasis n o) <- x =
       object $
-        ["particle" .= SpinfulFermionTy, "number_sites" .= n] <> encodeSpinfulOccupation o
+        ["particle" .= SpinfulFermionTy, "number_sites" .= n]
+          <> encodeSpinfulOccupation o
   | (SpinlessFermionBasis n o) <- x =
       object
         ["particle" .= SpinlessFermionTy, "number_sites" .= n, "number_particles" .= o]
@@ -305,29 +202,35 @@ basisHeaderFromJSON :: Value -> Parser SomeBasis
 basisHeaderFromJSON = withObject "Basis" $ \v -> do
   tp <- v .:! "particle" .!= SpinTy
   case tp of
-    SpinTy ->
-      fmap SomeBasis . join $
-        mkSpinHeader
+    SpinTy -> do
+      g <- eitherToParser . fromGenerators =<< (v .:! "symmetries" .!= [])
+      fmap SomeBasis
+        . join
+        $ mkSpinHeader
           <$> (v .: "number_spins")
           <*> (v .:? "hamming_weight")
           <*> (v .:? "spin_inversion")
-          <*> (eitherToParser . fmap compileGroupRepresentation . groupRepresentationFromGenerators =<< (v .:! "symmetries" .!= []))
+          <*> pure g
     SpinlessFermionTy ->
       fmap SomeBasis $
-        SpinlessFermionBasis <$> (v .: "number_sites") <*> (v .:? "number_particles")
+        SpinlessFermionBasis
+          <$> (v .: "number_sites")
+          <*> (v .:? "number_particles")
     SpinfulFermionTy ->
       fmap SomeBasis $
-        SpinfulFermionBasis <$> (v .: "number_sites") <*> parseSpinfulOccupation v
+        SpinfulFermionBasis
+          <$> (v .: "number_sites")
+          <*> parseSpinfulOccupation v
 
 mkSpinHeader
-  :: (MonadFail m)
+  :: MonadFail m
   => Int
   -- ^ Number of sites
   -> Maybe Int
   -- ^ Hamming weight
   -> Maybe Int
   -- ^ Spin inversion
-  -> Symmetries
+  -> Representation Permutation
   -- ^ Lattice symmetries
   -> m (Basis 'SpinTy)
 mkSpinHeader n _ _ _
@@ -336,8 +239,8 @@ mkSpinHeader n (Just h) _ _
   | h < 0 || h > n = fail $ "invalid Hamming weight: " <> show h
 mkSpinHeader _ _ (Just i) _
   | i /= (-1) && i /= 1 = fail $ "invalid spin inversion: " <> show i
-mkSpinHeader n (Just h) (Just _) _
-  | n /= 2 * h = fail $ "invalid spin inversion: " <> show n <> " spins, but Hamming weight is " <> show h
+mkSpinHeader n (Just h) (Just k) _
+  | n /= 2 * h = fail $ "invalid spin inversion: " <> show k <> "; " <> show n <> " spins, but the Hamming weight is " <> show h
 mkSpinHeader n _ _ g
   | maybe False (/= n) g.numberBits = fail "invalid symmetries"
 -- If the user didn't specify a Hamming weight, but did specify spin inversion,
@@ -485,71 +388,6 @@ data SpinfulOccupation
 
 -- data Representatives = Representatives {rStates :: !ChapelArray}
 
-computeBinomials :: IO (DenseMatrix U.Vector Word64)
-computeBinomials = do
-  coeff <- GM.replicate (dim * dim) 0
-  GM.write coeff 0 1
-  loopM 1 (< dim) (+ 1) $ \n -> do
-    GM.write coeff (n * dim) 1
-    loopM 1 (<= n) (+ 1) $ \k ->
-      GM.write coeff (n * dim + k)
-        =<< (+)
-          <$> GM.read coeff ((n - 1) * dim + k - 1)
-          <*> GM.read coeff ((n - 1) * dim + k)
-  DenseMatrix dim dim <$> G.unsafeFreeze coeff
-  where
-    dim = 64
-
-binomialsCache :: DenseMatrix U.Vector Word64
-binomialsCache = unsafePerformIO computeBinomials
-{-# NOINLINE binomialsCache #-}
-
-binomial :: Int -> Int -> Maybe Int
-binomial n k
-  | n <= 0 || k > n = Just 0
-  | otherwise = toIntegralSized $ indexDenseMatrix binomialsCache (n, k)
-
--- binomial :: Int -> Int -> Maybe Int
--- binomial n k
---   | n <= 0 || k > n = Just 0
---   | otherwise = toIntegralSized $ factorial n `div` factorial (n - k) `div` factorial k
---   where
---     factorial :: Int -> Integer
---     factorial x = product ([1 .. fromIntegral x] :: [Integer])
-
-fixedHammingStateToIndex :: Word64 -> Int
-fixedHammingStateToIndex = go 0 1
-  where
-    go !i !k !α
-      | α /= 0 =
-          let c = countTrailingZeros α
-              α' = α .&. (α - 1)
-              i' = i + Data.Maybe.fromJust (binomial c k)
-           in go i' (k + 1) α'
-      | otherwise = i
-
-fixedHammingIndexToState :: Int -> Int -> Word64
-fixedHammingIndexToState hammingWeight = go hammingWeight 0
-  where
-    go !i !state !index
-      | i <= 0 = state
-      | otherwise = go (i - 1) state' index'
-      where
-        (c, contribution) = inner index i (i - 1) 0
-        -- (Data.Maybe.fromJust (binomial c i))
-        state' = state .|. bit c
-        index' = index - contribution
-    inner !index !i !c !contribution
-      | c >= numberBits = (c, contribution)
-      | otherwise =
-          if contribution' > index
-            then (c, contribution)
-            else inner index i c' contribution'
-      where
-        numberBits = 64
-        c' = c + 1
-        contribution' = Data.Maybe.fromJust (binomial c' i)
-
 -- uint64_t
 -- ls_hs_combinadics_index_to_state(ptrdiff_t index, int const hamming_weight,
 --                                  ls_hs_combinadics_kernel_data const *cache) {
@@ -619,22 +457,22 @@ fixedHammingIndexToState hammingWeight = go hammingWeight 0
 --                 else pure $ Just (fromIntegral i)
 --   | otherwise = Nothing
 
-flattenIndex :: Basis t -> IndexType t -> Int
-flattenIndex basis i = case basis of
-  SpinBasis {} -> i
-  SpinfulFermionBasis n _ ->
-    case i of
-      (SpinUp, k) -> k
-      (SpinDown, k) -> n + k
-  SpinlessFermionBasis _ _ -> i
+-- flattenIndex :: Basis t -> IndexType t -> Int
+-- flattenIndex basis i = case basis of
+--   SpinBasis {} -> i
+--   SpinfulFermionBasis n _ ->
+--     case i of
+--       (SpinUp, k) -> k
+--       (SpinDown, k) -> n + k
+--   SpinlessFermionBasis _ _ -> i
 
-unFlattenIndex :: Basis t -> Int -> IndexType t
-unFlattenIndex basis i = case basis of
-  SpinBasis {} -> i
-  SpinlessFermionBasis {} -> i
-  SpinfulFermionBasis n _
-    | i >= n -> (SpinDown, i - n)
-    | otherwise -> (SpinUp, i)
+-- unFlattenIndex :: Basis t -> Int -> IndexType t
+-- unFlattenIndex basis i = case basis of
+--   SpinBasis {} -> i
+--   SpinlessFermionBasis {} -> i
+--   SpinfulFermionBasis n _
+--     | i >= n -> (SpinDown, i - n)
+--     | otherwise -> (SpinUp, i)
 
 getNumberSites :: Basis t -> Int
 getNumberSites x = case x of
@@ -678,12 +516,12 @@ getNumberUp x = case x of
   SpinlessFermionBasis _ _ -> Nothing
 {-# INLINE getNumberUp #-}
 
-getParticleType :: Basis t -> Cparticle_type
-getParticleType x = case x of
-  SpinBasis {} -> c_LS_HS_SPIN
-  SpinfulFermionBasis {} -> c_LS_HS_SPINFUL_FERMION
-  SpinlessFermionBasis {} -> c_LS_HS_SPINLESS_FERMION
-{-# INLINE getParticleType #-}
+-- getParticleType :: Basis t -> Cparticle_type
+-- getParticleType x = case x of
+--   SpinBasis {} -> c_LS_HS_SPIN
+--   SpinfulFermionBasis {} -> c_LS_HS_SPINFUL_FERMION
+--   SpinlessFermionBasis {} -> c_LS_HS_SPINLESS_FERMION
+-- {-# INLINE getParticleType #-}
 
 getSpinInversion :: Basis t -> Maybe Int
 getSpinInversion x = case x of
@@ -701,7 +539,7 @@ getParticleTag x = case x of
 
 isStateIndexIdentity :: Basis t -> Bool
 isStateIndexIdentity x = case x of
-  SpinBasis _ Nothing Nothing g -> nullSymmetries g
+  SpinBasis _ Nothing Nothing g -> G.null (unRepresentation g)
   SpinfulFermionBasis _ SpinfulNoOccupation -> True
   SpinlessFermionBasis _ Nothing -> True
   _ -> False
@@ -719,7 +557,7 @@ hasSpinInversionSymmetry x = case x of
 
 hasPermutationSymmetries :: Basis t -> Bool
 hasPermutationSymmetries x = case x of
-  SpinBasis _ _ _ g -> not (nullSymmetries g)
+  SpinBasis _ _ _ g -> not (G.null (unRepresentation g))
   _ -> False
 {-# INLINE hasPermutationSymmetries #-}
 
@@ -732,11 +570,20 @@ hasFixedHammingWeight x = case x of
   _ -> False
 {-# INLINE hasFixedHammingWeight #-}
 
+getHammingWeight :: Basis t -> Maybe Int
+getHammingWeight x = case x of
+  SpinBasis _ h _ _ -> h
+  SpinfulFermionBasis _ (SpinfulTotalParticles n) -> Just n
+  SpinfulFermionBasis _ (SpinfulPerSector u d) -> Just (u + d)
+  SpinlessFermionBasis _ (Just n) -> Just n
+  _ -> Nothing
+
 maxStateEstimate :: Basis t -> BasisState t
 maxStateEstimate x = case x of
   SpinBasis n (Just h) i _ ->
-    BasisState n . BitString $
-      if isNothing i
+    BasisState n
+      . BitString
+      $ if isNothing i
         then (bit h - 1) `shiftL` (n - h)
         else (bit h - 1) `shiftL` (n - h - 1)
   -- TODO: improve the bound for fixed spin inversion
@@ -753,7 +600,7 @@ maxStateEstimate x = case x of
      in BasisState (2 * n) $ (minUp `shiftL` n) .|. minDown
   SpinlessFermionBasis n p ->
     unsafeCastBasisState $
-      maxStateEstimate (SpinBasis n p Nothing emptySymmetries)
+      maxStateEstimate (SpinBasis n p Nothing (Representation G.empty))
 
 minStateEstimate :: Basis t -> BasisState t
 minStateEstimate x = case x of
@@ -772,55 +619,194 @@ minStateEstimate x = case x of
      in BasisState (2 * n) $ (minUp `shiftL` n) .|. minDown
   SpinlessFermionBasis n p ->
     unsafeCastBasisState $
-      minStateEstimate (SpinBasis n p Nothing emptySymmetries)
+      minStateEstimate (SpinBasis n p Nothing (Representation G.empty))
 
 isBasisReal :: Basis t -> Bool
 isBasisReal x = case x of
-  SpinBasis _ _ _ g -> areSymmetriesReal g
+  SpinBasis _ _ _ g -> isRepresentationReal g
   SpinfulFermionBasis _ _ -> True
   SpinlessFermionBasis _ _ -> True
 
-optionalNatural :: Maybe Int -> CInt
-optionalNatural x = case x of
-  (Just n) -> fromIntegral n
-  Nothing -> (-1)
-{-# INLINE optionalNatural #-}
+-- optionalNatural :: Maybe Int -> CInt
+-- optionalNatural x = case x of
+--   (Just n) -> fromIntegral n
+--   Nothing -> (-1)
+-- {-# INLINE optionalNatural #-}
 
-newCbasis :: (HasCallStack) => (IsBasis t) => Basis t -> IO (Ptr Cbasis)
-newCbasis x = do
-  -- logDebug' $ "basisFromHeader" <> show x
-  -- fp <- mallocForeignPtr
-  kernels <- createCbasis_kernels x
-  payload <- newStablePtr (SomeBasis x)
-  -- addForeignPtrConcFinalizer fp (destroyCbasis_kernels kernels)
-  -- withForeignPtr fp $ \ptr ->
-  --   poke ptr $
-  new $
-    Cbasis
-      { cbasis_refcount = AtomicCInt 1
-      , cbasis_number_sites = fromIntegral (getNumberSites x)
-      , cbasis_number_particles = optionalNatural (getNumberParticles x)
-      , cbasis_number_up = optionalNatural (getNumberUp x)
-      , cbasis_particle_type = getParticleType x
-      , cbasis_spin_inversion = maybe 0 fromIntegral (getSpinInversion x)
-      , cbasis_state_index_is_identity = fromBool (isStateIndexIdentity x)
-      , cbasis_requires_projection = fromBool (requiresProjection x)
-      , cbasis_kernels = kernels
-      , cbasis_representatives = emptyExternalArray
-      , cbasis_haskell_payload = castStablePtrToPtr payload
-      }
+-- newCbasis :: HasCallStack => IsBasis t => Basis t -> IO (Ptr Cbasis)
+-- newCbasis x = do
+--   -- logDebug' $ "basisFromHeader" <> show x
+--   -- fp <- mallocForeignPtr
+--   kernels <- createCbasis_kernels x
+--   payload <- newStablePtr (SomeBasis x)
+--   -- addForeignPtrConcFinalizer fp (destroyCbasis_kernels kernels)
+--   -- withForeignPtr fp $ \ptr ->
+--   --   poke ptr $
+--   new
+--     $ Cbasis
+--       { cbasis_refcount = AtomicCInt 1
+--       , cbasis_number_sites = fromIntegral (getNumberSites x)
+--       , cbasis_number_particles = optionalNatural (getNumberParticles x)
+--       , cbasis_number_up = optionalNatural (getNumberUp x)
+--       , cbasis_particle_type = getParticleType x
+--       , cbasis_spin_inversion = maybe 0 fromIntegral (getSpinInversion x)
+--       , cbasis_state_index_is_identity = fromBool (isStateIndexIdentity x)
+--       , cbasis_requires_projection = fromBool (requiresProjection x)
+--       , cbasis_kernels = kernels
+--       , cbasis_representatives = emptyExternalArray
+--       , cbasis_haskell_payload = castStablePtrToPtr payload
+--       }
 
-foreign import ccall unsafe "ls_hs_internal_destroy_external_array"
-  ls_hs_internal_destroy_external_array :: Ptr Cexternal_array -> IO ()
+-- foreign import ccall unsafe "ls_hs_internal_destroy_external_array"
+--   ls_hs_internal_destroy_external_array :: Ptr Cexternal_array -> IO ()
 
-destroyCbasis :: (HasCallStack) => Ptr Cbasis -> IO ()
-destroyCbasis p = do
-  refcount <- basisDecRefCount p
+-- void ls_hs_destroy_basis(ls_hs_basis *basis) {
+--     LS_CHECK(basis != NULL, "trying to destroy a NULL basis");
+--     if (ls_hs_internal_object_dec_ref_count(&basis->base) == 1) {
+--         ls_hs_internal_destroy_external_array(&basis->local_representatives);
+--         ls_hs_internal_destroy_external_array(&basis->norms);
+--         ls_hs_destroy_is_representative_kernel(basis->is_representative_kernel);
+--         ls_hs_destroy_state_info_kernel(basis->is_representative_kernel);
+--         hs_free_stable_ptr(basis->haskell_payload);
+--     }
+-- }
+
+ls_hs_destroy_basis :: Ptr Cbasis -> IO ()
+ls_hs_destroy_basis p = do
+  refcount <- [CU.exp| int { ls_hs_internal_object_dec_ref_count(&$(ls_hs_basis* p)->base) } |]
   when (refcount == 1) $ do
-    x <- peek p
-    with (cbasis_representatives x) ls_hs_internal_destroy_external_array
-    destroyCbasis_kernels (cbasis_kernels x)
-    freeStablePtr . castPtrToStablePtr $ cbasis_haskell_payload x
+    [CU.block| void {
+      ls_hs_basis* p = $(ls_hs_basis* p);
+      ls_hs_internal_destroy_external_array(&p->local_representatives);
+      ls_hs_internal_destroy_external_array(&p->local_norms);
+      if (p->info != NULL) {
+        free(p->info);
+      }
+    } |]
+    destroyIsRepresentativeKernel_v2
+      =<< [CU.exp| ls_hs_is_representative_kernel_type_v2 { $(ls_hs_basis* p)->is_representative_kernel } |]
+    destroyStateInfoKernel_v2
+      =<< [CU.exp| ls_hs_state_info_kernel_type_v2 { $(ls_hs_basis* p)->state_info_kernel } |]
+    freeStablePtr . castPtrToStablePtr =<< [CU.exp| void* { $(ls_hs_basis* p)->base.haskell_payload } |]
+
+ls_hs_init_is_representative_kernel :: Ptr Cbasis -> IO ()
+ls_hs_init_is_representative_kernel basisPtr = withCbasis basisPtr $ foldSomeBasis $ \case
+  SpinBasis _numberSpins _hammingWeight spinInversion symmetries -> do
+    funPtr <- createIsRepresentativeKernel_v2 symmetries spinInversion
+    [CU.block| void {
+      $(ls_hs_basis* basisPtr)->is_representative_kernel = $(ls_hs_is_representative_kernel_type_v2 funPtr);
+    } |]
+  _ -> error "cannot build is_representative kernel for this basis type"
+
+ls_hs_init_state_info_kernel :: Ptr Cbasis -> IO ()
+ls_hs_init_state_info_kernel basisPtr = withCbasis basisPtr $ foldSomeBasis $ \case
+  SpinBasis _numberSpins _hammingWeight spinInversion symmetries -> do
+    funPtr <- createStateInfoKernel_v2 symmetries spinInversion
+    [CU.block| void {
+      $(ls_hs_basis* basisPtr)->state_info_kernel = $(ls_hs_state_info_kernel_type_v2 funPtr);
+    } |]
+  _ -> error "cannot build state_info kernel for this basis type"
+
+ls_hs_init_state_to_index_kernel :: Ptr Cbasis -> IO ()
+ls_hs_init_state_to_index_kernel basisPtr = withCbasis basisPtr $ foldSomeBasis $ \case
+  SpinBasis numberSites (Just hammingWeight) Nothing symmetries
+    | nullRepresentation symmetries -> do
+        funPtr <- createFixedHammingStateToIndexKernel numberSites hammingWeight
+        [CU.block| void {
+          $(ls_hs_basis* basisPtr)->state_to_index_kernel = $(ls_hs_state_to_index_kernel_type funPtr);
+        } |]
+  _ -> error "cannot build state_to_index kernel for this basis type"
+
+newCbasis :: IsBasis t => Basis t -> IO (Ptr Cbasis)
+newCbasis x = do
+  payload <- castStablePtrToPtr <$> newStablePtr (SomeBasis x)
+  -- NOTE: important to initialize memory to 0 such that we don't have to manually initialize fields
+  p <- callocBytes $ fromIntegral [CU.pure| size_t { sizeof(ls_hs_basis) } |]
+  [CU.block| void { ls_hs_internal_object_init(&$(ls_hs_basis* p)->base, 1, $(void* payload)); } |]
+  pure p
+
+ls_hs_init_basis_info :: Ptr Cbasis -> IO ()
+ls_hs_init_basis_info p =
+  withCbasis p $ foldSomeBasis $ \basis -> do
+    let has_permutation_symmetries = fromBool (hasPermutationSymmetries basis)
+        requires_projection = fromBool (requiresProjection basis)
+        is_state_index_identity = fromBool (isStateIndexIdentity basis)
+        is_real = fromBool (isBasisReal basis)
+        number_bits = fromIntegral (getNumberBits basis)
+        number_words = fromIntegral (getNumberWords basis)
+        number_sites = fromIntegral (getNumberSites basis)
+        number_particles = maybe (-1) fromIntegral (getNumberParticles basis)
+        hamming_weight = maybe (-1) fromIntegral (getHammingWeight basis)
+        number_up = maybe (-1) fromIntegral (getNumberUp basis)
+        spin_inversion = maybe 0 fromIntegral (getSpinInversion basis)
+        min_state_estimate = case minStateEstimate basis of
+          BasisState k (BitString n) -> if k <= 64 then fromIntegral n else minBound
+        max_state_estimate = case maxStateEstimate basis of
+          BasisState k (BitString n) -> if k <= 64 then fromIntegral n else maxBound
+    [CU.block| void {
+      ls_hs_basis* const p = $(ls_hs_basis* p);
+      if (atomic_load(&p->info) == NULL) {
+        ls_hs_basis_info* info = calloc(1, sizeof(ls_hs_basis_info));
+        // This should really never happen, but let's check anyway
+        if (info == NULL) {
+          fprintf(stderr, "ls_hs_init_basis_info: failed to allocate memory, aborting...\n");
+          abort();
+        }
+        *info = (ls_hs_basis_info){
+          .has_permutation_symmetries = $(bool has_permutation_symmetries),
+          .requires_projection = $(bool requires_projection),
+          .is_state_index_identity = $(bool is_state_index_identity),
+          .is_real = $(bool is_real),
+          .number_bits = $(int number_bits),
+          .number_words = $(int number_words),
+          .number_sites = $(int number_sites),
+          .number_particles = $(int number_particles),
+          .number_up = $(int number_up),
+          .hamming_weight = $(int hamming_weight),
+          .spin_inversion = $(int spin_inversion),
+          .min_state_estimate = $(uint64_t min_state_estimate),
+          .max_state_estimate = $(uint64_t max_state_estimate)
+        };
+
+        ls_hs_basis_info* _Atomic expected = NULL;
+        ls_hs_basis_info* _Atomic desired = info;
+        // atomic_compare_exchange_strong atomically does the following:
+        // if (p->info == expected) {
+        //   p->info = desired;
+        //   return true;
+        // }
+        // else {
+        //   expected = p->info;
+        //   return false;
+        // }
+        //
+        // In our case the return value false means that another thread beat us to constructing
+        // info, so we don't need to set p->info anymore.
+        if (!atomic_compare_exchange_strong(&p->info, &expected, desired)) {
+          if (atomic_load(&expected) == NULL) {
+            fprintf(stderr, "ls_hs_init_basis_info: this should never happen, aborting...\n");
+            abort();
+          }
+          free(info);
+        }
+      }
+    } |]
+
+ls_hs_basis_from_json :: CString -> IO CString
+ls_hs_basis_from_json = newCencoded <=< rightM (foldSomeBasis newCbasis) <=< decodeCString @SomeBasis
+
+ls_hs_basis_to_json :: Ptr Cbasis -> IO CString
+ls_hs_basis_to_json = foldCbasis newCencoded
+
+--   -- logDebug' $ "basisFromHeader" <> show x
+--   -- fp <- mallocForeignPtr
+--   kernels <- createCbasis_kernels x
+--   payload <- newStablePtr (SomeBasis x)
+--   -- addForeignPtrConcFinalizer fp (destroyCbasis_kernels kernels)
+--   -- withForeignPtr fp $ \ptr ->
+--   --   poke ptr $
+--         ls_hs_destroy_state_info_kernel(basis->is_representative_kernel);
+--         hs_free_stable_ptr(basis->haskell_payload);
 
 -- pure $ Basis x fp
 
@@ -855,13 +841,19 @@ destroyCbasis p = do
 --     basisPokePayload ptr =<< newStablePtr basis
 --   pure $ unsafeForeignPtrToPtr (basisContents basis)
 
-cloneCbasis :: (HasCallStack) => Ptr Cbasis -> IO (Ptr Cbasis)
-cloneCbasis ptr = do
-  _ <- basisIncRefCount ptr
-  pure ptr
+-- cloneCbasis :: HasCallStack => Ptr Cbasis -> IO (Ptr Cbasis)
+-- cloneCbasis ptr = do
+--   _ <- basisIncRefCount ptr
+--   pure ptr
 
 withCbasis :: Ptr Cbasis -> (SomeBasis -> IO a) -> IO a
-withCbasis p f = f =<< deRefStablePtr . castPtrToStablePtr . cbasis_haskell_payload =<< peek p
+withCbasis p f =
+  f
+    =<< (deRefStablePtr . castPtrToStablePtr)
+    =<< [CU.exp| void* { $(ls_hs_basis* p)->base.haskell_payload } |]
+
+foldCbasis :: (SomeBasis -> IO a) -> Ptr Cbasis -> IO a
+foldCbasis f p = withCbasis p f
 
 -- withForeignPtr (basisContents x) action
 -- withCbasis :: Basis t -> (Ptr Cbasis -> IO a) -> IO a
@@ -891,7 +883,7 @@ withCbasis p f = f =<< deRefStablePtr . castPtrToStablePtr . cbasis_haskell_payl
 
 -- data Ccombinadics_kernel_data
 
-data Cbinary_search_kernel_data
+-- data Cbinary_search_kernel_data
 
 -- foreign import ccall safe "lattice_symmetries_haskell.h ls_hs_internal_create_combinadics_kernel_data"
 --   ls_hs_internal_create_combinadics_kernel_data :: CInt -> CBool -> IO (Ptr Ccombinadics_kernel_data)
@@ -902,58 +894,58 @@ data Cbinary_search_kernel_data
 -- foreign import ccall safe "lattice_symmetries_haskell.h &ls_hs_state_index_combinadics_kernel"
 --   ls_hs_state_index_combinadics_kernel :: FunPtr Cindex_kernel
 
-foreign import ccall safe "lattice_symmetries_haskell.h ls_hs_destroy_state_index_binary_search_kernel_data"
-  ls_hs_destroy_state_index_binary_search_kernel_data :: Ptr Cbinary_search_kernel_data -> IO ()
-
-foreign import ccall safe "lattice_symmetries_haskell.h &ls_hs_state_index_binary_search_kernel"
-  ls_hs_state_index_binary_search_kernel :: FunPtr Cindex_kernel
+-- foreign import ccall safe "lattice_symmetries_haskell.h ls_hs_destroy_state_index_binary_search_kernel_data"
+--   ls_hs_destroy_state_index_binary_search_kernel_data :: Ptr Cbinary_search_kernel_data -> IO ()
+--
+-- foreign import ccall safe "lattice_symmetries_haskell.h &ls_hs_state_index_binary_search_kernel"
+--   ls_hs_state_index_binary_search_kernel :: FunPtr Cindex_kernel
 
 -- foreign import ccall safe "lattice_symmetries_haskell.h &ls_hs_state_index_identity_kernel"
 --   ls_hs_state_index_identity_kernel :: FunPtr Cindex_kernel
 
-data Chalide_kernel_data
+-- data Chalide_kernel_data
 
-foreign import ccall safe "lattice_symmetries_haskell.h ls_internal_create_halide_kernel_data"
-  ls_internal_create_halide_kernel_data :: Ptr Cpermutation_group -> CInt -> IO (Ptr Chalide_kernel_data)
+-- foreign import ccall safe "lattice_symmetries_haskell.h ls_internal_create_halide_kernel_data"
+--   ls_internal_create_halide_kernel_data :: Ptr Cpermutation_group -> CInt -> IO (Ptr Chalide_kernel_data)
+--
+-- foreign import ccall safe "lattice_symmetries_haskell.h ls_internal_destroy_halide_kernel_data"
+--   ls_internal_destroy_halide_kernel_data :: Ptr Chalide_kernel_data -> IO ()
+--
+-- foreign import ccall safe "lattice_symmetries_haskell.h &ls_hs_is_representative_halide_kernel"
+--   ls_hs_is_representative_halide_kernel :: FunPtr Cis_representative_kernel
+--
+-- foreign import ccall safe "lattice_symmetries_haskell.h &ls_hs_state_info_halide_kernel"
+--   ls_hs_state_info_halide_kernel :: FunPtr Cstate_info_kernel
 
-foreign import ccall safe "lattice_symmetries_haskell.h ls_internal_destroy_halide_kernel_data"
-  ls_internal_destroy_halide_kernel_data :: Ptr Chalide_kernel_data -> IO ()
+-- setStateInfoKernel :: Basis t -> Cbasis_kernels -> IO Cbasis_kernels
+-- setStateInfoKernel (SpinBasis n _ i g) k
+--   | n <= 64 && not (nullSymmetries g) = do
+--       kernelData <-
+--         bracket (newCpermutation_group g) destroyCpermutation_group $ \gPtr ->
+--           ls_internal_create_halide_kernel_data gPtr (maybe 0 fromIntegral i)
+--       pure
+--         $ k
+--           { cbasis_state_info_kernel = ls_hs_state_info_halide_kernel
+--           , cbasis_state_info_data = castPtr kernelData
+--           , cbasis_is_representative_kernel = ls_hs_is_representative_halide_kernel
+--           , cbasis_is_representative_data = castPtr kernelData
+--           }
+-- setStateInfoKernel _ k =
+--   pure
+--     $ k
+--       { cbasis_state_info_kernel = nullFunPtr
+--       , cbasis_state_info_data = nullPtr
+--       , cbasis_is_representative_kernel = nullFunPtr
+--       , cbasis_is_representative_data = nullPtr
+--       }
 
-foreign import ccall safe "lattice_symmetries_haskell.h &ls_hs_is_representative_halide_kernel"
-  ls_hs_is_representative_halide_kernel :: FunPtr Cis_representative_kernel
-
-foreign import ccall safe "lattice_symmetries_haskell.h &ls_hs_state_info_halide_kernel"
-  ls_hs_state_info_halide_kernel :: FunPtr Cstate_info_kernel
-
-setStateInfoKernel :: Basis t -> Cbasis_kernels -> IO Cbasis_kernels
-setStateInfoKernel (SpinBasis n _ i g) k
-  | n <= 64 && not (nullSymmetries g) = do
-      kernelData <-
-        bracket (newCpermutation_group g) destroyCpermutation_group $ \gPtr ->
-          ls_internal_create_halide_kernel_data gPtr (maybe 0 fromIntegral i)
-      pure $
-        k
-          { cbasis_state_info_kernel = ls_hs_state_info_halide_kernel
-          , cbasis_state_info_data = castPtr kernelData
-          , cbasis_is_representative_kernel = ls_hs_is_representative_halide_kernel
-          , cbasis_is_representative_data = castPtr kernelData
-          }
-setStateInfoKernel _ k =
-  pure $
-    k
-      { cbasis_state_info_kernel = nullFunPtr
-      , cbasis_state_info_data = nullPtr
-      , cbasis_is_representative_kernel = nullFunPtr
-      , cbasis_is_representative_data = nullPtr
-      }
-
-setStateIndexKernel :: Basis t -> Cbasis_kernels -> IO Cbasis_kernels
-setStateIndexKernel _ k =
-  pure $
-    k
-      { cbasis_state_index_kernel = nullFunPtr
-      , cbasis_state_index_data = nullPtr
-      }
+-- setStateIndexKernel :: Basis t -> Cbasis_kernels -> IO Cbasis_kernels
+-- setStateIndexKernel _ k =
+--   pure
+--     $ k
+--       { cbasis_state_index_kernel = nullFunPtr
+--       , cbasis_state_index_data = nullPtr
+--       }
 
 -- \| isStateIndexIdentity x =
 --     pure $
@@ -984,50 +976,58 @@ setStateIndexKernel _ k =
 --           }
 --     _ -> error "not implemented"
 
-createCbasis_kernels :: Basis t -> IO (Ptr Cbasis_kernels)
-createCbasis_kernels x =
-  new <=< setStateInfoKernel x <=< setStateIndexKernel x $
-    Cbasis_kernels
-      { cbasis_state_info_kernel = nullFunPtr
-      , cbasis_state_info_data = nullPtr
-      , cbasis_is_representative_kernel = nullFunPtr
-      , cbasis_is_representative_data = nullPtr
-      , cbasis_state_index_kernel = nullFunPtr
-      , cbasis_state_index_data = nullPtr
-      }
-
-destroyCindex_kernel :: (HasCallStack) => Cbasis_kernels -> IO ()
-destroyCindex_kernel p
-  -- \| kernel == ls_hs_state_index_combinadics_kernel = ls_hs_internal_destroy_combinadics_kernel_data (castPtr env)
-  | kernel == ls_hs_state_index_binary_search_kernel = ls_hs_destroy_state_index_binary_search_kernel_data (castPtr env)
-  -- \| kernel == ls_hs_state_index_identity_kernel && env == nullPtr = pure ()
-  | kernel == nullFunPtr && env == nullPtr = pure ()
-  | otherwise = error "failed to automatically deallocate state_index kernel"
-  where
-    kernel = cbasis_state_index_kernel p
-    env = cbasis_state_index_data p
-
-destroyCstate_info_kernel :: (HasCallStack) => Cbasis_kernels -> IO ()
-destroyCstate_info_kernel p
-  | cbasis_state_info_kernel p == ls_hs_state_info_halide_kernel
-      && cbasis_is_representative_kernel p == ls_hs_is_representative_halide_kernel =
-      do
-        ls_internal_destroy_halide_kernel_data (castPtr (cbasis_state_info_data p))
-        when (cbasis_state_info_data p /= cbasis_is_representative_data p) $
-          ls_internal_destroy_halide_kernel_data (castPtr (cbasis_is_representative_data p))
-  | cbasis_state_info_kernel p == nullFunPtr
-      && cbasis_state_info_data p == nullPtr
-      && cbasis_is_representative_kernel p == nullFunPtr
-      && cbasis_is_representative_data p == nullPtr =
-      pure ()
-  | otherwise = error "failed to automatically deallocate state_info and is_representative kernels"
-
-destroyCbasis_kernels :: (HasCallStack) => Ptr Cbasis_kernels -> IO ()
-destroyCbasis_kernels p = do
-  kernels <- peek p
-  destroyCindex_kernel kernels
-  destroyCstate_info_kernel kernels
-  free p
+-- createCbasis_kernels :: Basis t -> IO (Ptr Cbasis_kernels)
+-- createCbasis_kernels x =
+--   new
+--     <=< setStateInfoKernel x
+--     <=< setStateIndexKernel x
+--     $ Cbasis_kernels
+--       { cbasis_state_info_kernel = nullFunPtr
+--       , cbasis_state_info_data = nullPtr
+--       , cbasis_is_representative_kernel = nullFunPtr
+--       , cbasis_is_representative_data = nullPtr
+--       , cbasis_state_index_kernel = nullFunPtr
+--       , cbasis_state_index_data = nullPtr
+--       }
+--
+-- destroyCindex_kernel :: HasCallStack => Cbasis_kernels -> IO ()
+-- destroyCindex_kernel p
+--   -- \| kernel == ls_hs_state_index_combinadics_kernel = ls_hs_internal_destroy_combinadics_kernel_data (castPtr env)
+--   | kernel == ls_hs_state_index_binary_search_kernel = ls_hs_destroy_state_index_binary_search_kernel_data (castPtr env)
+--   -- \| kernel == ls_hs_state_index_identity_kernel && env == nullPtr = pure ()
+--   | kernel == nullFunPtr && env == nullPtr = pure ()
+--   | otherwise = error "failed to automatically deallocate state_index kernel"
+--   where
+--     kernel = cbasis_state_index_kernel p
+--     env = cbasis_state_index_data p
+--
+-- destroyCstate_info_kernel :: HasCallStack => Cbasis_kernels -> IO ()
+-- destroyCstate_info_kernel p
+--   | cbasis_state_info_kernel p
+--       == ls_hs_state_info_halide_kernel
+--       && cbasis_is_representative_kernel p
+--       == ls_hs_is_representative_halide_kernel =
+--       do
+--         ls_internal_destroy_halide_kernel_data (castPtr (cbasis_state_info_data p))
+--         when (cbasis_state_info_data p /= cbasis_is_representative_data p)
+--           $ ls_internal_destroy_halide_kernel_data (castPtr (cbasis_is_representative_data p))
+--   | cbasis_state_info_kernel p
+--       == nullFunPtr
+--       && cbasis_state_info_data p
+--       == nullPtr
+--       && cbasis_is_representative_kernel p
+--       == nullFunPtr
+--       && cbasis_is_representative_data p
+--       == nullPtr =
+--       pure ()
+--   | otherwise = error "failed to automatically deallocate state_info and is_representative kernels"
+--
+-- destroyCbasis_kernels :: HasCallStack => Ptr Cbasis_kernels -> IO ()
+-- destroyCbasis_kernels p = do
+--   kernels <- peek p
+--   destroyCindex_kernel kernels
+--   destroyCstate_info_kernel kernels
+--   free p
 
 -- data BasisSpec = BasisSpec !Int !(Maybe Int) !(Maybe Int) ![SymmetrySpec]
 --   deriving stock (Read, Show, Eq)

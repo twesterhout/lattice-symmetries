@@ -41,7 +41,7 @@ common common-options
         -W -Wall -Wcompat -Widentities -Wincomplete-uni-patterns
         -Wincomplete-record-updates
 
-    default-language:   GHC2021 
+    default-language:   GHC2021
     default-extensions:
         AllowAmbiguousTypes
         BangPatterns
@@ -50,24 +50,25 @@ common common-options
         DeriveAnyClass
         DeriveGeneric
         DerivingVia
+        DuplicateRecordFields
         FlexibleContexts
         FlexibleInstances
         GeneralizedNewtypeDeriving
         MultiParamTypeClasses
+        OverloadedRecordDot
         OverloadedStrings
         ScopedTypeVariables
         StandaloneDeriving
         TypeApplications
         TypeFamilies
         ViewPatterns
-        OverloadedRecordDot
-        DuplicateRecordFields
 
 library
     import:          common-options
     hs-source-dirs:  src
     exposed-modules:
         LatticeSymmetries.Algebra
+        LatticeSymmetries.Automorphisms
         LatticeSymmetries.Basis
         LatticeSymmetries.Benes
         LatticeSymmetries.BitString
@@ -83,8 +84,11 @@ library
         LatticeSymmetries.NonbranchingTerm
         LatticeSymmetries.Operator
         LatticeSymmetries.Parser
+        LatticeSymmetries.Permutation
+        LatticeSymmetries.Some
         LatticeSymmetries.Utils
-        LatticeSymmetries.Yaml
+
+    -- LatticeSymmetries.Yaml
 
     include-dirs:    cbits
 
@@ -96,6 +100,7 @@ library
         , containers
         , derive-storable
         , directory
+        , halide-haskell
         , inline-c
         , megaparsec
         , mtl
@@ -134,7 +139,7 @@ library
     -- , vector-binary-instances
     -- , hdf5-hs
     -- , HaskellForMaths
-    extra-libraries: kernels
+    extra-libraries: kernels_v2
 
     -- pkgconfig-depends:   lattice_symmetries
     -- c-sources:           kernels/indexing.c
@@ -146,19 +151,23 @@ library
         -Wdouble-promotion -Wformat=2 -Wformat-overflow=2 -Winit-self
         -Wimplicit-fallthrough -Wunused -Wuninitialized -Wstrict-overflow=2
         -Wduplicated-branches -Wfloat-equal -Wshadow -Wunused-macros
-        -Wmissing-field-initializers -Wno-variadic-macros
+        -Wmissing-field-initializers -Wno-variadic-macros -march=haswell
 
     if (os(linux) && !flag(no-standalone))
         ghc-options: -fPIC -fexternal-dynamic-refs
 
--- executable group
---     import:         common-options
---     hs-source-dirs: app
---     main-is:        Main.hs
---     ghc-options:    -threaded -rtsopts
---     build-depends:
---         , lattice-symmetries-haskell
---         , vector
+executable benchmark
+    import:         common-options
+    hs-source-dirs: app
+    main-is:        Main.hs
+    ghc-options:    -threaded -rtsopts
+    build-depends:
+        , gauge
+        , halide-haskell
+        , inline-c
+        , lattice-symmetries-haskell
+        , random
+        , vector
 
 foreign-library lattice_symmetries_haskell
     import:         common-options
@@ -207,23 +216,30 @@ test-suite lattice-symmetries-haskell-test
     hs-source-dirs: test
     main-is:        Spec.hs
     other-modules:
+        LatticeSymmetries.AutomorphismsSpec
         LatticeSymmetries.BenesSpec
         LatticeSymmetries.BitStringSpec
         LatticeSymmetries.ComplexRationalSpec
-        LatticeSymmetries.ConversionSpec
         LatticeSymmetries.DenseSpec
+        LatticeSymmetries.ExprSpec
         LatticeSymmetries.GeneratorSpec
         LatticeSymmetries.GroupSpec
+        LatticeSymmetries.LoweringSpec
         LatticeSymmetries.NonbranchingTermSpec
         LatticeSymmetries.OperatorSpec
         LatticeSymmetries.ParserSpec
+        LatticeSymmetries.PermutationSpec
+        Utils
 
+    -- LatticeSymmetries.ConversionSpec
     build-depends:
         , aeson
+        , bytestring
+        , containers
         , hspec
+        , HUnit
         , lattice-symmetries-haskell
         , megaparsec
-        , HUnit
         , prettyprinter
         , QuickCheck
         , text

@@ -1,3 +1,7 @@
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
+
 -- |
 -- Module      : LatticeSymmetries.Utils
 -- Description : Random utilities
@@ -7,6 +11,7 @@ module LatticeSymmetries.Utils
   ( -- ** Looping constructs
     loopM
   , iFoldM
+  , rightM
 
     -- ** Error handling
   , throwC
@@ -15,9 +20,15 @@ module LatticeSymmetries.Utils
     -- ** String handling
   , peekUtf8
   , newCString
+  , newCencoded
   , decodeCString
   , toPrettyText
+  , renderDoc
   , eitherToParser
+  , viaAeson
+  , viaAesonIO
+  , ls_hs_destroy_string
+  , MutablePtr
 
     -- ** Testing utilities
   , ApproxEq (..)
@@ -26,25 +37,29 @@ where
 
 import Control.Exception.Safe (handleAnyDeep)
 import Data.Aeson
+import Data.Aeson qualified as Aeson
 import Data.Aeson.Types (Parser)
+import Data.Aeson.Types qualified as Aeson
 import Data.ByteString (packCString, useAsCString)
 import Data.ByteString.Internal (ByteString (..))
 import Data.Complex
-import qualified Data.Vector.Generic as G
+import Data.Vector.Generic qualified as G
 import Foreign.C.String (CString)
 import Foreign.C.Types (CChar, CDouble (..))
 import Foreign.ForeignPtr (withForeignPtr)
-import Foreign.Marshal.Alloc (mallocBytes)
+import Foreign.Marshal.Alloc (free, mallocBytes)
 import Foreign.Marshal.Utils (copyBytes)
 import Foreign.Ptr (Ptr, castPtr)
 import Foreign.Storable (Storable (..))
+import Language.Halide (Arguments (..), UnCurry (..))
+import LatticeSymmetries.Context
 import Prettyprinter (Pretty (..))
 import Prettyprinter qualified as Pretty
 import Prettyprinter.Render.Text (renderStrict)
-import qualified Data.Aeson as Aeson
-import qualified Data.Aeson.Types as Aeson
 
-loopM :: (Monad m) => i -> (i -> Bool) -> (i -> i) -> (i -> m ()) -> m ()
+type MutablePtr a = Ptr a
+
+loopM :: Monad m => i -> (i -> Bool) -> (i -> i) -> (i -> m ()) -> m ()
 loopM i₀ cond inc action = go i₀
   where
     go !i
@@ -52,7 +67,7 @@ loopM i₀ cond inc action = go i₀
       | otherwise = pure ()
 {-# INLINE loopM #-}
 
-iFoldM :: (Monad m) => i -> (i -> Bool) -> (i -> i) -> a -> (a -> i -> m a) -> m a
+iFoldM :: Monad m => i -> (i -> Bool) -> (i -> i) -> a -> (a -> i -> m a) -> m a
 iFoldM i₀ cond inc x₀ action = go x₀ i₀
   where
     go !x !i
@@ -60,11 +75,13 @@ iFoldM i₀ cond inc x₀ action = go x₀ i₀
       | otherwise = pure x
 {-# INLINE iFoldM #-}
 
-foreign import ccall unsafe "ls_hs_error"
-  ls_hs_error :: CString -> IO ()
+-- foreign import ccall unsafe "ls_hs_error"
+--   ls_hs_error :: CString -> IO ()
+ls_hs_error :: CString -> IO ()
+ls_hs_error = undefined
 
 -- | Invoke the 'ls_hs_error' error handling function with the given message.
-throwC :: (HasCallStack) => a -> Text -> IO a
+throwC :: HasCallStack => a -> Text -> IO a
 throwC def msg = do
   useAsCString (encodeUtf8 msg) ls_hs_error
   pure def
@@ -102,19 +119,25 @@ newCString (PS fp _ l) = do
     pokeByteOff buf l (0 :: CChar)
   pure buf
 
+newCencoded :: (HasCallStack, Data.Aeson.ToJSON a) => a -> IO CString
+newCencoded = newCString . (\x -> trace (decodeUtf8 x) x) . toStrict . Data.Aeson.encode
+
 -- | Read JSON from a 'CString'.
-decodeCString :: (HasCallStack, FromJSON a) => CString -> IO a
+decodeCString :: FromJSON a => CString -> IO (Either Text a)
 decodeCString cStr = do
   s <- packCString cStr
   case eitherDecode (fromStrict s) of
-    Right x -> pure x
-    Left msg -> error (toText msg)
+    Right x -> pure $ Right x
+    Left msg -> pure $ Left (toText msg)
 
 eitherToParser :: Either Text a -> Parser a
 eitherToParser = either (fail . toString) pure
 
-toPrettyText :: (Pretty a) => a -> Text
-toPrettyText = renderStrict . Pretty.layoutPretty (Pretty.LayoutOptions Pretty.Unbounded) . pretty
+renderDoc :: Pretty.Doc ann -> Text
+renderDoc = renderStrict . Pretty.layoutPretty (Pretty.LayoutOptions Pretty.Unbounded)
+
+toPrettyText :: Pretty a => a -> Text
+toPrettyText = renderDoc . pretty
 
 instance FromJSON a => FromJSON (Complex a) where
   parseJSON (Aeson.Object v) = (:+) <$> v .: "real" <*> v .: "imag"
@@ -123,3 +146,60 @@ instance FromJSON a => FromJSON (Complex a) where
 
 instance ToJSON a => ToJSON (Complex a) where
   toJSON (a :+ b) = object ["real" .= a, "imag" .= b]
+
+newCobject :: a -> Ptr Cobject
+newCobject = undefined
+
+newtype JSONArguments ts = JSONArguments (Arguments ts)
+
+class ArgumentsFromJSON (ts :: [Type]) where
+  argumentsFromJSON :: [Aeson.Value] -> Aeson.Parser (Arguments ts)
+  expectedNumberArgs :: Proxy ts -> Int
+
+instance ArgumentsFromJSON '[] where
+  argumentsFromJSON [] = pure Nil
+  argumentsFromJSON _ = fail "parseJSON: expected an empty array"
+  expectedNumberArgs _ = 0
+
+instance (FromJSON t, ArgumentsFromJSON ts) => ArgumentsFromJSON (t ': ts) where
+  argumentsFromJSON (x : xs) = (:::) <$> parseJSON x <*> argumentsFromJSON xs
+  argumentsFromJSON [] = fail "parseJSON: expected an non-empty array"
+  expectedNumberArgs _ = 1 + expectedNumberArgs (Proxy @ts)
+
+instance ArgumentsFromJSON ts => FromJSON (Arguments ts) where
+  parseJSON = Aeson.withArray "Arguments" $ \v ->
+    if G.length v == n
+      then argumentsFromJSON (G.toList v)
+      else fail $ "expected " <> show n <> " arguments, but " <> show (G.length v) <> " were provided"
+    where
+      n = expectedNumberArgs (Proxy @ts)
+
+viaAeson
+  :: forall args r f
+   . ( UnCurry f args (Either Text r)
+     , FromJSON (Arguments args)
+     , ToJSON r
+     )
+  => f
+  -> CString
+  -> IO CString
+viaAeson f cStr =
+  decodeCString @(Arguments args) cStr
+    >>= either (newCencoded @(Either Text r) . Left) (newCencoded . uncurryG f)
+
+viaAesonIO
+  :: forall args r f
+   . (UnCurry f args (IO (Either Text r)), FromJSON (Arguments args), ToJSON r)
+  => f
+  -> CString
+  -> IO CString
+viaAesonIO f cStr =
+  decodeCString @(Arguments args) cStr
+    >>= either (newCencoded @(Either Text r) . Left) (newCencoded <=< uncurryG f)
+
+ls_hs_destroy_string :: CString -> IO ()
+ls_hs_destroy_string = free
+
+rightM :: (b -> IO c) -> Either a b -> IO (Either a c)
+rightM _ (Left a) = pure (Left a)
+rightM f (Right b) = Right <$> f b

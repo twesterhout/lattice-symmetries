@@ -12,22 +12,21 @@ use ForeignTypes;
 use StatesEnumeration;
 import CSR;
 
-proc ls_internal_operator_apply_diag_x1(
-    const ref op : ls_hs_operator,
+require "library.h";
+
+proc applyDiagKernel(
+    diag_terms : c_ptrConst(ls_hs_nonbranching_terms),
     batch_size : int,
     alphas : c_ptrConst(uint(64)),
     ys : c_ptr(?eltType),
     xs : c_ptrConst(eltType)) {
-  // ls_internal_operator_apply_diag_x1(c_ptrToConst(op), batch_size, alphas, ys, xs);
-  // return;
-
   // The diagonal is zero
-  if (op.diag_terms == nil || op.diag_terms.deref().number_terms == 0) {
+  if (diag_terms == nil || diag_terms.deref().number_terms == 0) {
     POSIX.memset(ys, 0, batch_size:c_size_t * c_sizeof(eltType));
     return;
   }
 
-  const ref terms = op.diag_terms.deref();
+  const ref terms = diag_terms.deref();
   const number_terms = terms.number_terms;
 
   foreach batch_idx in 0 ..# batch_size {
@@ -46,7 +45,7 @@ proc ls_internal_operator_apply_diag_x1(
 }
 
 proc applyOffDiagKernel(
-    const ref op : ls_hs_operator,
+    off_diag_terms : c_ptrConst(ls_hs_nonbranching_terms),
     batch_size : int,
     alphas : c_ptrConst(uint(64)),
     betas : c_ptr(uint(64)),
@@ -55,12 +54,12 @@ proc applyOffDiagKernel(
     xs,
     param left : bool = false) {
   // Nothing to apply
-  if (op.off_diag_terms == nil || op.off_diag_terms.deref().number_terms == 0) {
+  if (off_diag_terms == nil || off_diag_terms.deref().number_terms == 0) {
     POSIX.memset(offsets, 0, (batch_size + 1):c_size_t * c_sizeof(c_ptrdiff));
     return;
   }
 
-  const ref terms = op.off_diag_terms.deref();
+  const ref terms = off_diag_terms.deref();
   const number_terms = terms.number_terms;
 
   offsets[0] = 0;
@@ -153,8 +152,8 @@ private proc computeOffDiagOnlyInversion(const ref matrix : Operator,
   computeOffDiagNoProjection(matrix, count, alphas, xs, others, left, timers);
 
   const totalCount = others.offsets[count];
-  const mask = (1:uint(64) << matrix.basis.numberSites()) - 1;
-  const character = matrix.basis.spinInversion;
+  const mask = (1:uint(64) << matrix.basis.info.number_sites) - 1;
+  const character = try! matrix.basis.info.spin_inversion.value();
   assert(character != 0);
 
   if timers != nil then timers!.stateInfoTimer.start();
@@ -228,12 +227,12 @@ private inline proc computeOffDiagGeneric(const ref matrix : Operator,
                                           param left : bool,
                                           in timers : BatchedOperatorTimers?) {
   // Simple case when no symmetries are used
-  if !matrix.basis.requiresProjection() {
+  if !matrix.basis.info.requires_projection {
     computeOffDiagNoProjection(matrix, count, alphas, xs, others, left, timers);
   }
   // Another simple case when no permutations were given, only the spin inversion
-  else if !matrix.basis.hasPermutationSymmetries()
-            && matrix.basis.hasSpinInversionSymmetry() {
+  else if !matrix.basis.info.has_permutation_symmetries
+            && matrix.basis.info.spin_inversion.hasValue {
     computeOffDiagOnlyInversion(matrix, count, alphas, xs, others, left, timers);
   }
   // The tricky case when we have to project betas first
@@ -242,31 +241,7 @@ private inline proc computeOffDiagGeneric(const ref matrix : Operator,
   }
 }
 
-extern {
-  #include <stdlib.h>
-  #include <stdint.h>
-
-  // int qsort_s( void *ptr, size_t count, size_t size,
-  //              int (*comp)(const void *, const void *, void *),
-  //              void *context );
-
-  int ls_internal_comp_int64(const void* _a, const void* _b, void* _ctx);
-  void ls_internal_qsort_int64(int64_t* xs, size_t count, uint64_t const* keys);
-
-  int ls_internal_comp_int64(const void* _a, const void* _b, void* _ctx) {
-    int64_t const a = *(int64_t const*)_a;
-    int64_t const b = *(int64_t const*)_b;
-    uint64_t const* keys = (uint64_t const*)_ctx;
-    uint64_t const key_a = keys[a];
-    uint64_t const key_b = keys[b];
-    return (key_a > key_b) - (key_a < key_b);
-  }
-
-  void ls_internal_qsort_int64(int64_t* xs, size_t const count, uint64_t const* keys) {
-    qsort_r(xs, count, sizeof(int64_t), ls_internal_comp_int64, (void*)keys);
-  }
-}
-
+extern proc ls_internal_qsort_int64(xs : c_ptr(int(64)), count : c_size_t, keys : c_ptrConst(uint(64)));
 
 private proc csrGeneratePart(count : int,
                              betas : c_ptrConst(uint(64)),
@@ -278,6 +253,7 @@ private proc csrGeneratePart(count : int,
                              matrixElements : c_ptr(?eltType),
                              const ref basis : Basis,
                              numberOffDiagTerms : int) {
+  logDebug("numberOffDiagTerms=", numberOffDiagTerms);
   var order : [0 ..# numberOffDiagTerms] int;
   var indices : [0 ..# numberOffDiagTerms] int;
   var numberNonZero : idxType = 0;
@@ -288,15 +264,18 @@ private proc csrGeneratePart(count : int,
     const b = offsets[rowIndex];
     const e = offsets[rowIndex + 1];
     const n = e - b;
+    if numberOffDiagTerms == 0 then assert(n == 0);
 
-    // Reset the order
-    foreach i in 0 ..# n do order[i] = i;
-    // Sort according to betas
-    ls_internal_qsort_int64(c_ptrTo(order[0]), n, c_ptrToConst(betas[b]));
-    // Convert betas to indices
-    if numLocales == 1 && basis.isStateIndexIdentity()
-      then POSIX.memcpy(c_ptrTo(indices[0]), c_ptrToConst(betas[b]), n:c_size_t * c_sizeof(int(64)));
-      else ls_hs_state_index(basis.payload, n, c_ptrToConst(betas[b]), 1, c_ptrTo(indices[0]), 1);
+    if n > 0 {
+      // Reset the order
+      foreach i in 0 ..# n do order[i] = i;
+      // Sort according to betas
+      ls_internal_qsort_int64(c_ptrTo(order[0]), n, c_ptrToConst(betas[b]));
+      // Convert betas to indices
+      if numLocales == 1 && basis.info.is_state_index_identity
+        then POSIX.memcpy(c_ptrTo(indices[0]), c_ptrToConst(betas[b]), n:c_size_t * c_sizeof(int(64)));
+        else ls_hs_state_index(basis.payload, n, c_ptrToConst(betas[b]), 1, c_ptrTo(indices[0]), 1);
+    }
 
     // Sum duplicates
     var diagonalWritten = false;
@@ -371,59 +350,54 @@ record BatchedOperatorPointers {
 // This record pre-allocates all buffers such that repeated application cause no allocations.
 //
 // Operations on this record are not thread-safe, so each task should keep a separate copy of BatchedOperator.
-record BatchedOperator {
+class BatchedOperator {
   var _matrixPtr : c_ptrConst(Operator);
   var pointers : BatchedOperatorPointers;
   var batchSize : int;
   var numberOffDiagTerms : int;
-  var _dom : domain(1);
-  var _spins : [_dom] uint(64);
-  var _coeffs : [_dom] complex(128);
-  var _offsets : [0 ..# batchSize + 1] int;
-  var _localeIdxs : [_dom] uint(8);
-  var _domTemp : domain(1);
-  var _spinsTemp : [_domTemp] uint(64);
-  var _coeffsTemp : [_domTemp] complex(128);
-  var _normsTemp : [_domTemp] real(64);
+  var hasPermutationSymmetries : bool;
   var timers : owned BatchedOperatorTimers;
 
   proc initPointers() {
-    pointers.betas = c_ptrTo(_spins);
-    pointers.coeffs = c_ptrTo(_coeffs);
-    pointers.offsets = c_ptrTo(_offsets);
-    pointers.tempSpins = if _domTemp.size != 0 then c_ptrTo(_spinsTemp) else nil;
-    pointers.tempCoeffs = if _domTemp.size != 0 then c_ptrTo(_coeffsTemp) else nil;
-    pointers.tempNorms = if _domTemp.size != 0 then c_ptrTo(_normsTemp) else nil;
-    pointers.localeIdxs = c_ptrTo(_localeIdxs);
+    const numberTerms = max(numberOffDiagTerms, 1);
+    // It is important to have numberTerms + 1 here. See the POSIX.memcpy
+    // call in computeOffDiagWithProjection for why.
+    const capacity = batchSize * (numberTerms + 1);
+
+    pointers.offsets = allocate(int, batchSize + 1);
+    pointers.betas = allocate(uint(64), capacity);
+    pointers.coeffs = allocate(complex(128), capacity);
+    pointers.localeIdxs = allocate(uint(8), capacity);
+    if hasPermutationSymmetries {
+      pointers.tempSpins = allocate(uint(64), capacity);
+      pointers.tempCoeffs = allocate(complex(128), capacity);
+      pointers.tempNorms = allocate(real(64), capacity);
+    }
+  }
+
+  proc deinitPointers() {
+    if pointers.offsets != nil then deallocate(pointers.offsets);
+    if pointers.betas != nil then deallocate(pointers.betas);
+    if pointers.coeffs != nil then deallocate(pointers.coeffs);
+    deallocate(pointers.localeIdxs);
+    if hasPermutationSymmetries {
+      deallocate(pointers.tempSpins);
+      deallocate(pointers.tempCoeffs);
+      deallocate(pointers.tempNorms);
+    }
   }
 
   proc init(const ref matrix : Operator, batchSize : int) {
     this._matrixPtr = c_addrOfConst(matrix);
     this.batchSize = batchSize;
     this.numberOffDiagTerms = matrix.numberOffDiagTerms();
-    const numberTerms = max(numberOffDiagTerms, 1);
-    this._dom = {0 ..# batchSize * numberTerms};
-    this._domTemp =
-      if _matrixPtr.deref().basis.hasPermutationSymmetries()
-        // It is important to have numberTerms + 1 here. See the POSIX.memcpy
-        // call in computeOffDiagWithProjection for why.
-        then {0 ..# (batchSize * (numberTerms + 1))}
-        else {0 .. -1};
+    this.hasPermutationSymmetries = _matrixPtr.deref().basis.info.has_permutation_symmetries;
     this.timers = new BatchedOperatorTimers();
-    complete();
+    init this;
     initPointers();
   }
-  proc init=(const ref other : BatchedOperator) {
-    assert(other.locale == here);
-    this._matrixPtr = other._matrixPtr;
-    this.batchSize = other.batchSize;
-    this.numberOffDiagTerms = other.numberOffDiagTerms;
-    this._dom = other._dom;
-    this._domTemp = other._domTemp;
-    this.timers = new BatchedOperatorTimers();
-    complete();
-    initPointers();
-  }
+
+  proc deinit() { deinitPointers(); }
 
   inline proc matrix ref { return _matrixPtr.deref(); }
   inline proc basis ref { return matrix.basis; }
@@ -471,7 +445,7 @@ export proc ls_chpl_operator_apply_diag(matrixPtr : c_ptr(ls_hs_operator),
                                         coeffs : c_ptr(chpl_external_array),
                                         numTasks : int) {
   var matrix = new Operator(matrixPtr, owning=false);
-  if matrix.basis.numberWords != 1 then
+  if matrix.basis.info.number_words != 1 then
     halt("bases with more than 64 bits are not yet implemented");
 
   var _cs : [0 ..# count] real(64) = noinit;
@@ -492,10 +466,17 @@ export proc ls_chpl_operator_apply_off_diag(matrixPtr : c_ptr(ls_hs_operator),
   var matrix = new Operator(matrixPtr, owning=false);
   var batchedOperator = new BatchedOperator(matrix, max(1, count));
 
-  batchedOperator.computeOffDiag(count, alphas, nil, left=false);
-  betas.deref() = convertToExternalArray(batchedOperator._spins);
-  coeffs.deref() = convertToExternalArray(batchedOperator._coeffs);
-  offsets.deref() = convertToExternalArray(batchedOperator._offsets);
+  const size = batchedOperator.computeOffDiag(count, alphas, nil, left=false)[0];
+  betas.deref() = chpl_make_external_array_ptr_free(batchedOperator.pointers.betas, size);
+  coeffs.deref() = chpl_make_external_array_ptr_free(batchedOperator.pointers.coeffs, size);
+  offsets.deref() = chpl_make_external_array_ptr_free(batchedOperator.pointers.offsets, count + 1);
+  // Tell BatchedOperator to not destroy these arrays
+  batchedOperator.pointers.betas = nil;
+  batchedOperator.pointers.coeffs = nil;
+  batchedOperator.pointers.offsets = nil;
+  // betas.deref() = convertToExternalArray(batchedOperator._spins);
+  // coeffs.deref() = convertToExternalArray(batchedOperator._coeffs);
+  // offsets.deref() = convertToExternalArray(batchedOperator._offsets);
 }
 
 export proc ls_chpl_operator_to_csr(matrixPtr : c_ptr(ls_hs_operator),
@@ -522,6 +503,7 @@ export proc ls_chpl_operator_to_csr(matrixPtr : c_ptr(ls_hs_operator),
   var _colIndices : [0 ..# count + totalCount] int(32);
   var _matrixElements : [0 ..# count + totalCount] complex(128);
 
+  logDebug(count);
   csrGeneratePart(count,
                   betas,
                   coeffs,

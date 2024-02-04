@@ -2,208 +2,219 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 
 module LatticeSymmetries.Group
-  ( PermutationGroup (..)
-  , fromGenerators
-  , Symmetry (..)
+  ( RepElement (..)
+  , Representation (..)
+  , AbelianPermutationGroup (..)
+  , abelianSubgroup
+  , abelianRepresentations
+  , groupRepresentations
+
+    -- * Helpers
+  , Symmetry
   , mkSymmetry
-  , getPeriodicity
-  , groupRepresentationFromGenerators
-  , Symmetries (..)
-  , areSymmetriesReal
-  , nullSymmetries
-  , emptySymmetries
-  , compileGroupRepresentation
+  , fromGenerators
+  , isRepElementReal
+  , isRepresentationReal
+
+    -- * Hm...
+
+  -- , Symmetries (..)
+  -- , areSymmetriesReal
+  -- , emptySymmetries
+  , nullRepresentation
+  -- , compileGroupRepresentation
 
     -- ** Low-level interface for FFI
-  , newCpermutation_group
-  , destroyCpermutation_group
+
+  -- , newCpermutation_group
+  -- , destroyCpermutation_group
 
     -- * Automorphisms
-  , Hypergraph (..)
-  , hypergraphAutomorphisms
-  , mkMultiplicationTable
-  , abelianRepresentations
-  -- , abelianSubgroup
-  -- , Representation (..)
-  -- , groupRepresentations
-  , cyclicGraph
-  , cyclicGraph3
-  , rectangularGraph
-  -- , distancePartition
-  -- , autsSearchTree
-  -- , naiveExtractLeaves
-  -- , isAutomorphism
-  -- , transversalGeneratingSet
-  -- , groupFromTransversalGeneratingSet
-  -- , MultiplicationTable (..)
-  -- , AbelianSubsetHistory (..)
-  -- , abelianSubset
-  , GroupElement (..)
-  , shrinkMultiplicationTable
-  , getGroupElements
-  , selectPrimeElements
-  , groupGenerators
-  , groupElementCycle
-  , groupElementOrder
-  , Coset (..)
-  , abelianization
-  , commutatorSubgroup
+
+  -- , mkMultiplicationTable
+  -- , abelianRepresentations
+  -- , GroupElement (..)
+  -- , shrinkMultiplicationTable
+  -- , getGroupElements
+  -- , selectPrimeElements
+  -- , groupGenerators
+  -- , groupElementCycle
+  -- , groupElementOrder
+  -- , Coset (..)
+  -- , abelianization
+  -- , commutatorSubgroup
+
+    -- * Reference implementation
+  , isRepresentativeSlow
+  , stateInfoSlow
   )
 where
 
 import Control.Arrow (left)
-import Control.Exception (assert)
 import Control.Monad.ST.Strict (runST)
 import Data.Aeson (FromJSON (..), ToJSON (..), object, withObject, (.:), (.=))
 import Data.Complex
 import Data.IntSet qualified as IntSet
 import Data.List qualified
 import Data.List.NonEmpty qualified
-import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict qualified as Map
 import Data.Ratio
-import Data.Set qualified as Set
 import Data.Validity
 import Data.Vector qualified as B
-import Data.Vector.Algorithms.Search (binarySearch)
 import Data.Vector.Generic ((!))
 import Data.Vector.Generic qualified as G
-import Data.Vector.Generic.Mutable qualified as GM
-import Data.Vector.Storable qualified as S
 import Data.Vector.Unboxed qualified as U
 import Data.Vector.Unboxed.Mutable qualified as UM
-import Foreign.C.Types (CDouble)
-import Foreign.Marshal (free, new)
-import Foreign.Ptr
 import GHC.Records (HasField (..))
 import LatticeSymmetries.Algebra (sortVectorBy)
-import LatticeSymmetries.Benes
+import LatticeSymmetries.Automorphisms
 import LatticeSymmetries.Dense
-import LatticeSymmetries.FFI
+import LatticeSymmetries.Generator
+import LatticeSymmetries.Permutation
+import LatticeSymmetries.Utils (eitherToParser)
 import Prelude hiding (group, identity, permutations, second, toList)
 
--- | Permutation group
-newtype PermutationGroup = PermutationGroup {unPermutationGroup :: B.Vector Permutation}
-  deriving stock (Show, Eq, Generic)
-  deriving anyclass (NFData)
-
-instance HasField "size" PermutationGroup Int where
-  getField (PermutationGroup g) = G.length g
-
--- | Check whether a permutation group is empty
-nullPermutationGroup :: PermutationGroup -> Bool
-nullPermutationGroup (PermutationGroup gs) = G.null gs
-
-getPeriodicity :: Permutation -> Int
-getPeriodicity p₀ = go 1 p₀
-  where
-    identity = identityPermutation (G.length (unPermutation p₀))
-    go !n !p
-      | p == identity = n
-      | otherwise = go (n + 1) (p₀ <> p)
-
 -- | Representation of a permutation
-data Symmetry = Symmetry
-  { permutation :: !Permutation
-  , phase :: !(Ratio Int)
-  }
-  deriving stock (Show, Eq, Ord, Generic)
-  deriving anyclass (NFData)
+-- data Symmetry = Symmetry
+--   { permutation :: !Permutation
+--   , phase :: !(Ratio Int)
+--   }
+--   deriving stock (Show, Eq, Ord, Generic)
+--   deriving anyclass (NFData)
+type Symmetry = RepElement Permutation
 
-instance HasField "sector" Symmetry Int where
+instance HasPeriodicity a => HasField "sector" (RepElement a) Int where
   getField s
     | denominator sector == 1 = numerator sector
-    | otherwise = error $ "this should not have happened: invalid symmetry: " <> show s
+    | otherwise = error "this should not have happened: invalid RepElement"
     where
-      sector = s.phase * fromIntegral (getPeriodicity s.permutation)
+      sector = s.phase * fromIntegral (getPeriodicity s.element)
 
-instance HasField "size" Symmetry Int where
-  getField = G.length . unPermutation . (.permutation)
+instance HasField "length" a Int => HasField "size" (RepElement a) Int where
+  getField = (.length) . (.element)
 
-instance HasField "character" Symmetry (Complex Double) where
-  getField ((.phase) -> φ)
-    | φ == 0 = 1 :+ 0
-    | φ == 1 % 4 = 0 :+ (-1)
-    | φ == 1 % 2 = (-1) :+ 0
-    | φ == 3 % 4 = 0 :+ 1
-    | 0 <= φ && φ < 1 % 4 = cos (2 * pi * realToFrac φ) :+ (-sin (2 * pi * realToFrac φ))
-    | 1 % 4 <= φ && φ < 1 % 2 = (-cos (2 * pi * realToFrac (1 % 2 - φ))) :+ (-sin (2 * pi * realToFrac (1 % 2 - φ)))
-    | 1 % 2 <= φ && φ < 3 % 4 = (-cos (2 * pi * realToFrac (φ - 1 % 2))) :+ sin (2 * pi * realToFrac (φ - 1 % 2))
-    | 3 % 4 <= φ && φ < 1 = cos (2 * pi * realToFrac (1 - φ)) :+ sin (2 * pi * realToFrac (1 - φ))
-    | otherwise = error "should never happen"
+phaseToCharacter :: Ratio Int -> Complex Double
+phaseToCharacter φ
+  | φ == 0 = 1 :+ 0
+  | φ == 1 % 4 = 0 :+ (-1)
+  | φ == 1 % 2 = (-1) :+ 0
+  | φ == 3 % 4 = 0 :+ 1
+  | 0 <= φ && φ < 1 % 4 = cos (2 * pi * realToFrac φ) :+ (-sin (2 * pi * realToFrac φ))
+  | 1 % 4 <= φ && φ < 1 % 2 = (-cos (2 * pi * realToFrac (1 % 2 - φ))) :+ (-sin (2 * pi * realToFrac (1 % 2 - φ)))
+  | 1 % 2 <= φ && φ < 3 % 4 = (-cos (2 * pi * realToFrac (φ - 1 % 2))) :+ sin (2 * pi * realToFrac (φ - 1 % 2))
+  | 3 % 4 <= φ && φ < 1 = cos (2 * pi * realToFrac (1 - φ)) :+ sin (2 * pi * realToFrac (1 - φ))
+  | otherwise = error "should never happen"
+
+instance HasField "character" (RepElement a) (Complex Double) where
+  getField ((.phase) -> φ) = phaseToCharacter φ
 
 instance FromJSON Symmetry where
-  parseJSON = withObject "Symmetry" $ \v -> do
-    either (fail . toString) pure =<< (mkSymmetry <$> v .: "permutation" <*> v .: "sector")
+  parseJSON = withObject "Symmetry" $ \v ->
+    eitherToParser =<< (mkSymmetry <$> v .: "permutation" <*> v .: "sector")
 
 instance ToJSON Symmetry where
-  toJSON s = object ["__type__" .= ("Symmetry" :: Text), "permutation" .= s.permutation, "sector" .= s.sector]
+  toJSON s = object ["__type__" .= ("Symmetry" :: Text), "permutation" .= s.element, "sector" .= s.sector]
 
 -- | Create a new 'Symmetry'.
-mkSymmetry :: Permutation -> Int -> Either Text Symmetry
-mkSymmetry p k = Control.Arrow.left fromString . prettyValidate $ Symmetry p (modOne (k % getPeriodicity p))
+mkSymmetry :: Permutation -> Int -> Either Text (RepElement Permutation)
+mkSymmetry p k = Control.Arrow.left fromString . prettyValidate $ RepElement p (modOne (k % getPeriodicity p))
 
-instance Validity Symmetry where
-  validate (Symmetry p φ) =
-      check (φ >= 0) "phase φ is non-negative"
-      <> check (φ < 1) "phase φ is less than one"
-      <> check (denominator (φ * fromIntegral (getPeriodicity p)) == 1) "phase is consistent with periodicity"
+instance Validity (RepElement Permutation) where
+  validate x =
+    check (x.phase >= 0) "phase φ is non-negative"
+      <> check (x.phase < 1) "phase φ is less than one"
+      <> check (denominator (x.phase * fromIntegral (getPeriodicity x.element)) == 1) "phase is consistent with periodicity"
 
-modOne :: (Integral a) => Ratio a -> Ratio a
+modOne :: Integral a => Ratio a -> Ratio a
 modOne x
   | x >= 1 = x - fromIntegral (numerator x `div` denominator x)
   | x < 0 = modOne (x + fromIntegral (denominator x))
   | otherwise = x
 
-instance Semigroup Symmetry where
-  (<>) (Symmetry pa λa) (Symmetry pb λb) =
-    let !p = pa <> pb
-        !λ = modOne (λa + λb)
-     in Symmetry p λ
+-- instance Semigroup Symmetry where
+--   (<>) (Symmetry pa λa) (Symmetry pb λb) = undefined -- uncurry Symmetry (combine (pa, λa) (pb, λb))
 
-groupRepresentationFromGenerators :: [Symmetry] -> Either Text (B.Vector Symmetry)
-groupRepresentationFromGenerators [] = Right G.empty
-groupRepresentationFromGenerators gs@(g : _)
-  | sameSizes && null inconsistensies = Right $ G.fromList symmetries
-  | not sameSizes = Left "generators contain permutations of different length"
-  | otherwise = Left $ Data.List.head inconsistensies
+data RepElement a = RepElement {element :: !a, phase :: !(Ratio Int)}
+  deriving stock (Show, Eq, Ord, Generic)
+  deriving anyclass (NFData)
+
+newtype ComparingElement a = ComparingElement (RepElement a)
+
+instance Eq a => Eq (ComparingElement a) where
+  (ComparingElement a) == (ComparingElement b) = a.element == b.element
+
+instance Ord a => Ord (ComparingElement a) where
+  compare (ComparingElement a) (ComparingElement b) = compare a.element b.element
+
+instance Semigroup a => Semigroup (RepElement a) where
+  (<>) (RepElement pa λa) (RepElement pb λb) = RepElement (pa <> pb) (modOne (λa + λb))
+
+newtype Representation a = Representation {unRepresentation :: B.Vector (RepElement a)}
+  deriving stock (Show, Eq, Generic)
+  deriving anyclass (NFData)
+
+instance HasField "length" a Int => HasField "numberBits" (Representation a) (Maybe Int) where
+  getField (unRepresentation -> r)
+    | G.null r = Nothing
+    | otherwise = Just (G.head r).size
+
+unionWithConflictsM :: (Ord k, Eq a) => Map.Map k a -> Map.Map k a -> Either (k, a, a) (Map.Map k a)
+unionWithConflictsM a0 b0 = go a0 (Map.toList b0)
   where
-    sameSizes = all ((== g.size) . (.size)) gs
-    identity = fromRight (error "should never fail") $ mkSymmetry (identityPermutation g.size) 0
-    set = fromGenerators identity gs
-    symmetries = Set.toAscList set
-    inconsistensies = do
-      s₁ <- symmetries
-      s₂ <- symmetries
-      let s₃@(Symmetry p₃ λ₃) = s₁ <> s₂
-          context = " (where g₁ = " <> show s₁ <> ", g₂ = " <> show s₂ <> ", g₁g₂ = " <> show s₃ <> ")"
-      if not (Set.member s₃ set)
-        then pure $ "generators are incompatible: g₁g₂ does not belong to the group" <> context
-        else
-          if denominator (λ₃ * fromIntegral (getPeriodicity p₃)) /= 1
-            then pure $ "generators are incompatible: g₁g₂ has an invalid phase for periodicity " <> show (getPeriodicity p₃) <> context
-            else []
+    go !acc ((k, e) : rest)
+      | Just e' <- Map.lookup k acc = if e' == e then go acc rest else Left (k, e', e)
+      | otherwise = go (Map.insert k e acc) rest
+    go !acc [] = Right acc
 
-data Symmetries = Symmetries
-  { symmGroup :: !PermutationGroup
-  , symmNetwork :: !BatchedBenesNetwork
-  , symmCharactersReal :: !(S.Vector Double)
-  , symmCharactersImag :: !(S.Vector Double)
-  , symmOriginal :: !(B.Vector Symmetry)
-  }
-  deriving stock (Show, Eq)
-
-compileGroupRepresentation :: B.Vector Symmetry -> Symmetries
-compileGroupRepresentation symmetries
-  | G.null symmetries = emptySymmetries
-  | otherwise = Symmetries permGroup benesNetwork charactersReal charactersImag symmetries
+differenceWithConflictsM :: (Ord k, Eq a) => Map.Map k a -> Map.Map k a -> Either (k, a, a) (Map.Map k a)
+differenceWithConflictsM a0 b0 = go a0 (Map.toList b0)
   where
-    permutations = (.permutation) <$> symmetries
-    permGroup = PermutationGroup permutations
-    benesNetwork = mkBatchedBenesNetwork $ G.map permutationToBenesNetwork permutations
-    characters = G.convert $ (.character) <$> symmetries
-    charactersReal = G.map realPart characters
-    charactersImag = G.map imagPart characters
+    go !acc ((k, e) : rest)
+      | Just e' <- Map.lookup k acc = if e' == e then go (Map.delete k acc) rest else Left (k, e', e)
+      | otherwise = go acc rest
+    go !acc [] = Right acc
+
+fromListWithConflictsM :: (Ord k, Eq a) => [(k, a)] -> Either (k, a, a) (Map.Map k a)
+fromListWithConflictsM = go Map.empty
+  where
+    go !acc ((k, e) : rest)
+      | Just e' <- Map.lookup k acc = if e' == e then go acc rest else Left (k, e', e)
+      | otherwise = go (Map.insert k e acc) rest
+    go !acc [] = Right acc
+
+fromGenerators :: forall a. (Semigroup a, Ord a, Show a) => [RepElement a] -> Either Text (Representation a)
+fromGenerators [] = Right . Representation $ G.empty
+fromGenerators gs = Control.Arrow.left conflictToText $ go Map.empty =<< fromListWithConflictsM (to <$> gs)
+  where
+    to x = (x.element, x.phase)
+    from (p, φ) = RepElement p φ
+    conflictToText (p, φ1, φ2) = "conflicting phases for group element " <> show p <> ": " <> show φ1 <> " != " <> show φ2
+    go !interior !boundary
+      | Map.null boundary = Right . Representation . G.fromList . fmap from . Map.toList $ interior
+      | otherwise = do
+          interior' <- unionWithConflictsM interior boundary
+          everything <- fromListWithConflictsM [to (from h <> g) | h <- Map.toList boundary, g <- gs]
+          boundary' <- differenceWithConflictsM everything interior'
+          go interior' boundary'
+
+isRepElementReal :: RepElement a -> Bool
+isRepElementReal x = x.phase == 0 || x.phase == 1 % 2
+
+isRepresentationReal :: Representation a -> Bool
+isRepresentationReal = G.all isRepElementReal . unRepresentation
+
+-- compileGroupRepresentation :: HasCallStack => B.Vector Symmetry -> Symmetries
+-- compileGroupRepresentation symmetries
+--   | G.null symmetries = emptySymmetries
+--   | (G.head symmetries).size <= 1 = emptySymmetries
+--   | otherwise = Symmetries permGroup benesNetwork charactersReal charactersImag symmetries
+--   where
+--     permutations = (.permutation) <$> symmetries
+--     permGroup = PermutationGroup permutations
+--     benesNetwork = mkBatchedBenesNetwork $ G.map permutationToBenesNetwork permutations
+--     characters = G.convert $ (.character) <$> symmetries
+--     charactersReal = G.map realPart characters
+--     charactersImag = G.map imagPart characters
 
 -- mkSymmetriesFromRepresentation :: (HasCallStack) => PermutationGroup -> Representation -> Symmetries
 -- mkSymmetriesFromRepresentation group (Representation r) =
@@ -218,27 +229,85 @@ compileGroupRepresentation symmetries
 
 -- instance ToJSON Symmetries where
 --   toJSON s = toJSON s.symmOriginal
-instance ToJSON Symmetries where
-  toJSON s = object 
-    [ "symmOriginal" .= s.symmOriginal,
-      "symmNetwork" .= s.symmNetwork
-    ]
+-- instance ToJSON Symmetries where
+--   toJSON s =
+--     object
+--       [ "symmOriginal" .= s.symmOriginal
+--       , "symmNetwork" .= s.symmNetwork
+--       ]
 
 -- instance IsList Symmetries where
 --   type Item Symmetries = Symmetry
 --   toList = toSymmetryList
 --   fromList x = either error id (mkSymmetries x)
 
-instance HasField "numberBits" Symmetries (Maybe Int) where
-  getField s
-    | nullSymmetries s = Nothing
-    | otherwise = Just . G.length . unPermutation . G.head $ s.symmGroup.unPermutationGroup
+-- instance HasField "numberBits" Symmetries (Maybe Int) where
+--   getField s
+--     | nullSymmetries s = Nothing
+--     | otherwise = Just . G.length . unPermutation . G.head $ s.symmGroup.permutations
 
-emptySymmetries :: Symmetries
-emptySymmetries = Symmetries (PermutationGroup G.empty) emptyBatchedBenesNetwork G.empty G.empty G.empty
+nullRepresentation :: Representation a -> Bool
+nullRepresentation = G.null . unRepresentation
 
-areSymmetriesReal :: Symmetries -> Bool
-areSymmetriesReal = G.all (== 0) . symmCharactersImag
+-- areSymmetriesReal :: Symmetries -> Bool
+-- areSymmetriesReal = G.all (== 0) . symmCharactersImag
+
+permuteBasisState :: Permutation -> BasisState t -> BasisState t
+permuteBasisState p (BasisState n bits)
+  | p.length == n = BasisState n (permuteBits p bits)
+  | otherwise = error $ "permuteBasisState: size mismatch: " <> show p.length <> " != " <> show n
+
+isRepresentativeSlow
+  :: Representation Permutation
+  -- ^ Symmetry group
+  -> Maybe Int
+  -- ^ Spin inversion
+  -> BasisState t
+  -- ^ Basis state
+  -> Maybe Int
+  -- ^ Norm if the state is a representative, nothing otherwise
+isRepresentativeSlow (B.toList . unRepresentation -> group) spinInversion basisState1 = case spinInversion of
+  Nothing -> go 0 basisState1 group
+  Just _ ->
+    let count1 = go 0 basisState1 group
+        count2 = go 0 basisState2 group
+     in (+) <$> count1 <*> count2
+  where
+    basisState2 = invertBasisState basisState1
+    go !count _ [] = Just count
+    go !count bits ((RepElement p φ) : rest) = case compare bits' bits of
+      LT -> Nothing
+      EQ
+        | φ /= 0 -> Nothing
+        | otherwise -> go (count + 1) bits rest
+      GT -> go count bits rest
+      where
+        bits' = permuteBasisState p bits
+
+stateInfoSlow
+  :: Representation Permutation
+  -- ^ Symmetry group
+  -> Maybe Int
+  -- ^ Spin inversion
+  -> BasisState t
+  -- ^ Basis state
+  -> (BasisState t, Int)
+  -- ^ Norm if the state is a representative, nothing otherwise
+stateInfoSlow (B.toList . unRepresentation -> group) spinInversion basisState1 = case spinInversion of
+  Nothing -> go (basisState1, -1) 0 basisState1 group
+  Just _ -> error "not implemented"
+  -- let count1 = go 0 basisState1 group
+  --     count2 = go 0 basisState2 group
+  --  in (+) <$> count1 <*> count2
+  where
+    basisState2 = invertBasisState basisState1
+    go (!rep, !index) _ _ [] = (rep, index)
+    go (!rep, !index) !k !original ((RepElement p _) : rest) =
+      case compare permuted rep of
+        LT -> go (permuted, k) (k + 1) original rest
+        _ -> go (rep, index) (k + 1) original rest
+      where
+        permuted = permuteBasisState p original
 
 -- toSymmetryList :: (HasCallStack) => Symmetries -> [Symmetry]
 -- toSymmetryList (Symmetries (PermutationGroup gs) _ λsRe λsIm) =
@@ -256,236 +325,61 @@ areSymmetriesReal = G.all (== 0) . symmCharactersImag
 --         (r, _φ) = polar (λRe :+ λIm)
 --         φ = _φ / (2 * pi) + (if _φ < 0 then 1 else 0)
 
-fromGenerators :: (Semigroup a, Ord a) => a -> [a] -> Set a
-fromGenerators _ [] = Set.empty
-fromGenerators identity gs = go Set.empty (Set.singleton identity)
-  where
-    go !interior !boundary
-      | Set.null boundary = interior
-      | otherwise = go interior' boundary'
-      where
-        interior' = interior `Set.union` boundary
-        boundary' = Set.fromList [h <> g | h <- Set.toList boundary, g <- gs] Set.\\ interior'
+-- newCpermutation_group :: Symmetries -> IO (Ptr Cpermutation_group)
+-- newCpermutation_group x =
+--   let (DenseMatrix numberShifts numberMasks masks) = bbnMasks (symmNetwork x)
+--    in case x.numberBits of
+--         Just nBits ->
+--           S.unsafeWith masks $ \masksPtr ->
+--             S.unsafeWith (x.symmNetwork.bbnShifts) $ \shiftsPtr ->
+--               S.unsafeWith (symmCharactersReal x) $ \eigvalsRealPtr ->
+--                 S.unsafeWith (symmCharactersImag x) $ \eigvalsImagPtr ->
+--                   new
+--                     $ Cpermutation_group
+--                       { cpermutation_group_refcount = 0
+--                       , cpermutation_group_number_bits = fromIntegral nBits
+--                       , cpermutation_group_number_shifts = fromIntegral numberShifts
+--                       , cpermutation_group_number_masks = fromIntegral numberMasks
+--                       , cpermutation_group_masks = masksPtr
+--                       , cpermutation_group_shifts = shiftsPtr
+--                       , cpermutation_group_eigvals_re = (castPtr :: Ptr Double -> Ptr CDouble) eigvalsRealPtr
+--                       , cpermutation_group_eigvals_im = (castPtr :: Ptr Double -> Ptr CDouble) eigvalsImagPtr
+--                       , cpermutation_group_haskell_payload = nullPtr
+--                       }
+--         Nothing -> pure nullPtr
 
-nullSymmetries :: Symmetries -> Bool
-nullSymmetries = nullPermutationGroup . symmGroup
+newtype AbelianPermutationGroup = AbelianPermutationGroup {unAbelianPermutationGroup :: PermutationGroup}
+  deriving stock (Show, Eq, Generic)
+  deriving anyclass (NFData)
 
-newCpermutation_group :: Symmetries -> IO (Ptr Cpermutation_group)
-newCpermutation_group x =
-  let (DenseMatrix numberShifts numberMasks masks) = bbnMasks (symmNetwork x)
-   in case x.numberBits of
-        Just nBits ->
-          S.unsafeWith masks $ \masksPtr ->
-            S.unsafeWith (x.symmNetwork.bbnShifts) $ \shiftsPtr ->
-              S.unsafeWith (symmCharactersReal x) $ \eigvalsRealPtr ->
-                S.unsafeWith (symmCharactersImag x) $ \eigvalsImagPtr ->
-                  new $
-                    Cpermutation_group
-                      { cpermutation_group_refcount = 0
-                      , cpermutation_group_number_bits = fromIntegral nBits
-                      , cpermutation_group_number_shifts = fromIntegral numberShifts
-                      , cpermutation_group_number_masks = fromIntegral numberMasks
-                      , cpermutation_group_masks = masksPtr
-                      , cpermutation_group_shifts = shiftsPtr
-                      , cpermutation_group_eigvals_re = (castPtr :: Ptr Double -> Ptr CDouble) eigvalsRealPtr
-                      , cpermutation_group_eigvals_im = (castPtr :: Ptr Double -> Ptr CDouble) eigvalsImagPtr
-                      , cpermutation_group_haskell_payload = nullPtr
-                      }
-        Nothing -> pure nullPtr
-
-destroyCpermutation_group :: Ptr Cpermutation_group -> IO ()
-destroyCpermutation_group p = when (p /= nullPtr) $ free p
-
-data Hypergraph a = Hypergraph {vertices :: !(Set a), hyperedges :: !(Set (Set a))}
-  deriving stock (Eq, Ord, Show)
-
-data SearchTree a r
-  = SearchBranch !a [SearchTree a r]
-  | SearchLeaf !(Maybe r)
-  deriving stock (Eq, Ord, Show, Functor)
-
-newtype Partitioning a = Partitioning (NonEmpty (U.Vector a))
-  deriving stock (Show, Eq)
-
-allSingletons :: (UM.Unbox a) => Partitioning a -> Bool
-allSingletons (Partitioning xs) = all ((== 1) . G.length) xs
-
-distancePartition
-  :: forall a
-   . (UM.Unbox a, Ord a)
-  => Hypergraph a
-  -- ^ The hypergraph to partition
-  -> a
-  -- ^ A selected vertex
-  -> Partitioning a
-  -- ^ Groups of vertices by their distance to the selected vertex
-distancePartition g v0 =
-  Partitioning . NonEmpty.fromList . fmap (G.fromList . Set.toAscList) $
-    go (Set.singleton v0) (Set.toList g.hyperedges)
-  where
-    go :: Set a -> [Set a] -> [Set a]
-    go !seen hyperedges
-      | Set.null boundary = [foldl' Set.union Set.empty others | not (null others)]
-      | otherwise = boundary : go (Set.union seen combined) others
-      where
-        shouldIncludeHyperedge = any (`Set.member` seen) . Set.toList
-        (toBeIncluded, others) = Data.List.partition shouldIncludeHyperedge hyperedges
-        !combined = foldl' Set.union Set.empty toBeIncluded
-        !boundary = combined Set.\\ seen
-
--- | c n is the cyclic graph on n vertices
-cyclicGraph :: Int -> Hypergraph Int
-cyclicGraph n
-  | n >= 3 = Hypergraph (Set.fromList vs) (Set.fromList (Set.fromList <$> es))
-  | otherwise = error "n must be at least 3"
-  where
-    vs = [0 .. n - 1]
-    es = [[i, (i + 1) `mod` n] | i <- [0 .. n - 1]]
-
--- cyclic hypergraph with 3-vertex edges
-cyclicGraph3 :: Int -> Hypergraph Int
-cyclicGraph3 n
-  | n >= 3 = Hypergraph (Set.fromList vs) (Set.fromList (Set.fromList <$> es))
-  | otherwise = error "n must be at least 3"
-  where
-    vs = [0 .. (n - 1)]
-    es = [[i, (i + 1) `mod` n, (i + 2) `mod` n] | i <- [0 .. (n - 1)]]
-
-rectangularGraph :: Int -> Int -> Hypergraph Int
-rectangularGraph n k = Hypergraph (Set.fromList vs) (Set.fromList (Set.fromList <$> es))
-  where
-    -- vs contains an extra element that does not enter any edge in es
-    vs = [0 .. n * k]
-    es = [[k * i + j, k * i + ((j + 1) `mod` k)] | i <- [0 .. n - 1], j <- [0 .. k - 1]] ++ [[k * i + j, k * ((i + 1) `mod` n) + j] | i <- [0 .. n - 1], j <- [0 .. k - 1]]
-
-intersectSorted :: (G.Vector v a, Ord a) => v a -> v a -> v a
-intersectSorted a b = runST $ do
-  out <- GM.unsafeNew $ min (G.length a) (G.length b)
-  let go !size !i !j
-        | i < G.length a && j < G.length b =
-            let x = G.unsafeIndex a i
-                y = G.unsafeIndex b j
-             in case compare x y of
-                  EQ -> GM.unsafeWrite out size x >> go (size + 1) (i + 1) (j + 1)
-                  LT -> go size (i + 1) j
-                  GT -> go size i (j + 1)
-        | otherwise = pure size
-  size <- go 0 0 0
-  G.unsafeFreeze (GM.take size out)
-{-# SCC intersectSorted #-}
-
-intersectAllToAll :: (UM.Unbox a, Ord a) => Partitioning a -> Partitioning a -> Partitioning a
-intersectAllToAll (Partitioning p1) (Partitioning p2) =
-  Partitioning . NonEmpty.fromList $
-    intersectSorted <$> NonEmpty.toList p1 <*> NonEmpty.toList p2
-
-createMappings :: (U.Unbox a) => Partitioning a -> Partitioning a -> [Mapping a]
-createMappings (Partitioning (NonEmpty.toList -> src)) (Partitioning (NonEmpty.toList -> tgt)) =
-  G.toList $ G.zipWith Mapping (G.concat src) (G.concat tgt)
-
-pickOne :: (UM.Unbox a, Ord a) => Map a (Partitioning a) -> Partitioning a -> (a, Partitioning a)
-pickOne dps (Partitioning (v :| rest))
-  | G.null v = error "pickOne expects a normalized Partitioning"
-  | otherwise = (x, intersectAllToAll p (dps Map.! x))
-  where
-    !x = G.head v
-    p = Partitioning (G.tail v :| rest)
-
-pickAll :: (UM.Unbox a, Ord a) => Map a (Partitioning a) -> Partitioning a -> [(a, Partitioning a)]
-pickAll dps (Partitioning (xss :| rest)) = do
-  (x, xs) <- picks (G.toList xss)
-  let p = Partitioning (G.fromList xs :| rest)
-  pure (x, intersectAllToAll p (dps Map.! x))
-  where
-    picks :: [a] -> [(a, [a])]
-    picks [] = []
-    picks (x : xs) = (x, xs) : [(y, x : ys) | (y, ys) <- picks xs]
-
-normalizeWhenCompatible :: (UM.Unbox a, Ord a) => Partitioning a -> Partitioning a -> Maybe (Partitioning a, Partitioning a)
-normalizeWhenCompatible (Partitioning (NonEmpty.toList -> src)) (Partitioning (NonEmpty.toList -> tgt))
-  | fmap G.length src == fmap G.length tgt =
-      let normalize = Partitioning . NonEmpty.fromList . filter (not . G.null)
-       in -- (src', tgt') = unzip $ Data.List.sort $ zip (filter (not . null) src) (filter (not . null) tgt)
-          Just (normalize src, normalize tgt)
-  | otherwise = Nothing
-{-# SCC normalizeWhenCompatible #-}
-
--- | Generate a SearchTree of graph automorphisms using distance partition
-autsSearchTree :: Hypergraph Int -> SearchTree [Mapping Int] Permutation
-autsSearchTree g = dfs [] (Partitioning (vs :| [])) (Partitioning (vs :| []))
-  where
-    dfs :: [Mapping Int] -> Partitioning Int -> Partitioning Int -> SearchTree [Mapping Int] Permutation
-    dfs !mappings !srcPart !trgPart
-      -- check compatibility at the final step
-      | allSingletons srcPart =
-          -- isCompatible xys = isAutomorphism g xys
-          assert (allSingletons trgPart) $
-            let p =
-                  permutationFromMappings (Just (Set.size g.vertices)) $
-                    mappings <> createMappings srcPart trgPart
-             in SearchLeaf $ if isAutomorphism g p then Just p else Nothing
-      | otherwise =
-          let (!x, !srcPart') = pickOne dps srcPart
-              branches = do
-                (!y, !trgPart') <- pickAll dps trgPart
-                case normalizeWhenCompatible srcPart' trgPart' of
-                  Just (srcPart'', trgPart'') -> pure $ dfs (Mapping x y : mappings) srcPart'' trgPart''
-                  Nothing -> []
-           in SearchBranch mappings branches
-    vs = G.fromList $ Set.toAscList g.vertices
-    !dps = Map.fromAscList $ (\v -> (v, distancePartition g v)) <$> G.toList vs
-{-# SCC autsSearchTree #-}
-
-transversalGeneratingSet :: SearchTree a Permutation -> B.Vector Permutation
-transversalGeneratingSet = B.fromList . go
-  where
-    go (SearchLeaf (Just !p)) = [p | not (isIdentityPermutation p)]
-    go (SearchBranch _ (t : ts)) = concatMap (force . take 1 . go) ts <> go t
-    go _ = []
-
-groupFromTransversalGeneratingSet :: B.Vector Permutation -> PermutationGroup
-groupFromTransversalGeneratingSet tgs =
-  PermutationGroup . sortVectorBy compare . B.fromList $
-    Data.List.foldr1 (flip (<>)) <$> sequence transversals
-  where
-    k = (G.head tgs).length
-    transversals =
-      fmap ((identityPermutation k :) . B.toList . fmap fst) $
-        B.groupBy (\g h -> snd g == snd h) $
-          sortVectorBy (comparing snd) $
-            fmap (\p -> (p, minimalSupport p)) tgs
-
-hypergraphAutomorphisms :: (Permutation -> Bool) -> Hypergraph Int -> PermutationGroup
-hypergraphAutomorphisms p =
-  (PermutationGroup . G.filter p . unPermutationGroup)
-    . groupFromTransversalGeneratingSet
-    . transversalGeneratingSet
-    . autsSearchTree
-
-abelianSubgroup :: PermutationGroup -> MultiplicationTable -> (PermutationGroup, MultiplicationTable)
-abelianSubgroup (PermutationGroup g) t = (g', t')
+-- destroyCpermutation_group :: Ptr Cpermutation_group -> IO ()
+-- destroyCpermutation_group p = when (p /= nullPtr) $ free p
+abelianSubgroup :: PermutationGroup -> AbelianPermutationGroup
+abelianSubgroup (PermutationGroup g t) = AbelianPermutationGroup (PermutationGroup g' t')
   where
     -- abelianSubset returns candidates; we consider the first 100 and select the largest
     indices = Data.List.maximumBy (comparing G.length) . take 100 $ abelianSubset t
+    g' = G.map (g G.!) . G.convert $ indices
     t' = shrinkMultiplicationTable t indices
-    g' = PermutationGroup . G.map (g G.!) . G.convert $ indices
 
-abelianRepresentations :: PermutationGroup -> MultiplicationTable -> [B.Vector Symmetry]
-abelianRepresentations g t = fmap repToSymmetry <$> groupRepresentations t'
+abelianRepresentations :: AbelianPermutationGroup -> B.Vector (Representation Permutation)
+abelianRepresentations (AbelianPermutationGroup (PermutationGroup g t)) =
+  G.fromList $ Representation . fmap repToSymmetry . unRepresentation <$> abelianGroupRepresentations t
   where
-    (PermutationGroup g', t') = abelianSubgroup g t
-    repToSymmetry (GroupElement i _, φ) =
-      either (error . fromString) id . prettyValidate $ Symmetry (g' ! i) φ
+    repToSymmetry x = RepElement (g ! x.element.index) x.phase
 
-newtype MultiplicationTable = MultiplicationTable {unMultiplicationTable :: DenseMatrix U.Vector Int}
-  deriving stock (Show)
-
-mkMultiplicationTable :: PermutationGroup -> MultiplicationTable
-mkMultiplicationTable (PermutationGroup ps) =
-  MultiplicationTable . generateDenseMatrix n n $ \i j ->
-    binarySearch' ps (ps ! i <> ps ! j)
+groupRepresentations :: PermutationGroup -> B.Vector (Representation Permutation)
+groupRepresentations group0 = G.fromList $ unpackRep <$> abelianReps
   where
-    !n = G.length ps
+    (abelianGroup, abelianTable) = abelianization group0.table
+    abelianReps = abelianGroupRepresentations abelianTable
+    unpackCoset :: RepElement GroupElement -> [(Int, RepElement Permutation)]
+    unpackCoset x = f <$> indices
+      where
+        (Coset (IntSet.toList -> indices)) = abelianGroup ! x.element.index
+        f i = (i, RepElement (group0.permutations ! i) x.phase)
+    unpackRep :: Representation GroupElement -> Representation Permutation
+    unpackRep = either error id . fromGenerators . fmap snd . sortOn fst . concatMap unpackCoset . unRepresentation
 
 data AbelianSubsetHistory = AbelianSubsetHistory
   { included :: !(U.Vector Bool)
@@ -532,7 +426,8 @@ abelianSubset t = (\h -> sortVectorBy compare . G.map fst . G.filter snd . G.ind
               Data.List.sortOn (negate . G.length . G.filter id . (.included))
                 . mergeAbelianSubsetHistories
                 . Data.List.sortOn (.mask)
-                $ addToAbelianSubsetHistory t h <$> choices
+                $ addToAbelianSubsetHistory t h
+                  <$> choices
          in concatMap go hs'
 
 data GroupElement = GroupElement {index :: !Int, table :: !MultiplicationTable}
@@ -544,19 +439,11 @@ instance Semigroup GroupElement where
     where
       index' = unsafeIndexDenseMatrix (unMultiplicationTable a.table) (a.index, b.index)
 
-binarySearch' :: (HasCallStack, G.Vector v a, Ord a) => v a -> a -> Int
-binarySearch' !v !x = runST $ do
-  mv <- G.unsafeThaw v
-  index <- binarySearch mv x
-  unless (v ! index == x) $ error "element not found"
-  pure index
+instance Eq GroupElement where
+  a == b = a.index == b.index
 
-shrinkMultiplicationTable :: MultiplicationTable -> U.Vector Int -> MultiplicationTable
-shrinkMultiplicationTable (MultiplicationTable matrix) indices =
-  MultiplicationTable . generateDenseMatrix n n $ \i j ->
-    binarySearch' indices $ indexDenseMatrix matrix (indices ! i, indices ! j)
-  where
-    n = G.length indices
+instance Ord GroupElement where
+  compare = comparing (.index)
 
 getGroupElements :: MultiplicationTable -> [GroupElement]
 getGroupElements t@(MultiplicationTable (DenseMatrix n _ _)) = [GroupElement i t | i <- [0 .. n - 1]]
@@ -588,8 +475,8 @@ groupElementCycle x0 = x0 : go (x0 <> x0)
       | x.index == x0.index = []
       | otherwise = x : go (x <> x0)
 
-isIdentity :: GroupElement -> Bool
-isIdentity x = (x <> x).index == x.index
+instance HasIdentity GroupElement where
+  isIdentity x = (x <> x).index == x.index
 
 selectPrimeElements :: [GroupElement] -> [(GroupElement, Int, Int)]
 selectPrimeElements = mapMaybe getInfo
@@ -623,26 +510,27 @@ groupGenerators group0 = go factors0 [] (selectPrimeElements group0) []
           let seen = IntSet.fromList $ (.index) <$> subgroup'
            in flip filter candidates $ \(cg, cp, cn) ->
                 not (IntSet.member cg.index seen)
-                  && cn <= Data.List.maximum [fn | (fp, fn) <- factors', fp == cp]
+                  && cn
+                    <= Data.List.maximum [fn | (fp, fn) <- factors', fp == cp]
 
         second (_, b, _) = b
         third (_, _, c) = c
 
-newtype Representation = Representation (B.Vector Symmetry)
-  deriving stock (Show)
-
-groupRepresentationsFromGenerators :: B.Vector GroupElement -> [B.Vector (GroupElement, Ratio Int)]
-groupRepresentationsFromGenerators generators =
-  let r = fmap G.fromList $ mapM (uncurry phases) . G.toList $ G.zip generators orders
-   in r
+abelianGroupRepresentationsFromGenerators :: B.Vector GroupElement -> [Representation GroupElement]
+abelianGroupRepresentationsFromGenerators generators =
+  fmap (either error id . fromGenerators)
+    $ mapM (uncurry phases)
+      . G.toList
+    $ G.zip generators orders
   where
     orders = G.map groupElementOrder generators
-    phases :: GroupElement -> Int -> [(GroupElement, Ratio Int)]
-    phases g n = [(g, i % n) | i <- [0 .. n - 1]]
+    phases :: GroupElement -> Int -> [RepElement GroupElement]
+    phases g n = [RepElement g (i % n) | i <- [0 .. n - 1]]
 
-groupRepresentations :: MultiplicationTable -> [B.Vector (GroupElement, Ratio Int)]
-groupRepresentations =
-  groupRepresentationsFromGenerators . G.fromList . groupGenerators . getGroupElements
+abelianGroupRepresentations :: MultiplicationTable -> [Representation GroupElement]
+abelianGroupRepresentations t = abelianGroupRepresentationsFromGenerators generators
+  where
+    generators = G.fromList . groupGenerators . getGroupElements $ t
 
 newtype Coset = Coset {unCoset :: IntSet.IntSet}
   deriving stock (Eq, Ord, Show)
@@ -664,13 +552,14 @@ getInvert t@(MultiplicationTable matrix) =
         Just k -> k
         Nothing -> error "the group has no or multiple identities"
 
-commutatorSubgroup :: MultiplicationTable -> IntSet
+commutatorSubgroup :: MultiplicationTable -> [Int]
 commutatorSubgroup t =
-  IntSet.fromList
-    [ g `times` h `times` (inverses ! g) `times` (inverses ! h)
-    | g <- [0 .. n - 1]
-    , h <- [0 .. n - 1]
-    ]
+  IntSet.toList $
+    IntSet.fromList
+      [ g `times` h `times` (inverses ! g) `times` (inverses ! h)
+      | g <- [0 .. n - 1]
+      , h <- [0 .. n - 1]
+      ]
   where
     !n = t.unMultiplicationTable.dmRows
     !times = getTimes t
@@ -681,9 +570,8 @@ abelianization :: MultiplicationTable -> (B.Vector Coset, MultiplicationTable)
 abelianization t = (cosets, cosetMultiplicationTable t cosets)
   where
     n = t.unMultiplicationTable.dmRows
-    cgs = commutatorSubgroup t
     times = getTimes t
-    coset g = Coset $ IntSet.fromList [g `times` h | h <- IntSet.toList cgs]
+    coset g = Coset $ IntSet.fromList [g `times` h | h <- commutatorSubgroup t]
     !cosets = go [] IntSet.empty [0 .. n - 1]
     go !cs !seen (g : gs)
       | g `IntSet.member` seen = go cs seen gs
@@ -692,8 +580,6 @@ abelianization t = (cosets, cosetMultiplicationTable t cosets)
               seen' = unCoset c' `IntSet.union` seen
            in go (c' : cs) seen' gs
     go cs _ [] = G.fromList cs
-
--- !cosets = B.fromList . Set.toAscList . Set.fromList $ coset <$> [0 .. n - 1]
 
 cosetMultiplicationTable :: MultiplicationTable -> B.Vector Coset -> MultiplicationTable
 cosetMultiplicationTable t cosets =
@@ -706,27 +592,3 @@ cosetMultiplicationTable t cosets =
           Nothing -> error "G/[G, G] is not closed under <>"
   where
     n = G.length cosets
-
--- strongGeneratingSet :: SearchTree [Mapping Int] -> [[Mapping Int]]
--- strongGeneratingSet = go []
---   where
---     go gs (SearchTree True xys _) = xys : gs
---     go gs (SearchTree False xys ts) =
---       case listToMaybe $ reverse $ filter (\(Mapping x y) -> x /= y) xys of -- the first vertex that isn't fixed
---         Nothing -> Data.List.foldl' (\hs t -> go hs t) gs ts
---         Just (Mapping x y) ->
---           if y `elem` (x .^^ gs)
---             then gs
---             else find1New gs ts
---     find1New gs (t : ts) =
---       let hs = instrongTerminals gs t
---        in if take 1 gs /= take 1 hs -- we know a new element would be placed at the front
---             then hs
---             else find1New gs ts
---     find1New gs [] = gs
-
-isAutomorphism :: Hypergraph Int -> Permutation -> Bool
-isAutomorphism g p = g.hyperedges == Set.map transformEdge g.hyperedges
-  where
-    i = unPermutation p
-    transformEdge = Set.map (i G.!)

@@ -36,7 +36,7 @@ final: prev: {
                   "CHPL_HOST_MEM=jemalloc"
                   "CHPL_TARGET_MEM=jemalloc"
                   "CHPL_LAUNCHER=none"
-                  "OPTIMIZATION=--fast"
+                  "OPTIMIZATION='--debug -g'"
                   "CHPL_CFLAGS='-I${final.lattice-symmetries.kernels}/include'"
                   "CHPL_LDFLAGS='-L${final.lattice-symmetries.haskell.lib}/lib'"
                   "HDF5_CFLAGS='-I${final.hdf5.dev}/include'"

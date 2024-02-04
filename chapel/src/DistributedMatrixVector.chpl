@@ -88,7 +88,7 @@ private proc localProcess(basisPtr : c_ptrConst(Basis),
 
     ref accessor = accessorPtr.deref();
     // Special case when we don't have to call ls_hs_state_index
-    if numLocales == 1 && basisPtr.deref().isStateIndexIdentity() {
+    if numLocales == 1 && basisPtr.deref().info.is_state_index_identity {
       timer.accessing.start();
       foreach k in 0 ..# size {
         const i = basisStates[k]:int;
@@ -128,86 +128,6 @@ private proc localProcess(basisPtr : c_ptrConst(Basis),
   }
 }
 
-record PartitionInfo {
-    var _countOrOffset : int;
-    var nextOffset : int;
-
-    inline proc count ref { return _countOrOffset; }
-    inline proc offset ref { return _countOrOffset; }
-};
-
-inline proc partitionBy(in first : c_ptr(?eltType), last : c_ptr(eltType), predicate) {
-    while true {
-      if first == last then return last;
-      if !predicate(first.deref()) then break;
-      first += 1;
-    }
-
-    var it = first + 1;
-    while it != last {
-      if predicate(it.deref()) {
-        first.deref() <=> it.deref();
-        first += 1;
-      }
-      it += 1;
-    }
-    return first;
-}
-
-inline proc swapElements(a : int, b : int, arr : c_ptr(?t1)) {
-  arr[a] <=> arr[b];
-}
-inline proc swapElements(a : int, b : int, arr1 : c_ptr(?t1), arr2 : c_ptr(?t2)) {
-  swapElements(a, b, arr1);
-  swapElements(a, b, arr2);
-}
-
-proc radixOneStep(numKeys : int, keys : c_ptr(uint(8)), offsets : c_array(int, 257), arrs...?numArrs) {
-  var partitions : c_array(PartitionInfo, 256);
-  foreach i in 0 ..# numKeys {
-    partitions[keys[i]:int].count += 1;
-  }
-
-  var remainingPartitions : c_array(uint(8), 256);
-  var numPartitions : int;
-  var total : int;
-  for i in 0 ..# 256 {
-    const count = partitions[i].count;
-    if count > 0 {
-      partitions[i].offset = total;
-      total += count;
-      remainingPartitions[numPartitions] = i:uint(8);
-      numPartitions += 1;
-    }
-    partitions[i].nextOffset = total;
-  }
-
-  var lastRemaining = remainingPartitions:c_ptr(uint(8)) + numPartitions;
-  var endPartition = remainingPartitions:c_ptr(uint(8)) + 1;
-  while lastRemaining - endPartition > 0 {
-    record Func {
-      inline proc this(partitionIdx : uint(8)) {
-        ref beginOffset = partitions[partitionIdx:int].offset;
-        ref endOffset = partitions[partitionIdx:int].nextOffset;
-        if beginOffset == endOffset then return false;
-
-        for i in beginOffset .. endOffset - 1 {
-          ref offset = partitions[keys[i]:int].offset;
-          keys[i] <=> keys[offset];
-          swapElements(i, offset, (...arrs));
-          offset += 1;
-        }
-        return beginOffset != endOffset;
-      }
-    }
-    lastRemaining = partitionBy(remainingPartitions:c_ptr(uint(8)), lastRemaining, new Func());
-  }
-
-  offsets[0] = 0;
-  foreach i in 1 ..# 256 {
-    offsets[i] = partitions[i - 1].nextOffset;
-  }
-}
 
 record _LocalBuffer {
   type coeffType;
@@ -221,13 +141,22 @@ record _LocalBuffer {
   var isEmpty : chpl__processorAtomicType(bool);
   var incrementNumProcessed : chpl__processorAtomicType(bool);
 
-  proc postinit() {
+  proc init(type coeffType, destLocaleIdx : int, srcLocaleIdx : int, capacity : int) {
     assert(destLocaleIdx == here.id);
-    incrementNumProcessed.write(true);
-    isEmpty.write(true);
-    basisStates = allocate(uint(64), capacity);
-    coeffs = allocate(coeffType, capacity);
+    this.coeffType = coeffType;
+    this.destLocaleIdx = destLocaleIdx;
+    this.srcLocaleIdx = srcLocaleIdx;
+    this.capacity = capacity;
+    this.size = 0;
+    this.basisStates = allocate(uint(64), capacity);
+    this.coeffs = allocate(coeffType, capacity);
+    this.isFull = nil;
+    this.isEmpty = true;
+    this.incrementNumProcessed = true;
   }
+
+  proc init(type coeffType) do this.init(coeffType, here.id, -1, 0);
+
 
   proc deinit() {
     deallocate(basisStates);
@@ -256,11 +185,22 @@ record _RemoteBuffer {
   var isEmpty : c_ptr(chpl__processorAtomicType(bool));
   var incrementNumProcessed : c_ptr(chpl__processorAtomicType(bool));
 
-  // var timer : RemoteBufferTimer;
-
-  proc postinit() {
-    isFull.write(false);
+  proc init(type coeffType, destLocaleIdx : int = -1, srcLocaleIdx : int = here.id, remoteBufferSize : int = 0) {
+    this.coeffType = coeffType;
+    this.destLocaleIdx = destLocaleIdx;
+    this.srcLocaleIdx = srcLocaleIdx;
+    this.capacity = remoteBufferSize;
+    this.size = nil;
+    this.basisStates = nil;
+    this.coeffs = nil;
+    this.isFull = false;
+    this.isEmpty = nil;
+    this.incrementNumProcessed = nil;
   }
+
+  // proc postinit() {
+  //   isFull.write(false);
+  // }
 
   inline proc put(localBasisStates : c_ptrConst(uint(64)),
                   localCoeffs : c_ptrConst(coeffType),
@@ -457,7 +397,7 @@ record Producer {
   var numChunks : int;
   var numProducerTasks : int;
 
-  var batchedOperator : BatchedOperator;
+  var batchedOperator : owned BatchedOperator;
   var basisPtr : c_ptrConst(Basis);
   var accessorPtr : c_ptr(ConcurrentAccessor(eltType));
   var representativesPtr : c_ptrConst(uint(64));
@@ -479,7 +419,7 @@ record Producer {
   // var fastOnTimer : stopwatch;
   // var submitTimer : stopwatch;
 
-  proc init(taskIdx : int, numChunks : int, in batchedOperator : BatchedOperator,
+  proc init(taskIdx : int, numChunks : int, in batchedOperator : owned BatchedOperator,
             ref accessor : ConcurrentAccessor(?eltType),
             const ref representatives : [] uint(64),
             const ref x : [] eltType,
@@ -493,13 +433,13 @@ record Producer {
     this.numChunks = numChunks;
     this.numProducerTasks = remoteBuffers.domain.dim(1).size;
     this.batchedOperator = batchedOperator;
-    this.basisPtr = c_ptrToConst(this.batchedOperator._matrixPtr.deref().basis);
-    this.accessorPtr = c_ptrTo(accessor);
+    this.basisPtr = c_addrOfConst(this.batchedOperator._matrixPtr.deref().basis);
+    this.accessorPtr = c_addrOf(accessor);
     this.representativesPtr = c_ptrToConst(representatives);
     this.xPtr = c_ptrToConst(x);
     this.rangesPtr = c_ptrToConst(ranges);
-    this.moreWorkPtr = c_ptrTo(moreWork);
-    this.currentChunkIdxPtr = c_ptrTo(currentChunkIdx);
+    this.moreWorkPtr = c_addrOf(moreWork);
+    this.currentChunkIdxPtr = c_addrOf(currentChunkIdx);
     this.remoteBuffersPtr = c_ptrTo(remoteBuffers);
 
     // this.runTimer = new stopwatch();
@@ -511,6 +451,10 @@ record Producer {
     // this.fastOnTimer = new stopwatch();
     // this.submitTimer = new stopwatch();
     // logDebug("Done creating Producer(", taskIdx, ")...");
+  }
+
+  proc deinit() {
+    logDebug("destroying Producer");
   }
 
   inline proc remoteBuffers(localeIdx : int, taskIdx : int) ref {
@@ -525,11 +469,11 @@ record Producer {
     return 8 * sentBytes / (1024.0 * 1024.0 * 1024.0) / sentTime;
   }
 
-  proc trySubmit(ref remoteBuffer,
-                 basisStatesPtr : c_ptr(uint(64)),
-                 coeffsPtr : c_ptr(complex(128)),
-                 count : int,
-                 increment : bool = true) {
+  proc ref trySubmit(ref remoteBuffer,
+                     basisStatesPtr : c_ptr(uint(64)),
+                     coeffsPtr : c_ptr(complex(128)),
+                     count : int,
+                     increment : bool = true) {
     if remoteBuffer.isFull.read() then
       return false;
 
@@ -561,7 +505,8 @@ record Producer {
     return true;
   }
 
-  proc run() {
+  proc ref run() {
+    logDebug("Calling Producer.run on taskIdx=", _taskIdx);
     assert(numLocales <= 256);
     timer.run.start();
 
@@ -655,6 +600,7 @@ record Producer {
     }
 
     timer.run.stop();
+    logDebug("Producer.run done on taskIdx=", _taskIdx);
   }
 
   proc getTimings() {
@@ -759,7 +705,7 @@ record Consumer {
     return localBuffersPtr[localeIdx * numProducerTasks + taskIdx];
   }
 
-  proc run() {
+  proc ref run() {
     runTimer.start();
     while numProcessedPtr.deref().read() < totalNumberChunks {
       var hasDoneWork = false;
@@ -807,7 +753,7 @@ private proc localOffDiagonalNoQueue(matrix : Operator,
                                      ref y : [] eltType,
                                      const ref representatives : [] uint(64),
                                      in timings : TimingTree? = nil) {
-  // logDebug("Calling localOffDiagonalNoQueue...");
+  logDebug("Calling localOffDiagonalNoQueue...");
   var totalTimer = new stopwatch();
   var initializationTimer = new stopwatch();
   totalTimer.start();
@@ -828,11 +774,11 @@ private proc localOffDiagonalNoQueue(matrix : Operator,
   var newRemoteBuffers = _offDiagMakeRemoteBuffers(numProducerTasks, remoteBufferSize);
   var accessor = new ConcurrentAccessor(y);
 
-  const numChunks =
-    min(max((representatives.size * matrix.numberOffDiagTerms()
-               + remoteBufferSize - 1) / (remoteBufferSize * kFactor),
-            10 * numProducerTasks),
-        representatives.size);
+  const numChunks = representatives.size;
+    // min(max((representatives.size * matrix.numberOffDiagTerms()
+    //            + remoteBufferSize - 1) / (remoteBufferSize * kFactor),
+    //         10 * numProducerTasks),
+    //     representatives.size);
   // logDebug(matrix.basis, ", ", (newRemoteBuffers.dim(0).size, newRemoteBuffers.dim(1).size),
   //                        ", ", (newLocalBuffers.dim(0).size, newLocalBuffers.dim(1).size));
   // logDebug((c_const_ptrTo(matrix.basis), c_ptrTo(accessor),
@@ -910,7 +856,8 @@ private proc localOffDiagonalNoQueue(matrix : Operator,
   allLocalesBarrier.barrier();
   initializationTimer.stop();
 
-  coforall taskIdx in 0 ..# numTasks with (ref accessor, ref producerTimings, ref consumerTimings) {
+  logDebug("numTasks=", numTasks, ", numChunks=", numChunks, ", ranges=", ranges);
+  coforall taskIdx in 0 ..# numTasks with (const ref matrix, ref accessor, ref producerTimings, ref consumerTimings, ref newLocalBuffers, ref newRemoteBuffers) {
     if taskIdx < numProducerTasks {
       // I'm a producer
       var producer = new Producer(
@@ -926,8 +873,8 @@ private proc localOffDiagonalNoQueue(matrix : Operator,
         newRemoteBuffers);
       producer.run();
 
-      if kDisplayTimings then
-        producerTimings.pushBack(producer.getTimings());
+      // if kDisplayTimings then
+      //   producerTimings.pushBack(producer.getTimings());
 
       //  logDebug(producer.getTimings());
       // producerRunTime[taskIdx] = producer.runTimer.elapsed();
@@ -976,6 +923,7 @@ private proc localOffDiagonalNoQueue(matrix : Operator,
   }
 
   allLocalesBarrier.barrier();
+  logDebug("loop is done");
 
   for srcLocaleIdx in 0 ..# numLocales {
     for taskIdx in 0 ..# numProducerTasks {
@@ -999,6 +947,7 @@ private proc localOffDiagonalNoQueue(matrix : Operator,
       tree.addChild(combineTimingTrees(consumerTimings.toArray()));
     timings!.addChild(tree);
   }
+  logDebug("localOffDiagonalNoQueue done.");
     // logDebug("localOffDiagonalNoQueue: ", totalTimer.elapsed(), "\n",
     //          " ├─ ", initializationTimer.elapsed(), " in initialization\n"
              // " ├─ producers: ", meanAndErrString(producerRunTime), "\n",
@@ -1035,12 +984,14 @@ proc localMatrixVector(matrix : Operator,
   assert(x.locale == here);
   assert(y.locale == here);
   assert(representatives.locale == here);
+  logDebug("Calling localMatrixVector...");
   if matrix.numberDiagTerms() > 0 then
     localDiagonal(matrix, x, y, representatives, timings);
   else
     y = 0;
   if matrix.numberOffDiagTerms() > 0 then
     localOffDiagonalNoQueue(matrix, x, y, representatives, timings);
+  logDebug("localMatrixVector done.");
 }
 
 proc matrixVectorProduct(const ref matrix : Operator,
@@ -1051,9 +1002,9 @@ proc matrixVectorProduct(const ref matrix : Operator,
   coforall loc in Locales with (ref y) do on loc {
     // var (_, myMatrix) = loadConfigFromYaml(matrixFilename, hamiltonian=true);
     const myMatrix = matrix;
-    const ref myX = x.getBlock(loc.id)[0, ..];
-    ref myY = y.getBlock(loc.id)[0, ..];
-    const ref myBasisStates = representatives.getBlock(loc.id);
+    const ref myX = x[loc][0, ..];
+    ref myY = y[loc][0, ..];
+    const ref myBasisStates = representatives[loc];
     // logDebug("Setting representatives...");
     myMatrix.basis.uncheckedSetRepresentatives(myBasisStates);
     // logDebug("Done setting representatives");
@@ -1077,7 +1028,7 @@ export proc ls_chpl_matrix_vector_product_f64(matrixPtr : c_ptr(ls_hs_operator),
                                               xPtr : c_ptr(real(64)), yPtr : c_ptr(real(64))) {
   // logDebug("Calling ls_chpl_matrix_vector_product ...");
   var matrix = new Operator(matrixPtr, owning=false);
-  if matrix.basis.numberWords != 1 then
+  if matrix.basis.info.number_words != 1 then
     halt("bases with more than 64 bits are not yet implemented");
   if numVectors != 1 then
     halt("applying the Operator to more than 1 vector is not yet implemented");
@@ -1094,7 +1045,7 @@ export proc ls_chpl_matrix_vector_product_c128(matrixPtr : c_ptr(ls_hs_operator)
                                                xPtr : c_ptr(complex(128)), yPtr : c_ptr(complex(128))) {
   // logDebug("Calling ls_chpl_matrix_vector_product ...");
   var matrix = new Operator(matrixPtr, owning=false);
-  if matrix.basis.numberWords != 1 then
+  if matrix.basis.info.number_words != 1 then
     halt("bases with more than 64 bits are not yet implemented");
   if numVectors != 1 then
     halt("applying the Operator to more than 1 vector is not yet implemented");

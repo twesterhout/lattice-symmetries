@@ -1,18 +1,20 @@
 .RULES:
 .POSIX:
 
-OPTIMIZATION ?= --fast
 PREFIX ?= /usr/local
 TEST_DATA ?= $(PWD)
 CHPL_ARGS ?=
-CHPL_CFLAGS ?=
+CHPL_CFLAGS ?= --fast
 
-CFLAGS = $(OPTIMIZATION) --target-compiler=llvm
+# --target-compiler=llvm
 # TODO: enable later to get rid of __primitive calls: -s cPtrToLogicalValue=true
 LDFLAGS = -llattice_symmetries_haskell
 
 PRIMME_CFLAGS = -I$(PRIMME_PATH)/include
 PRIMME_LDFLAGS = -L$(PRIMME_PATH)/lib -lprimme -llapacke -lopenblas -lm -lgomp -lpthread
+
+HALIDE_CFLAGS = -I$(HALIDE_PATH)/include
+# HALIDE_LDFLAGS = -L$(HALIDE_PATH)/lib -lHalide
 
 ifeq ($(shell uname -s), Linux)
   HDF5_CFLAGS ?= $(shell pkg-config --cflags hdf5)
@@ -25,22 +27,34 @@ else
 endif
 
 # MODULES = src/ApplyOperator.chpl src/StatesEnumeration.chpl src/helper.c
-LIB_MODULES = src/LatticeSymmetries.chpl \
+LIB_MODULES = src/CommonParameters.chpl \
               src/FFI.chpl \
+              src/Utils.chpl \
+              src/Timing.c \
+              src/Timing.chpl \
+              src/ForeignTypes.c \
               src/ForeignTypes.chpl \
               src/Vector.chpl \
-              src/ConcurrentAccessor.chpl \
-              src/StatesEnumeration.chpl \
-              src/BatchedOperator.chpl \
-              src/DistributedMatrixVector.chpl \
-              src/CommonParameters.chpl \
-              src/CSR.chpl \
-              src/Utils.chpl
+              src/StatesEnumeration.chpl
 
-APP_MODULES = $(LIB_MODULES) \
-              src/HashedToBlock.chpl \
-              src/BlockToHashed.chpl \
-              src/MyHDF5.chpl
+# LIB_MODULES = src/LatticeSymmetries.chpl \
+#               src/FFI.chpl \
+#               src/ForeignTypes.chpl \
+#               src/ForeignTypes.c \
+#               src/Vector.chpl \
+#               src/ConcurrentAccessor.chpl \
+#               src/StatesEnumeration.chpl \
+#               src/BatchedOperator.chpl \
+#               src/DistributedMatrixVector.chpl \
+#               src/CommonParameters.chpl \
+#               src/CSR.chpl \
+#               src/Utils.chpl
+
+APP_MODULES = $(LIB_MODULES)
+# APP_MODULES = $(LIB_MODULES) \
+#               src/HashedToBlock.chpl \
+#               src/BlockToHashed.chpl \
+#               src/MyHDF5.chpl
 
 .PHONY: all
 all: lib
@@ -57,8 +71,8 @@ lib/liblattice_symmetries_chapel.$(SHARED_EXT): $(LIB_MODULES) src/library.o
 	@mkdir -p $(@D)
 	@rm -rf $(@D)/*
 	CHPL_LIB_PIC=pic chpl \
-		$(CFLAGS) \
 		$(CHPL_CFLAGS) \
+		$(HALIDE_CFLAGS) \
 		--library --dynamic -o lattice_symmetries_chapel $^ \
 		$(CHPL_LDFLAGS) -llattice_symmetries_haskell
 
@@ -80,9 +94,23 @@ install: lib
 # 	# $(CHPL_LIBS) $< $(CHPL_ARGS) --kBasis data/heisenberg_kagome_36.yaml --kRepresentatives data/heisenberg_kagome_36.h5
 # 	$(CHPL_LIBS) $< $(CHPL_ARGS) --kHamiltonian data/heisenberg_square_6x6.yaml --kVectors data/large-scale/matvec/heisenberg_square_6x6.h5
 
-bin/TestStatesEnumeration: test/TestStatesEnumeration.chpl $(APP_MODULES)
+bin/TestConcurrentQueue: test/TestConcurrentQueue.chpl src/ConcurrentQueue.chpl src/ConcurrentQueue.c
 	@mkdir -p $(@D)
-	chpl $(CFLAGS) $(CHPL_CFLAGS) $(HDF5_CFLAGS) -o $@ --main-module $(@F) $^ $(HDF5_LDFLAGS) $(CHPL_LDFLAGS) $(LDFLAGS)
+	chpl $(CHPL_CFLAGS) -o $@ --main-module $(@F) $^ $(CHPL_LDFLAGS) $(LDFLAGS)
+
+bin/TestUtils: test/TestUtils.chpl src/CommonParameters.chpl src/FFI.chpl src/Utils.chpl src/Timing.c src/Timing.chpl src/ForeignTypes.c src/ForeignTypes.chpl src/Vector.chpl
+	@mkdir -p $(@D)
+	chpl $(CHPL_CFLAGS) $(HALIDE_CFLAGS) -o $@ --main-module $(@F) $^ $(CHPL_LDFLAGS) $(LDFLAGS)
+
+bin/TestStatesEnumeration: test/TestStatesEnumeration.chpl \
+                           src/FFI.chpl \
+                           src/Utils.chpl \
+                           src/ForeignTypes.c src/ForeignTypes.chpl \
+                           src/Timing.c src/Timing.chpl \
+                           src/CommonParameters.chpl \
+                           src/StatesEnumeration.chpl
+	@mkdir -p $(@D)
+	chpl $(CHPL_CFLAGS) $(HALIDE_CFLAGS) -I src/ -o $@ --main-module $(@F) $^ $(CHPL_LDFLAGS) $(LDFLAGS)
 
 bin/TestMatrixVectorProduct: test/TestMatrixVectorProduct.chpl $(APP_MODULES)
 	@mkdir -p $(@D)

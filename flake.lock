@@ -1,21 +1,73 @@
 {
   "nodes": {
+    "arrayfire-haskell": {
+      "inputs": {
+        "flake-utils": [
+          "halide-haskell",
+          "flake-utils"
+        ],
+        "nix-filter": [
+          "halide-haskell",
+          "nix-filter"
+        ],
+        "nixpkgs": [
+          "halide-haskell",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1704284732,
+        "narHash": "sha256-editEH1WQNsOqmGL1Vxbn6I62ZFjPpRcGTNTwdTLKvk=",
+        "owner": "twesterhout",
+        "repo": "arrayfire-haskell",
+        "rev": "79b2519486f409dc14e60b44dc360b430756d9c5",
+        "type": "github"
+      },
+      "original": {
+        "owner": "twesterhout",
+        "ref": "withDevicePtr",
+        "repo": "arrayfire-haskell",
+        "type": "github"
+      }
+    },
     "flake-utils": {
       "inputs": {
         "systems": "systems"
       },
       "locked": {
-        "lastModified": 1694529238,
-        "narHash": "sha256-zsNZZGTGnMOf9YpHKJqMSsa0dXbfmxeoJ7xHlrt+xmY=",
+        "lastModified": 1705309234,
+        "narHash": "sha256-uNRRNRKmJyCRC/8y1RqBkqWBLM034y4qN7EprSdmgyA=",
         "owner": "numtide",
         "repo": "flake-utils",
-        "rev": "ff7b65b44d01cf9ba6a71320833626af21126384",
+        "rev": "1ef2e671c3b0c19053962c07dbda38332dcebf26",
         "type": "github"
       },
       "original": {
         "owner": "numtide",
         "repo": "flake-utils",
         "type": "github"
+      }
+    },
+    "halide-haskell": {
+      "inputs": {
+        "arrayfire-haskell": "arrayfire-haskell",
+        "flake-utils": [
+          "flake-utils"
+        ],
+        "nix-filter": "nix-filter",
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1706275899,
+        "narHash": "sha256-1gP1DD6fxKpieD09mhqmycAQMcxJEHwlDquuTGz98Gg=",
+        "path": "/home/tom/Projects/halide-haskell",
+        "type": "path"
+      },
+      "original": {
+        "path": "/home/tom/Projects/halide-haskell",
+        "type": "path"
       }
     },
     "haskell-python-tools": {
@@ -25,11 +77,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1695315460,
-        "narHash": "sha256-IkYjao43m45S3z9CPnUpYB3WESa7czMhDut0RehGLgw=",
+        "lastModified": 1701344663,
+        "narHash": "sha256-1XChgbosuxVJ/qb9XIhl8T+YbFprgMjvFqDyzuRtjKs=",
         "owner": "twesterhout",
         "repo": "haskell-python-tools.nix",
-        "rev": "9bc45133b9e73aed42d1a03ab12f5c60386b6063",
+        "rev": "5885d10a9ea979a39695162895667c047c3e7d2c",
         "type": "github"
       },
       "original": {
@@ -48,26 +100,38 @@
         ]
       },
       "locked": {
-        "lastModified": 1696252598,
-        "narHash": "sha256-Azfyof/hzImb39/bofZ15VRmGSDsjrzr4RvnuGgOSJI=",
-        "owner": "twesterhout",
-        "repo": "nix-chapel",
-        "rev": "2a8abe8f919ada9c30b8e1628a103e4e9644343c",
+        "lastModified": 1706977600,
+        "narHash": "sha256-JYkBUS8hF9LgJDSJrFiiy+85jI+2dBs+DmEpBuecqUA=",
+        "path": "/home/tom/Projects/nix-chapel",
+        "type": "path"
+      },
+      "original": {
+        "path": "/home/tom/Projects/nix-chapel",
+        "type": "path"
+      }
+    },
+    "nix-filter": {
+      "locked": {
+        "lastModified": 1701697642,
+        "narHash": "sha256-L217WytWZHSY8GW9Gx1A64OnNctbuDbfslaTEofXXRw=",
+        "owner": "numtide",
+        "repo": "nix-filter",
+        "rev": "c843418ecfd0344ecb85844b082ff5675e02c443",
         "type": "github"
       },
       "original": {
-        "owner": "twesterhout",
-        "repo": "nix-chapel",
+        "owner": "numtide",
+        "repo": "nix-filter",
         "type": "github"
       }
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1701068326,
-        "narHash": "sha256-vmMceA+q6hG1yrjb+MP8T0YFDQIrW3bl45e7z24IEts=",
+        "lastModified": 1706732774,
+        "narHash": "sha256-hqJlyJk4MRpcItGYMF+3uHe8HvxNETWvlGtLuVpqLU0=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "8cfef6986adfb599ba379ae53c9f5631ecd2fd9c",
+        "rev": "b8b232ae7b8b144397fdb12d20f592e5e7c1a64d",
         "type": "github"
       },
       "original": {
@@ -80,6 +144,7 @@
     "root": {
       "inputs": {
         "flake-utils": "flake-utils",
+        "halide-haskell": "halide-haskell",
         "haskell-python-tools": "haskell-python-tools",
         "nix-chapel": "nix-chapel",
         "nixpkgs": "nixpkgs"

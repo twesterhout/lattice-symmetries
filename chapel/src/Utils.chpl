@@ -1,8 +1,13 @@
 module Utils {
 
-private use List;
+// Our modules
 private use FFI;
-import IO;
+
+// System modules
+private use CTypes;
+private import OS.POSIX;
+
+// private import IO;
 
 proc initRuntime() {
   coforall loc in Locales do on loc {
@@ -16,131 +21,226 @@ proc deinitRuntime() {
   }
 }
 
-record VarianceAccumulator {
+record Ref {
   type eltType;
-  var _count : int;
-  var _mean : eltType;
-  var _M2 : eltType;
+  var payload : c_ptrTo(eltType);
 
-  proc init(x : ?eltType) {
-    this.eltType = eltType;
-    this._count = 1;
-    this._mean = x;
-    this._M2 = 0;
+  proc init(ref x : ?t) {
+    this.eltType = t;
+    this.payload = c_addrOf(x);
   }
 
-  proc update(x : eltType) {
-    _count += 1;
-    const delta = x - _mean;
-    _mean += delta / _count;
-    const delta2 = x - _mean;
-    _M2 += delta * delta2;
+  proc _getReference() ref {
+    if payload == nil then
+      halt("payload is nil");
+    else
+      return payload.deref();
   }
 
-  inline proc mean { return if _count == 0 then (0.0 / 0.0):eltType else _mean; }
-  inline proc std { return if _count < 2 then (0.0 / 0.0):eltType else _M2 / _count; }
+  forwarding _getReference();
+}
 
-  proc writeThis(f) throws {
-    f.write(mean, " ± ", std);
+inline proc sizeToDomain(dim0) { return {0 ..# dim0}; }
+inline proc sizeToDomain(dim0, dim1) { return {0 ..# dim0, 0 ..# dim1}; }
+inline proc sizeToDomain(dim0, dim1, dim2) { return {0 ..# dim0, 0 ..# dim1, 0 ..# dim2}; }
+inline proc sizeToDomain(dim0, dim1, dim2, dim3) { return {0 ..# dim0, 0 ..# dim1, 0 ..# dim2, 0 ..# dim3}; }
+
+proc prefixSum(count : int, arr : c_ptrConst(?eltType), sums : c_ptr(eltType),
+               param inclusive : bool = false) {
+  var total : eltType = 0;
+  for i in 0 ..# count {
+    sums[i] = total;
+    total += arr[i];
+  }
+  if inclusive then
+    sums[count] = total;
+}
+proc prefixSum(arr : [] ?eltType, param inclusive : bool = false) where arr.domain.rank == 1 {
+  var sums : [0 ..# (if inclusive then arr.size + 1 else arr.size)] eltType;
+  if arr.size == 0 then return sums;
+  prefixSum(arr.size, c_ptrToConst(arr), c_ptrTo(sums), inclusive);
+  return sums;
+}
+proc prefixSum(arr : [] ?eltType, param dim : int, param inclusive : bool = false)
+    where arr.domain.rank == 2 && 0 <= dim && dim < 2 {
+  const dim0 = arr.dim(0).size;
+  const dim1 = arr.dim(1).size;
+  select dim {
+    when 0 {
+      // Vertically
+      var sums : [0 ..# (if inclusive then dim0 + 1 else dim0), 0 ..# dim1] eltType;
+      var total : [0 ..# dim1] eltType = 0;
+      for i in 0 ..# dim0 {
+        POSIX.memcpy(c_ptrTo(sums[i, 0]), c_ptrToConst(total[0]),
+                    dim1:c_size_t * c_sizeof(eltType));
+        foreach j in 0 ..# dim1 do
+          total[j] += arr[i, j];
+      }
+      if inclusive then
+        POSIX.memcpy(c_ptrTo(sums[dim0, 0]), c_ptrToConst(total[0]),
+                    dim1:c_size_t * c_sizeof(eltType));
+      return sums;
+    }
+    when 1 {
+      // Horizontally
+      var sums : [0 ..# dim0, 0 ..# (if inclusive then dim1 + 1 else dim1)] eltType;
+      foreach i in 0 ..# dim0 do
+        prefixSum(dim1, c_ptrToConst(arr[i, 0]), c_ptrTo(sums[i, 0]), inclusive);
+      return sums;
+    }
+    otherwise do halt("should never happen: dim=" + dim:string);
   }
 }
 
-
-class RoseTree {
-  type eltType;
-  var func : string;
-  var stat : eltType;
-  var children : list(shared RoseTree(eltType));
-
-  proc init(func : string, stat : ?eltType) {
-    this.eltType = eltType;
-    this.func = func;
-    this.stat = stat;
-  }
-  proc init(func : string, stat : ?eltType, children) {
-    this.eltType = eltType;
-    this.func = func;
-    this.stat = stat;
-    this.children = children;
-  }
-
-  proc addChild(x : shared RoseTree(eltType)) {
-    this.children.pushBack(x);
-  }
-  proc addChild(func : string, stat : eltType) {
-    addChild(new shared RoseTree(func, stat));
-  }
-
-  proc getChild(func : string) ref {
-    for c in children {
-      if c.func == func then return c;
+proc sum(count : int, arr : c_ptrConst(?eltType)) {
+  var total : eltType = 0;
+  foreach i in 0 ..# count do
+    total += arr[i];
+  return total;
+}
+proc sum(arr : [] ?eltType, param dim : int)
+    where arr.domain.rank == 2 && 0 <= dim && dim < 2 {
+  const dim0 = arr.dim(0).size;
+  const dim1 = arr.dim(1).size;
+  select dim {
+    when 0 {
+      var total : [0 ..# dim1] eltType = 0;
+      for i in 0 ..# dim0 do
+        foreach j in 0 ..# dim1 do
+          total[j] += arr[i, j];
+      return total;
     }
-    halt("child " + func:string + " not found");
+    when 1 {
+      var total : [0 ..# dim0] eltType = 0;
+      foreach i in 0 ..# dim0 do
+        total[i] = sum(dim1, c_ptrToConst(arr[i, 0]));
+      return total;
+    }
+    otherwise do halt("should never happen: dim=" + dim:string);
+  }
+}
+
+record PartitionInfo {
+    var _countOrOffset : int;
+    var nextOffset : int;
+
+    inline proc ref count ref { return _countOrOffset; }
+    inline proc ref offset ref { return _countOrOffset; }
+};
+
+private inline proc partitionBy(in first : c_ptr(?eltType), last : c_ptr(eltType), predicate) {
+    while true {
+      if first == last then return last;
+      if !predicate(first.deref()) then break;
+      first += 1;
+    }
+
+    var it = first + 1;
+    while it != last {
+      if predicate(it.deref()) {
+        first.deref() <=> it.deref();
+        first += 1;
+      }
+      it += 1;
+    }
+    return first;
+}
+
+private inline proc swapElements(a : int, b : int, arr : c_ptr(?t1)) {
+  arr[a] <=> arr[b];
+}
+private inline proc swapElements(a : int, b : int, arr1 : c_ptr(?t1), arr2 : c_ptr(?t2)) {
+  swapElements(a, b, arr1);
+  swapElements(a, b, arr2);
+}
+
+proc unstableRadixOneStep(numKeys : int, keys : c_ptr(uint(8)),
+                          ref offsets : c_array(int, 257),
+                          arrs...?numArrs) {
+  var partitions : c_array(PartitionInfo, 256);
+  foreach i in 0 ..# numKeys {
+    partitions[keys[i]:int].count += 1;
   }
 
-  proc toAccumulatorTree() : shared RoseTree(VarianceAccumulator(eltType)) {
-    var tree = new shared RoseTree(func, new VarianceAccumulator(stat));
-    for c in children do
-      tree.addChild(c.toAccumulatorTree());
-    return tree;
+  var remainingPartitions : c_array(uint(8), 256);
+  var numPartitions : int;
+  var total : int;
+  for i in 0 ..# 256 {
+    const count = partitions[i].count;
+    if count > 0 {
+      partitions[i].offset = total;
+      total += count;
+      remainingPartitions[numPartitions] = i:uint(8);
+      numPartitions += 1;
+    }
+    partitions[i].nextOffset = total;
   }
 
-  proc writeChildren(f, indent : string) throws {
-    if !children.isEmpty() {
-      for (x, i) in zip(children, 0 ..) {
-        const currentPrefix = if i == children.size - 1 then "└─ " else "├─ ";
-        const childPrefix = if i == children.size - 1 then "   " else "│  ";
-        f.write(indent, currentPrefix, x.func, ": ", x.stat, '\n');
-        x.writeChildren(f, indent + childPrefix);
+  var lastRemaining = remainingPartitions:c_ptr(uint(8)) + numPartitions;
+  var endPartition = remainingPartitions:c_ptr(uint(8)) + 1;
+  while lastRemaining - endPartition > 0 {
+    record Func {
+      inline proc this(partitionIdx : uint(8)) {
+        ref beginOffset = partitions[partitionIdx:int].offset;
+        ref endOffset = partitions[partitionIdx:int].nextOffset;
+        if beginOffset == endOffset then return false;
+
+        for i in beginOffset .. endOffset - 1 {
+          ref offset = partitions[keys[i]:int].offset;
+          keys[i] <=> keys[offset];
+          swapElements(i, offset, (...arrs));
+          offset += 1;
+        }
+        return beginOffset != endOffset;
       }
     }
+    lastRemaining = partitionBy(remainingPartitions:c_ptr(uint(8)), lastRemaining, new Func());
   }
-  override proc writeThis(f) throws {
-    f.write(func, ": ", stat, '\n');
-    writeChildren(f, indent = "  ");
-  }
-}
 
-
-type TimingTree = shared RoseTree(real);
-
-proc timingTree(func, result, children) {
-  return new shared RoseTree(func, result,
-    [(f, r) in children] new shared RoseTree(f, r));
-}
-proc timingTree(func, result) {
-  return new shared RoseTree(func, result);
-}
-
-proc meanAndErr(xs : [] real) {
-  const mean = (+ reduce xs) / xs.size:real;
-  const variance =
-    (1.0 / xs.size:real)
-      * (+ reduce ([i in xs.domain] (xs[i] - mean) * (xs[i] - mean)));
-  const err = round(100 * sqrt(variance)) / 100;
-  return (mean, err);
-}
-
-proc fromAccumulatorTree(tree) : TimingTree {
-  var outTree = new shared RoseTree(tree.func, tree.stat.mean);
-  for c in tree.children do
-    outTree.addChild(fromAccumulatorTree(c));
-  return outTree;
-}
-
-proc combineTimingTrees(ref dest, const ref tree) {
-  dest.stat.update(tree.stat);
-  for (destChild, child) in zip(dest.children, tree.children) {
-    combineTimingTrees(destChild, child);
+  offsets[0] = 0;
+  foreach i in 1 ..# 256 {
+    offsets[i] = partitions[i - 1].nextOffset;
   }
 }
-proc combineTimingTrees(arr : [] TimingTree) {
-  if arr.isEmpty() then
-    halt("trying to combine an empty list of timings");
-  var dest = arr[0].toAccumulatorTree();
-  for tree in arr[1..] do
-    combineTimingTrees(dest, tree);
-  return fromAccumulatorTree(dest);
+
+
+private proc shuffleBasedOnKeys(count : int,
+                                keys : c_ptrConst(uint(8)),
+                                offsets : c_ptrConst(int),
+                                arr : c_ptr(?eltType)) {
+  var buffer = allocate(eltType, count);
+  defer deallocate(buffer);
+
+  var current : c_array(int, 256);
+  POSIX.memcpy(current, offsets, 256:c_size_t * c_sizeof(int));
+
+  for i in 0 ..# count {
+    ref offset = current[keys[i]:int];
+    buffer[offset] = arr[i];
+    offset += 1;
+  }
+  POSIX.memcpy(arr, buffer, count:c_size_t * c_sizeof(eltType));
+}
+private proc shuffleBasedOnKeys(count : int,
+                                keys : c_ptrConst(uint(8)),
+                                offsets : c_ptrConst(int),
+                                arr1 : c_ptr(?),
+                                arr2 : c_ptr(?)) {
+  shuffleBasedOnKeys(count, keys, offsets, arr1);
+  shuffleBasedOnKeys(count, keys, offsets, arr2);
+}
+
+proc stableRadixOneStep(numKeys : int, keys : c_ptrConst(uint(8)),
+                        offsets : c_ptr(int), arrs...?numArrs) {
+  var counts : c_array(int, 256);
+  foreach i in 0 ..# numKeys do
+    counts[keys[i]:int] += 1;
+  // writeln(counts);
+  prefixSum(256, counts:c_ptrConst(int), offsets, inclusive=true);
+  shuffleBasedOnKeys(numKeys, keys, offsets, (...arrs));
+  for i in 0 ..# 10 do
+    write(offsets[i], ", ");
+  writeln();
 }
 
 } // module Utils

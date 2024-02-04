@@ -19,6 +19,9 @@ module LatticeSymmetries.Algebra
   , simplifyPolynomial
   , swapGenerators
   , sortVectorBy
+  , HasProperGeneratorType
+  , HasProperIndexType
+  , IsBasis
   )
 where
 
@@ -35,6 +38,7 @@ import GHC.Exts (IsList (..))
 import LatticeSymmetries.ComplexRational
 import LatticeSymmetries.Generator
 import LatticeSymmetries.NonbranchingTerm
+import Prettyprinter (Pretty (..))
 import Prelude hiding (Product, Sum, identity, toList)
 
 -- | Represents a term of the form @c × g@ where @c@ is typically a scalar and @g@ is some
@@ -66,14 +70,11 @@ data CommutatorType
     Anticommutator
   deriving stock (Show, Eq)
 
-class Ord g => Algebra g where
+class (Ord g, HasIdentity g) => Algebra g where
   -- | The type of commutator this algebra uses.
   --
   -- We have 'Commutator' for spin (or bosonic) systems and 'Anticommutator' for fermionic systems.
   nonDiagonalCommutatorType :: CommutatorType
-
-  -- | Check whether a given generator is an identity.
-  isIdentity :: g -> Bool
 
   -- | Check whether a given generator is diagonal.
   isDiagonal :: g -> Bool
@@ -140,7 +141,6 @@ instance Num c => CanScale c (CommutatorType, Sum (Scaled c g)) where
 
 instance Algebra SpinGeneratorType where
   nonDiagonalCommutatorType = Commutator
-  isIdentity g = g == SpinIdentity
   isDiagonal = \case
     SpinIdentity -> True
     SpinZ -> True
@@ -181,7 +181,6 @@ instance Algebra SpinGeneratorType where
 
 instance Algebra FermionGeneratorType where
   nonDiagonalCommutatorType = Anticommutator
-  isIdentity g = g == FermionIdentity
   isDiagonal g = case g of
     FermionIdentity -> True
     FermionCount -> True
@@ -222,7 +221,6 @@ instance Algebra FermionGeneratorType where
 
 instance (Algebra g, Ord i) => Algebra (Generator i g) where
   nonDiagonalCommutatorType = nonDiagonalCommutatorType @g
-  isIdentity (Generator _ g) = isIdentity g
   isDiagonal (Generator _ g) = isDiagonal g
   conjugateGenerator (Generator i g) = Generator i (conjugateGenerator g)
   commute (Generator i a) (Generator j b)
@@ -311,7 +309,7 @@ productToCanonical t₀ = go (Scaled 1 t₀) 0 False
 -- | Reduce the degree of a product of terms that belong to the same site.
 simplifyProductNoIndices :: forall c g. (Fractional c, Algebra g) => Product g -> Sum (Scaled c g)
 simplifyProductNoIndices (Product v) = case G.toList v of
-  [] -> []
+  [] -> error "simplifyProductNoIndices does not work on empty Products"
   (g : gs) -> Sum $ go (Scaled 1 g) gs
   where
     go :: Scaled c g -> [g] -> Vector (Scaled c g)
@@ -328,18 +326,14 @@ simplifyProduct
   => Product (Generator i g)
   -> Polynomial c (Generator i g)
 simplifyProduct =
-  fmap (fmap dropRedundantIdentities)
+  fmap (fmap dropIdentities)
     . expandProduct
     . fromList
     . fmap (simplifyProductNoIndices . fromList)
     . List.groupBy (\(Generator i _) (Generator j _) -> i == j)
     . toList
   where
-    dropRedundantIdentities (Product v)
-      | not (G.null useful) = Product useful
-      | otherwise = Product $ G.take 1 identities
-      where
-        (identities, useful) = G.partition (\(Generator _ g) -> isIdentity g) v
+    dropIdentities (Product v) = Product $ G.filter (not . isIdentity) v
 
 collectTerms :: (Num c, Eq c, Eq g) => Sum (Scaled c g) -> Sum (Scaled c g)
 collectTerms = Sum . dropZeros . combine . unSum
@@ -401,8 +395,34 @@ expandProduct
   => Product (Sum (Scaled c g))
   -> Sum (Scaled c (Product g))
 expandProduct (Product v)
-  | G.null v = Sum G.empty
+  | G.null v = Sum [Scaled 1 (Product [])]
   | otherwise = G.foldl1' (*) $ fmap asProducts v
   where
     -- asProducts :: Sum (Scaled c g) -> Sum (Scaled c (Product g))
     asProducts = fmap (fmap (Product . G.singleton)) -- \(Scaled c g) -> (Scaled c (Product (G.singleton g))))
+
+class IsGeneratorType (GeneratorType t) => HasProperGeneratorType t
+
+instance IsGeneratorType (GeneratorType t) => HasProperGeneratorType t
+
+class IsIndexType (IndexType t) => HasProperIndexType t
+
+instance IsIndexType (IndexType t) => HasProperIndexType t
+
+type IsGeneratorType g = (Eq g, Ord g, Pretty g, Algebra g, HasNonbranchingRepresentation (Generator Int g))
+
+type IsIndexType i = (Eq i, Ord i {-HasSiteIndex i,-}, Pretty i)
+
+class
+  ( Typeable t
+  , HasProperGeneratorType t
+  , HasProperIndexType t
+  , Pretty (Generator (IndexType t) (GeneratorType t))
+  ) =>
+  IsBasis t
+
+instance IsBasis 'SpinTy
+
+instance IsBasis 'SpinfulFermionTy
+
+instance IsBasis 'SpinlessFermionTy

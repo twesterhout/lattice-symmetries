@@ -12,6 +12,7 @@ module LatticeSymmetries.ComplexRational
   , conjugate
   , magnitudeSquared
   , Cscalar
+  , prettyRational
   )
 where
 

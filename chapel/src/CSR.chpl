@@ -2,7 +2,7 @@ module CSR {
 
 use CTypes;
 
-private proc mergePathSearch(diagonal : int, a : c_ptrConst,
+private proc mergePathSearch(diagonal : int, a : c_ptrConst(?),
                              sizeA : int, sizeB : int) : (int, int)
 {
     var xMin = max(diagonal - sizeB, 0);

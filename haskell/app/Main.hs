@@ -1,12 +1,48 @@
-import Data.Vector.Generic qualified as G
-import LatticeSymmetries.Group
+{-# LANGUAGE OverloadedRecordDot #-}
+
+import Data.Maybe (fromJust)
+import Data.Vector.Storable qualified as S
+import Data.Vector.Storable.Mutable qualified as SM
+import Foreign (castPtr)
+import Gauge.Benchmark
+import Gauge.Main
+import Language.Halide hiding ((==))
+import LatticeSymmetries.Basis
+import LatticeSymmetries.Dense (DenseMatrix (DenseMatrix))
+import LatticeSymmetries.Lowering
+import System.Random
 
 main :: IO ()
 main = do
-  let !g =
-        groupFromTransversalGeneratingSet . transversalGeneratingSet $
-          autsSearchTree (rectangularGraph 10 10)
-  let !t = mkMultiplicationTable g
-  print $ G.length . fst $ abelianization t
-  -- print (G.length g)
-  -- print $ G.length <$> take 16 (abelianSubset t)
+  let pureGen = mkStdGen 140
+      numberSites = 36
+      hammingWeight = 18
+
+      indices :: S.Vector Int64
+      !indices =
+        S.fromList
+          . take 1000
+          . unfoldr (Just . uniformR (0, fromIntegral (fromJust (binomial numberSites hammingWeight)) - 1))
+          $ pureGen
+      !states = S.map (fixedHammingIndexToState hammingWeight . fromIntegral) indices
+
+  !kernelPtr <- createFixedHammingStateToIndexKernel numberSites hammingWeight
+  out <- SM.new @_ @Int64 (S.length states)
+  withHalideBuffer @1 @Word64 states $ \basisStatesBuf ->
+    withHalideBuffer @1 @Int64 out $ \indicesBuf -> do
+      let !b = nfIO $ toFun_fixed_hamming_state_to_index_kernel kernelPtr (castPtr basisStatesBuf) (castPtr indicesBuf)
+      benchmark b
+  print . (indices ==) =<< S.freeze out
+
+  destroyFixedHammingStateToIndexKernel kernelPtr
+
+  S.unsafeWith states $ \basisStatesBuf ->
+    SM.unsafeWith out $ \indicesBuf -> do
+      let !b =
+            nfIO $
+              ls_hs_fixed_hamming_state_to_index
+                (fromIntegral (S.length states))
+                basisStatesBuf
+                indicesBuf
+      benchmark b
+  print . (indices ==) =<< S.freeze out

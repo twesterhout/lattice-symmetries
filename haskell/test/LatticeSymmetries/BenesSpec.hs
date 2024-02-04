@@ -7,6 +7,8 @@ import Data.Bits
 import Data.Vector (Vector)
 import Data.Vector.Generic qualified as G
 import LatticeSymmetries.Benes
+import LatticeSymmetries.BitString
+import LatticeSymmetries.Permutation
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
@@ -26,18 +28,27 @@ spec = do
   describe "permuteBits" $ do
     it "should permute bits" $ do
       let p₁ = permutationToBenesNetwork <$> mkPermutation [0, 1, 2]
-      benesPermuteBits <$> p₁ <*> pure 0b100 `shouldBe` Right 0b100
+      benesPermuteBits <$> p₁ <*> pure (BitString 0b100) `shouldBe` Right (BitString 0b100)
       let p₂ = permutationToBenesNetwork <$> mkPermutation [1, 2, 0]
-      benesPermuteBits <$> p₂ <*> pure 0b100 `shouldBe` Right 0b010
-      benesPermuteBits <$> p₂ <*> pure 0b101 `shouldBe` Right 0b110
+      benesPermuteBits <$> p₂ <*> pure (BitString 0b100) `shouldBe` Right (BitString 0b010)
+      benesPermuteBits <$> p₂ <*> pure (BitString 0b101) `shouldBe` Right (BitString 0b110)
       let v₃ = mkPermutation [1, 2, 3, 0, 5, 6, 7, 4, 9, 10, 11, 8]
           p₃ = permutationToBenesNetwork <$> v₃
-      benesPermuteBits <$> p₃ <*> pure 0b100111010010 `shouldBe` Right 0b110011100001
-      benesPermuteBits <$> p₃ <*> pure 0b100111010010 `shouldBe` permuteBits <$> v₃ <*> pure 0b100111010010
+      benesPermuteBits <$> p₃ <*> pure (BitString 0b100111010010) `shouldBe` Right (BitString 0b110011100001)
+      benesPermuteBits <$> p₃ <*> pure (BitString 0b100111010010) `shouldBe` permuteBits <$> v₃ <*> pure (BitString 0b100111010010)
+      let v₄ = mkPermutation [0]
+          p₄ = permutationToBenesNetwork <$> v₄
+      print p₄
+      benesPermuteBits <$> p₄ <*> pure (BitString 0b1) `shouldBe` Right (BitString 0b1)
+      benesPermuteBits <$> p₄ <*> pure (BitString 0b1) `shouldBe` permuteBits <$> v₄ <*> pure (BitString 0b1)
     prop "correctly permutes bits" $ \(PermutationTestData p v) ->
       let !network = permutationToBenesNetwork p
        in G.forM_ v $ \x ->
-            benesPermuteBits network x `shouldBe` permuteBits p x
+            benesPermuteBits network (BitString x) `shouldBe` permuteBits p (BitString x)
+  describe "mkBatchedBenesNetwork" $ do
+    it "should build a BatchedBenesNetwork" $ do
+      let !p = permutationToBenesNetwork <$> mkPermutation [0]
+      mkBatchedBenesNetwork . G.singleton <$> p `shouldBe` Right emptyBatchedBenesNetwork
   describe "ToJSON/FromJSON Permutation" $ do
     it "encodes Permutation" $ do
       Aeson.encode (either error id $ mkPermutation [0, 1, 2, 3]) `shouldBe` "[0,1,2,3]"

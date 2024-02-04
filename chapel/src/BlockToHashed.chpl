@@ -40,7 +40,7 @@ module BlockToHashed {
     return offsets;
   }
 
-  private proc blockToHashedTaskCounts(masksSize : int, masksPtr : c_ptr(?i),
+  private proc blockToHashedTaskCounts(masksSize : int, masksPtr : c_ptrConst(?i),
                                        numChunksPerLocale : int) {
     var counts : [0 ..# numChunksPerLocale, 0 ..# numLocales] int;
     const ranges : [0 ..# numChunksPerLocale] range(int) =
@@ -113,7 +113,7 @@ module BlockToHashed {
     timer.counts.start();
     const perLocaleCounts = blockToHashedLocaleCounts(masks);
     const perLocaleOffsets = blockToHashedLocaleOffsets(perLocaleCounts);
-    const perLocaleOffsetsPtr = c_const_ptrTo(perLocaleOffsets[perLocaleOffsets.domain.low]);
+    const perLocaleOffsetsPtr = c_ptrToConst(perLocaleOffsets[perLocaleOffsets.domain.low]);
     timer.counts.stop();
 
     timer.makeDestArr.start();
@@ -148,7 +148,7 @@ module BlockToHashed {
                         numBytes = numLocales:c_size_t * c_sizeof(c_ptr(eltType)));
 
       const mySubdomain = masks.localSubdomain();
-      const myMasksPtr = c_const_ptrTo(masks.localAccess(mySubdomain.low));
+      const myMasksPtr = c_ptrToConst(masks.localAccess(mySubdomain.low));
       const myMasksSize = mySubdomain.size;
       const myPerTaskCounts = blockToHashedTaskCounts(myMasksSize, myMasksPtr, numChunksPerLocale);
       const myPerTaskOffsets = blockToHashedTaskOffsets(myPerTaskCounts, myPerLocaleOffsets);
@@ -157,8 +157,8 @@ module BlockToHashed {
       var myPermuteTime : atomic real;
       for batchIdx in 0 ..# batchSize {
         const myArrPtr = if rank == 1
-                           then c_const_ptrTo(arr.localAccess(mySubdomain.low))
-                           else c_const_ptrTo(arr.localAccess(batchIdx, mySubdomain.low));
+                           then c_ptrToConst(arr.localAccess(mySubdomain.low))
+                           else c_ptrToConst(arr.localAccess(batchIdx, mySubdomain.low));
 
         forall (r, chunkIdx) in zip(ranges, 0 ..# numChunksPerLocale) {
           var myTimer = new stopwatch();
@@ -177,7 +177,7 @@ module BlockToHashed {
 
       const _myPermuteTime = myPermuteTime.read();
       Communication.put(dest = permuteTimePtr + loc.id,
-                        src = c_const_ptrTo(_myPermuteTime),
+                        src = c_ptrToConst(_myPermuteTime),
                         destLocID = mainLocaleIdx,
                         numBytes = c_sizeof(real));
     }

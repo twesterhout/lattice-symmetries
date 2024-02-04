@@ -20,7 +20,7 @@ module HashedToBlock {
           myCounts[chunkIdx, key:int] += 1;
         }
       }
-      const myCountsPtr = c_const_ptrTo(myCounts[myCounts.domain.low]);
+      const myCountsPtr = c_ptrToConst(myCounts[myCounts.domain.low]);
       const destPtr = countsPtr + loc.id * numChunks * numLocales;
       const destSize = (numChunks * numLocales):c_size_t * c_sizeof(int);
       PUT(myCountsPtr, 0, destPtr, destSize);
@@ -87,10 +87,10 @@ module HashedToBlock {
 
     const srcOffsets = hashedToBlockComputeSrcOffsets(counts);
     var destArr = hashedToBlockMakeDestArray(arr, masks);
-    const countsPtr = c_const_ptrTo(counts[counts.domain.low]);
-    const srcOffsetsPtr = c_const_ptrTo(srcOffsets[srcOffsets.domain.low]);
+    const countsPtr = c_ptrToConst(counts[counts.domain.low]);
+    const srcOffsetsPtr = c_ptrToConst(srcOffsets[srcOffsets.domain.low]);
     const mainLocaleIdx = here.id;
-    const arrPtrsPtr = c_const_ptrTo(arr._dataPtrs[0]);
+    const arrPtrsPtr = c_ptrToConst(arr._dataPtrs[0]);
     param rank = arr.innerRank;
     const batchSize = if rank == 1 then 1 else arr.innerDom.shape[0];
     const batchStride = if rank == 1 then 0 else arr.innerDom.shape[1];

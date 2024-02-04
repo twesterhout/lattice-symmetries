@@ -1,7 +1,7 @@
 > ⚠️ **INFO**
 >
 > This is a Haskell rewrite of the original
-> [lattice-symmetries](https://github.com/twesterhout/lattice-symmetries). At
+> [lattice-symmetries](https://github.com/twesterhout/lattice-symmetries/v1). At
 > some point, this package will completely replace the first version of
 > lattice-symmetries.
 
@@ -9,6 +9,10 @@
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
 A package to simplify working with symmetry-adapted quantum many-body bases.
+
+## Permutations
+
+
 
 
 ## Hamiltonians

@@ -1,10 +1,11 @@
 module Vector {
 
-use FFI;
 // TODO: probably shouldn't use it...
 use ArrayViewSlice;
 use BlockDist;
 use CTypes;
+
+use Utils;
 
 record Vector {
   type eltType;
@@ -26,12 +27,12 @@ record Vector {
 
   forwarding _arr only this;
 
-  proc reserve(capacity : int) {
+  proc ref reserve(capacity : int) {
     if capacity > _dom.size then
       _dom = {0 ..# capacity};
   }
 
-  proc resize(newSize : int) {
+  proc ref resize(newSize : int) {
     if newSize > _size then
       reserve(newSize);
     _size = newSize;
@@ -39,36 +40,36 @@ record Vector {
 
   inline proc size { return _size; }
 
-  proc defaultGrow(factor : real = 1.5) {
+  proc ref defaultGrow(factor : real = 1.5) {
     const currentCapacity = _dom.size;
     const newCapacity =
       max(currentCapacity + 1, round(factor * currentCapacity):int);
     reserve(newCapacity);
   }
 
-  inline proc pushBack(x : eltType) {
+  inline proc ref pushBack(x : eltType) {
     if _size == _dom.size then
       defaultGrow();
     _arr[_size] = x;
     _size += 1;
   }
 
-  proc append(xs : [] eltType) {
+  proc ref append(xs : [] eltType) {
     if _size + xs.size > _dom.size then
       reserve(_size + xs.size);
     _arr[_size ..# xs.size] = xs;
     _size += xs.size;
   }
-  proc append(const ref xs : Vector(eltType)) {
+  proc ref append(const ref xs : Vector(eltType)) {
     append(xs._arr[0 ..# xs._size]);
   }
 
-  proc shrink() {
+  proc ref shrink() {
     if _size < _dom.size then
       _dom = {0 ..# _size};
   }
 
-  inline proc data : c_ptr(eltType) { return c_ptrTo(_arr[_dom.low]); }
+  inline proc ref data : c_ptr(eltType) { return c_ptrTo(_arr[_dom.low]); }
 
   pragma "reference to const when const this"
   pragma "fn returns aliasing array"
@@ -85,95 +86,88 @@ record Vector {
   }
 }
 
-proc isVector(type x : Vector) param { return true; }
+proc isVector(type x : Vector(?)) param { return true; }
 proc isVector(type x) param { return false; }
 
-proc _getDataPtrs(type eltType, const ref counts, ref data) {
-  const size = counts.size;
-  // logDebug("_getDataPtrs(", eltType:string, ", counts=", counts, ", ", data.domain, ")");
-  // assert(data.size == size);
-  // assert(data.size > 0);
-  // assert(data[0].size > 0);
-  var dataPtrs : [0 ..# size] c_ptr(eltType);
-  if size == 0 then return dataPtrs;
+// proc _getDataPtrs(type eltType, const ref counts, ref data) {
+//   const size = counts.size;
+//   // logDebug("_getDataPtrs(", eltType:string, ", counts=", counts, ", ", data.domain, ")");
+//   // assert(data.size == size);
+//   // assert(data.size > 0);
+//   // assert(data[0].size > 0);
+//   var dataPtrs : [0 ..# size] c_ptr(eltType);
+//   if size == 0 then return dataPtrs;
+// 
+//   const dataPtrsPtr = c_ptrTo(dataPtrs);
+//   const localeIdx = here.id;
+//   forall (c, i) in zip(counts, 0 ..) {
+//     assert(here == c.locale);
+//     ref myData = data[i];
+//     // if myData.domain.rank == 1 then
+//     //   assert(myData.domain.low == 0);
+//     const myDataPtr = if myData.size > 0
+//                         then c_ptrTo(data[i][myData.domain.low])
+//                         else nil;
+//     dataPtrs[i] = myDataPtr;
+//     // if here.id != localeIdx then
+//     //   PUT(myDataPtr, localeIdx, dataPtrsPtr + i, c_sizeof(c_ptr(eltType)));
+//     // else
+//     //   dataPtrsPtr[i] = myDataPtr;
+//   }
+//   return dataPtrs;
+// }
 
-  const dataPtrsPtr = c_ptrTo(dataPtrs);
-  const localeIdx = here.id;
-  forall (c, i) in zip(counts, 0 ..) {
-    assert(here == c.locale);
-    ref myData = data[i];
-    // if myData.domain.rank == 1 then
-    //   assert(myData.domain.low == 0);
-    const myDataPtr = if myData.size > 0
-                        then c_ptrTo(data[i][myData.domain.low])
-                        else nil;
-    dataPtrs[i] = myDataPtr;
-    // if here.id != localeIdx then
-    //   PUT(myDataPtr, localeIdx, dataPtrsPtr + i, c_sizeof(c_ptr(eltType)));
-    // else
-    //   dataPtrsPtr[i] = myDataPtr;
-  }
-  return dataPtrs;
-}
 
-
-class LocBlockVector {
+class LocBlockArr {
   type eltType;
   param rank : int;
   var dom : domain(rank);
   var data : [dom] eltType;
-  var count : int;
 
   forwarding data only this;
-}
 
-proc getBlockPtrs(type eltType, const ref arr, ref ptrs) {
-  // var ptrs : [0 ..# arr.size] c_ptr(eltType);
-  for i in arr.dim(0) {
-    ref locBlock = arr[i];
-    if locBlock.dom.size > 0 {
-      ref x = locBlock.data[locBlock.dom.low];
-      ptrs[i] = __primitive("_wide_get_addr", x):c_ptr(eltType);
-    }
+  proc dataPtr() {
+    if dom.size == 0 then return nil;
+    return c_ptrTo(data[dom.low]);
   }
-  // return ptrs;
 }
 
-proc getOuterDom(numBlocks : int, param distribute : bool) {
-  const box = {0 ..# numBlocks};
-  return if distribute then box dmapped Block(box, Locales)
-                       else box;
-}
+// proc getBlockPtrs(type eltType, const ref arr, ref ptrs) {
+//   // var ptrs : [0 ..# arr.size] c_ptr(eltType);
+//   for i in arr.dim(0) {
+//     ptrs[i] = arr[i].dataPtr();
+//     // ref locBlock = arr[i];
+//     // if locBlock.dom.size > 0 {
+//     //   ref x = locBlock.data[locBlock.dom.low];
+//     //   ptrs[i] = __primitive("_wide_get_addr", x):c_ptr(eltType);
+//     // }
+//   }
+//   // return ptrs;
+// }
 
-proc getInnerDom(counts : [] int) {
-  const maxNumElts = max reduce counts;
-  return {0 ..# maxNumElts};
-}
-proc getInnerDom(batchSize : int, counts : [] int) {
-  const maxNumElts = max reduce counts;
-  return {0 ..# batchSize, 0 ..# maxNumElts};
-}
+// proc getOuterDom(numBlocks : int, param distribute : bool) {
+//   const box = {0 ..# numBlocks};
+//   return if distribute then box dmapped blockDist(box, Locales)
+//                        else box;
+// }
+// 
+// iter makeInnerDoms(shape : int ...?n, lastDimSizes : [] int) {
+//   for n in lastDimSizes do
+//     yield sizeToDomain((...shape), n);
+// }
 
 class BlockVector {
   type eltType;
-  param innerRank : int;
-  var outerDom;
-  var _locBlocks : [outerDom] unmanaged LocBlockVector(eltType, innerRank);
+  param rank : int;
+  var _outerDom;
+  var _locBlocks : [_outerDom] unmanaged LocBlockArr(eltType, rank);
   var _dataPtrs;
 
-  proc finalizeInitialization(innerDom : domain(innerRank), counts) {
-    forall (i, n) in zip(outerDom, counts) with (in innerDom) {
-      ref locBlock = _locBlocks[i];
-      locBlock.dom = innerDom;
-      locBlock.count = n;
-      _dataPtrs[i] = c_ptrTo(locBlock.data[innerDom.low]);
+  proc finalizeInitialization(counts) {
+    forall (locBlock, dataPtr, shape) in zip(_locBlocks, _dataPtrs, counts) {
+      locBlock.dom = if isTuple(shape) then sizeToDomain((...shape)) else sizeToDomain(shape);
+      dataPtr = locBlock.dataPtr();
     }
-  }
-  inline proc finalizeInitialization(counts : [] int) {
-    finalizeInitialization(getInnerDom(counts), counts);
-  }
-  inline proc finalizeInitialization(batchSize : int, counts : [] int) {
-    finalizeInitialization(getInnerDom(batchSize, counts), counts);
   }
 
   proc deinit() {
@@ -182,93 +176,90 @@ class BlockVector {
     }
   }
 
-  proc init(type t, param rank : int, numBlocks : int, param distribute : bool) {
+  proc init(type t, param rank : int) {
     this.eltType = t;
-    this.innerRank = rank;
-    const dom = getOuterDom(numBlocks, distribute);
-    this.outerDom = dom;
-    this._locBlocks = [i in dom] new unmanaged LocBlockVector(t, rank);
-    this._dataPtrs = [i in 0 ..# numBlocks] nil:c_ptr(t);
+    this.rank = rank;
+    const dom = LocaleSpace dmapped blockDist(LocaleSpace, Locales);
+    this._outerDom = dom;
+    this._locBlocks = [i in dom] new unmanaged LocBlockArr(t, rank);
+    this._dataPtrs = [i in dom.dim(0)] nil:c_ptr(t);
   }
 
-  proc init(type t, counts : [] int, param distribute : bool = true) {
-    init(t, 1, counts.size, distribute);
+  proc init(type t, counts : [] int) where counts.domain.rank == 1 {
+    assert(counts.size == numLocales);
+    init(t, 1);
     finalizeInitialization(counts);
   }
-
-  proc init(type t, batchSize : int, counts : [] int, param distribute : bool = true) {
-    init(t, 2, counts.size, distribute);
-    finalizeInitialization(batchSize, counts);
-  }
-
-  proc init(chunks : [] ?t, param distribute : bool = true)
-      where chunks.domain.rank == 1 && isVector(t) {
-    init(t.eltType, 1, chunks.size, distribute);
-    const counts : [0 ..# chunks.size] int = [c in chunks] c.size;
+  proc init(type t, counts : [] ?shape) where counts.domain.rank == 1 && isTuple(shape) {
+    assert(counts.size == numLocales);
+    init(t, shape.size);
     finalizeInitialization(counts);
-    forall (locBlock, chunk) in zip(this._locBlocks, chunks) {
-      locBlock.data[0 ..# chunk.size] = chunk.toArray();
+  }
+  proc init(chunks : [] ?t) where chunks.domain.rank == 1 && isVector(t) {
+    assert(chunks.size == numLocales);
+    init(t.eltType, 1);
+    finalizeInitialization([c in chunks] c.size);
+    forall (locBlock, chunk) in zip(_locBlocks, chunks) {
+      locBlock.data = chunk.toArray();
     }
   }
 
-  inline proc numBlocks { return outerDom.size; }
   inline proc count(i) { return _locBlocks[i].count; }
 
   inline proc counts { return _locBlocks.count; }
 
-  inline proc innerDom { return _locBlocks[0].dom; }
-
   inline proc _data ref { return _locBlocks; }
 
-  inline proc getBlockDomain(blockIdx : int)
-      where innerRank == 1 {
-    return {0 ..# count(blockIdx)};
+  // inline proc getBlockDomain(blockIdx : int)
+  //     where innerRank == 1 {
+  //   return {0 ..# count(blockIdx)};
+  // }
+  // inline proc getBlockDomain(blockIdx : int)
+  //     where innerRank == 2 {
+  //   return {0 ..# _locBlocks[blockIdx].data.shape[0],
+  //           0 ..# _locBlocks[blockIdx].count};
+  // }
+
+  // pragma "fn returns aliasing array"
+  pragma "reference to const when const this"
+  proc getBlock(loc : locale = here) ref {
+    return _locBlocks[loc.id].data;
+    // pragma "no auto destroy" var d = getBlockDomain(blockIdx);
+    // d._value._free_when_no_arrs = true;
+    // d._value.definedConst = true;
+    // var a = new unmanaged ArrayViewSliceArr(
+    //     eltType=eltType,
+    //     _DomPid=d._pid, dom=d._instance,
+    //     _ArrPid=_locBlocks[blockIdx].data._pid,
+    //     _ArrInstance=_locBlocks[blockIdx].data._value);
+    // d._value.add_arr(a, locking=false, addToList=false);
+    // return _newArray(a);
   }
-  inline proc getBlockDomain(blockIdx : int)
-      where innerRank == 2 {
-    return {0 ..# _locBlocks[blockIdx].data.shape[0],
-            0 ..# _locBlocks[blockIdx].count};
-  }
+
+  // pragma "fn returns aliasing array"
+  pragma "reference to const when const this"
+  inline proc this(loc : locale) ref { return getBlock(loc); }
 
   pragma "reference to const when const this"
-  pragma "fn returns aliasing array"
-  proc getBlock(blockIdx : int) {
-    pragma "no auto destroy" var d = getBlockDomain(blockIdx);
-    d._value._free_when_no_arrs = true;
-    d._value.definedConst = true;
-    var a = new unmanaged ArrayViewSliceArr(
-        eltType=eltType,
-        _DomPid=d._pid, dom=d._instance,
-        _ArrPid=_locBlocks[blockIdx].data._pid,
-        _ArrInstance=_locBlocks[blockIdx].data._value);
-    d._value.add_arr(a, locking=false, addToList=false);
-    return _newArray(a);
-  }
-
-  pragma "reference to const when const this"
-  pragma "fn returns aliasing array"
-  inline proc this(loc : locale) { return getBlock(loc.id); }
-
-  inline proc this(i : int, j : int) ref where innerRank == 1 {
+  inline proc this(i : int, j) ref {
     return _locBlocks[i].data[j];
   }
 
-  pragma "reference to const when const this"
-  pragma "fn returns aliasing array"
-  inline proc this(i : int, j : range(int)) ref where innerRank == 1 {
-    pragma "no auto destroy" var d = {j};
-    d._value._free_when_no_arrs = true;
-    d._value.definedConst = true;
-    var a = new unmanaged ArrayViewSliceArr(
-        eltType=eltType,
-        _DomPid=d._pid, dom=d._instance,
-        _ArrPid=_locBlocks[i].data._pid,
-        _ArrInstance=_locBlocks[i].data._value);
-    d._value.add_arr(a, locking=false, addToList=false);
-    return _newArray(a);
-  }
+  // pragma "fn returns aliasing array"
+  // inline proc this(i : int, j : range(int)) ref where innerRank == 1 {
+    // pragma "no auto destroy" var d = {j};
+    // d._value._free_when_no_arrs = true;
+    // d._value.definedConst = true;
+    // var a = new unmanaged ArrayViewSliceArr(
+    //     eltType=eltType,
+    //     _DomPid=d._pid, dom=d._instance,
+    //     _ArrPid=_locBlocks[i].data._pid,
+    //     _ArrInstance=_locBlocks[i].data._value);
+    // d._value.add_arr(a, locking=false, addToList=false);
+    // return _newArray(a);
+  // }
 
-  inline proc this(i : int, j...) ref where innerRank != 1 {
+  inline proc this(i : int, j...) ref where rank != 1 {
     return _locBlocks[i].data[(...j)];
   }
   // inline proc this(i : int, j, k) ref where innerRank == 2 {

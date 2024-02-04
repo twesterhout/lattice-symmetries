@@ -1,5 +1,6 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -14,19 +15,23 @@ module LatticeSymmetries.Generator
   , FermionGeneratorType (..)
   , Generator (..)
   , ParticleTy (..)
+  , BasisState (..)
+  , unsafeCastBasisState
+  , invertBasisState
+  , prettyBitString
   , ParticleTag (..)
   , particleTagToType
   , particleDispatch
+  , matchParticleType2
   , IndexType
   , GeneratorType
-  , IsIndexType
-  , HasProperIndexType
-  , IsGeneratorType
-  , HasProperGeneratorType
   , withConstraint
   -- HasSiteIndex (..),
-  , getSiteIndex
+  -- , getSiteIndex
   , mapSiteIndex
+  , HasIdentity (..)
+  , flattenIndex
+  , unFlattenIndex
   -- HasMatrixRepresentation (..),
   )
 where
@@ -72,6 +77,45 @@ instance FromJSON ParticleTy where
 instance ToJSON ParticleTy where
   toJSON = String . renderStrict . Pretty.layoutCompact . pretty
 
+-- | Hilbert space basis vector parametrized by the particle type.
+data BasisState (t :: ParticleTy) = BasisState {-# UNPACK #-} !Int !BitString
+  deriving stock (Show, Eq, Ord)
+
+instance Typeable t => Pretty (BasisState t) where
+  pretty x = case particleDispatch @t of
+    SpinTag -> prettySpin x
+    SpinfulFermionTag -> prettyFermion x
+    SpinlessFermionTag ->
+      let (BasisState n bits) = x
+       in prettySpin (BasisState n bits :: BasisState 'SpinTy)
+    where
+      prettySpin (BasisState n bits) = "|" <> prettyBitString n (unBitString bits) <> "⟩"
+      prettyFermion (BasisState n bits) =
+        let up = unBitString bits `shiftR` (n `div` 2)
+         in mconcat
+              [ "|"
+              , prettyBitString (n `div` 2) up
+              , "⟩"
+              , "|"
+              , prettyBitString (n `div` 2) (unBitString bits)
+              , "⟩"
+              ]
+
+unsafeCastBasisState :: BasisState t1 -> BasisState t2
+unsafeCastBasisState (BasisState n bits) = BasisState n bits
+
+-- | Invert all bits in a BasisState
+invertBasisState :: BasisState t -> BasisState t
+invertBasisState (BasisState n bits) = BasisState n (bits `xor` mask)
+  where
+    mask = BitString (bit n - 1)
+
+prettyBitString :: Int -> Integer -> Pretty.Doc ann
+prettyBitString n bits = mconcat $ prettyBool . testBit bits <$> reverse [0 .. n - 1]
+  where
+    prettyBool True = "1"
+    prettyBool False = "0"
+
 -- | Type-level analog of 'ParticleTy'.
 data ParticleTag (t :: ParticleTy) where
   SpinTag :: ParticleTag 'SpinTy
@@ -97,10 +141,20 @@ particleDispatch
   | Just HRefl <- eqTypeRep (typeRep @t) (typeRep @'SpinlessFermionTy) = SpinlessFermionTag
   | otherwise = error "this should never happen by construction"
 
+matchParticleType2
+  :: forall (t1 :: ParticleTy) (t2 :: ParticleTy) proxy1 proxy2
+   . (Typeable t1, Typeable t2)
+  => proxy1 t1
+  -> proxy2 t2
+  -> Maybe (t1 :~~: t2)
+matchParticleType2 _ _ = case eqTypeRep (typeRep @t1) (typeRep @t2) of
+  Just HRefl -> Just HRefl
+  Nothing -> Nothing
+
 withConstraint
   :: forall (c :: ParticleTy -> Constraint) (t :: ParticleTy) a
    . (HasCallStack, Typeable t, c 'SpinTy, c 'SpinfulFermionTy, c 'SpinlessFermionTy)
-  => ((c t) => a)
+  => (c t => a)
   -> a
 withConstraint f = case particleDispatch @t of
   SpinTag -> f
@@ -128,6 +182,9 @@ instance Pretty SpinIndex where
   pretty SpinUp = "↑"
   pretty SpinDown = "↓"
 
+instance ToJSON SpinIndex where
+  toJSON = String . renderStrict . Pretty.layoutCompact . pretty
+
 instance FromJSON SpinIndex where
   parseJSON (Data.Aeson.String t)
     | t == "↑" || Text.toLower t == "up" = pure SpinUp
@@ -138,6 +195,9 @@ instance FromJSON SpinIndex where
       0 -> pure SpinUp
       1 -> pure SpinDown
       _ -> fail $ "invalid spin index: " <> show k
+
+class HasIdentity g where
+  isIdentity :: g -> Bool
 
 -- | Generators for the algebra of spin-1/2 particles.
 data SpinGeneratorType
@@ -153,10 +213,13 @@ data SpinGeneratorType
 
 instance Pretty SpinGeneratorType where
   pretty x = case x of
-    SpinIdentity -> "1"
+    SpinIdentity -> "I"
     SpinZ -> "σᶻ"
     SpinPlus -> "σ⁺"
     SpinMinus -> "σ⁻"
+
+instance HasIdentity SpinGeneratorType where
+  isIdentity = (== SpinIdentity)
 
 -- | Generators for the fermionic algebra.
 data FermionGeneratorType
@@ -172,10 +235,13 @@ data FermionGeneratorType
 
 instance Pretty FermionGeneratorType where
   pretty x = case x of
-    FermionIdentity -> "1"
+    FermionIdentity -> "I"
     FermionCount -> "n"
     FermionCreate -> "c†"
     FermionAnnihilate -> "c"
+
+instance HasIdentity FermionGeneratorType where
+  isIdentity = (== FermionIdentity)
 
 type family IndexType (t :: ParticleTy) where
   IndexType 'SpinTy = Int
@@ -187,22 +253,13 @@ type family GeneratorType (t :: ParticleTy) where
   GeneratorType 'SpinfulFermionTy = FermionGeneratorType
   GeneratorType 'SpinlessFermionTy = FermionGeneratorType
 
-class (IsGeneratorType (GeneratorType t)) => HasProperGeneratorType t
-
-instance (IsGeneratorType (GeneratorType t)) => HasProperGeneratorType t
-
-class (IsIndexType (IndexType t)) => HasProperIndexType t
-
-instance (IsIndexType (IndexType t)) => HasProperIndexType t
-
-type IsGeneratorType g = (Eq g, Ord g, Pretty g, HasNonbranchingRepresentation (Generator Int g))
-
-type IsIndexType i = (Eq i, Ord i, HasSiteIndex i, Pretty i)
-
 -- | A generator (either spin or fermionic) which is not associated with an index @i@. The index
 -- could be the site index or a tuple of spin and site indices.
 data Generator i g = Generator !i !g
   deriving stock (Eq, Ord, Show, Generic)
+
+instance HasIdentity g => HasIdentity (Generator i g) where
+  isIdentity (Generator _ g) = isIdentity g
 
 class HasSiteIndex i where
   getSiteIndex :: i -> Int
@@ -210,13 +267,28 @@ class HasSiteIndex i where
 
 instance HasSiteIndex Int where
   getSiteIndex = id
-  mapSiteIndex f i = f i
+  mapSiteIndex f = f
 
 instance HasSiteIndex (SpinIndex, Int) where
   getSiteIndex (_, i) = i
   mapSiteIndex f (σ, i) = (σ, f i)
 
-toSubscript :: (HasCallStack) => Int -> Text
+flattenIndex :: forall t. Typeable t => Int -> IndexType t -> Int
+flattenIndex numberSites = case particleDispatch @t of
+  SpinTag -> id
+  SpinlessFermionTag -> id
+  SpinfulFermionTag -> \case
+    (σ, k) | k < numberSites -> fromEnum σ * numberSites + k
+    (_, k) -> error $ "index exceeds numberSites: " <> show k <> " > " <> show numberSites
+
+unFlattenIndex :: forall t. Typeable t => Int -> Int -> IndexType t
+unFlattenIndex numberSites = case particleDispatch @t of
+  SpinTag -> id
+  SpinlessFermionTag -> id
+  SpinfulFermionTag -> \i ->
+    if i >= numberSites then (SpinDown, i - numberSites) else (SpinUp, i)
+
+toSubscript :: HasCallStack => Int -> Text
 toSubscript n = Text.map h (show n)
   where
     h '0' = '₀'
@@ -229,15 +301,16 @@ toSubscript n = Text.map h (show n)
     h '7' = '₇'
     h '8' = '₈'
     h '9' = '₉'
-    h _ = error "invalid character"
+    h c = error $ "invalid character: '" <> Text.singleton c <> "'"
 
-instance (Pretty g) => Pretty (Generator Int g) where
-  pretty (Generator i g) = pretty g <> pretty (toSubscript i)
+instance (Pretty g, HasIdentity g) => Pretty (Generator Int g) where
+  pretty (Generator i g) = pretty g <> (if isIdentity g then "" else pretty (toSubscript i))
 
-instance (Pretty g) => Pretty (Generator (SpinIndex, Int) g) where
-  pretty (Generator (σ, i) g) = pretty g <> pretty (toSubscript i) <> pretty σ
+instance (Pretty g, HasIdentity g) => Pretty (Generator (SpinIndex, Int) g) where
+  pretty (Generator (σ, i) g) = pretty g <> (if isIdentity g then "" else pretty (toSubscript i) <> pretty σ)
 
 instance HasNonbranchingRepresentation (Generator Int SpinGeneratorType) where
+  nonbranchingRepresentation :: Generator Int SpinGeneratorType -> NonbranchingTerm
   nonbranchingRepresentation (Generator _ SpinIdentity) =
     NonbranchingTerm 1 zeroBits zeroBits zeroBits zeroBits zeroBits
   nonbranchingRepresentation (Generator i SpinZ) =
@@ -248,6 +321,7 @@ instance HasNonbranchingRepresentation (Generator Int SpinGeneratorType) where
     NonbranchingTerm 1 (bit i) zeroBits (bit i) (bit i) zeroBits
 
 instance HasNonbranchingRepresentation (Generator Int FermionGeneratorType) where
+  nonbranchingRepresentation :: Generator Int FermionGeneratorType -> NonbranchingTerm
   nonbranchingRepresentation (Generator _ FermionIdentity) =
     NonbranchingTerm 1 zeroBits zeroBits zeroBits zeroBits zeroBits
   nonbranchingRepresentation (Generator i FermionCount) =
