@@ -5,7 +5,7 @@
 #include <stdatomic.h>
 #include <assert.h>
 
-uint32_t nextPowerOfTwo(uint32_t const x) {
+static uint32_t nextPowerOfTwo(uint32_t const x) {
   assert(x > 0 && "expected a positive number");
   return x == 1 ? 1 : 1 << (32 - __builtin_clz(x - 1));
 }
@@ -38,6 +38,12 @@ ConcurrentQueue* ls_chpl_create_ConcurrentQueue(uint32_t capacity, uint64_t null
 void ls_chpl_destroy_ConcurrentQueue(ConcurrentQueue* queue) {
     free(queue->buffer);
     free(queue);
+}
+
+int64_t ls_chpl_ConcurrentQueue_size(ConcurrentQueue const* queue) {
+    uint64_t const localHead = atomic_load(&queue->head);
+    uint64_t const localTail = atomic_load(&queue->tail);
+    return localHead - localTail;
 }
 
 bool ls_chpl_ConcurrentQueue_try_push(ConcurrentQueue* queue, uint64_t const value) {

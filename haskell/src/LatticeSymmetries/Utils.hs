@@ -120,7 +120,7 @@ newCString (PS fp _ l) = do
   pure buf
 
 newCencoded :: (HasCallStack, Data.Aeson.ToJSON a) => a -> IO CString
-newCencoded = newCString . (\x -> trace (decodeUtf8 x) x) . toStrict . Data.Aeson.encode
+newCencoded = newCString . {-(\x -> trace (decodeUtf8 x) x) .-} toStrict . Data.Aeson.encode
 
 -- | Read JSON from a 'CString'.
 decodeCString :: FromJSON a => CString -> IO (Either Text a)

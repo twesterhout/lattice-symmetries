@@ -9,27 +9,28 @@ module Utils
   )
 where
 
-import Control.Exception (throwIO, bracket)
+import Control.Exception (bracket, throwIO)
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Aeson qualified as Aeson
 import Data.Bits (Bits (bit))
 import Data.Ratio ((%))
 import Data.Vector.Generic qualified as G
+import Foreign.C (CString)
+import Foreign.Ptr (Ptr)
 import GHC.Exts (IsList (..))
 import GHC.Stack
 import LatticeSymmetries.Algebra
+import LatticeSymmetries.Basis (Basis)
 import LatticeSymmetries.BitString
 import LatticeSymmetries.ComplexRational
+import LatticeSymmetries.Context
 import LatticeSymmetries.Expr
+import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
 import LatticeSymmetries.Group
 import LatticeSymmetries.Permutation
 import LatticeSymmetries.Some
 import LatticeSymmetries.Utils
-import LatticeSymmetries.FFI
-import LatticeSymmetries.Context
-import Foreign.Ptr (Ptr)
-import Foreign.C (CString)
 import Test.HUnit.Lang (FailureReason (..), HUnitFailure (..))
 import Test.Hspec
 import Test.QuickCheck

@@ -1,8 +1,9 @@
 module ConcurrentAccessor {
 
-use FFI;
-use CTypes;
-use ChapelLocks;
+private use FFI;
+private use CTypes;
+private use ChapelLocks;
+private use IO.FormattedIO;
 
 // config const concurrentAccessorNumLocks = 5 * here.maxTaskPar;
 
@@ -29,6 +30,8 @@ record ConcurrentAccessor {
   var _data : c_ptr(chpl__processorAtomicType(realType(eltType)));
   var _numElts : int;
 
+  var _locks : c_array(chpl_LocalSpinlock, 256);
+
   proc init(ref arr : [] ?t)
       where arr.domain.rank == 1 && arr.domain.strides == strideKind.one {
     if arr.locale != here then
@@ -41,7 +44,12 @@ record ConcurrentAccessor {
     this._numElts = arr.size;
   }
 
+  inline proc ref lock(i : int) { _locks[i:int].lock(); }
+  inline proc ref unlock(i : int) { _locks[i:int].unlock(); }
+
   inline proc localAdd(i : int, x : eltType) {
+    // assert(0 <= i && i < _numElts,
+    //        try! "localAdd: index out of bounds: %i, but _numElts=%i".format(i, _numElts));
     if !isComplex(eltType) then
       _data[i].add(x, order=memoryOrder.relaxed);
     else {

@@ -11,8 +11,9 @@ import Foreign.C.Types (CBool (..), CInt (..), CPtrdiff (..))
 import HeaderFileGeneration
 import LatticeSymmetries.Basis
 import LatticeSymmetries.Context
-import LatticeSymmetries.Permutation
 import LatticeSymmetries.Lowering
+import LatticeSymmetries.Operator
+import LatticeSymmetries.Permutation
 import LatticeSymmetries.Some
 import LatticeSymmetries.Utils
 import Prelude
@@ -528,13 +529,13 @@ addDeclarations
   , "ls_hs_expr_is_real"
   , "ls_hs_expr_is_identity"
   , "ls_hs_expr_permutation_group"
-  ------------------------
-  -- Operator
+  , ------------------------
+    -- Operator
 
-  -- , "ls_hs_create_operator"
-  -- , "ls_hs_clone_operator"
-  -- , "ls_hs_destroy_operator"
-  -- , "ls_hs_operator_max_number_off_diag"
+    "ls_hs_create_operator"
+  , "ls_hs_destroy_operator"
+  , "ls_hs_operator_from_json"
+  , "ls_hs_operator_to_json"
   -- , "ls_hs_operator_get_expr"
   -- , "ls_hs_operator_get_basis"
   -- , "ls_hs_operator_abelian_representations"

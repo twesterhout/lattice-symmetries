@@ -60,8 +60,8 @@
         ]
       },
       "locked": {
-        "lastModified": 1706275899,
-        "narHash": "sha256-1gP1DD6fxKpieD09mhqmycAQMcxJEHwlDquuTGz98Gg=",
+        "lastModified": 1707067335,
+        "narHash": "sha256-XWelGPJzjPtNRee3AG73UtBvpHJL9h1eMoPIZKb2ieQ=",
         "path": "/home/tom/Projects/halide-haskell",
         "type": "path"
       },
@@ -100,8 +100,8 @@
         ]
       },
       "locked": {
-        "lastModified": 1706977600,
-        "narHash": "sha256-JYkBUS8hF9LgJDSJrFiiy+85jI+2dBs+DmEpBuecqUA=",
+        "lastModified": 1707167713,
+        "narHash": "sha256-EXtn2BR6oGL+ElUUDIuqxVR9dT36nYo6Wb2Gb5T6Edg=",
         "path": "/home/tom/Projects/nix-chapel",
         "type": "path"
       },
@@ -127,11 +127,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1706732774,
-        "narHash": "sha256-hqJlyJk4MRpcItGYMF+3uHe8HvxNETWvlGtLuVpqLU0=",
+        "lastModified": 1706913249,
+        "narHash": "sha256-x3M7iV++CsvRXI1fpyFPduGELUckZEhSv0XWnUopAG8=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "b8b232ae7b8b144397fdb12d20f592e5e7c1a64d",
+        "rev": "e92b6015881907e698782c77641aa49298330223",
         "type": "github"
       },
       "original": {

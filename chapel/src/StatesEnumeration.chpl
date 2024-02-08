@@ -1,22 +1,22 @@
 module StatesEnumeration {
 
-use CommonParameters;
-use FFI;
-use ForeignTypes;
-use Vector;
-use Timing;
-use Utils;
+private use CommonParameters;
+private use FFI;
+private use ForeignTypes;
+private use Vector;
+private use Timing;
+private use Utils;
 
-use BitOps;
-use BlockDist;
-use ChplConfig;
-use CTypes;
-use CyclicDist;
-use DynamicIters;
-use RangeChunk;
-use Time;
-import Communication;
-import OS.POSIX;
+private import Communication;
+private import IO.FormattedIO.format;
+private import OS.POSIX;
+private use BitOps;
+private use BlockDist;
+private use CTypes;
+private use ChplConfig;
+private use CyclicDist;
+private use DynamicIters;
+private use RangeChunk;
 
 /* Get the next integer with the same Hamming weight.
 
@@ -61,7 +61,9 @@ private inline iter _manyNextStateIter(in v: uint(64), bound: uint(64),
  */
 private inline iter manyNextState(v: uint(64), bound: uint(64),
                                   isHammingWeightFixed : bool) {
-  assert(v <= bound, "v is greater than bound");
+  if v > bound then
+    halt(try! "v (%i) is greater than bound (%i)".format(v, bound));
+
   if isHammingWeightFixed then
     for x in _manyNextStateIter(v, bound, true) do
       yield x;
@@ -120,10 +122,9 @@ private proc unprojectedIndexToState(indices : [] int(64), numberSites : int, ha
 }
 
 private proc assertBoundsHaveSameHammingWeight(r : range(?t), isHammingWeightFixed : bool) {
-  assert(!isHammingWeightFixed || popCount(r.low) == popCount(r.high),
-    "r.low=" + r.low:string + " and r.high=" + r.high:string
-      + " have different Hamming weight: " + popCount(r.low):string
-      + " vs. " + popCount(r.high):string);
+  if isHammingWeightFixed && popCount(r.low) != popCount(r.high) then
+    halt(try! "r.low=%u and r.high=%u have different Hamming weight: %i != %i".format(
+         r.low, r.high, popCount(r.low), popCount(r.high)));
 }
 
 /* We want to split `r` into `numChunks` non-overlapping ranges but such that for each range
@@ -171,19 +172,18 @@ proc determineEnumerationRanges(r : range(uint(64)), numChunks : int,
     const mask = (1:uint(64) << numberSites) - 1; // isolate the lower numberSites bits
     const numberUp = basisInfo.number_up;
     const numberDown = basisInfo.number_particles - numberUp;
-    assert(0 <= numberUp && 0 <= numberDown && numberUp + numberDown <= 2 * numberSites,
-           "invalid combination of (number_up, number_particles, number_sites): "
-           + (basisInfo.number_up, basisInfo.number_particles, basisInfo.number_sites):string);
+    if numberUp < 0 || numberDown < 0 || numberUp + numberDown > 2 * numberSites then
+      halt(try! "invalid combination of (number_up, number_particles, number_sites): (%i, %i, %i)".format(
+           basisInfo.number_up, basisInfo.number_particles, basisInfo.number_sites));
 
     const minA = r.low & mask;
     const maxA = r.high & mask;
     const minB = (r.low >> numberSites) & mask;
     const maxB = (r.high >> numberSites) & mask;
-    assert(popCount(minA) == numberUp && popCount(maxA) == numberUp &&
-             popCount(minB) == numberDown && popCount(maxB) == numberDown,
-           "invalid r.low=" + r.low:string + " and r.high=" + r.high:string +
-           " for a spinless fermion system with " + numberUp:string +
-           " spins up and " + numberDown:string + " spins down");
+    if popCount(minA) != numberUp || popCount(maxA) != numberUp ||
+       popCount(minB) != numberDown || popCount(maxB) != numberDown then
+      halt(try! "invalid r.low=%u and r.high=%u for a spinless fermion system with %i spins up and %i spins down".format(
+           r.low, r.high, numberUp, numberDown));
 
     // TODO: This algorithm will be inefficient when we have only 1 spin down and many spins up.
     // In such cases, we should split into subranges using minA .. maxA range.
@@ -429,8 +429,6 @@ private proc enumStatesMakeBuckets(numChunks : int) {
 }
 */
 
-config const kFail = false;
-
 proc enumStatesFillBuckets(ref buckets : [] owned Bucket,
                            const ref ranges : [] range(uint(64)),
                            const ref basis : Basis) {
@@ -489,7 +487,7 @@ proc enumStatesPerBucketCounts(const ref buckets : [] owned Bucket) {
   return perBucketLocaleCounts;
 }
 
-proc enumerateStates(ranges : [] range(uint(64)), const ref basis : Basis, out _basisStates, out _norms) {
+proc enumerateStates(ranges : [] range(uint(64)), const ref basis : Basis, out _basisStates, out _norms, out _keys) {
   // We distribute ranges among locales using Cyclic distribution to ensure
   // an even workload. For each range, a vector of basis states and a vector of
   // masks is computed. Masks indicate on which locale a basis state should live.
@@ -501,6 +499,7 @@ proc enumerateStates(ranges : [] range(uint(64)), const ref basis : Basis, out _
 
   // Allocate space for states
   const perLocaleCounts = sum(perBucketLocaleCounts, dim=0); // [0 ..# numLocales]
+  const totalCount = sum(perLocaleCounts);
   var basisStates = new BlockVector(uint(64), perLocaleCounts);
   var norms = new BlockVector(real(64), perLocaleCounts);
 
@@ -529,10 +528,45 @@ proc enumerateStates(ranges : [] range(uint(64)), const ref basis : Basis, out _
                         destLocID = targetLocaleIdx,
                         numBytes = count:c_size_t * c_sizeof(real(64)));
     }
+
+    // we're done with bucket.basisStates and bucket.norms, so we can free up some memory
+    bucket.basisStates.clear();
+    bucket.norms.clear();
+  }
+
+  // Allocate space for keys
+  assert(numLocales <= max(uint(8)), "locale indices do not fit into an uint(8)");
+  var keys = blockDist.createArray(0 ..# totalCount, uint(8));
+
+  // Perform transfers to target locales
+  if numLocales > 1 {
+    const perBucketCounts = sum(perBucketLocaleCounts, dim=1); // [0 ..# buckets.size]
+    const perBucketOffsets = prefixSum(perBucketCounts); // [0 ..# buckets.size]
+    forall (bucket, i) in zip(buckets, 0..) {
+      assert(here == bucket.locale);
+      const myOffset = perBucketOffsets[i];
+      keys[myOffset ..# bucket.keys.size] = bucket.keys.toArray();
+
+      // we're done with bucket.keys, so we can free the memory
+      bucket.keys.clear();
+    }
   }
 
   _basisStates = basisStates;
   _norms = norms;
+  _keys = keys;
+}
+proc enumerateStates(const ref basis : Basis, out basisStates, out norms, out keys,
+                     in numChunks = kEnumerateStatesNumChunks) {
+  const ref basisInfo = basis.info;
+  const r = basisInfo.min_state_estimate .. basisInfo.max_state_estimate;
+  // If we don't have to project, the enumeration ranges can be split equally,
+  // so there's no need to use more chunks than there are cores
+  if !basisInfo.requires_projection then
+    numChunks = numLocales * here.maxTaskPar;
+  numChunks = min(r.size, numChunks);
+  const chunks = determineEnumerationRanges(r, numChunks, basisInfo);
+  enumerateStates(chunks, basis, basisStates, norms, keys);
 }
 
 /*

@@ -1,13 +1,13 @@
 module Utils {
 
 // Our modules
+private use CommonParameters;
 private use FFI;
 
 // System modules
-private use CTypes;
 private import OS.POSIX;
-
-// private import IO;
+private use BlockDist;
+private use CTypes;
 
 proc initRuntime() {
   coforall loc in Locales do on loc {
@@ -21,24 +21,29 @@ proc deinitRuntime() {
   }
 }
 
+/*
 record Ref {
   type eltType;
-  var payload : c_ptrTo(eltType);
+  var ptr: c_ptr(void);
+  var loc: chpl_localeID_t;
 
   proc init(ref x : ?t) {
     this.eltType = t;
-    this.payload = c_addrOf(x);
+    this.ptr = __primitive("_wide_get_addr", x);
+    this.loc = __primitive("_wide_get_locale", x);
   }
 
   proc _getReference() ref {
-    if payload == nil then
-      halt("payload is nil");
-    else
-      return payload.deref();
+    assert(ptr != nil, "ptr is nil");
+    // TODO: I really want to do this instead:
+    // __primitive("_wide_make", eltType, ptr, loc);
+    // but it doesn't seem to work :(
+    return (ptr:c_ptr(eltType)).deref();
   }
 
   forwarding _getReference();
 }
+*/
 
 inline proc sizeToDomain(dim0) { return {0 ..# dim0}; }
 inline proc sizeToDomain(dim0, dim1) { return {0 ..# dim0, 0 ..# dim1}; }
@@ -98,8 +103,18 @@ proc sum(count : int, arr : c_ptrConst(?eltType)) {
     total += arr[i];
   return total;
 }
+proc sum(arr : [] ?eltType)
+    // ensure that arr is local
+    where domainDistIsLayout(arr.domain) {
+  var total : eltType = 0;
+  foreach x in arr do
+    total += x;
+  return total;
+}
 proc sum(arr : [] ?eltType, param dim : int)
-    where arr.domain.rank == 2 && 0 <= dim && dim < 2 {
+    where domainDistIsLayout(arr.domain) &&
+          arr.domain.rank == 2 &&
+          0 <= dim && dim < 2 {
   const dim0 = arr.dim(0).size;
   const dim1 = arr.dim(1).size;
   select dim {
@@ -238,9 +253,66 @@ proc stableRadixOneStep(numKeys : int, keys : c_ptrConst(uint(8)),
   // writeln(counts);
   prefixSum(256, counts:c_ptrConst(int), offsets, inclusive=true);
   shuffleBasedOnKeys(numKeys, keys, offsets, (...arrs));
-  for i in 0 ..# 10 do
-    write(offsets[i], ", ");
-  writeln();
+  // for i in 0 ..# 10 do
+  //   write(offsets[i], ", ");
+  // writeln();
+}
+
+proc isBlockDist(x: blockDist(?)) param {
+  return true;
+}
+
+proc isBlockDist(x) param {
+  return false;
+}
+
+proc blockArrGetBlocks(ref arr : [?dom] ?eltType) where isBlockDist(arr.domain.distribution) {
+  const ref targetLocales = arr.targetLocales();
+  var blocks : [0 ..# targetLocales.size] (c_ptr(eltType), arr.shape.type);
+  const blocksPtr = c_ptrTo(blocks);
+  for (loc, i) in zip(targetLocales, 0..) {
+    const ref d = arr.localSubdomain(loc);
+    ref x = arr[d.low];
+    const xPtr = __primitive("_wide_get_addr", x):c_ptr(eltType);
+    blocks[i] = (xPtr, d.shape);
+  }
+  return blocks;
+}
+
+proc approxEqual(a : real, b : real, atol = kAbsTol, rtol = kRelTol) {
+  return abs(a - b) <= max(atol, rtol * max(abs(a), abs(b)));
+}
+proc approxEqual(a : complex, b : complex, atol = kAbsTol, rtol = kRelTol) {
+  return approxEqual(a.re, b.re, atol, rtol) && approxEqual(a.im, b.im, atol, rtol);
+}
+proc approxEqual(a : [], b : [], atol = kAbsTol, rtol = kRelTol) {
+  return [i in a.domain] approxEqual(a[i], b[i], atol, rtol);
+}
+
+proc checkArraysEqual(arr1 : [] ?eltType, arr2 : [] eltType) {
+  if arr1.size != arr2.size {
+    writeln("Failed: array sizes differ: arr1.size=", arr1.size, " arr2.size=", arr2.size);
+    halt("checkArraysEqual test failed");
+  }
+
+  const condition = if isIntegral(eltType) then arr1.equals(arr2) else && reduce approxEqual(arr1, arr2);
+  if !condition {
+    writeln("Failed: arrays differ:");
+    var count = 0;
+    const maxCount = 10;
+    for (i, x1, x2) in zip(arr1.domain, arr1, arr2) {
+      const f = if isIntegral(eltType) then x1 != x2 else !approxEqual(x1, x2);
+      if f {
+        if count >= maxCount {
+          writeln("...");
+          break;
+        }
+        writeln(i, ": ", x1, " != ", x2);
+        count += 1;
+      }
+    }
+    halt("checkArraysEqual test failed");
+  }
 }
 
 } // module Utils

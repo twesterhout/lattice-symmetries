@@ -102,6 +102,32 @@ bin/TestUtils: test/TestUtils.chpl src/CommonParameters.chpl src/FFI.chpl src/Ut
 	@mkdir -p $(@D)
 	chpl $(CHPL_CFLAGS) $(HALIDE_CFLAGS) -o $@ --main-module $(@F) $^ $(CHPL_LDFLAGS) $(LDFLAGS)
 
+bin/TestBatchedOperator: test/TestBatchedOperator.chpl \
+                         src/FFI.chpl \
+                         src/Utils.chpl \
+                         src/ForeignTypes.c src/ForeignTypes.chpl \
+                         src/Timing.c src/Timing.chpl \
+                         src/CommonParameters.chpl \
+                         src/BatchedOperator.chpl \
+                         src/ConcurrentQueue.c src/ConcurrentQueue.chpl \
+                         src/MatrixVectorProduct.chpl
+	@mkdir -p $(@D)
+	chpl $(CHPL_CFLAGS) $(HALIDE_CFLAGS) -I src/ -o $@ --main-module $(@F) $^ $(CHPL_LDFLAGS) $(LDFLAGS)
+
+bin/TestSingleLocaleMatrixVector: test/TestSingleLocaleMatrixVector.chpl \
+                                  src/FFI.chpl \
+                                  src/Utils.chpl \
+                                  src/ForeignTypes.c src/ForeignTypes.chpl \
+                                  src/Timing.c src/Timing.chpl \
+                                  src/CommonParameters.chpl \
+                                  src/BatchedOperator.chpl \
+                                  src/ConcurrentQueue.c src/ConcurrentQueue.chpl \
+                                  src/HDF5Extensions.chpl \
+                                  src/StatesEnumeration.chpl \
+                                  src/MatrixVectorProduct.chpl
+	@mkdir -p $(@D)
+	chpl $(CHPL_CFLAGS) $(HALIDE_CFLAGS) $(HDF5_CFLAGS) -I src/ -o $@ --main-module $(@F) $^ $(HDF5_CFLAGS) $(CHPL_LDFLAGS) $(LDFLAGS)
+
 bin/TestStatesEnumeration: test/TestStatesEnumeration.chpl \
                            src/FFI.chpl \
                            src/Utils.chpl \

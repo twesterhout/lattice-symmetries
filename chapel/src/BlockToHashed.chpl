@@ -9,35 +9,29 @@ module BlockToHashed {
   use RangeChunk;
   use Time;
 
-  private proc blockToHashedLocaleCounts(const ref masks : [] ?i) where isIntegral(i) {
-    var counts : [0 ..# numLocales, 0 ..# numLocales] int;
-    const countsPtr = c_ptrTo(counts[counts.domain.low]);
+  proc blockArrHistograms(const ref arr : [] ?i, maxElement : i)
+      where isBlockDist(masks.domain.distribution) &&
+            isIntegral(i) {
+    const ref arrTargetLocales = arr.targetLocales();
+    const size = maxElement:int + 1;
+    var counts : [0 ..# arrTargetLocales.size, 0 ..# size] int;
+    const countsPtr = c_ptrTo(counts[0, 0]);
     const mainLocaleIdx = here.id;
-    coforall loc in Locales do on loc {
-      const mySubdomain = masks.localSubdomain();
-      var myCounts : [0 ..# numLocales] int;
-      forall key in masks.localAccess(mySubdomain) with (+ reduce myCounts) do
-        myCounts[key:int] += 1;
 
-      Communication.put(dest = countsPtr + loc.id * numLocales,
-                        src = c_ptrTo(myCounts[0]),
+    coforall loc in arrTargetLocales do on loc {
+      const mySubdomain = arr.localSubdomain();
+      var myCounts : [0 ..# size] int;
+      forall x in arr.localAccess(mySubdomain) with (+ reduce myCounts) {
+        assert(0 <= x && x <= maxElement);
+        myCounts[x:int] += 1;
+      }
+
+      Communication.put(dest = countsPtr + loc.id * size,
+                        src = c_ptrToConst(myCounts[0]),
                         destLocID = mainLocaleIdx,
-                        numBytes = numLocales:c_size_t * c_sizeof(int));
+                        numBytes = size:c_size_t * c_sizeof(int));
     }
     return counts;
-  }
-
-  private proc blockToHashedLocaleOffsets(counts) {
-    var offsets : [0 ..# numLocales, 0 ..# numLocales] int;
-    foreach destLocaleIdx in 0 ..# numLocales {
-      var total = 0;
-      for srcLocaleIdx in 0 ..# numLocales {
-        const count = counts[srcLocaleIdx, destLocaleIdx];
-        offsets[srcLocaleIdx, destLocaleIdx] = total;
-        total += count;
-      }
-    }
-    return offsets;
   }
 
   private proc blockToHashedTaskCounts(masksSize : int, masksPtr : c_ptrConst(?i),
@@ -67,81 +61,39 @@ module BlockToHashed {
     return offsets;
   }
 
-  proc blockToHashedMakeDestArr(arr : [] ?eltType, counts) {
-    const destCounts = [i in 0 ..# numLocales] (+ reduce counts[.., i]);
-    return
-      if arr.domain.rank == 1
-        then new BlockVector(eltType, destCounts)
-        else new BlockVector(eltType, arr.shape[0], destCounts);
-  }
-
   proc blockToHashedNumChunksPerLocale(masks, numChunks) {
     const minBlockSize = min reduce [loc in Locales] masks.localSubdomain(loc).size;
     const suggested = max(1, numChunks / numLocales);
     return min(minBlockSize, suggested);
   }
 
-  record BlockToHashedTimer {
-    var total : stopwatch;
-    var counts : stopwatch;
-    var makeDestArr : stopwatch;
-    var distribute : stopwatch;
-    var permute : [0 ..# numLocales] real;
+  proc arrFromBlockToHashed(const ref arr : [] ?eltType, const ref keys : [] ?i)
+      where isBlockDist(arr.domain.distribution) &&
+            isBlockDist(keys.domain.distribution) &&
+            (arr.rank == 1 || arr.rank == 2) {
 
-    proc writeThis(f) throws {
-      const tree = timingTree("arrFromBlockToHashed", total.elapsed(),
-        [ ("counts", counts.elapsed())
-        , ("makeDestArr", makeDestArr.elapsed())
-        , ("distribute", distribute.elapsed())
-        ]);
-      tree.children[2].addChild(timingTree(
-        "permute (mean over locales, sum over tasks)", meanAndErr(permute)[0]
-      ));
-
-      f.write(tree);
-    }
-  }
-
-
-  proc arrFromBlockToHashed(const ref arr : [] ?eltType, const ref masks : [] ?i,
-                            numChunksPerLocale : int =
-                              blockToHashedNumChunksPerLocale(masks, kBlockToHashedNumChunks)) {
-    var timer = new BlockToHashedTimer();
-    const permuteTimePtr = c_ptrTo(timer.permute[0]);
-    timer.total.start();
-
-    timer.counts.start();
-    const perLocaleCounts = blockToHashedLocaleCounts(masks);
-    const perLocaleOffsets = blockToHashedLocaleOffsets(perLocaleCounts);
-    const perLocaleOffsetsPtr = c_ptrToConst(perLocaleOffsets[perLocaleOffsets.domain.low]);
-    timer.counts.stop();
-
-    timer.makeDestArr.start();
-    var destArr = blockToHashedMakeDestArr(arr, perLocaleCounts);
-    const destPtrsPtr = c_ptrTo(destArr._dataPtrs);
-    timer.makeDestArr.stop();
-
-    timer.distribute.start();
     param rank = arr.domain.rank;
-    const batchSize = if rank == 1
-                        then 1
-                        else arr.shape[0];
-    const batchStride = if rank == 1
-                          then 0
-                          else destArr.innerDom.shape[1];
+    const maxElement = max reduce keys;
+    assert(maxElement < numLocales,
+           "maxElement=%i, but numLocales=%i".format(maxElement, numLocales));
+    const perLocaleLocaleCounts = blockArrHistograms(keys, (numLocales - 1):i);
+    const perLocaleOffsets = prefixSum(perLocaleCounts, dim=0);
+
+    const batchSize = if rank == 1 then 1 else arr.dim(0).size;
+    const destShapes : [0 ..# numLocales] = [n in sum(perLocaleLocaleCounts, dim=0)] if rank == 1 then n else (batchSize, n);
+    var destArr = new BlockVector(eltType, destShapes);
+
     const mainLocaleIdx = here.id;
+    const perLocaleOffsetsPtr = c_ptrToConst(perLocaleOffsets[0]);
     coforall loc in Locales do on loc {
-      var myPerLocaleOffsets : [0 ..# numLocales] int = noinit;
-      // NOTE: Actually, we want myPerLocaleOffsets = perLocaleOffsets[loc.id, ..],
-      // but Chapel fails to generate a bulk copy operation and copies element-by-element.
+
+      var myPerLocaleOffsets : [0 ..# numLocales] int;
       Communication.get(dest = c_ptrTo(myPerLocaleOffsets[0]),
                         src = perLocaleOffsetsPtr + loc.id * numLocales,
                         srcLocID = mainLocaleIdx,
                         numBytes = numLocales:c_size_t * c_sizeof(int));
 
-      var myDestPtrs : [0 ..# numLocales] c_ptr(eltType) = noinit;
-      // TODO: we're not doing rank-changing copies here, so myDestPtrs = destPtrs
-      // should do the trick... Check it!
+      var myDestPtrs : [0 ..# numLocales] c_ptr(eltType);
       Communication.get(dest = c_ptrTo(myDestPtrs[0]),
                         src = destPtrsPtr,
                         srcLocID = mainLocaleIdx,

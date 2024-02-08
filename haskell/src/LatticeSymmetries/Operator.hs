@@ -24,14 +24,22 @@ module LatticeSymmetries.Operator
   -- , cloneCoperator
   -- , destroyCoperator
   , withCoperator
+  , foldCoperator
+  , newCoperator
+  , ls_hs_create_operator
+  , ls_hs_destroy_operator
+  -- , ls_hs_operator_max_number_off_diag
+  , ls_hs_operator_to_json
+  , ls_hs_operator_from_json
   )
 where
 
+import Data.Aeson (FromJSON (parseJSON), ToJSON (toJSON), object, withObject, (.:), (.=))
 import Data.Primitive.Ptr qualified as P
 import Data.Set qualified as Set
 import Data.Vector (Vector)
-import Data.Vector qualified as B
 import Data.Vector.Generic qualified as G
+import Foreign.C (CBool (..), CInt (..), CSize (..), CString)
 import Foreign.Marshal
 import Foreign.Ptr
 import Foreign.StablePtr
@@ -39,7 +47,6 @@ import Foreign.Storable
 import GHC.Show qualified
 import Language.C.Inline.Unsafe qualified as CU
 import LatticeSymmetries.Algebra
-import LatticeSymmetries.Automorphisms
 import LatticeSymmetries.Basis
 import LatticeSymmetries.BitString
 import LatticeSymmetries.ComplexRational
@@ -47,9 +54,8 @@ import LatticeSymmetries.Context
 import LatticeSymmetries.Expr
 import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
-import LatticeSymmetries.Group
 import LatticeSymmetries.NonbranchingTerm
-import LatticeSymmetries.Permutation (Permutation (unPermutation))
+import LatticeSymmetries.Some
 import LatticeSymmetries.Utils
 import Prelude hiding (Product, Sum)
 
@@ -64,6 +70,10 @@ deriving stock instance
   (Show (Basis t), Show (IndexType t), Show (GeneratorType t))
   => Show (Operator t)
 
+deriving stock instance
+  (Eq (Basis t), Eq (IndexType t), Eq (GeneratorType t))
+  => Eq (Operator t)
+
 data SomeOperator where
   SomeOperator :: IsBasis t => ParticleTag t -> Operator t -> SomeOperator
 
@@ -71,6 +81,12 @@ instance Show SomeOperator where
   show (SomeOperator SpinTag x) = show x
   show (SomeOperator SpinlessFermionTag x) = show x
   show (SomeOperator SpinfulFermionTag x) = show x
+
+instance Eq SomeOperator where
+  (SomeOperator SpinTag x) == (SomeOperator SpinTag y) = x == y
+  (SomeOperator SpinfulFermionTag x) == (SomeOperator SpinfulFermionTag y) = x == y
+  (SomeOperator SpinlessFermionTag x) == (SomeOperator SpinlessFermionTag y) = x == y
+  _ == _ = False
 
 withSomeOperator :: SomeOperator -> (forall t. IsBasis t => Operator t -> a) -> a
 withSomeOperator x f = case x of
@@ -82,26 +98,25 @@ foldSomeOperator f x = case x of
   SomeOperator _ operator -> f operator
 {-# INLINE foldSomeOperator #-}
 
-mkOperator :: IsBasis t => Basis t -> Expr t -> Operator t
-mkOperator = Operator
+mkOperator :: (MonadFail m, IsBasis t) => Basis t -> Expr t -> m (Operator t)
+mkOperator b e = pure $ Operator b e
 
--- getNonbranchingTerms
---   :: HasNonbranchingRepresentation (Generator Int (GeneratorType t))
---   => Operator t
---   -> Vector NonbranchingTerm
--- getNonbranchingTerms operator =
---   case nonbranchingRepresentation <$> opTermsFlat operator of
---     -- NOTE: sorting based on nbtX is important!
---     -- Terms with the same nbtX generate the same spin configuration. If they
---     -- appear one after another, we can eliminate the duplicates easily. This
---     -- is done in the off_diag kernel in Chapel.
---     -- If duplicates are not eliminated, we might run into bufer overflows
---     -- since we allocate buffers assuming that there are not duplicates.
---     (Sum v) -> sortVectorBy (comparing (.nbtX)) $ G.filter ((/= 0) . (.nbtV)) v
---   where
---     opTermsFlat :: Operator t -> Polynomial ComplexRational (Generator Int (GeneratorType t))
---     opTermsFlat (Operator basis terms) =
---       fmap (fmap (fmap (\(Generator i g) -> Generator (flattenIndex basis i) g))) (unExpr terms)
+mkSomeOperator :: MonadFail m => SomeBasis -> SomeExpr -> m SomeOperator
+mkSomeOperator (SomeBasis b@(SpinBasis {})) (SomeExpr SpinTag e) = SomeOperator SpinTag <$> mkOperator b e
+mkSomeOperator (SomeBasis b@(SpinBasis {})) (SomeExpr t _) =
+  fail $
+    "could not construct operator from " <> show (getParticleTag b) <> " basis and " <> show t <> " expression"
+mkSomeOperator (SomeBasis b) (SomeExpr t _) = fail $ "not implemented: " <> show (getParticleTag b) <> ", " <> show t
+
+instance FromJSON SomeOperator where
+  parseJSON = withObject "Operator" $ \v -> do
+    basis <- v .: "basis"
+    expr <- v .: "expression"
+    mkSomeOperator basis expr
+
+instance ToJSON SomeOperator where
+  toJSON (SomeOperator t (Operator basis expr)) =
+    object ["basis" .= SomeBasis basis, "expression" .= SomeExpr t expr]
 
 -- typedef struct ls_hs_nonbranching_terms {
 --   int number_terms;
@@ -116,58 +131,86 @@ mkOperator = Operator
 --   // all arrays are contiguous in row-major order
 -- } ls_hs_nonbranching_terms;
 
--- writeWords :: (Bits i, Integral i) => Int -> Ptr Word64 -> i -> IO ()
--- writeWords count p x₀ = go 0 x₀
---   where
---     nextWord !x = case bitSizeMaybe x of
---       Just n -> if n > 64 then x `shiftR` 64 else 0
---       Nothing -> x `shiftR` 64
---     go !i !x
---       | i < count = do
---         pokeElemOff p i (fromIntegral x :: Word64)
---         go (i + 1) (nextWord x)
---       | otherwise = pure ()
+-- newCbasis :: IsBasis t => Basis t -> IO (Ptr Cbasis)
+-- newCbasis x = do
+--   payload <- castStablePtrToPtr <$> newStablePtr (SomeBasis x)
+--   -- NOTE: important to initialize memory to 0 such that we don't have to manually initialize fields
+--   p <- callocBytes $ fromIntegral [CU.pure| size_t { sizeof(ls_hs_basis) } |]
+--   [CU.block| void { ls_hs_internal_object_init(&$(ls_hs_basis* p)->base, 1, $(void* payload)); } |]
+--   pure p
+newCnonbranching_terms :: Int -> Vector NonbranchingTerm -> IO (Ptr Cnonbranching_terms)
+newCnonbranching_terms numberBits terms = do
+  let numberWords = (numberBits + 63) `div` 64
+      numberTerms = G.length terms
+      c_numberTerms = fromIntegral numberTerms
+      c_numberBits = fromIntegral numberBits
+      mkArray
+        | numberTerms > 0 = callocBytes (numberTerms * numberWords * sizeOf (undefined :: Word64))
+        | otherwise = pure nullPtr
+  p <- callocBytes $ fromIntegral [CU.pure| size_t { sizeof(ls_hs_nonbranching_terms) } |]
+  vPtr <-
+    if numberTerms > 0
+      then callocBytes (numberTerms * sizeOf (undefined :: Cscalar))
+      else pure nullPtr
+  mPtr <- mkArray
+  lPtr <- mkArray
+  rPtr <- mkArray
+  xPtr <- mkArray
+  sPtr <- mkArray
+  [CU.block| void {
+    ls_hs_nonbranching_terms* p = $(ls_hs_nonbranching_terms* p);
+    p->number_terms = $(int c_numberTerms);
+    p->number_bits = $(int c_numberBits);
+    p->v = $(ls_hs_scalar const* vPtr);
+    p->m = $(uint64_t const* mPtr);
+    p->l = $(uint64_t const* lPtr);
+    p->r = $(uint64_t const* rPtr);
+    p->x = $(uint64_t const* xPtr);
+    p->s = $(uint64_t const* sPtr);
+  } |]
+  loopM 0 (< numberTerms) (+ 1) $ \i -> do
+    let (NonbranchingTerm v m l r x s) = terms G.! i
+    pokeElemOff vPtr i (toComplexDouble v)
+    writeBitString numberWords (P.advancePtr mPtr (i * numberWords)) m
+    writeBitString numberWords (P.advancePtr lPtr (i * numberWords)) l
+    writeBitString numberWords (P.advancePtr rPtr (i * numberWords)) r
+    writeBitString numberWords (P.advancePtr xPtr (i * numberWords)) x
+    writeBitString numberWords (P.advancePtr sPtr (i * numberWords)) s
+  pure p
 
--- createCnonbranching_terms :: Int -> Vector NonbranchingTerm -> IO (Ptr Cnonbranching_terms)
--- createCnonbranching_terms numberBits terms
---   | G.null terms = pure nullPtr
---   | otherwise = do
---       let numberTerms = G.length terms
---           numberWords = (numberBits + 63) `div` 64
---       -- NOTE: the following is not exception-safe :/
---       -- TODO: fix it
---       vPtr <- mallocBytes (numberTerms * sizeOf (undefined :: Cscalar))
---       let mkArray = mallocBytes (numberTerms * numberWords * sizeOf (undefined :: Word64))
---       mPtr <- mkArray
---       lPtr <- mkArray
---       rPtr <- mkArray
---       xPtr <- mkArray
---       sPtr <- mkArray
---       loopM 0 (< numberTerms) (+ 1) $ \i -> do
---         let (NonbranchingTerm v m l r x s) = (G.!) terms i
---         pokeElemOff vPtr i (toComplexDouble v)
---         writeBitString numberWords (P.advancePtr mPtr (i * numberWords)) m
---         writeBitString numberWords (P.advancePtr lPtr (i * numberWords)) l
---         writeBitString numberWords (P.advancePtr rPtr (i * numberWords)) r
---         writeBitString numberWords (P.advancePtr xPtr (i * numberWords)) x
---         writeBitString numberWords (P.advancePtr sPtr (i * numberWords)) s
---       let c_terms = Cnonbranching_terms (fromIntegral numberTerms) (fromIntegral numberBits) vPtr mPtr lPtr rPtr xPtr sPtr
---       p <- malloc
---       poke p c_terms
---       pure p
---
--- destroyCnonbranching_terms :: Ptr Cnonbranching_terms -> IO ()
--- destroyCnonbranching_terms p
---   | p /= nullPtr = do
---       Cnonbranching_terms _ _ vPtr mPtr lPtr rPtr xPtr sPtr <- peek p
---       free vPtr
---       free mPtr
---       free lPtr
---       free rPtr
---       free xPtr
---       free sPtr
---       free p
---   | otherwise = pure ()
+destroyCnonbranching_terms :: Ptr Cnonbranching_terms -> IO ()
+destroyCnonbranching_terms p
+  | p /= nullPtr = do
+      let freeIfNotNull x
+            | x /= nullPtr = free x
+            | otherwise = pure ()
+      freeIfNotNull =<< [CU.exp| ls_hs_scalar const* { $(ls_hs_nonbranching_terms* p)->v } |]
+      freeIfNotNull =<< [CU.exp| uint64_t const* { $(ls_hs_nonbranching_terms* p)->m } |]
+      freeIfNotNull =<< [CU.exp| uint64_t const* { $(ls_hs_nonbranching_terms* p)->l } |]
+      freeIfNotNull =<< [CU.exp| uint64_t const* { $(ls_hs_nonbranching_terms* p)->r } |]
+      freeIfNotNull =<< [CU.exp| uint64_t const* { $(ls_hs_nonbranching_terms* p)->x } |]
+      freeIfNotNull =<< [CU.exp| uint64_t const* { $(ls_hs_nonbranching_terms* p)->s } |]
+      free p
+  | otherwise = pure ()
+
+getNonbranchingTerms
+  :: forall t
+   . (Typeable t, HasNonbranchingRepresentation (Generator Int (GeneratorType t)))
+  => Operator t
+  -> Vector NonbranchingTerm
+getNonbranchingTerms operator =
+  case nonbranchingRepresentation <$> opTermsFlat of
+    -- NOTE: sorting based on nbtX is important!
+    -- Terms with the same nbtX generate the same spin configuration. If they
+    -- appear one after another, we can eliminate the duplicates easily. This
+    -- is done in the off_diag kernel in Chapel.
+    -- If duplicates are not eliminated, we might run into bufer overflows
+    -- since we allocate buffers assuming that there are not duplicates.
+    (Sum v) -> sortVectorBy (comparing (.nbtX)) $ G.filter ((/= 0) . (.nbtV)) v
+  where
+    numberSites = getNumberSites operator.opBasis
+    flattenGenerator (Generator i g) = Generator (flattenIndex @t numberSites i) g
+    opTermsFlat = fmap (fmap flattenGenerator) <$> unExpr operator.opTerms
 
 -- newCoperator :: (IsBasis t, HasCallStack) => Maybe (Ptr Cbasis) -> Operator t -> IO (Ptr Coperator)
 -- newCoperator maybeBasisPtr x = do
@@ -195,6 +238,67 @@ withCoperator p f =
   f
     =<< (deRefStablePtr . castPtrToStablePtr)
     =<< [CU.exp| void* { $(ls_hs_operator* p)->base.haskell_payload } |]
+
+foldCoperator :: (SomeOperator -> IO a) -> Ptr Coperator -> IO a
+foldCoperator f p = withCoperator p f
+
+newCoperator :: Maybe (Ptr Cbasis) -> Maybe (Ptr Cexpr) -> SomeOperator -> IO (Ptr Coperator)
+newCoperator cBasis cExpr operator@(SomeOperator t op) = do
+  let (diag, offDiag) = G.partition nbtIsDiagonal (foldSomeOperator getNonbranchingTerms operator)
+      numberBits = foldSomeOperator (getNumberBits . opBasis) operator
+  diag_terms <- newCnonbranching_terms numberBits diag
+  off_diag_terms <- newCnonbranching_terms numberBits offDiag
+
+  -- NOTE: important to initialize memory to 0 such that we don't have to manually initialize fields
+  p <- callocBytes $ fromIntegral [CU.pure| size_t { sizeof(ls_hs_operator) } |]
+
+  payload <- castStablePtrToPtr <$> newStablePtr operator
+  cBasis' <- maybe (newCbasis op.opBasis) pure cBasis
+  cExpr' <- maybe (newCexpr (SomeExpr t op.opTerms)) pure cExpr
+  let incRefCountBasis = fromBool (isJust cBasis)
+      incRefCountExpr = fromBool (isJust cExpr)
+      maxNumberOffDiag = fromIntegral . Set.size . Set.fromList . G.toList . G.map nbtX $ offDiag
+  [CU.block| void {
+    ls_hs_operator* p = $(ls_hs_operator* p);
+    ls_hs_internal_object_init(&p->base, 1, $(void* payload));
+    p->basis = $(ls_hs_basis* cBasis');
+    if ($(bool incRefCountBasis)) {
+      ls_hs_internal_object_inc_ref_count(&p->basis->base);
+    }
+    p->expr = $(ls_hs_expr* cExpr');
+    if ($(bool incRefCountExpr)) {
+      ls_hs_internal_object_inc_ref_count(&p->expr->base);
+    }
+    p->diag_terms = $(ls_hs_nonbranching_terms* diag_terms);
+    p->off_diag_terms = $(ls_hs_nonbranching_terms* off_diag_terms);
+    p->max_number_off_diag = $(int maxNumberOffDiag);
+  } |]
+  pure p
+
+ls_hs_create_operator :: Ptr Cbasis -> Ptr Cexpr -> IO CString
+ls_hs_create_operator cBasis cExpr =
+  withCbasis cBasis $ \basis ->
+    withCexpr cExpr $ \expr ->
+      newCencoded
+        =<< rightM (newCoperator (Just cBasis) (Just cExpr)) (mkSomeOperator @(Either Text) basis expr)
+
+ls_hs_destroy_operator :: Ptr Coperator -> IO ()
+ls_hs_destroy_operator = ls_hs_destroy_object $ \p -> do
+  destroyCnonbranching_terms =<< [CU.exp| ls_hs_nonbranching_terms* { $(ls_hs_operator* p)->diag_terms } |]
+  destroyCnonbranching_terms =<< [CU.exp| ls_hs_nonbranching_terms* { $(ls_hs_operator* p)->off_diag_terms } |]
+  ls_hs_destroy_expr =<< [CU.exp| ls_hs_expr* { $(ls_hs_operator* p)->expr } |]
+  ls_hs_destroy_basis =<< [CU.exp| ls_hs_basis* { $(ls_hs_operator* p)->basis } |]
+
+-- ls_hs_operator_max_number_off_diag :: Ptr Coperator -> IO CInt
+-- ls_hs_operator_max_number_off_diag = foldCoperator $ foldSomeOperator $ \operator ->
+--   pure . fromIntegral . Set.size . Set.fromList . G.toList . G.map nbtX $
+--     G.filter (not . nbtIsDiagonal) (getNonbranchingTerms operator)
+
+ls_hs_operator_from_json :: CString -> IO CString
+ls_hs_operator_from_json = newCencoded <=< rightM (newCoperator Nothing Nothing) <=< decodeCString @SomeOperator
+
+ls_hs_operator_to_json :: Ptr Coperator -> IO CString
+ls_hs_operator_to_json = foldCoperator newCencoded
 
 -- cloneCoperator :: (HasCallStack) => Ptr Coperator -> IO (Ptr Coperator)
 -- cloneCoperator p = do

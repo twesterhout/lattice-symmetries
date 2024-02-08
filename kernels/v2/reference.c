@@ -55,10 +55,12 @@ void ls_hs_internal_object_init(ls_hs_object *object, int refcount, void *haskel
 int ls_hs_internal_object_inc_ref_count(ls_hs_object *object) {
     // LS_CHECK(object != NULL, "trying to increase refcount of a NULL object");
     return atomic_fetch_add(&object->refcount, 1);
+    // fprintf(stderr, "refcount: %d -> %d\n", r, r + 1);
 }
 int ls_hs_internal_object_dec_ref_count(ls_hs_object *object) {
     // LS_CHECK(object != NULL, "trying to decrease refcount of a NULL object");
     return atomic_fetch_sub(&object->refcount, 1);
+    // fprintf(stderr, "refcount: %d -> %d\n", r, r - 1);
 }
 
 // TODO: currently not thread-safe, fix it

@@ -7,6 +7,7 @@ module LatticeSymmetries.Context
   , RawIsRepresentativeKernel
   , RawStateInfoKernel
   , RawStateToIndexKernel
+  , Cnonbranching_terms
   , Cobject
   , Cpermutation
   , Cpermutation_group
@@ -15,13 +16,16 @@ module LatticeSymmetries.Context
   , Cbasis
   , Cexpr
   , Coperator
+  , Cscalar
   , IsCobject
   )
 where
 
 import Data.Aeson (FromJSON (parseJSON), ToJSON (toJSON))
+import Data.Complex (Complex)
 import Data.Map.Strict qualified as Map
 import Foreign (FunPtr, Ptr, WordPtr (WordPtr), ptrToWordPtr, wordPtrToPtr)
+import Foreign.C (CDouble)
 import Language.C.Inline qualified as C
 import Language.C.Inline.Context (Context (..))
 import Language.C.Types (CIdentifier, TypeSpecifier (..))
@@ -47,6 +51,10 @@ type RawIsRepresentativeKernel = Ptr RawHalideBuffer -> Ptr RawHalideBuffer -> I
 type RawStateInfoKernel = Ptr RawHalideBuffer -> Ptr RawHalideBuffer -> Ptr RawHalideBuffer -> IO ()
 type RawStateToIndexKernel = Ptr RawHalideBuffer -> Ptr RawHalideBuffer -> IO ()
 
+type Cscalar = Complex CDouble
+
+data Cnonbranching_terms
+
 data Cobject
 
 data Cbasis
@@ -63,7 +71,7 @@ data Crepresentation
 
 data Coperator
 
-class IsCobject a
+class Typeable a => IsCobject a
 
 instance IsCobject Cobject
 
@@ -100,6 +108,7 @@ lsTypePairs =
       , ("ls_hs_permutation_group", "Cpermutation_group")
       , ("ls_hs_rep_element", "Crep_element")
       , ("ls_hs_representation", "Crepresentation")
+      , ("ls_hs_scalar", "Cscalar")
       , ("Halide::Internal::Dimension", "CxxDimension")
       , ("Halide::Internal::FusedPair", "FusedPair")
       , ("Halide::Internal::PrefetchDirective", "PrefetchDirective")

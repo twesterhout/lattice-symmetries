@@ -1,10 +1,10 @@
-module MyHDF5 {
-  use AllLocalesBarriers;
-  use BlockDist;
-  use CTypes;
-  import FileSystem;
-  import HDF5;
-  import HDF5.C_HDF5;
+module HDF5Extensions {
+  private use AllLocalesBarriers;
+  private use BlockDist;
+  private use CTypes;
+  private import FileSystem;
+  private import HDF5;
+  private import HDF5.C_HDF5;
 
   // use LatticeSymmetries.FFI;
 
@@ -89,7 +89,7 @@ module MyHDF5 {
     if C_HDF5.H5Tequal(HDF5.getHDF5Type(eltType), dtype_id) <= 0 then
       halt("type mismatch in file: '" + filename + "' dataset: '" + dataset +
            "'  " + HDF5.getHDF5Type(eltType):string + " != " + dtype_id:string);
-  
+
     var c_shape : [0 ..# rank] C_HDF5.hsize_t;
     C_HDF5.H5Sget_simple_extent_dims(dspace_id, c_ptrTo(c_shape), nil);
 
@@ -124,7 +124,7 @@ module MyHDF5 {
     if C_HDF5.H5Tequal(HDF5.getHDF5Type(eltType), dtype_id) <= 0 then
       halt("type mismatch in file: '" + filename + "' dataset: '" + dataset +
            "'  " + HDF5.getHDF5Type(eltType):string + " != " + dtype_id:string);
-    
+
     var c_offset : [0 ..# arr.rank] C_HDF5.hsize_t;
     var c_shape : [0 ..# arr.rank] C_HDF5.hsize_t;
     for i in 0 ..# arr.rank {
@@ -275,7 +275,7 @@ module MyHDF5 {
     const boundingBox = _makeDomain(shape);
     const targetLocales = if rank == 1 then Locales
                                        else reshape(Locales, {0 ..# 1, 0 ..# numLocales});
-    const dom = boundingBox dmapped Block(boundingBox, targetLocales);
+    const dom = blockDist.createDomain(boundingBox, targetLocales);
     var vectors : [dom] eltType;
     coforall loc in Locales do on loc {
       const indices = vectors.localSubdomain();

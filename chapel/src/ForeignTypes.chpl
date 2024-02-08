@@ -2,10 +2,11 @@ module ForeignTypes {
   use FFI;
   // use CommonParameters;
   import Communication;
+  use Timing;
 
+  import Reflection.getRoutineName;
   use CTypes;
   use ChplConfig;
-  // use ByteBufferHelpers;
   use IO;
   use JSON;
   // use Time;
@@ -15,6 +16,9 @@ module ForeignTypes {
   extern proc ls_chpl_get_is_representative_kernel(p : c_ptrConst(ls_hs_basis)) : c_fn_ptr;
   extern proc ls_chpl_invoke_is_representative_kernel(kernel : c_fn_ptr, count : int(64),
                                                       basis_states : c_ptrConst(uint(64)), norms : c_ptr(real(64)));
+  extern proc ls_chpl_get_state_to_index_kernel(p : c_ptrConst(ls_hs_basis)) : c_fn_ptr;
+  extern proc ls_chpl_invoke_state_to_index_kernel(kernel : c_fn_ptr, count : int(64),
+                                                   basis_states : c_ptrConst(uint(64)), indices : c_ptr(int(64)));
 
   // pragma "fn synchronization free"
   // private extern proc c_pointer_return(const ref x : ?t) : c_ptr(t);
@@ -226,7 +230,6 @@ module ForeignTypes {
     }
   }
 
-  /*
   record OperatorForeignInterface {
     proc clone(p : c_ptrConst(ls_hs_operator)) {
       assert(p != nil);
@@ -235,19 +238,19 @@ module ForeignTypes {
       return mp;
     }
 
-    proc destroy(p : c_ptr(ls_hs_basis)) {
+    proc destroy(p : c_ptr(ls_hs_operator)) {
       assert(p != nil);
-      ls_hs_destroy_basis(p);
+      ls_hs_destroy_operator(p);
     }
 
-    proc to_json(p : c_ptrConst(ls_hs_basis)) {
-      const c_str = ls_hs_basis_to_json(p);
+    proc to_json(p : c_ptrConst(ls_hs_operator)) {
+      const c_str = ls_hs_operator_to_json(p);
       defer ls_hs_destroy_string(c_str);
       return try! string.createCopyingBuffer(c_str);
     }
 
     proc from_json(s : c_ptrConst(c_char)) throws {
-      const c_str = ls_hs_basis_from_json(s);
+      const c_str = ls_hs_operator_from_json(s);
       defer ls_hs_destroy_string(c_str);
 
       var file = openMemFile();
@@ -256,13 +259,13 @@ module ForeignTypes {
       writer.close();
       var r = file.reader(deserializer=new jsonDeserializer());
       var p = r.read(HsResult(uint(64))).value;
-      return p:c_ptr(void):c_ptr(ls_hs_basis);
+      return p:c_ptr(void):c_ptr(ls_hs_operator);
     }
   }
-  */
 
   proc foreignInterfaceType(type t) type {
     if t == ls_hs_basis then return BasisForeignInterface;
+    if t == ls_hs_operator then return OperatorForeignInterface;
     compilerError("unknown type");
   }
 
@@ -273,51 +276,58 @@ module ForeignTypes {
 
     inline proc foreignInterface { return new foreignInterfaceType(eltType)(); }
 
+    proc init(type eltType) {
+      this.eltType = eltType;
+      this.payload = nil;
+      this.localeId = chpl_nodeID;
+    }
+
     proc init(ptr : c_ptr(?eltType), owning : bool = true) {
       this.eltType = eltType;
       init this;
+      if owning && ptr == nil then
+        halt("HsWrapper.init: if owning=true, then ptr must not be nil");
       this.payload = if owning then ptr else foreignInterface.clone(ptr);
       this.localeId = chpl_nodeID;
     }
 
     proc init(const ref x : HsWrapper(?eltType)) {
       this.eltType = eltType;
+      this.localeId = chpl_nodeID;
       init this;
 
-      if compiledForSingleLocale() || x.localeId == chpl_nodeID {
+      if x.payload == nil { // Trivial case, nothing to initialize
+        this.payload = nil;
+      }
+      else if compiledForSingleLocale() || x.localeId == chpl_nodeID { // Local copy constructor
         this.payload = foreignInterface.clone(x.payload);
-        this.localeId = chpl_nodeID;
       }
       else {
         // We serialize the value to JSON on x.localeId, copy the JSON representation to chpl_nodeID,
         // and then reconstruct the eltType.
-        //
-        // the following like is taken from the BigInteger module
         const xLoc = chpl_buildLocaleID(x.localeId, c_sublocid_any);
         const p = x.payload;
         var jsonString : string;
-        // the following like is taken from the BigInteger module
-        on __primitive("chpl_on_locale_num", xLoc) {
+        on __primitive("chpl_on_locale_num", xLoc) do
           jsonString = foreignInterface.to_json(p);
-        }
         this.payload = try! foreignInterface.from_json(jsonString.localize().c_str());
-        this.localeId = chpl_nodeID;
       }
     }
+    proc init=(const ref x : HsWrapper(?eltType)) do this.init(x);
 
     proc init(type eltType, jsonString : string) {
       this.eltType = eltType;
+      this.localeId = chpl_nodeID;
       init this;
+
       const s = jsonString.localize();
       this.payload = try! foreignInterface.from_json(s.c_str());
-      this.localeId = chpl_nodeID;
     }
-
-    proc init=(const ref x : HsWrapper(?eltType)) do this.init(x);
 
     proc deinit() {
       assert(localeId == chpl_nodeID);
-      foreignInterface.destroy(payload);
+      if payload != nil then
+        foreignInterface.destroy(payload);
     }
 
     proc deref() ref : eltType {
@@ -326,17 +336,34 @@ module ForeignTypes {
     }
   }
 
+  operator HsWrapper.=(ref lhs : HsWrapper(?eltType), const ref rhs : HsWrapper(eltType)) {
+    // logDebug("HsWrapper.=");
+    var t = rhs;
+    lhs.payload <=> t.payload;
+    lhs.localeId <=> t.localeId;
+  }
+
+  proc getBasisInfo(ptr : c_ptr(ls_hs_basis)) const ref : ls_hs_basis_info {
+      const info = ls_chpl_get_basis_info(ptr);
+      if info == nil then
+        halt("failed to initialize basis_info");
+      return info.deref();
+  }
+
   record Basis {
     var wrapper : HsWrapper(ls_hs_basis);
 
-    inline proc payload { return wrapper.payload; }
-    inline proc info const ref {
-      const info = ls_chpl_get_basis_info(payload);
-      assert(info != nil);
-      return info.deref();
+    inline proc payload {
+      assert(wrapper.payload != nil);
+      return wrapper.payload;
     }
+    inline proc info const ref { return getBasisInfo(payload); }
+
+    // TODO: figure out a way to remote this
+    proc init() { }
 
     proc init(p : c_ptr(ls_hs_basis), owning : bool = true) {
+      // logDebug("Basis.init(p, owning)");
       this.wrapper = new HsWrapper(p, owning);
     }
     proc init(p : c_ptrConst(ls_hs_basis), owning : bool) {
@@ -344,61 +371,24 @@ module ForeignTypes {
       init(p:c_ptr(ls_hs_basis), owning);
     }
     proc init(jsonString : string) {
+      // logDebug("Basis.init(string)");
       this.wrapper = new HsWrapper(ls_hs_basis, jsonString);
     }
     proc init(const ref x : Basis) {
+      // logDebug("Basis.init(Basis)");
       this.wrapper = x.wrapper;
     }
     proc init=(const ref x : Basis) do this.init(x);
 
-    // proc build() { ls_hs_basis_build(wrapper.payload); }
+    proc deinit() {
+      // logDebug("Basis.deinit");
+    }
+  }
 
-    // proc uncheckedSetRepresentatives(representatives : [] uint(64)) {
-    //   var arr = unsafeViewAsExternalArray(representatives);
-    //   ls_hs_unchecked_set_representatives(wrapper.payload, c_ptrTo(arr),
-    //                                       kCacheNumberBits:c_int);
-    // }
-
-    // proc isSpinBasis() { return wrapper.deref().particle_type == LS_HS_SPIN; }
-    // proc isSpinfulFermionicBasis() { return wrapper.deref().particle_type == LS_HS_SPINFUL_FERMION; }
-    // proc isSpinlessFermionicBasis() { return wrapper.deref().particle_type == LS_HS_SPINLESS_FERMION; }
-
-    // proc isHammingWeightFixed() {
-    //   // logDebug("ls_hs_basis_has_fixed_hamming_weight");
-    //   return info.hamming_weight.hasValue;
-    //   // ls_hs_basis_has_fixed_hamming_weight(wrapper.payload);
-    // }
-    // proc hasSpinInversionSymmetry() {
-    //   return info.spin_inversion.hasValue();
-    //   // ls_hs_basis_has_spin_inversion_symmetry(wrapper.payload);
-    // }
-    // inline proc hasPermutationSymmetries() { return info.has_permutation_symmetries; }
-
-    // proc numberBits : int { return info.number_bits; }
-    // proc numberWords : int { return info.number_words; }
-    // proc numberSites() : int { return info.number_sites; }
-    // proc numberParticles() : int {
-    //   const r = try! info.number_particles.value();
-    //   return r;
-    // }
-    // proc numberUp() : int { return wrapper.deref().number_up; }
-    // proc spinInversion : int { return wrapper.deref().spin_inversion:int; }
-
-    // proc minStateEstimate() : uint(64) {
-    //   // logDebug("ls_hs_min_state_estimate");
-    //   return ls_hs_min_state_estimate(wrapper.payload);
-    // }
-    // proc maxStateEstimate() : uint(64) {
-    //   // logDebug("ls_hs_max_state_estimate");
-    //   return ls_hs_max_state_estimate(wrapper.payload);
-    // }
-
-    // proc representatives() {
-    //   ref rs = wrapper.deref().representatives;
-    //   if rs.elts == nil then
-    //     halt("basis is not built");
-    //   return makeArrayFromExternArray(rs, uint(64));
-    // }
+  operator Basis.=(ref lhs : Basis, const ref rhs : Basis) {
+    // logDebug("Basis.=");
+    var t = rhs;
+    lhs.wrapper <=> t.wrapper;
   }
 
   // operator Basis.= (ref lhs : Basis, const ref rhs : Basis) {
@@ -420,7 +410,9 @@ module ForeignTypes {
       }
 
       inline proc this(basisState : uint(64)) : int where CHPL_COMM == "" { return 0; }
-      inline proc this(basisState : uint(64)) : int where CHPL_COMM != "" { return (hash64_01(basisState) % numLocales:uint):int; }
+      inline proc this(basisState : uint(64)) : int where CHPL_COMM != "" {
+        return (hash64_01(basisState) % numLocales:uint):int;
+      }
 
       proc this(count : int, basisStates : c_ptrConst(uint(64)), targetLocales : c_ptr(uint(8))) {
         if numLocales > 1 then
@@ -438,15 +430,16 @@ module ForeignTypes {
   proc isRepresentative(const ref basis : Basis,
                         const ref alphas : [?D1] uint(64),
                         ref norms : [?D2] real(64)) where D1.rank == 1 && D2.rank == 1 {
+    const _timer = recordTime(getRoutineName());
     const count = alphas.size;
-    assert(norms.size == count,
-           "alphas.size (" + alphas.size:string + ") != norms.size ("
-           + norms.size:string + ")");
+    if norms.size != count then
+      halt(try! "alphas.size (%i) != norms.size (%i)".format(alphas.size, norms.size));
+    if !basis.info.has_permutation_symmetries then
+      halt("do not call isRepresentative on bases that do not have permutation symmetries");
 
-    assert(basis.info.has_permutation_symmetries,
-           "do not call isRepresentative on bases that do not have permutation symmetries");
     const kernel = ls_chpl_get_is_representative_kernel(basis.payload);
-    assert(kernel != nil, "is_representative_kernel was not initialized");
+    if kernel == nil then
+      halt("is_representative_kernel was not initialized");
 
     ls_chpl_invoke_is_representative_kernel(kernel, count, c_ptrToConst(alphas), c_ptrTo(norms));
   }
@@ -454,6 +447,64 @@ module ForeignTypes {
     var norms : [0 ..# alphas.size] real(64) = noinit;
     isRepresentative(basis, alphas, norms);
     return norms;
+  }
+
+  proc basisStatesToIndices(const ref basis : Basis, count : int, alphas : c_ptrConst(uint(64)), indices : c_ptr(int(64))) {
+    const _timer = recordTime(getRoutineName());
+    const kernel = ls_chpl_get_state_to_index_kernel(basis.payload);
+    if kernel == nil then
+      halt("state_to_index kernel was not initialized");
+
+    ls_chpl_invoke_state_to_index_kernel(kernel, count, alphas, indices);
+  }
+
+  record Operator {
+    var wrapper : HsWrapper(ls_hs_operator);
+    var basis : Basis;
+
+    inline proc payload { return wrapper.payload; }
+
+    proc _getReference() ref {
+      assert(payload != nil);
+      return payload.deref();
+    }
+    forwarding _getReference();
+
+    proc init(p : c_ptr(ls_hs_operator), owning : bool = true) {
+      this.wrapper = new HsWrapper(p, owning);
+      init this;
+
+      this.basis = new Basis(this.wrapper.payload.deref().basis, owning=false);
+    }
+    proc init(p : c_ptrConst(ls_hs_operator), owning : bool) {
+      assert(owning == false);
+      init(p:c_ptr(ls_hs_operator), owning);
+    }
+    proc init(jsonString : string) {
+      this.wrapper = new HsWrapper(ls_hs_operator, jsonString);
+      init this;
+      // logDebug("Operator.init(string): refcount=", this.payload.deref().base.refcount);
+
+      this.basis = new Basis(this.wrapper.payload.deref().basis, owning=false);
+      // logDebug("Operator.init(string): refcount=", this.payload.deref().base.refcount,
+      //          ", basis refcount=", this.basis.payload.deref().base.refcount);
+    }
+    proc init(const ref x : Operator) {
+      this.wrapper = x.wrapper;
+      this.basis = x.basis;
+    }
+    proc init=(const ref x : Operator) do this.init(x);
+
+    proc deinit() {
+      // logDebug("Operator.deinit");
+    }
+  }
+
+  operator Operator.=(ref lhs : Operator, const ref rhs : Operator) {
+    // logDebug("Operator.=");
+    var t = rhs;
+    lhs.wrapper <=> t.wrapper;
+    lhs.basis <=> t.basis;
   }
 
   /*

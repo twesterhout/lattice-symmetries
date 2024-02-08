@@ -11,13 +11,13 @@ module LatticeSymmetries.ComplexRational
   , imagPart
   , conjugate
   , magnitudeSquared
-  , Cscalar
   , prettyRational
   )
 where
 
 import Data.Complex (Complex (..))
 import Foreign.C.Types (CDouble (..))
+import LatticeSymmetries.Context (Cscalar)
 import Prettyprinter (Doc, Pretty (..))
 import Prettyprinter qualified as Pretty
 
@@ -78,14 +78,14 @@ instance Fractional ComplexRational where
       d = magnitudeSquared z'
   fromRational a = ComplexRational a 0
 
-type Cscalar = Complex CDouble
+-- type Cscalar = Complex CDouble
 
 class Fractional a => ConvertibleToComplexDouble a where
   toComplexDouble :: a -> Cscalar
   fromComplexDouble :: Cscalar -> a
 
 instance ConvertibleToComplexDouble ComplexRational where
-  toComplexDouble (ComplexRational r i) = (fromRational r) :+ (fromRational i)
+  toComplexDouble (ComplexRational r i) = fromRational r :+ fromRational i
   fromComplexDouble (r :+ i) = ComplexRational (toRational r) (toRational i)
 
 instance ConvertibleToComplexDouble (Complex CDouble) where

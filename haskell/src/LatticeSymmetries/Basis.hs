@@ -75,15 +75,10 @@ module LatticeSymmetries.Basis
   )
 where
 
-import Control.Monad.ST
 import Data.Aeson
-import Data.Aeson.Types (Pair)
+import Data.Aeson.Types (Pair, Parser)
 import Data.Bits
-import Data.Maybe qualified (fromJust)
 import Data.Vector.Generic qualified as G
-import Data.Vector.Generic.Mutable qualified as GM
-import Data.Vector.Unboxed qualified as U
-import Data.Yaml.Aeson
 import Foreign (fromBool)
 import Foreign.C (CString)
 import Foreign.C.Types
@@ -94,7 +89,6 @@ import Language.C.Inline.Unsafe qualified as CU
 import LatticeSymmetries.Algebra
 import LatticeSymmetries.BitString
 import LatticeSymmetries.Context
-import LatticeSymmetries.Dense
 import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
 import LatticeSymmetries.Group
@@ -672,22 +666,19 @@ isBasisReal x = case x of
 -- }
 
 ls_hs_destroy_basis :: Ptr Cbasis -> IO ()
-ls_hs_destroy_basis p = do
-  refcount <- [CU.exp| int { ls_hs_internal_object_dec_ref_count(&$(ls_hs_basis* p)->base) } |]
-  when (refcount == 1) $ do
-    [CU.block| void {
-      ls_hs_basis* p = $(ls_hs_basis* p);
-      ls_hs_internal_destroy_external_array(&p->local_representatives);
-      ls_hs_internal_destroy_external_array(&p->local_norms);
-      if (p->info != NULL) {
-        free(p->info);
-      }
-    } |]
-    destroyIsRepresentativeKernel_v2
-      =<< [CU.exp| ls_hs_is_representative_kernel_type_v2 { $(ls_hs_basis* p)->is_representative_kernel } |]
-    destroyStateInfoKernel_v2
-      =<< [CU.exp| ls_hs_state_info_kernel_type_v2 { $(ls_hs_basis* p)->state_info_kernel } |]
-    freeStablePtr . castPtrToStablePtr =<< [CU.exp| void* { $(ls_hs_basis* p)->base.haskell_payload } |]
+ls_hs_destroy_basis = ls_hs_destroy_object $ \p -> do
+  [CU.block| void {
+    ls_hs_basis* p = $(ls_hs_basis* p);
+    ls_hs_internal_destroy_external_array(&p->local_representatives);
+    ls_hs_internal_destroy_external_array(&p->local_norms);
+    if (p->info != NULL) {
+      free(p->info);
+    }
+  } |]
+  destroyIsRepresentativeKernel_v2
+    =<< [CU.exp| ls_hs_is_representative_kernel_type_v2 { $(ls_hs_basis* p)->is_representative_kernel } |]
+  destroyStateInfoKernel_v2
+    =<< [CU.exp| ls_hs_state_info_kernel_type_v2 { $(ls_hs_basis* p)->state_info_kernel } |]
 
 ls_hs_init_is_representative_kernel :: Ptr Cbasis -> IO ()
 ls_hs_init_is_representative_kernel basisPtr = withCbasis basisPtr $ foldSomeBasis $ \case

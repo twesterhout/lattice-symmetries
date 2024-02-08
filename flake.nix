@@ -126,18 +126,23 @@
               #   compiler = "gnu";
               #   settings = { CHPL_TARGET_MEM = "cstdlib"; CHPL_HOST_MEM = "cstdlib"; CHPL_UNWIND = "none"; CHPL_TASKS = "fifo"; CHPL_SANITIZE_EXE = "address"; CHPL_LIB_PIC = "none"; };
               # })
-              (chapel.override {
-                compiler = "gnu";
-                # settings = { CHPL_COMM = "gasnet"; CHPL_COMM_SUBSTRATE = "smp"; CHPL_UNWIND = "none"; };
-              })
               # (chapel.override {
               #   llvmPackages = llvmPackages_16;
               #   compiler = "llvm";
               #   # settings = { CHPL_LIB_PIC = "pic"; CHPL_UNWIND = "system"; };
               # })
               # chapelFixupBinary
+              # (chapel.override {
+              #   compiler = "gnu";
+              #   settings = { CHPL_COMM = "gasnet"; CHPL_COMM_SUBSTRATE = "smp"; CHPL_UNWIND = "none"; };
+              # })
+              (chapel.override {
+                settings = { "CHPL_TARGET_CPU" = "haswell"; };
+              })
               # (pr_XXX.override { compiler = "gnu"; })
               gcc
+              gdb
+              valgrind
               pkg-config
               prettierd
             ];

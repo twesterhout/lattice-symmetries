@@ -142,6 +142,10 @@ typedef struct ls_hs_basis {
     LS_HS_ATOMIC(ls_hs_basis_info *) info;
 } ls_hs_basis;
 
+typedef struct ls_hs_expr {
+    ls_hs_object base;
+} ls_hs_expr;
+
 typedef struct ls_hs_nonbranching_terms {
     int number_terms;
     int number_bits;
@@ -155,23 +159,23 @@ typedef struct ls_hs_nonbranching_terms {
                            // all arrays are contiguous in row-major order
 } ls_hs_nonbranching_terms;
 
-typedef struct ls_hs_expr ls_hs_expr;
-
 typedef struct ls_hs_operator {
     ls_hs_object base;
     ls_hs_basis *basis;
     ls_hs_expr *expr;
     ls_hs_nonbranching_terms *diag_terms;
     ls_hs_nonbranching_terms *off_diag_terms;
+    int max_number_off_diag;
 } ls_hs_operator;
 
 typedef struct ls_chpl_batched_operator {
-    ls_hs_operator *matrix;
+    ls_hs_operator const *matrix;
     int64_t batch_size;
     uint64_t *betas;
     ls_hs_scalar *coeffs;
     int64_t *offsets;
     uint64_t *temp_spins;
+    ls_hs_scalar *temp_coeffs;
     double *temp_norms;
     uint8_t *locale_indices;
 } ls_chpl_batched_operator;

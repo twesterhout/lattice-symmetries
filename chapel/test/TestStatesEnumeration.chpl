@@ -9,6 +9,8 @@ use CTypes;
 use Time;
 use JSON;
 use IO;
+use BlockDist;
+use CommDiagnostics;
 // use LatticeSymmetries;
 // use BlockToHashed;
 // use HashedToBlock;
@@ -75,9 +77,9 @@ proc test_determineEnumerationRanges() {
   assert(t3.elapsed() < 0.1);
   assert(rs.size == 10000);
 
-  for loc in Locales do on loc {
-    stdout.withSerializer(new jsonSerializer()).writeln(summarize());
-  }
+  // for loc in Locales do on loc {
+  //   stdout.withSerializer(new jsonSerializer()).writeln(summarize());
+  // }
 }
 
 
@@ -100,33 +102,14 @@ const smallBasesExpectedNorms = [
   // new Vector([0.5]), // TODO: fix me !!!
 ];
 
-proc checkArraysEqual(arr1 : [] ?eltType, arr2 : [] eltType) {
-  if !arr1.equals(arr2) {
-    writeln("Failed: arrays differ:");
-    var count = 0;
-    const maxCount = 10;
-    for (i, x1, x2) in zip(arr1.domain, arr1, arr2) {
-      if x1 != x2 {
-        if count >= maxCount {
-          writeln("...");
-          break;
-        }
-        writeln(i, ": ", x1, " != ", x2);
-        count += 1;
-      }
-    }
-    halt("checkArraysEqual test failed");
-  }
-}
-
 proc test__enumerateStatesGeneric() {
   const basis1 = new Basis("{ \"number_spins\": 5, \"hamming_weight\": 2 }");
   const ref basisInfo1 = basis1.info;
   const r1 = basisInfo1.min_state_estimate .. basisInfo1.max_state_estimate;
   var bucket1 = new Bucket();
   _enumerateStatesGeneric(r1, basis1, bucket1.basisStates, bucket1.norms);
-  writeln(bucket1.basisStates.toArray());
-  writeln(bucket1.norms.toArray());
+  // writeln(bucket1.basisStates.toArray());
+  // writeln(bucket1.norms.toArray());
 
   for (basisDef, expectedStates, expectedNorms)
       in zip(smallBasesJsonDefs, smallBasesExpectedStates, smallBasesExpectedNorms) {
@@ -148,7 +131,8 @@ proc test_enumerateStates() {
                                         4, basis1.info);
   var basisStates;
   var norms;
-  enumerateStates(rs, basis1, basisStates, norms);
+  var keys;
+  enumerateStates(rs, basis1, basisStates, norms, keys);
   writeln(basisStates);
   writeln(norms);
 
@@ -156,29 +140,22 @@ proc test_enumerateStates() {
   const rs2 = determineEnumerationRanges(basis2.info.min_state_estimate .. basis2.info.max_state_estimate, 4, basis2.info);
   var basisStates2;
   var norms2;
-  enumerateStates(rs2, basis2, basisStates2, norms2);
+  var keys2;
+  enumerateStates(rs2, basis2, basisStates2, norms2, keys2);
   writeln(basisStates2);
   writeln(norms2);
 }
 
-record Foo {
-  var xs : c_array(int, 5);
-}
-
-proc bar(x : c_ptr(int)) {
-  x[0] = 10;
-}
-
-proc test_something() {
-  var foo = new Foo();
-  writeln(foo.xs);
-  bar(foo.xs:c_ptr(int));
-  writeln(foo.xs);
-
-  var raw : c_array(int, 5);
-  writeln(raw);
-  bar(raw);
-  writeln(raw);
+proc test_blockArrGetBlocks() {
+  var arr = blockDist.createArray(0 ..# 10, int(64));
+  // startVerboseComm();
+  const blocks = blockArrGetBlocks(arr);
+  // stopVerboseComm();
+  // writeln(blocks);
+  for (loc, i) in zip(Locales, 0..) do on loc {
+    assert(c_ptrTo(arr[arr.localSubdomain().low]) == blocks[i][0]);
+    assert(arr[arr.localSubdomain()].shape == blocks[i][1]);
+  }
 }
 
 proc main() {
@@ -189,7 +166,7 @@ proc main() {
   test_determineEnumerationRanges();
   test__enumerateStatesGeneric();
   test_enumerateStates();
-  test_something();
+  test_blockArrGetBlocks();
 
   // const basis = loadConfigFromYaml(kHamiltonian);
 

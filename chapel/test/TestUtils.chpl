@@ -84,6 +84,14 @@ proc test_radixOneStep() {
   assert(arr4.equals([10, 20, 30, 40, 50]));
 }
 
+proc test_refcounts() {
+  const op = new Operator(
+      "{"
+    + "\"basis\": { \"number_spins\": 2 },"
+    + "\"expression\": { \"expression\": \"2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁\" }"
+    + "}");
+}
+
 proc main() {
   initRuntime();
   defer deinitRuntime();
@@ -91,6 +99,7 @@ proc main() {
   test_prefixSum();
   test_sum();
   test_radixOneStep();
+  test_refcounts();
 
   return 0;
 }

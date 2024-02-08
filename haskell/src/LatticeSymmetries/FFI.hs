@@ -31,11 +31,11 @@ module LatticeSymmetries.FFI where
 -- , Cyaml_config (..)
 -- ) where
 
+import Data.Typeable (typeOf)
 import Foreign
 import Foreign.C.Types
-import LatticeSymmetries.ComplexRational (Cscalar)
-import LatticeSymmetries.Context
 import Language.C.Inline.Unsafe qualified as CU
+import LatticeSymmetries.Context
 
 -- newtype AtomicCInt = AtomicCInt CInt
 --   deriving stock (Show, Eq)
@@ -104,17 +104,17 @@ import Language.C.Inline.Unsafe qualified as CU
 --   }
 --   deriving stock (Show, Generic)
 
-data Cnonbranching_terms = Cnonbranching_terms
-  { cnonbranching_terms_number_terms :: {-# UNPACK #-} !CInt
-  , cnonbranching_terms_number_bits :: {-# UNPACK #-} !CInt
-  , cnonbranching_terms_v :: {-# UNPACK #-} !(Ptr Cscalar)
-  , cnonbranching_terms_m :: {-# UNPACK #-} !(Ptr Word64)
-  , cnonbranching_terms_l :: {-# UNPACK #-} !(Ptr Word64)
-  , cnonbranching_terms_r :: {-# UNPACK #-} !(Ptr Word64)
-  , cnonbranching_terms_x :: {-# UNPACK #-} !(Ptr Word64)
-  , cnonbranching_terms_s :: {-# UNPACK #-} !(Ptr Word64)
-  }
-  deriving stock (Show, Generic)
+-- data Cnonbranching_terms = Cnonbranching_terms
+--   { cnonbranching_terms_number_terms :: {-# UNPACK #-} !CInt
+--   , cnonbranching_terms_number_bits :: {-# UNPACK #-} !CInt
+--   , cnonbranching_terms_v :: {-# UNPACK #-} !(Ptr Cscalar)
+--   , cnonbranching_terms_m :: {-# UNPACK #-} !(Ptr Word64)
+--   , cnonbranching_terms_l :: {-# UNPACK #-} !(Ptr Word64)
+--   , cnonbranching_terms_r :: {-# UNPACK #-} !(Ptr Word64)
+--   , cnonbranching_terms_x :: {-# UNPACK #-} !(Ptr Word64)
+--   , cnonbranching_terms_s :: {-# UNPACK #-} !(Ptr Word64)
+--   }
+--   deriving stock (Show, Generic)
 
 -- type Creplace_index = CInt -> CInt -> Ptr CInt -> Ptr CInt -> IO ()
 
@@ -148,9 +148,17 @@ ls_hs_destroy_object :: forall a. IsCobject a => (Ptr a -> IO ()) -> Ptr a -> IO
 ls_hs_destroy_object custom p = do
   let p' = castPtr @a @Cobject p
   refcount <- [CU.exp| int { ls_hs_internal_object_dec_ref_count($(ls_hs_object* p')) } |]
-  when (refcount == 1) $ do
-    custom p
-    freeStablePtr . castPtrToStablePtr =<< [CU.exp| void* { $(ls_hs_object* p')->haskell_payload } |]
+  case compare refcount 1 of
+    GT -> do
+      -- don't have to do anything yet
+      pure ()
+    EQ -> do
+      -- call the destructor
+      custom p
+      freeStablePtr . castPtrToStablePtr =<< [CU.exp| void* { $(ls_hs_object* p')->haskell_payload } |]
+    LT ->
+      -- should never happen
+      error $ "ls_hs_destroy_object: refcount < 1 when destroying " <> show (typeOf p)
 
 newCobject :: IsCobject b => a -> IO (Ptr b)
 newCobject = fmap castPtr . newCobjectSized 0

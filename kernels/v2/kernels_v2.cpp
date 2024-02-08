@@ -326,6 +326,7 @@ extern "C" ls_hs_state_to_index_kernel_type
 mk_fixed_hamming_state_to_index_kernel(int const number_sites, int const hamming_weight,
                                        halide_buffer_t const *binomials) {
     try {
+        // fprintf(stderr, "mk_fixed_hamming_state_to_index_kernel\n");
         auto fn = lattice_symmetries::mk_fixed_hamming_state_to_index_kernel(
             number_sites, hamming_weight, binomials);
         auto closure =

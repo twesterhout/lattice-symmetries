@@ -21,6 +21,7 @@ module LatticeSymmetries.Group
   -- , Symmetries (..)
   -- , areSymmetriesReal
   -- , emptySymmetries
+  , emptyRepresentation
   , nullRepresentation
   -- , compileGroupRepresentation
 
@@ -245,6 +246,9 @@ isRepresentationReal = G.all isRepElementReal . unRepresentation
 --   getField s
 --     | nullSymmetries s = Nothing
 --     | otherwise = Just . G.length . unPermutation . G.head $ s.symmGroup.permutations
+
+emptyRepresentation :: Representation a
+emptyRepresentation = Representation G.empty
 
 nullRepresentation :: Representation a -> Bool
 nullRepresentation = G.null . unRepresentation

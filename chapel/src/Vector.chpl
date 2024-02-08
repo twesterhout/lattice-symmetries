@@ -69,6 +69,11 @@ record Vector {
       _dom = {0 ..# _size};
   }
 
+  proc ref clear() {
+    resize(0);
+    shrink();
+  }
+
   inline proc ref data : c_ptr(eltType) { return c_ptrTo(_arr[_dom.low]); }
 
   pragma "reference to const when const this"

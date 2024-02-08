@@ -1,6 +1,7 @@
 #include "ForeignTypes.h"
 #include <HalideRuntime.h>
 #include <lattice_symmetries_functions.h>
+// #include <stdio.h>
 
 ls_hs_basis_info const *ls_chpl_get_basis_info(ls_hs_basis const *basis) {
     ls_hs_basis_info const *ptr = atomic_load(&basis->info);
@@ -45,4 +46,41 @@ void ls_chpl_invoke_is_representative_kernel(ls_hs_is_representative_kernel_type
         .dim = dims,
         .padding = 0};
     kernel(&basis_states_buf, &norms_buf);
+}
+
+ls_hs_state_to_index_kernel_type
+ls_chpl_get_state_to_index_kernel(ls_hs_basis const *basis) {
+    ls_hs_state_to_index_kernel_type fun = atomic_load(&basis->state_to_index_kernel);
+    // fprintf(stderr, "ls_chpl_get_state_to_index_kernel: %p\n", (void*)fun);
+    if (fun == NULL) {
+        ls_hs_init_state_to_index_kernel(basis);
+        fun = atomic_load(&basis->state_to_index_kernel);
+    }
+    return fun;
+}
+
+void ls_chpl_invoke_state_to_index_kernel(ls_hs_state_to_index_kernel_type kernel,
+                                          int64_t const count, uint64_t const *basis_states,
+                                          int64_t *indices) {
+    halide_dimension_t dims[1] = {
+        (halide_dimension_t){.min = 0, .extent = (int32_t)count, .stride = 1}};
+    halide_buffer_t basis_states_buf = (halide_buffer_t){
+        .device = 0,
+        .device_interface = 0,
+        .host = (uint8_t *)basis_states,
+        .flags = 0,
+        .type = (struct halide_type_t){.code = halide_type_uint, .bits = 64, .lanes = 1},
+        .dimensions = 1,
+        .dim = dims,
+        .padding = 0};
+    halide_buffer_t indices_buf = (halide_buffer_t){
+        .device = 0,
+        .device_interface = 0,
+        .host = (uint8_t *)indices,
+        .flags = 0,
+        .type = (struct halide_type_t){.code = halide_type_int, .bits = 64, .lanes = 1},
+        .dimensions = 1,
+        .dim = dims,
+        .padding = 0};
+    kernel(&basis_states_buf, &indices_buf);
 }

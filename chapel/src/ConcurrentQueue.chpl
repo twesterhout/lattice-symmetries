@@ -12,6 +12,8 @@ module ConcurrentQueue {
 
   extern proc ls_chpl_destroy_ConcurrentQueue(queue : c_ptr(ConcurrentQueue));
 
+  extern proc ls_chpl_ConcurrentQueue_size(queue : c_ptr(ConcurrentQueue)) : int(64);
+
   pragma "fast-on safe extern function"
   extern proc ls_chpl_ConcurrentQueue_try_push(queue : c_ptr(ConcurrentQueue), value : uint(64)) : bool;
 
@@ -23,6 +25,81 @@ module ConcurrentQueue {
 
   pragma "fast-on safe extern function"
   extern proc ls_chpl_ConcurrentQueue_pop(queue : c_ptr(ConcurrentQueue), value : c_ptr(uint(64)));
+
+  record ConcurrentQueueWrapper {
+    type eltType;
+    var queuePtr : c_ptr(ConcurrentQueue);
+    var localeId : int;
+    var owning : bool;
+
+    proc init(type eltType, queuePtr : c_ptr(ConcurrentQueue) = nil, localeId : int = -1, owning : bool = false) {
+      this.eltType = eltType;
+      this.queuePtr = queuePtr;
+      this.localeId = localeId;
+      this.owning = owning;
+    }
+    proc init(capacity : int, nullElement : ?eltType) {
+      this.eltType = eltType;
+      this.queuePtr = ls_chpl_create_ConcurrentQueue(capacity.safeCast(uint(32)), encodeAsWord(nullElement));
+      this.localeId = here.id;
+      this.owning = true;
+      // init this;
+      // assert(queuePtr != nil);
+    }
+    proc deinit() {
+      if owning then
+        on Locales[localeId] do
+          ls_chpl_destroy_ConcurrentQueue(queuePtr);
+    }
+
+    proc tryPush(value : eltType) : bool {
+      const rvfValue : uint(64) = encodeAsWord(value);
+      const rvfQueue = queuePtr;
+      var success : bool;
+      if here.id == localeId then
+        success = ls_chpl_ConcurrentQueue_try_push(rvfQueue, rvfValue);
+      else
+        on Locales[localeId] do
+          success = ls_chpl_ConcurrentQueue_try_push(rvfQueue, rvfValue);
+      return success;
+    }
+
+    proc push(value : eltType) {
+      const rvfValue : uint(64) = encodeAsWord(value);
+      const rvfQueue = queuePtr;
+      if here.id == localeId then
+        ls_chpl_ConcurrentQueue_push(rvfQueue, rvfValue);
+      else
+        on Locales[localeId] do
+          ls_chpl_ConcurrentQueue_push(rvfQueue, rvfValue);
+    }
+
+    proc tryPop(ref value) : bool {
+      if here.id != localeId then halt("tryPop should be executed locally");
+
+      var encodedValue : uint(64);
+      const success = ls_chpl_ConcurrentQueue_try_pop(queuePtr, c_ptrTo(encodedValue));
+      if success then
+        decodeFromWord(encodedValue, value);
+      return success;
+    }
+
+    proc pop() : eltType {
+      if here.id != localeId then halt("pop should be executed locally");
+
+      var encodedValue : uint(64);
+      ls_chpl_ConcurrentQueue_pop(queuePtr, c_ptrTo(encodedValue));
+      var value : eltType;
+      decodeFromWord(encodedValue, value);
+      return value;
+    }
+
+    proc size() {
+      if here.id != localeId then halt("size should be executed locally");
+
+      return ls_chpl_ConcurrentQueue_size(queuePtr);
+    }
+  }
 
   /*
   proc nextPowerOfTwo(x : int(?n)) {
