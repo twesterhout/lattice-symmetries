@@ -45,13 +45,15 @@ proc applyDiagKernel(
 
 proc applyOffDiagKernel(
     off_diag_terms : c_ptrConst(ls_hs_nonbranching_terms),
-    batch_size : int,
+    chunk : range(int),
     alphas : c_ptrConst(uint(64)),
     betas : c_ptr(uint(64)),
     coeffs : c_ptr(complex(128)),
     offsets : c_ptr(c_ptrdiff),
+    targetStates : c_ptr(uint(64)),
     xs,
     param left : bool = false) {
+  const batch_size = chunk.size;
   // Nothing to apply
   if (off_diag_terms == nil || off_diag_terms.deref().number_terms == 0) {
     POSIX.memset(offsets, 0, (batch_size + 1):c_size_t * c_sizeof(c_ptrdiff));
@@ -83,6 +85,7 @@ proc applyOffDiagKernel(
           if old_beta != alpha {
             coeffs[offset] = old_coeff;
             betas[offset] = old_beta;
+            targetStates[offset] = chunk.low + batch_idx;
             offset += 1;
           }
           old_beta = beta;
@@ -96,6 +99,7 @@ proc applyOffDiagKernel(
     if old_beta != alpha {
       coeffs[offset] = old_coeff;
       betas[offset] = old_beta;
+      targetStates[offset] = chunk.low + batch_idx;
       offset += 1;
     }
     offsets[batch_idx + 1] = offset;
@@ -122,32 +126,34 @@ private proc computeKeys(totalCount, betas, keys, ref keysTimer) {
 */
 
 private proc computeOffDiagNoProjection(const ref matrix : ls_chpl_batched_operator,
-                                        count : int,
+                                        chunk,
                                         alphas : c_ptrConst(uint(64)),
                                         xs,
                                         param left : bool) {
   const _timer = recordTime(getRoutineName());
+  const count = chunk.size;
   if count > matrix.batch_size then
     halt(try! "buffer overflow: allocated space for %i elements, but count=%i".format(matrix.batch_size, count));
   if matrix.betas == nil || matrix.coeffs == nil || matrix.offsets == nil then
     halt("betas, coeffs, or offsets should be pre-allocated");
   applyOffDiagKernel(
     matrix.matrix.deref().off_diag_terms,
-    count,
+    chunk,
     alphas,
     matrix.betas,
     matrix.coeffs,
     matrix.offsets,
+    matrix.target_states,
     xs,
     left);
 }
 private proc computeOffDiagOnlyInversion(const ref matrix : ls_chpl_batched_operator,
-                                         count : int,
+                                         chunk,
                                          alphas : c_ptrConst(uint(64)),
                                          xs,
                                          param left : bool) {
   const _timer = recordTime("computeOffDiagOnlyInversion");
-  computeOffDiagNoProjection(matrix, count, alphas, xs, left);
+  // computeOffDiagNoProjection(matrix, chunk, alphas, xs, left);
   assert(false,
          "computeOffDiagOnlyInversion is not yet implemented");
 
@@ -168,7 +174,7 @@ private proc computeOffDiagOnlyInversion(const ref matrix : ls_chpl_batched_oper
   // if timers != nil then timers!.stateInfoTimer.stop();
 }
 private proc computeOffDiagWithProjection(const ref matrix : ls_chpl_batched_operator,
-                                          count : int,
+                                          chunk,
                                           alphas : c_ptrConst(uint(64)),
                                           xs,
                                           param left : bool) {
@@ -224,21 +230,21 @@ private proc computeOffDiagWithProjection(const ref matrix : ls_chpl_batched_ope
 // bounded by `_numberOffDiagTerms`.
 private inline proc computeOffDiagGeneric(const ref basisInfo : ls_hs_basis_info,
                                           const ref matrix : ls_chpl_batched_operator,
-                                          count : int,
+                                          chunk,
                                           alphas : c_ptrConst(uint(64)),
                                           xs,
                                           param left : bool) {
   // Simple case when no symmetries are used
   if !basisInfo.requires_projection {
-    computeOffDiagNoProjection(matrix, count, alphas, xs, left);
+    computeOffDiagNoProjection(matrix, chunk, alphas, xs, left);
   }
   // Another simple case when no permutations were given, only the spin inversion
   else if !basisInfo.has_permutation_symmetries && basisInfo.spin_inversion != 0 {
-    computeOffDiagOnlyInversion(matrix, count, alphas, xs, left);
+    computeOffDiagOnlyInversion(matrix, chunk, alphas, xs, left);
   }
   // The tricky case when we have to project betas first
   else {
-    computeOffDiagWithProjection(matrix, count, alphas, xs, left);
+    computeOffDiagWithProjection(matrix, chunk, alphas, xs, left);
   }
 }
 
@@ -380,6 +386,7 @@ record BatchedOperator {
 
     raw.betas = allocate(uint(64), capacity);
     raw.coeffs = allocate(complex(128), capacity);
+    raw.target_states = allocate(uint(64), capacity);
     raw.offsets = allocate(int(64), raw.batch_size + 1);
     if basisInfo.has_permutation_symmetries {
       raw.temp_spins = allocate(uint(64), capacity);
@@ -395,6 +402,7 @@ record BatchedOperator {
     // logDebug("BatchedOperator.deallocateBuffers");
     if raw.betas != nil then deallocate(raw.betas);
     if raw.coeffs != nil then deallocate(raw.coeffs);
+    if raw.target_states != nil then deallocate(raw.target_states);
     if raw.offsets != nil then deallocate(raw.offsets);
     if raw.locale_indices != nil then deallocate(raw.locale_indices);
     if raw.temp_spins != nil then deallocate(raw.temp_spins);
@@ -418,17 +426,18 @@ record BatchedOperator {
     if owning then deallocateBuffers();
   }
 
-  proc computeOffDiag(count : int, alphas : c_ptrConst(uint(64)), xs, param left : bool)
-      : (int, c_ptr(uint(64)), c_ptr(complex(128))) {
+  proc computeOffDiag(chunk : range(int), alphas : c_ptrConst(uint(64)), xs, param left : bool)
+      : (int, c_ptr(uint(64)), c_ptr(complex(128)), c_ptr(uint(64))) {
+    const count = chunk.size;
     if count == 0 || matrix.max_number_off_diag == 0 then
-      return (0, nil, nil);
+      return (0, nil, nil, nil);
     if count > raw.batch_size then
       halt(try! "buffer overflow in BatchedOperator: count=%i, batch_size=%i".format(count, raw.batch_size));
 
-    computeOffDiagGeneric(basisInfo, raw, count, alphas, xs, left);
+    computeOffDiagGeneric(basisInfo, raw, chunk, alphas, xs, left);
     const totalCount = raw.offsets[count];
     // computeKeys(totalCount, pointers.betas, pointers.localeIdxs, timers.keysTimer);
-    return (totalCount, raw.betas, raw.coeffs);
+    return (totalCount, raw.betas, raw.coeffs, raw.target_states);
   }
 }
 
@@ -550,7 +559,7 @@ export proc ls_chpl_operator_apply_off_diag(matrixPtr : c_ptrConst(ls_hs_operato
     halt(try! ("ls_chpl_operator_apply_off_diag: number_words=%i, "
               + "but bases with more than 64 bits are not yet implemented").format(basisInfo.number_words));
 
-  const (size, _, _) = batchedOperator.computeOffDiag(count, alphas, nil, left=false);
+  const (size, _, _, _) = batchedOperator.computeOffDiag(0 ..# count, alphas, nil, left=false);
   betas.deref() = chpl_make_external_array_ptr_free(batchedOperator.raw.betas, size);
   batchedOperator.raw.betas = nil;
   coeffs.deref() = chpl_make_external_array_ptr_free(batchedOperator.raw.coeffs, size);

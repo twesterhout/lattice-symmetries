@@ -173,6 +173,7 @@ typedef struct ls_chpl_batched_operator {
     int64_t batch_size;
     uint64_t *betas;
     ls_hs_scalar *coeffs;
+    uint64_t *target_states;
     int64_t *offsets;
     uint64_t *temp_spins;
     ls_hs_scalar *temp_coeffs;

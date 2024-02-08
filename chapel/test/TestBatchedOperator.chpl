@@ -87,7 +87,7 @@ proc main() {
   defer deinitRuntime();
 
   test_BatchedOperator();
-  // test_smallMatrixVectorProduct();
+  test_smallMatrixVectorProduct();
   // test_smallMatrixVectorProduct2();
 
   return 0;

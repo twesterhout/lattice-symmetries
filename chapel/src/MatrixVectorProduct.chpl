@@ -14,6 +14,8 @@ private use CTypes;
 private use RangeChunk;
 private use Time;
 private use ChapelLocks;
+private use IO.FormattedIO;
+private use OS.POSIX;
 
 proc perLocaleDiagonal(const ref matrix : Operator,
                        const ref x : [] ?eltType,
@@ -102,6 +104,62 @@ inline proc decodeFromWord(w : uint(64), ref x : int) { x = w:int; }
 // var localProcessCounts : Vector(int);
 // localProcessCounts.reserve(7000);
 // var localProcessCountsLock : chpl_LocalSpinlock;
+
+private proc localProcessExperimental(const ref basis : Basis,
+                                      xs : c_ptrConst(?coeffType),
+                                      size : int,
+                                      basisStates : c_ptrConst(uint(64)),
+                                      coeffs : c_ptrConst(complex(128)),
+                                      targetIndices : c_ptrConst(uint(64)),
+                                      minTargetIndex : uint(64),
+                                      numDistinctTargetIndices : int,
+                                      targetCoeffs : c_ptr(coeffType)) {
+  const _timer = recordTime("localProcessExperimental");
+
+  local {
+    // count == 0 has to be handled separately because c_ptrTo(indices) fails
+    // when the size of indices is 0.
+    if size == 0 then return;
+
+    POSIX.memset(targetCoeffs, 0, numDistinctTargetIndices:c_size_t * c_sizeof(coeffType));
+
+    // Special case when we don't have to call ls_hs_state_index
+    if numLocales == 1 && basis.info.is_state_index_identity {
+
+      // logDebug(try! "localProcessExperimental: size=%i, numDistinctTargetStates=%i".format(size, numDistinctTargetStates));
+      // for k in 0 ..# size {
+      //   writeln(basisStates[k], ", ", coeffs[k], ", ", targetStates[k], ", ", xs[basisStates[k]]);
+      // }
+
+      // foreach k in 0 ..# numDistinctTargetStates {
+      //   targetCoeffs[k] = 0;
+      // }
+      foreach k in 0 ..# size {
+        // assert(targetStates[k] - minTargetState < numDistinctTargetStates);
+        // writeln(try! "targetCoeffs[%u - %u] += %r * %r".format(targetStates[k], minTargetState, coeffs[k]:coeffType, xs[basisStates[k]:int]));
+        const x = xs[basisStates[k]:int];
+        if x != 0 then
+          targetCoeffs[targetIndices[k] - minTargetIndex] += coeffs[k]:coeffType * x;
+      }
+
+      // for k in 0 ..# numDistinctTargetStates {
+      //   writeln("targetCoeffs[", k, "] = ", targetCoeffs[k]);
+      // }
+    }
+    else {
+      var indices = allocate(int, size);
+      defer deallocate(indices);
+      basisStatesToIndices(basis, size, basisStates, indices);
+
+      foreach k in 0 ..# size {
+        const x = xs[indices[k]];
+        if x != 0 then
+          targetCoeffs[targetIndices[k] - minTargetIndex] += coeffs[k]:coeffType * x;
+      }
+
+    }
+  }
+}
 
 private proc localProcess(const ref basis : Basis,
                           ref accessor : ConcurrentAccessor(?coeffType),
@@ -335,6 +393,7 @@ proc LocaleState.allCompleted() : bool {
 }
 
 proc ref LocaleState.processReceivedData(msg : BufferFilledMessage) {
+  assert(false);
   if msg.size == -1 {
     // srcTaskIdx on srcLocaleIdx indicates to us that we should not expect any more data from it
     // isCompleted[msg.srcLocaleIdx, msg.srcTaskIdx].write(true);
@@ -389,12 +448,13 @@ record Worker {
       if chunkIdx == -1 { break; }
 
       const chunk : range(int) = localeState._chunks[chunkIdx];
-      const (n, basisStatesPtr, coeffsPtr) =
+      // logDebug("chunk=", chunk);
+      const (n, basisStatesPtr, coeffsPtr, targetIndicesPtr) =
         batchedOperator.computeOffDiag(
-          chunk.size,
+          chunk,
           localeState.representativesPtr + chunk.low,
-          localeState.xPtr + chunk.low,
-          left=true);
+          nil, // localeState.xPtr + chunk.low,
+          left=false);
 
       if numLocales > 1 {
         assert(false, "not implemented");
@@ -408,10 +468,21 @@ record Worker {
       }
       else {
         // Process all the generated data locally
-        // logDebug("localProcess");
-        localProcess(localeState.basis, localeState.accessor,
-                     basisStatesPtr, coeffsPtr, // :c_ptrConst(complex(128)),
-                     n);
+        const accumulators = allocate(localeState.coeffType, chunk.size);
+        defer deallocate(accumulators);
+
+        localProcessExperimental(localeState.basis,
+                                 localeState.xPtr,
+                                 n,
+                                 basisStatesPtr,
+                                 coeffsPtr:c_ptrConst(complex(128)),
+                                 targetIndicesPtr,
+                                 chunk.low,
+                                 chunk.size,
+                                 accumulators);
+        foreach k in 0 ..# chunk.size do
+          if accumulators[k] != 0 then
+            localeState.accessor.localAdd(chunk.low + k, accumulators[k]);
       }
     } // end while true
 
