@@ -10,12 +10,12 @@
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     nix-chapel = {
-      url = "path:/home/tom/Projects/nix-chapel"; # "github:twesterhout/nix-chapel";
+      url = "github:twesterhout/nix-chapel";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.flake-utils.follows = "flake-utils";
     };
     halide-haskell = {
-      url = "path:/home/tom/Projects/halide-haskell";
+      url = "github:twesterhout/halide-haskell";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.flake-utils.follows = "flake-utils";
     };
