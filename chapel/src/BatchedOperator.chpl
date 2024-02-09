@@ -130,7 +130,7 @@ private proc computeOffDiagNoProjection(const ref matrix : ls_chpl_batched_opera
                                         alphas : c_ptrConst(uint(64)),
                                         xs,
                                         param left : bool) {
-  // const _timer = recordTime(getRoutineName());
+  const _timer = recordTime(getRoutineName());
   const count = chunk.size;
   if count > matrix.batch_size then
     halt(try! "buffer overflow: allocated space for %i elements, but count=%i".format(matrix.batch_size, count));

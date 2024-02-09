@@ -77,7 +77,8 @@
 
       packages = flake-utils.lib.eachDefaultSystemMap (system:
         with pkgs-for system; {
-          inherit (lattice-symmetries) kernels kernels_v2 haskell chapel python distributed test-data;
+          inherit (lattice-symmetries)
+            kernels kernels_v2 haskell chapel python distributed test-data BenchmarkSingleLocaleMatrixVector;
           inherit atomic_queue;
           inherit haskellPackages;
           inherit (python3Packages) quspin;

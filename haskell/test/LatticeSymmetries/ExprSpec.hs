@@ -5,6 +5,7 @@ module LatticeSymmetries.ExprSpec (spec) where
 import Control.Exception (bracket)
 import Data.Aeson qualified as Aeson
 import Data.ByteString (packCString, useAsCString)
+import Data.Text.IO qualified as Text.IO
 import Foreign (fromBool)
 import Foreign.C (CString)
 import LatticeSymmetries.Algebra
@@ -32,8 +33,11 @@ spec = do
       useAsCString (toStrict (Aeson.encode someExpr)) $ \exprEncoded ->
         bracket (ls_hs_expr_from_json exprEncoded) ls_hs_destroy_string $ \cExprStr -> do
           cExpr <- extractRight =<< extractRight =<< decodeCString @(Either Text _) cExprStr
-          bracket (ls_hs_expr_to_json cExpr) ls_hs_destroy_string $ \cStr ->
-            Aeson.decode . toLazy <$> packCString cStr `shouldReturn` Just (mapSomeExpr simplifyExpr someExpr)
+          bracket (ls_hs_expr_to_json cExpr) ls_hs_destroy_string $ \cStr -> do
+            Just e <- Aeson.decodeStrict <$> packCString cStr
+            -- when (mapSomeExpr simplifyExpr someExpr /= e) $ do
+            --   Text.IO.putStrLn $ toPrettyText (mapSomeExpr simplifyExpr someExpr) <> " | " <> toPrettyText e
+            e `shouldBe` mapSomeExpr simplifyExpr someExpr
   describe "ls_hs_expr_to_string" $ do
     prop "pretty prints" $ \(someExpr :: SomeExpr) ->
       bracket (newCexpr someExpr) ls_hs_destroy_expr $ \cExpr ->

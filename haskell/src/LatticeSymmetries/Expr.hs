@@ -20,6 +20,7 @@ module LatticeSymmetries.Expr
   -- , exprToHypergraph
   , exprPermutationGroup
   , fromSExpr
+  , estimateNumberSites
   )
 where
 
@@ -114,9 +115,9 @@ instance (Algebra (GeneratorType t), Ord (IndexType t)) => Num (Expr t) where
   abs = Expr . abs . unExpr
   signum = Expr . signum . unExpr
   fromInteger _ =
-    error
-      $ "Num instance of Expr does not implement fromInteger; "
-      <> "consider constructing an explicit identity 𝟙₀ and then scaling it"
+    error $
+      "Num instance of Expr does not implement fromInteger; "
+        <> "consider constructing an explicit identity 𝟙₀ and then scaling it"
 
 instance CanScale ComplexRational (Expr t) where
   scale c a
@@ -168,43 +169,47 @@ instance Pretty (Generator (IndexType t) (GeneratorType t)) => Pretty (Expr t) w
 --       where
 --         mapping = Map.fromList (zip oldSiteIndices siteIndices)
 
-fromSExpr :: (HasCallStack, Algebra (GeneratorType t), Ord (IndexType t)) => ParticleTag t -> SExpr -> Either Text (Expr t)
-fromSExpr t (SSum terms) = do
-  exprs <- mapM (fromSExpr t) terms
-  pure $ foldl' (+) (Expr []) exprs
-fromSExpr t (SScaled c term) = scale c <$> fromSExpr t term
-fromSExpr t (SProduct (term :| terms)) = do
-  expr <- fromSExpr t term
-  exprs <- mapM (fromSExpr t) terms
-  pure $ foldl' (*) expr exprs
-fromSExpr _ (SPrimitive SIdentity) = pure $ Expr [Scaled 1 []]
-fromSExpr SpinTag (SPrimitive (SSpinOp c t i)) = pure
-  $ case t of
-    SSpinPlus -> Expr [scaled [Generator i SpinPlus]]
-    SSpinMinus -> Expr [scaled [Generator i SpinMinus]]
-    SSpinZ -> Expr [scaled [Generator i SpinZ]]
-    SSpinX -> Expr [scaled [Generator i SpinPlus], scaled [Generator i SpinMinus]]
-    SSpinY ->
-      scale (ComplexRational 0 (-1))
-        $ Expr [scaled [Generator i SpinPlus], scale (-1 :: ℂ) (scaled [Generator i SpinMinus])]
+fromSExpr :: forall t. (HasCallStack, Algebra (GeneratorType t), Ord (IndexType t)) =>
+  ParticleTag t -> SExpr -> Either Text (Expr t)
+fromSExpr t0 expr0 = simplifyExpr <$> go t0 expr0
   where
-    scaled = if c == 'S' then Scaled 0.5 else Scaled 1
-fromSExpr SpinfulFermionTag (SPrimitive (SFermionOp t (Just s) i)) = pure
-  $ case t of
-    SFermionCreate -> Expr [Scaled 1 [Generator (s, i) FermionCreate]]
-    SFermionAnnihilate -> Expr [Scaled 1 [Generator (s, i) FermionAnnihilate]]
-    SFermionNumber -> Expr [Scaled 1 [Generator (s, i) FermionCount]]
-fromSExpr SpinlessFermionTag (SPrimitive (SFermionOp t Nothing i)) = pure
-  $ case t of
-    SFermionCreate -> Expr [Scaled 1 [Generator i FermionCreate]]
-    SFermionAnnihilate -> Expr [Scaled 1 [Generator i FermionAnnihilate]]
-    SFermionNumber -> Expr [Scaled 1 [Generator i FermionCount]]
-fromSExpr SpinTag (SPrimitive _) = fail "expected an expression for spin-1/2 particles"
-fromSExpr SpinfulFermionTag (SPrimitive _) = fail "expected an expression for spinful fermions"
-fromSExpr SpinlessFermionTag (SPrimitive _) = fail "expected an expression for spinless fermions"
+    go :: ParticleTag t -> SExpr -> Either Text (Expr t)
+    go t (SSum terms) = do
+      exprs <- mapM (go t) terms
+      pure $ foldl' (\a b -> Expr $ unExpr a + unExpr b) (Expr []) exprs
+    go t (SScaled c term) = scale c <$> go t term
+    go t (SProduct (term :| terms)) = do
+      expr <- go t term
+      exprs <- mapM (go t) terms
+      pure $ foldl' (\a b -> Expr $ unExpr a * unExpr b) expr exprs
+    go _ (SPrimitive SIdentity) = pure $ Expr [Scaled 1 []]
+    go SpinTag (SPrimitive (SSpinOp c t i)) = pure $
+      case t of
+        SSpinPlus -> Expr [scaled [Generator i SpinPlus]]
+        SSpinMinus -> Expr [scaled [Generator i SpinMinus]]
+        SSpinZ -> Expr [scaled [Generator i SpinZ]]
+        SSpinX -> Expr [scaled [Generator i SpinPlus], scaled [Generator i SpinMinus]]
+        SSpinY ->
+          scale (ComplexRational 0 (-1)) $
+            Expr [scaled [Generator i SpinPlus], scale (-1 :: ℂ) (scaled [Generator i SpinMinus])]
+      where
+        scaled = if c == 'S' then Scaled 0.5 else Scaled 1
+    go SpinfulFermionTag (SPrimitive (SFermionOp t (Just s) i)) = pure $
+      case t of
+        SFermionCreate -> Expr [Scaled 1 [Generator (s, i) FermionCreate]]
+        SFermionAnnihilate -> Expr [Scaled 1 [Generator (s, i) FermionAnnihilate]]
+        SFermionNumber -> Expr [Scaled 1 [Generator (s, i) FermionCount]]
+    go SpinlessFermionTag (SPrimitive (SFermionOp t Nothing i)) = pure $
+      case t of
+        SFermionCreate -> Expr [Scaled 1 [Generator i FermionCreate]]
+        SFermionAnnihilate -> Expr [Scaled 1 [Generator i FermionAnnihilate]]
+        SFermionNumber -> Expr [Scaled 1 [Generator i FermionCount]]
+    go SpinTag (SPrimitive _) = fail "expected an expression for spin-1/2 particles"
+    go SpinfulFermionTag (SPrimitive _) = fail "expected an expression for spinful fermions"
+    go SpinlessFermionTag (SPrimitive _) = fail "expected an expression for spinless fermions"
 
 mkExpr :: (HasCallStack, Algebra (GeneratorType t), Ord (IndexType t)) => ParticleTag t -> Text -> Either Text (Expr t)
-mkExpr tag s = parseExprEither s >>= fromSExpr tag
+mkExpr tag s = fromSExpr tag =<< parseExprEither s
 
 permuteExprG :: IsBasis t => (IndexType t -> Int) -> (Int -> IndexType t) -> Permutation -> Expr t -> Expr t
 permuteExprG to from (unPermutation -> p) expr = simplifyExpr $ mapIndices remap expr

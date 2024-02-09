@@ -9,13 +9,14 @@ private use ForeignTypes;
 private use Timing;
 private use Vector;
 
+private import Reflection.getRoutineName;
 private use AllLocalesBarriers;
 private use CTypes;
-private use RangeChunk;
-private use Time;
 private use ChapelLocks;
 private use IO.FormattedIO;
 private use OS.POSIX;
+private use RangeChunk;
+private use Time;
 
 proc perLocaleDiagonal(const ref matrix : Operator,
                        const ref x : [] ?eltType,
@@ -114,7 +115,7 @@ private proc localProcessExperimental(const ref basis : Basis,
                                       minTargetIndex : uint(64),
                                       numDistinctTargetIndices : int,
                                       targetCoeffs : c_ptr(coeffType)) {
-  // const _timer = recordTime("localProcessExperimental");
+  const _timer = recordTime(getRoutineName());
 
   local {
     // Reset accumulators
@@ -451,6 +452,7 @@ record Worker {
         const accumulators = allocate(localeState.coeffType, chunk.size);
         defer deallocate(accumulators);
 
+        assert(0 <= n && n < 100000, n);
         localProcessExperimental(localeState.basis,
                                  localeState.xPtr,
                                  n,

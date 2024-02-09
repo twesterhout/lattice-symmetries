@@ -169,6 +169,18 @@ executable benchmark
         , random
         , vector
 
+executable parsing
+    import:         common-options
+    hs-source-dirs: app
+    main-is:        Parsing.hs
+    ghc-options:    -threaded -rtsopts
+    build-depends:
+        , aeson
+        , bytestring
+        , lattice-symmetries-haskell
+        , text
+        , vector
+
 foreign-library lattice_symmetries_haskell
     import:         common-options
     type:           native-shared
