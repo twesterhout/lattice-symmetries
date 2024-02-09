@@ -507,6 +507,12 @@ module ForeignTypes {
     lhs.basis <=> t.basis;
   }
 
+  proc loadOperatorFromFile(jsonFile : string) throws {
+    var f = open(jsonFile, ioMode.r);
+    var r = f.reader();
+    return new Operator(r.readAll(string));
+  }
+
   /*
   record Operator {
     var payload : c_ptr(ls_hs_operator);

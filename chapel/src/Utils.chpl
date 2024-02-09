@@ -3,8 +3,11 @@ module Utils {
 // Our modules
 private use CommonParameters;
 private use FFI;
+private import Timing;
 
 // System modules
+private import IO;
+private import JSON.jsonSerializer;
 private import OS.POSIX;
 private use BlockDist;
 private use CTypes;
@@ -19,6 +22,11 @@ proc deinitRuntime() {
   coforall loc in Locales do on loc {
     ls_hs_exit();
   }
+
+  if kDisplayTimings then
+    for loc in Locales do on loc {
+      try! IO.stdout.withSerializer(new jsonSerializer()).writeln(Timing.summarize());
+    }
 }
 
 /*
@@ -105,14 +113,14 @@ proc sum(count : int, arr : c_ptrConst(?eltType)) {
 }
 proc sum(arr : [] ?eltType)
     // ensure that arr is local
-    where domainDistIsLayout(arr.domain) {
+    where chpl_domainDistIsLayout(arr.domain) {
   var total : eltType = 0;
   foreach x in arr do
     total += x;
   return total;
 }
 proc sum(arr : [] ?eltType, param dim : int)
-    where domainDistIsLayout(arr.domain) &&
+    where chpl_domainDistIsLayout(arr.domain) &&
           arr.domain.rank == 2 &&
           0 <= dim && dim < 2 {
   const dim0 = arr.dim(0).size;

@@ -68,20 +68,6 @@ proc test_smallMatrixVectorProduct2() {
   writeln(y);
 }
 
-proc test_smallMatrixVectorProduct3() {
-  const op = new Operator(
-      "{"
-    + "\"basis\": { \"number_spins\": 4, \"hamming_weight\": 2 },"
-    + "\"expression\": { \"expression\": \"2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁ + 2 (σ⁺₁ σ⁻₂ + σ⁺₂ σ⁻₁) + σᶻ₁ σᶻ₂ + 2 (σ⁺₂ σ⁻₃ + σ⁺₃ σ⁻₂) + σᶻ₂ σᶻ₃ + 2 (σ⁺₃ σ⁻₀ + σ⁺₀ σ⁻₃) + σᶻ₃ σᶻ₀\" }"
-    + "}");
-  var representatives : [0 ..# 6] uint(64) = [3, 5, 6, 9, 10, 12]:uint;
-  var x : [0 ..# 6] real(64) = [0, 1, 0, 0, 0, 0];
-  var y : [0 ..# 6] real(64);
-
-  perLocaleMatrixVector(op, x, y, representatives);
-  writeln(y);
-}
-
 proc main() {
   initRuntime();
   defer deinitRuntime();

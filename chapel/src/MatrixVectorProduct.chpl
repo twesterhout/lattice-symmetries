@@ -117,47 +117,27 @@ private proc localProcessExperimental(const ref basis : Basis,
   // const _timer = recordTime("localProcessExperimental");
 
   local {
-    // count == 0 has to be handled separately because c_ptrTo(indices) fails
-    // when the size of indices is 0.
-    if size == 0 then return;
-
+    // Reset accumulators
     POSIX.memset(targetCoeffs, 0, numDistinctTargetIndices:c_size_t * c_sizeof(coeffType));
 
-    // Special case when we don't have to call ls_hs_state_index
+    var indices : c_ptr(int(64));
+    var allocated : bool = false;
     if numLocales == 1 && basis.info.is_state_index_identity {
-
-      // logDebug(try! "localProcessExperimental: size=%i, numDistinctTargetStates=%i".format(size, numDistinctTargetStates));
-      // for k in 0 ..# size {
-      //   writeln(basisStates[k], ", ", coeffs[k], ", ", targetStates[k], ", ", xs[basisStates[k]]);
-      // }
-
-      // foreach k in 0 ..# numDistinctTargetStates {
-      //   targetCoeffs[k] = 0;
-      // }
-      foreach k in 0 ..# size {
-        // assert(targetStates[k] - minTargetState < numDistinctTargetStates);
-        // writeln(try! "targetCoeffs[%u - %u] += %r * %r".format(targetStates[k], minTargetState, coeffs[k]:coeffType, xs[basisStates[k]:int]));
-        const x = xs[basisStates[k]:int];
-        if x != 0 then
-          targetCoeffs[targetIndices[k] - minTargetIndex] += coeffs[k]:coeffType * x;
-      }
-
-      // for k in 0 ..# numDistinctTargetStates {
-      //   writeln("targetCoeffs[", k, "] = ", targetCoeffs[k]);
-      // }
+      // Special case when we don't have to call ls_hs_state_index
+      indices = basisStates:c_ptr(int(64));
     }
     else {
-      var indices = allocate(int, size);
-      defer deallocate(indices);
+      indices = allocate(int, size);
       basisStatesToIndices(basis, size, basisStates, indices);
-
-      foreach k in 0 ..# size {
-        const x = xs[indices[k]];
-        if x != 0 then
-          targetCoeffs[targetIndices[k] - minTargetIndex] += coeffs[k]:coeffType * x;
-      }
-
     }
+
+    foreach k in 0 ..# size {
+      const x = xs[indices[k]:int];
+      if x != 0 then
+        targetCoeffs[targetIndices[k] - minTargetIndex] += coeffs[k]:coeffType * x;
+    }
+
+    if allocated then deallocate(indices);
   }
 }
 
@@ -466,7 +446,7 @@ record Worker {
 
         // for
       }
-      else {
+      else if n > 0 {
         // Process all the generated data locally
         const accumulators = allocate(localeState.coeffType, chunk.size);
         defer deallocate(accumulators);

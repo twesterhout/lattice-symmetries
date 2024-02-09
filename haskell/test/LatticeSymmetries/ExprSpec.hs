@@ -12,6 +12,7 @@ import LatticeSymmetries.Automorphisms
 import LatticeSymmetries.ComplexRational (ComplexRational (ComplexRational))
 import LatticeSymmetries.Expr
 import LatticeSymmetries.Generator
+import LatticeSymmetries.NonbranchingTerm (HasNonbranchingRepresentation (nonbranchingRepresentation))
 import LatticeSymmetries.Some
 import LatticeSymmetries.Utils (decodeCString, ls_hs_destroy_string, toPrettyText)
 import Test.Hspec
@@ -59,10 +60,10 @@ spec = do
               decodeCexprResult (ls_hs_expr_plus cA cB) `shouldReturn` SomeExpr tag (simplifyExpr (a + b))
               decodeCexprResult (ls_hs_expr_minus cA cB) `shouldReturn` SomeExpr tag (simplifyExpr (a - b))
               decodeCexprResult (ls_hs_expr_times cA cB) `shouldReturn` SomeExpr tag (simplifyExpr (a * b))
-              bracket (ls_hs_expr_negate cA) ls_hs_destroy_expr
-                $ foldCexpr (`shouldBe` SomeExpr tag (-a))
-              bracket (ls_hs_expr_scale 2.0 (-5.0) cA) ls_hs_destroy_expr
-                $ foldCexpr (`shouldBe` SomeExpr tag (ComplexRational 2 (-5) `scale` a))
+              bracket (ls_hs_expr_negate cA) ls_hs_destroy_expr $
+                foldCexpr (`shouldBe` SomeExpr tag (-a))
+              bracket (ls_hs_expr_scale 2.0 (-5.0) cA) ls_hs_destroy_expr $
+                foldCexpr (`shouldBe` SomeExpr tag (ComplexRational 2 (-5) `scale` a))
     prop "SpinTy" $ check SpinTag
     prop "SpinlessFermionTy" $ check SpinlessFermionTag
     prop "SpinfulFermionTy" $ check SpinfulFermionTag
@@ -70,3 +71,7 @@ spec = do
     it "computes permutation groups" $ do
       let e = mkExpr SpinTag "2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁"
       (.permutations) . exprPermutationGroup Nothing <$> e `shouldBe` Right [[0, 1], [1, 0]]
+  describe "HasNonbranchingRepresentation" $ do
+    prop "identities match" $ do
+      nonbranchingRepresentation (Generator (1 :: Int) SpinIdentity)
+        `shouldBe` nonbranchingRepresentation (Generator (2 :: Int) FermionIdentity)

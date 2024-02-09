@@ -134,7 +134,9 @@ instance HasNonbranchingRepresentation g => HasNonbranchingRepresentation (Scale
 instance HasNonbranchingRepresentation g => HasNonbranchingRepresentation (Product g) where
   nonbranchingRepresentation (Product v)
     | not (G.null v) = G.foldl1' (<>) . G.map nonbranchingRepresentation $ v
-    | otherwise = error "empty products do not have a nonbranching representation"
+    | otherwise =
+        -- an empty Product is equivalent to an identity, and identities for all particle types are the same
+        nonbranchingRepresentation (Generator (0 :: Int) SpinIdentity)
 
 instance Num c => CanScale c (CommutatorType, Sum (Scaled c g)) where
   scale z (tp, terms) = (tp, scale z terms)

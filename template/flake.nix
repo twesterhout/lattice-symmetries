@@ -49,6 +49,7 @@
             contents = [
               (python3.withPackages my-python-packages)
               coreutils
+              less # for displaying docs in the Python interpreter
             ];
             diskSize = 10240;
             memSize = 5120;

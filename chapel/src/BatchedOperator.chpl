@@ -36,7 +36,7 @@ proc applyDiagKernel(
       if delta {
         const sign = 1 - 2 * parity(alpha & terms.s[term_idx]):eltType;
         const factor = if xs != nil then sign * xs[batch_idx] else sign;
-        acc += terms.v[term_idx].re * factor;
+        acc += terms.v[term_idx]:eltType * factor;
       }
     }
     ys[batch_idx] = acc;
@@ -530,6 +530,7 @@ record BatchedOperator {
 //   }
 // }
 
+/*
 export proc ls_chpl_operator_apply_diag(matrixPtr : c_ptrConst(ls_hs_operator),
                                         count : int,
                                         alphas : c_ptrConst(uint(64)),
@@ -567,6 +568,7 @@ export proc ls_chpl_operator_apply_off_diag(matrixPtr : c_ptrConst(ls_hs_operato
   offsets.deref() = chpl_make_external_array_ptr_free(batchedOperator.raw.offsets, count + 1);
   batchedOperator.raw.offsets = nil;
 }
+*/
 
 /*
 export proc ls_chpl_operator_to_csr(matrixPtr : c_ptr(ls_hs_operator),

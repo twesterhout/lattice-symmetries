@@ -7,44 +7,39 @@ import Timing;
 
 use IO;
 use JSON;
+use List;
 
-config const kHamiltonian = "data/heisenberg_chain_8.json";
-config const kVectors = "data/matvec/heisenberg_chain_8.h5";
+config const kHamiltonian = "../test/test_4_2_10_10_expr.json";
+config const kVectors = "../test/test_4_2_10_10_arrays.json";
+config const kVerbose = false;
 
-proc localLoadVectors(filename : string, x : string = "/x", y : string = "/y") {
-  var input = HDF5Extensions.readDataset(filename, x, real(64), rank = 2)[0, ..];
-  var output = HDF5Extensions.readDataset(filename, y, real(64), rank = 2)[0, ..];
-  return (input, output);
-}
-
-proc loadOperator(filename : string) {
-  var f = open(filename, ioMode.r);
-  var r = f.reader();
-  return new Operator(r.readAll(string));
+record TestInfo {
+  var x_real : list(real);
+  var x_imag : list(real);
+  var y_real : list(real);
+  var y_imag : list(real);
 }
 
 proc main() {
   initRuntime();
   defer deinitRuntime();
 
-  const matrix = loadOperator(kHamiltonian);
-  const _k = ls_chpl_get_state_to_index_kernel(matrix.basis.payload);
-  const (x, y) = localLoadVectors(kVectors);
+  const matrix = loadOperatorFromFile(kHamiltonian);
 
-  const basisStates;
-  const norms;
-  const keys;
+  const basisStates, norms, keys;
   enumerateStates(matrix.basis, basisStates, norms, keys);
+
+  const testData = open(kVectors, ioMode.r).reader(deserializer=new jsonDeserializer()).read(TestInfo);
+  const x = [(re, im) in zip(testData.x_real, testData.x_imag)] re + im * 1.0i;
+  const y = [(re, im) in zip(testData.y_real, testData.y_imag)] re + im * 1.0i;
 
   var z : [x.domain] x.eltType;
   perLocaleMatrixVector(matrix, x, z, basisStates[here]);
 
+  if kVerbose {
+    writeln(y);
+    writeln(z);
+  }
+
   checkArraysEqual(z, y);
-
-  stdout.withSerializer(new jsonSerializer()).writeln(Timing.summarize());
-
-  // const counts = localProcessCounts.toArray();
-  // writeln((+ reduce counts):real / counts.size:real);
-  // writeln(min reduce counts);
-  // writeln(max reduce counts);
 }
