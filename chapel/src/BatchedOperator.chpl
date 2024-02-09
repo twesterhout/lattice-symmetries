@@ -34,7 +34,7 @@ proc applyDiagKernel(
     for term_idx in 0 ..# number_terms {
       const delta = (alpha & terms.m[term_idx]) == terms.r[term_idx];
       if delta {
-        const sign = 1 - 2 * parity(alpha & terms.s[term_idx]):int;
+        const sign = 1 - 2 * parity(alpha & terms.s[term_idx]):eltType;
         const factor = if xs != nil then sign * xs[batch_idx] else sign;
         acc += terms.v[term_idx].re * factor;
       }
@@ -79,7 +79,7 @@ proc applyOffDiagKernel(
       if delta {
         const sign = 1 - 2 * parity(alpha & terms.s[term_idx]):int;
         const factor = if xs != nil then sign * xs[batch_idx] else sign;
-        const coeff = terms.v[term_idx] * factor;
+        const coeff = terms.v[term_idx].re * factor + (terms.v[term_idx].im * factor) * 1.0i;
         const beta = alpha ^ terms.x[term_idx];
         if beta != old_beta {
           if old_beta != alpha {
@@ -130,7 +130,7 @@ private proc computeOffDiagNoProjection(const ref matrix : ls_chpl_batched_opera
                                         alphas : c_ptrConst(uint(64)),
                                         xs,
                                         param left : bool) {
-  const _timer = recordTime(getRoutineName());
+  // const _timer = recordTime(getRoutineName());
   const count = chunk.size;
   if count > matrix.batch_size then
     halt(try! "buffer overflow: allocated space for %i elements, but count=%i".format(matrix.batch_size, count));

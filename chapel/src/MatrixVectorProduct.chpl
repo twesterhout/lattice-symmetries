@@ -114,7 +114,7 @@ private proc localProcessExperimental(const ref basis : Basis,
                                       minTargetIndex : uint(64),
                                       numDistinctTargetIndices : int,
                                       targetCoeffs : c_ptr(coeffType)) {
-  const _timer = recordTime("localProcessExperimental");
+  // const _timer = recordTime("localProcessExperimental");
 
   local {
     // count == 0 has to be handled separately because c_ptrTo(indices) fails

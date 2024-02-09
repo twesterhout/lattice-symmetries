@@ -14,12 +14,13 @@ final: prev: {
         checkPhase = "true";
         installCheckPhase = "true";
       });
+
       lattice-symmetries = python-final.buildPythonPackage rec {
         pname = "lattice-symmetries";
         inherit version;
         src = ./.;
 
-        buildInputs = with prev; [
+        buildInputs = with final; [
           lattice-symmetries.kernels_v2
           lattice-symmetries.haskell
           # lattice-symmetries.chapel
@@ -64,6 +65,56 @@ final: prev: {
         '';
 
       };
+
+      quspin = python-final.buildPythonPackage {
+        pname = "quspin";
+        version = "0.3.7";
+        format = "setuptools";
+        src = final.fetchFromGitHub {
+          owner = "QuSpin";
+          repo = "QuSpin";
+          rev = "98825222a11771c00dc158b49e78beee52efe8b7";
+          hash = "sha256-wAbOCyfECA1u6Yj/Hv11phhz9YzAv79QspfAhk3acik=";
+        };
+
+        enableParallelBuilding = true;
+
+        postPatch = ''
+          substituteInPlace setup.py --replace-fail '-march=native' ' '
+        '';
+
+        env = {
+          NIX_CFLAGS_COMPILE = "-fopenmp";
+          CFLAGS = "-fopenmp";
+        };
+
+        nativeBuildInputs = with python-final; [
+          cython
+          setuptools
+        ];
+
+        buildInputs = with final; [
+          boost
+        ];
+        propagatedBuildInputs = with python-final; [
+          dill
+          gmpy2
+          joblib
+          numba
+          numexpr
+          numpy
+          scipy
+          six
+        ];
+
+        nativeCheckInputs = with python-final; [
+          # pip
+          # pytestCheckHook
+        ];
+
+      };
+
+
     })
   ];
   lattice-symmetries = (prev.lattice-symmetries or { }) // {

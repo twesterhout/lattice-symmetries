@@ -80,6 +80,7 @@
           inherit (lattice-symmetries) kernels kernels_v2 haskell chapel python distributed test-data;
           inherit atomic_queue;
           inherit haskellPackages;
+          inherit (python3Packages) quspin;
         });
 
       devShells = flake-utils.lib.eachDefaultSystemMap (system:
