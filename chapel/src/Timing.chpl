@@ -93,7 +93,7 @@ record TaskLocalStore {
 class LocaleLocalStore {
   var store : map(chpl_taskID_t, TaskLocalStore, parSafe=true);
 
-  proc add(param func, time : real) {
+  inline proc add(param func, time : real) {
     const taskId = chpl_task_getId();
 
     store._enter(); defer store._leave();
@@ -111,7 +111,7 @@ proc initLocaleLocalStore() {
   c_timing_set_locale_data(c_ptrTo(obj));
 }
 
-proc getLocaleLocalStore() {
+inline proc getLocaleLocalStore() {
   var obj : unmanaged LocaleLocalStore = (c_timing_get_locale_data():unmanaged LocaleLocalStore?)!;
   return obj;
 }
@@ -120,19 +120,22 @@ record Recorder {
   param func;
   var timer : stopwatch;
 
-  proc init(param func) {
+  inline proc init(param func) {
     this.func = func;
     init this;
     timer.start();
   }
 
-  proc ref deinit() {
+  inline proc ref deinit() {
     timer.stop();
     getLocaleLocalStore().add(func, timer.elapsed());
   }
 }
 
-proc recordTime(param func) { return new Recorder(func); };
+config param kRecordTiming = true;
+
+inline proc recordTime(param func) where kRecordTiming { return new Recorder(func); }
+inline proc recordTime(param func) where !kRecordTiming { return nil; }
 
 proc summarize() {
   var r : map(string, TimingCombined);

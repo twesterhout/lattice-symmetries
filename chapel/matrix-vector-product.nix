@@ -18,7 +18,7 @@ let
 
     buildPhase = ''
       make \
-        CHPL_CFLAGS='-I${lattice-symmetries.kernels_v2}/include --fast --no-ieee-float' \
+        CHPL_CFLAGS='-I${lattice-symmetries.kernels_v2}/include --fast --no-ieee-float -s kRecordTiming=false' \
         CHPL_LDFLAGS='-L${lattice-symmetries.haskell.lib}/lib' \
         HALIDE_PATH='${halide}' \
         bin/${target}

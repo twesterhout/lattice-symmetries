@@ -114,7 +114,8 @@ private proc localProcessExperimental(const ref basis : Basis,
                                       targetIndices : c_ptrConst(uint(64)),
                                       minTargetIndex : uint(64),
                                       numDistinctTargetIndices : int,
-                                      targetCoeffs : c_ptr(coeffType)) {
+                                      targetCoeffs : c_ptr(coeffType),
+				      indicesBuffer : c_ptr(int)) {
   const _timer = recordTime(getRoutineName());
 
   local {
@@ -122,13 +123,13 @@ private proc localProcessExperimental(const ref basis : Basis,
     POSIX.memset(targetCoeffs, 0, numDistinctTargetIndices:c_size_t * c_sizeof(coeffType));
 
     var indices : c_ptr(int(64));
-    var allocated : bool = false;
     if numLocales == 1 && basis.info.is_state_index_identity {
       // Special case when we don't have to call ls_hs_state_index
       indices = basisStates:c_ptr(int(64));
     }
     else {
-      indices = allocate(int, size);
+      const _timer = recordTime("allocate and basisStatesToIndices");
+      indices = indicesBuffer;
       basisStatesToIndices(basis, size, basisStates, indices);
     }
 
@@ -137,8 +138,6 @@ private proc localProcessExperimental(const ref basis : Basis,
       if x != 0 then
         targetCoeffs[targetIndices[k] - minTargetIndex] += coeffs[k]:coeffType * x;
     }
-
-    if allocated then deallocate(indices);
   }
 }
 
@@ -411,11 +410,20 @@ record Worker {
   var batchedOperator : BatchedOperator;
   var localeStatePtr;
   var taskIdx : int;
+  var indices;
+  var accumulators;
 
   proc init(taskIdx : int, ref localeState, maxChunkSize : int) {
     this.batchedOperator = new BatchedOperator(localeState.matrix.payload, maxChunkSize);
     this.localeStatePtr = c_addrOf(localeState);
     this.taskIdx = taskIdx;
+    this.indices = allocate(int, maxChunkSize * (1 + max(1, localeState.matrix.max_number_off_diag)));
+    this.accumulators = allocate(localeState.coeffType, maxChunkSize);
+  }
+
+  proc deinit() {
+    deallocate(indices);
+    deallocate(accumulators);
   }
 
   proc ref run() {
@@ -449,10 +457,9 @@ record Worker {
       }
       else if n > 0 {
         // Process all the generated data locally
-        const accumulators = allocate(localeState.coeffType, chunk.size);
-        defer deallocate(accumulators);
+        // const accumulators = allocate(localeState.coeffType, chunk.size);
+        // defer deallocate(accumulators);
 
-        assert(0 <= n && n < 100000, n);
         localProcessExperimental(localeState.basis,
                                  localeState.xPtr,
                                  n,
@@ -461,7 +468,8 @@ record Worker {
                                  targetIndicesPtr,
                                  chunk.low,
                                  chunk.size,
-                                 accumulators);
+                                 accumulators,
+				 indices);
         foreach k in 0 ..# chunk.size do
           if accumulators[k] != 0 then
             localeState.accessor.localAdd(chunk.low + k, accumulators[k]);

@@ -450,7 +450,7 @@ module ForeignTypes {
   }
 
   proc basisStatesToIndices(const ref basis : Basis, count : int, alphas : c_ptrConst(uint(64)), indices : c_ptr(int(64))) {
-    // const _timer = recordTime(getRoutineName());
+    const _timer = recordTime(getRoutineName());
     const kernel = ls_chpl_get_state_to_index_kernel(basis.payload);
     if kernel == nil then
       halt("state_to_index kernel was not initialized");

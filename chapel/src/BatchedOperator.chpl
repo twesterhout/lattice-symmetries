@@ -43,7 +43,7 @@ proc applyDiagKernel(
   }
 }
 
-proc applyOffDiagKernel(
+inline proc applyOffDiagKernel(
     off_diag_terms : c_ptrConst(ls_hs_nonbranching_terms),
     chunk : range(int),
     alphas : c_ptrConst(uint(64)),
