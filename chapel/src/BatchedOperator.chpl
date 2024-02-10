@@ -43,6 +43,11 @@ proc applyDiagKernel(
   }
 }
 
+record ApplyOffDiagStats {
+  
+}
+
+
 inline proc applyOffDiagKernel(
     off_diag_terms : c_ptrConst(ls_hs_nonbranching_terms),
     chunk : range(int),

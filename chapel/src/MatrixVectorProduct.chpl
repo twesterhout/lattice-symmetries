@@ -254,7 +254,8 @@ record LocaleState {
   var _chunksDom : domain(1);
   var _chunks : [_chunksDom] range(int);
   // We push indices of chunks onto a queue such that workers can race to pop from it.
-  var chunkIndicesQueue : ConcurrentQueueWrapper(int);
+  // var chunkIndicesQueue : ConcurrentQueueWrapper(int);
+  var chunkIndex : chpl__processorAtomicType(int);
 
   // Allocated buffers to which tasks from other locales write their data
   var _localBuffersDom : domain(2);
@@ -291,7 +292,7 @@ record LocaleState {
 
     this._chunksDom = {0 ..# numChunks};
     this._chunks = chunks(0 ..# representatives.size, numChunks);
-    this.chunkIndicesQueue = new ConcurrentQueueWrapper(numChunks, nullElement=-1);
+    // this.chunkIndicesQueue = new ConcurrentQueueWrapper(numChunks, nullElement=-1);
 
     const D1 = {0 ..# numLocales, 0 ..# numTasks};
     this._localBuffersDom = D1;
@@ -317,11 +318,12 @@ record LocaleState {
     this.representativesPtr = c_ptrToConst(representatives);
     init this;
 
-    for i in _chunksDom {
-      const success = chunkIndicesQueue.tryPush(i);
-      if !success then
-        halt("failed to push to chunkIndicesQueue");
-    }
+    // for i in _chunksDom {
+    //   const success = chunkIndicesQueue.tryPush(i);
+    //   if !success then
+    //     halt("failed to push to chunkIndicesQueue");
+    // }
+    chunkIndex.write(0);
     numberCompleted.write(0);
 
     // pre-compile Basis kernels
@@ -361,9 +363,11 @@ proc ref LocaleState.completeInitialization(const ref globalStore) {
 }
 
 proc LocaleState.getNextChunkIndex() {
-  var i : int;
-  const success = chunkIndicesQueue.tryPop(i);
-  return if success then i else -1;
+  // var i : int;
+  // const success = chunkIndicesQueue.tryPop(i);
+  // return if success then i else -1;
+  const i = chunkIndex.fetchAdd(1);
+  return if i < _chunksDom.size then i else -1;
 }
 
 proc LocaleState.allCompleted() : bool {
