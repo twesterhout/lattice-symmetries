@@ -1,0 +1,1 @@
+{"basis": {"number_spins": 1, "hamming_weight": 1, "spin_inversion": null}, "expression": {"expression": "-0.2116718960697559 \u03c3\u207a_0 \u03c3\u207b_0 \u03c3\u207a_0 \u03c3\u207b_0 -0.3000917975248917 \u03c3\u1dbb_0 \u03c3\u207a_0 \u03c3\u207b_0 I + 0.2869243775021384 \u03c3\u207a_0 \u03c3\u207b_0 + 0.2051653786263351 I", "particle": "spin-1/2"}}
