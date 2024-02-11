@@ -9,7 +9,7 @@ final: prev: {
       inherit version;
       target = "BenchmarkSingleLocaleMatrixVector";
       chapel = final.chapel.override {
-        settings = { "CHPL_TARGET_CPU" = "haswell"; };
+        settings = { "CHPL_TARGET_CPU" = "znver3"; };
       };
     };
 
