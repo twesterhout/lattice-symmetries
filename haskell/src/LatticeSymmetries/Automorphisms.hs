@@ -31,9 +31,9 @@ import Data.Vector.Generic.Mutable qualified as GM
 import Data.Vector.Unboxed qualified as U
 import Data.Vector.Unboxed.Mutable qualified as UM
 import GHC.Records (HasField (..))
-import LatticeSymmetries.Algebra (sortVectorBy)
 import LatticeSymmetries.Dense
 import LatticeSymmetries.Permutation
+import LatticeSymmetries.Utils (sortVectorBy)
 import Prelude hiding (group, identity, permutations, second, toList)
 
 data Hypergraph a = Hypergraph {vertices :: !(Set a), hyperedges :: !(Set (Set a))}
@@ -140,8 +140,8 @@ intersectAllToAll (Partitioning p1) (Partitioning p2) =
   Partitioning
     . NonEmpty.fromList
     $ intersectSorted
-    <$> NonEmpty.toList p1
-    <*> NonEmpty.toList p2
+      <$> NonEmpty.toList p1
+      <*> NonEmpty.toList p2
 
 createMappings :: U.Unbox a => Partitioning a -> Partitioning a -> [Mapping a]
 createMappings (Partitioning (NonEmpty.toList -> src)) (Partitioning (NonEmpty.toList -> tgt)) =
@@ -183,12 +183,12 @@ autsSearchTree g = dfs [] (Partitioning (vs :| [])) (Partitioning (vs :| []))
       -- check compatibility at the final step
       | allSingletons srcPart =
           -- isCompatible xys = isAutomorphism g xys
-          assert (allSingletons trgPart)
-            $ let p =
-                    permutationFromMappings (Just (Set.size g.vertices))
-                      $ mappings
+          assert (allSingletons trgPart) $
+            let p =
+                  permutationFromMappings (Just (Set.size g.vertices)) $
+                    mappings
                       <> createMappings srcPart trgPart
-               in SearchLeaf $ if isAutomorphism g p then Just p else Nothing
+             in SearchLeaf $ if isAutomorphism g p then Just p else Nothing
       | otherwise =
           let (!x, !srcPart') = pickOne dps srcPart
               branches = do
@@ -214,14 +214,14 @@ groupFromTransversalGeneratingSet tgs =
     . sortVectorBy compare
     . B.fromList
     $ Data.List.foldr1 (flip (<>))
-    <$> sequence transversals
+      <$> sequence transversals
   where
     k = (G.head tgs).length
     transversals =
-      fmap ((identityPermutation k :) . B.toList . fmap fst)
-        $ B.groupBy (\g h -> snd g == snd h)
-        $ sortVectorBy (comparing snd)
-        $ fmap (\p -> (p, minimalSupport p)) tgs
+      fmap ((identityPermutation k :) . B.toList . fmap fst) $
+        B.groupBy (\g h -> snd g == snd h) $
+          sortVectorBy (comparing snd) $
+            fmap (\p -> (p, minimalSupport p)) tgs
 
 hypergraphAutomorphisms :: (Permutation -> Bool) -> Hypergraph Int -> PermutationGroup
 hypergraphAutomorphisms p =

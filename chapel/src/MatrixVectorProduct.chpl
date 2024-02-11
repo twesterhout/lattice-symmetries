@@ -115,7 +115,7 @@ private proc localProcessExperimental(const ref basis : Basis,
                                       minTargetIndex : uint(64),
                                       numDistinctTargetIndices : int,
                                       targetCoeffs : c_ptr(coeffType),
-				      indicesBuffer : c_ptr(int)) {
+                                      indicesBuffer : c_ptr(int)) {
   const _timer = recordTime(getRoutineName());
 
   local {
@@ -133,11 +133,22 @@ private proc localProcessExperimental(const ref basis : Basis,
       basisStatesToIndices(basis, size, basisStates, indices);
     }
 
-    foreach k in 0 ..# size {
-      const x = xs[indices[k]:int];
-      if x != 0 then
-        targetCoeffs[targetIndices[k] - minTargetIndex] += coeffs[k]:coeffType * x;
+    var k = 0;
+    while k < size {
+      var acc : coeffType = coeffs[k]:coeffType * xs[indices[k]];
+      var targetIndex = targetIndices[k];
+      k += 1;
+      while k < size && targetIndices[k] == targetIndex {
+        acc += coeffs[k]:coeffType * xs[indices[k]];
+        k += 1;
+      }
+      targetCoeffs[targetIndex - minTargetIndex] += acc;
     }
+    // foreach k in 0 ..# size {
+    //   const x = xs[indices[k]:int];
+    //   if x != 0 then
+    //     targetCoeffs[targetIndices[k] - minTargetIndex] += coeffs[k]:coeffType * x;
+    // }
   }
 }
 
@@ -279,6 +290,7 @@ record LocaleState {
   var accessor : ConcurrentAccessor(coeffType);
   var numberStates : int;
   var xPtr : c_ptrConst(coeffType);
+  var yPtr : c_ptr(coeffType);
   var representativesPtr : c_ptrConst(uint(64));
 
   proc init(const ref matrix : Operator,
@@ -315,6 +327,7 @@ record LocaleState {
     this.accessor = new ConcurrentAccessor(ys);
     this.numberStates = representatives.size;
     this.xPtr = c_ptrToConst(xs);
+    this.yPtr = c_ptrTo(ys);
     this.representativesPtr = c_ptrToConst(representatives);
     init this;
 
@@ -362,7 +375,7 @@ proc ref LocaleState.completeInitialization(const ref globalStore) {
   }
 }
 
-proc LocaleState.getNextChunkIndex() {
+proc ref LocaleState.getNextChunkIndex() {
   // var i : int;
   // const success = chunkIndicesQueue.tryPop(i);
   // return if success then i else -1;
@@ -428,6 +441,7 @@ record Worker {
   proc deinit() {
     deallocate(indices);
     deallocate(accumulators);
+    // logDebug("maxTotalCount=", batchedOperator.maxTotalCount);
   }
 
   proc ref run() {
@@ -446,7 +460,6 @@ record Worker {
         batchedOperator.computeOffDiag(
           chunk,
           localeState.representativesPtr + chunk.low,
-          nil, // localeState.xPtr + chunk.low,
           left=false);
 
       if numLocales > 1 {
@@ -473,29 +486,32 @@ record Worker {
                                  chunk.low,
                                  chunk.size,
                                  accumulators,
-				 indices);
+                                 indices);
+
         foreach k in 0 ..# chunk.size do
-          if accumulators[k] != 0 then
-            localeState.accessor.localAdd(chunk.low + k, accumulators[k]);
+          localeState.yPtr[chunk.low + k] += accumulators[k];
+        // foreach k in 0 ..# chunk.size do
+        //   if accumulators[k] != 0 then
+        //     localeState.accessor.localAdd(chunk.low + k, accumulators[k]);
       }
     } // end while true
 
-    // no more chunks to produce, but we could still have data to analyze
-    // logDebug("1 tryProcessReceivedData");
-    localeState.tryProcessReceivedData();
-
-    // tell other locales that we're done producing data
     if numLocales > 1 {
+      // no more chunks to produce, but we could still have data to analyze
+      // logDebug("1 tryProcessReceivedData");
+      localeState.tryProcessReceivedData();
+
+      // tell other locales that we're done producing data
       for i in 0 ..# numLocales {
         // logDebug("queue.push");
         ref queue = localeState.remoteQueues[i];
         queue.push(new BufferFilledMessage(here.id.safeCast(int(16)), taskIdx.safeCast(int(16)), -1:int(32)));
       }
-    }
 
-    while !localeState.allCompleted() {
-      // logDebug("2 tryProcessReceivedData");
-      localeState.tryProcessReceivedData();
+      while !localeState.allCompleted() {
+        // logDebug("2 tryProcessReceivedData");
+        localeState.tryProcessReceivedData();
+      }
     }
   }
 }
@@ -506,9 +522,9 @@ proc perLocaleOffDiagonal(matrix : Operator,
                           const ref representatives : [] uint(64)) {
   const _timer = recordTime("perLocaleOffDiagonal");
   const numTasks = kNumTasks;
-  const remoteBufferSize = max(kRemoteBufferSize, matrix.max_number_off_diag);
+  const remoteBufferSize = max(kRemoteBufferSize, matrix.max_number_off_diag_estimate);
   const numChunks =
-    min((representatives.size * matrix.max_number_off_diag + remoteBufferSize - 1) / remoteBufferSize,
+    min((representatives.size * matrix.max_number_off_diag_estimate + remoteBufferSize - 1) / remoteBufferSize,
         representatives.size);
 
   var localeState = new LocaleState(matrix, representatives, xs, ys, numChunks, numTasks, remoteBufferSize);

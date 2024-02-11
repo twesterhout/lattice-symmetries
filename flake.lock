@@ -1,61 +1,29 @@
 {
   "nodes": {
     "arrayfire-haskell": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1681826721,
-        "narHash": "sha256-O2pwFrlYYf7//fRQd+CvG+y6FuERI+94jXx3uCcvOfY=",
-        "owner": "twesterhout",
-        "repo": "arrayfire-haskell",
-        "rev": "6cb10ef1a4c3077f05436efca4f06887b4750c1a",
-        "type": "github"
-      },
-      "original": {
-        "owner": "twesterhout",
-        "ref": "main",
-        "repo": "arrayfire-haskell",
-        "type": "github"
-      }
-    },
-    "arrayfire-nix": {
       "inputs": {
         "flake-utils": [
           "halide-haskell",
           "flake-utils"
         ],
-        "nixgl": "nixgl",
+        "nix-filter": "nix-filter",
         "nixpkgs": [
           "halide-haskell",
           "nixpkgs"
         ]
       },
       "locked": {
-        "lastModified": 1686498501,
-        "narHash": "sha256-asJbLDtO+0ttSagYXccZF7vjCDiFAuSqiQFVsQ/TY04=",
+        "lastModified": 1704284732,
+        "narHash": "sha256-editEH1WQNsOqmGL1Vxbn6I62ZFjPpRcGTNTwdTLKvk=",
         "owner": "twesterhout",
-        "repo": "arrayfire-nix",
-        "rev": "1b38c60ca202cfa536808a3d76c59639fedf7e2b",
+        "repo": "arrayfire-haskell",
+        "rev": "79b2519486f409dc14e60b44dc360b430756d9c5",
         "type": "github"
       },
       "original": {
         "owner": "twesterhout",
-        "repo": "arrayfire-nix",
-        "type": "github"
-      }
-    },
-    "flake-compat": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1673956053,
-        "narHash": "sha256-4gtG9iQuiKITOjNQQeQIpoIB6b16fm+504Ch3sNKLd8=",
-        "owner": "edolstra",
-        "repo": "flake-compat",
-        "rev": "35bb57c0c8d8b62bbfd284272c928ceb64ddbde9",
-        "type": "github"
-      },
-      "original": {
-        "owner": "edolstra",
-        "repo": "flake-compat",
+        "ref": "withDevicePtr",
+        "repo": "arrayfire-haskell",
         "type": "github"
       }
     },
@@ -80,27 +48,24 @@
     "halide-haskell": {
       "inputs": {
         "arrayfire-haskell": "arrayfire-haskell",
-        "arrayfire-nix": "arrayfire-nix",
-        "flake-compat": "flake-compat",
         "flake-utils": [
           "flake-utils"
         ],
-        "nix-filter": "nix-filter",
-        "nixGL": "nixGL",
         "nixpkgs": [
           "nixpkgs"
         ]
       },
       "locked": {
-        "lastModified": 1687466923,
-        "narHash": "sha256-Hm3aDmsnvBtHQ14PsR5BLOeMWlXMlxSpVA/IgU43V48=",
+        "lastModified": 1707517270,
+        "narHash": "sha256-imXnSR+jtMpPB06xZWpeTj+/Td7iK0qylWnE0mWJnT0=",
         "owner": "twesterhout",
         "repo": "halide-haskell",
-        "rev": "7e88a54bc5009ebcdd122c821aa74bd0fcfd5205",
+        "rev": "a577b70a5059ac284effceefab8da4352ba50b4c",
         "type": "github"
       },
       "original": {
         "owner": "twesterhout",
+        "ref": "dynamic-dimensions",
         "repo": "halide-haskell",
         "type": "github"
       }
@@ -150,68 +115,16 @@
     },
     "nix-filter": {
       "locked": {
-        "lastModified": 1687178632,
-        "narHash": "sha256-HS7YR5erss0JCaUijPeyg2XrisEb959FIct3n2TMGbE=",
+        "lastModified": 1705332318,
+        "narHash": "sha256-kcw1yFeJe9N4PjQji9ZeX47jg0p9A0DuU4djKvg1a7I=",
         "owner": "numtide",
         "repo": "nix-filter",
-        "rev": "d90c75e8319d0dd9be67d933d8eb9d0894ec9174",
+        "rev": "3449dc925982ad46246cfc36469baf66e1b64f17",
         "type": "github"
       },
       "original": {
         "owner": "numtide",
         "repo": "nix-filter",
-        "type": "github"
-      }
-    },
-    "nixGL": {
-      "inputs": {
-        "flake-utils": [
-          "halide-haskell",
-          "flake-utils"
-        ],
-        "nixpkgs": [
-          "halide-haskell",
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1685908677,
-        "narHash": "sha256-E4zUPEUFyVWjVm45zICaHRpfGepfkE9Z2OECV9HXfA4=",
-        "owner": "guibou",
-        "repo": "nixGL",
-        "rev": "489d6b095ab9d289fe11af0219a9ff00fe87c7c5",
-        "type": "github"
-      },
-      "original": {
-        "owner": "guibou",
-        "repo": "nixGL",
-        "type": "github"
-      }
-    },
-    "nixgl": {
-      "inputs": {
-        "flake-utils": [
-          "halide-haskell",
-          "arrayfire-nix",
-          "flake-utils"
-        ],
-        "nixpkgs": [
-          "halide-haskell",
-          "arrayfire-nix",
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1685908677,
-        "narHash": "sha256-E4zUPEUFyVWjVm45zICaHRpfGepfkE9Z2OECV9HXfA4=",
-        "owner": "guibou",
-        "repo": "nixGL",
-        "rev": "489d6b095ab9d289fe11af0219a9ff00fe87c7c5",
-        "type": "github"
-      },
-      "original": {
-        "owner": "guibou",
-        "repo": "nixGL",
         "type": "github"
       }
     },

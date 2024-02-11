@@ -34,6 +34,7 @@ module LatticeSymmetries.Basis
   , getNumberBits
   , getNumberWords
   , getNumberSites
+  , getHammingWeight
   , minStateEstimate
   , maxStateEstimate
   , isStateIndexIdentity

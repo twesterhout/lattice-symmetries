@@ -12,7 +12,7 @@ import Utils
 instance Arbitrary (BasisState t) where
   arbitrary = do
     n <- chooseInt (1, 500)
-    bits <- chooseInteger (0, bit n - 1)
+    bits <- fromInteger <$> chooseInteger (0, bit n - 1)
     pure $ BasisState n (BitString bits)
 
 spec :: Spec

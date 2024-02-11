@@ -166,6 +166,7 @@ typedef struct ls_hs_operator {
     ls_hs_nonbranching_terms *diag_terms;
     ls_hs_nonbranching_terms *off_diag_terms;
     int max_number_off_diag;
+    int max_number_off_diag_estimate;
 } ls_hs_operator;
 
 typedef struct ls_chpl_batched_operator {

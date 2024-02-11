@@ -25,6 +25,7 @@ proc main() {
   defer deinitRuntime();
 
   const matrix = loadOperatorFromFile(kHamiltonian);
+  // writeln((new OperatorForeignInterface()).to_json(matrix.payload));
 
   const basisStates, norms, keys;
   enumerateStates(matrix.basis, basisStates, norms, keys);

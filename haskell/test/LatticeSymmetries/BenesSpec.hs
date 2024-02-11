@@ -43,7 +43,7 @@ spec = do
       benesPermuteBits <$> p₄ <*> pure (BitString 0b1) `shouldBe` permuteBits <$> v₄ <*> pure (BitString 0b1)
     prop "correctly permutes bits" $ \(PermutationTestData p v) ->
       let !network = permutationToBenesNetwork p
-       in G.forM_ v $ \x ->
+       in G.forM_ (fromIntegral <$> v) $ \x ->
             benesPermuteBits network (BitString x) `shouldBe` permuteBits p (BitString x)
   describe "mkBatchedBenesNetwork" $ do
     it "should build a BatchedBenesNetwork" $ do

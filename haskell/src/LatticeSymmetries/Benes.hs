@@ -118,7 +118,7 @@ solveCycle = go []
       | otherwise = go acc (e₁ : es)
     go _ _ = error "should not have happened"
 
-getMask :: [Swap] -> Integer
+getMask :: [Swap] -> Natural
 getMask = go zeroBits
   where
     go !acc [] = acc
@@ -168,7 +168,7 @@ stageCycles s = cycles Set.empty (initialEdges s)
            in cycle : cycles (visited `Set.union` Set.fromList cycle) es
       | otherwise = cycles visited es
 
-solveStage :: SolverState -> (Integer, Integer, SolverState)
+solveStage :: SolverState -> (Natural, Natural, SolverState)
 solveStage !s = (srcMask, tgtMask, s')
   where
     swaps = mconcat $ solveCycle <$> stageCycles s
@@ -181,7 +181,7 @@ solveStage !s = (srcMask, tgtMask, s')
         (applySwaps (ssTarget s) tgtSwaps)
         (2 * ssDelta s)
 
-solve :: InvertiblePermutation -> InvertiblePermutation -> ([Integer], [Integer], [Int])
+solve :: InvertiblePermutation -> InvertiblePermutation -> ([Natural], [Natural], [Int])
 solve src tgt = unpack $ go s₀
   where
     n = G.length (ipPermutation src)
@@ -200,7 +200,7 @@ data BenesNetwork = BenesNetwork {bnMasks :: !(B.Vector BitString), bnShifts :: 
 instance ToJSON BenesNetwork where
   toJSON x = object ["masks" .= x.bnMasks, "shifts" .= x.bnShifts]
 
-mkBenesNetwork :: [Integer] -> [Integer] -> [Int] -> BenesNetwork
+mkBenesNetwork :: [Natural] -> [Natural] -> [Int] -> BenesNetwork
 mkBenesNetwork srcMasks tgtMasks δs
   | null δs = BenesNetwork G.empty G.empty
   | isOkay =

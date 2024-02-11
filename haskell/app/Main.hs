@@ -41,3 +41,5 @@ main = do
       let !b = nfIO $ ls_hs_fixed_hamming_state_to_index (fromIntegral (S.length states)) basisStatesBuf indicesBuf
       benchmark b
   print . (indices ==) =<< S.freeze out
+
+

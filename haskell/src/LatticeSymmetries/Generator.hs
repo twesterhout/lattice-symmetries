@@ -110,7 +110,7 @@ invertBasisState (BasisState n bits) = BasisState n (bits `xor` mask)
   where
     mask = BitString (bit n - 1)
 
-prettyBitString :: Int -> Integer -> Pretty.Doc ann
+prettyBitString :: Int -> Natural -> Pretty.Doc ann
 prettyBitString n bits = mconcat $ prettyBool . testBit bits <$> reverse [0 .. n - 1]
   where
     prettyBool True = "1"

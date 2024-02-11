@@ -1,7 +1,7 @@
 module LatticeSymmetries.BitStringSpec (spec) where
 
-import qualified Data.Vector.Storable as S
-import qualified Data.Vector.Storable.Mutable as SM
+import Data.Vector.Storable qualified as S
+import Data.Vector.Storable.Mutable qualified as SM
 import LatticeSymmetries.BitString
 import System.IO.Unsafe (unsafePerformIO)
 import Test.Hspec
@@ -9,7 +9,7 @@ import Test.Hspec.QuickCheck
 import Test.QuickCheck (Arbitrary (..))
 import Prelude hiding (words)
 
-log2 :: Integer -> Int
+log2 :: Natural -> Int
 log2 !n
   | n == 1 = 0
   | n > 1 = 1 + log2 (div n 2)
@@ -21,7 +21,7 @@ numberWords (BitString n)
   | otherwise = 1 + log2 n
 
 instance Arbitrary BitString where
-  arbitrary = (BitString . abs) <$> arbitrary
+  arbitrary = (BitString . fromInteger . abs) <$> arbitrary
 
 spec :: Spec
 spec = do

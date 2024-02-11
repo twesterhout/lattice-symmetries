@@ -12,6 +12,7 @@ module LatticeSymmetries.Operator
   , SomeOperator (..)
   , withSomeOperator
   , foldSomeOperator
+  , getNonbranchingTerms
   -- , maxNumberOffDiag
   -- , operatorSymmetryGroup
   -- , operatorAbelianRepresentations
@@ -36,7 +37,6 @@ where
 
 import Data.Aeson (FromJSON (parseJSON), ToJSON (toJSON), object, withObject, (.:), (.=))
 import Data.Primitive.Ptr qualified as P
-import Data.Set qualified as Set
 import Data.Vector (Vector)
 import Data.Vector.Generic qualified as G
 import Foreign.C (CBool (..), CInt (..), CSize (..), CString)
@@ -257,7 +257,10 @@ newCoperator cBasis cExpr operator@(SomeOperator t op) = do
   cExpr' <- maybe (newCexpr (SomeExpr t op.opTerms)) pure cExpr
   let incRefCountBasis = fromBool (isJust cBasis)
       incRefCountExpr = fromBool (isJust cExpr)
-      maxNumberOffDiag = fromIntegral . Set.size . Set.fromList . G.toList . G.map nbtX $ offDiag
+      maxNumberOffDiag = fromIntegral $
+        getMaxNumberOffDiag (getNumberBits op.opBasis) (getHammingWeight op.opBasis) offDiag
+      maxNumberOffDiagEstimate = fromIntegral $
+        unsafeEstimateMaxNumberOffDiag (getNumberBits op.opBasis) (getHammingWeight op.opBasis) offDiag
   [CU.block| void {
     ls_hs_operator* p = $(ls_hs_operator* p);
     ls_hs_internal_object_init(&p->base, 1, $(void* payload));
@@ -272,6 +275,7 @@ newCoperator cBasis cExpr operator@(SomeOperator t op) = do
     p->diag_terms = $(ls_hs_nonbranching_terms* diag_terms);
     p->off_diag_terms = $(ls_hs_nonbranching_terms* off_diag_terms);
     p->max_number_off_diag = $(int maxNumberOffDiag);
+    p->max_number_off_diag_estimate = $(int maxNumberOffDiagEstimate);
   } |]
   pure p
 

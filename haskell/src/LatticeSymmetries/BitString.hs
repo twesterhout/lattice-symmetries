@@ -26,12 +26,12 @@ import Foreign.Ptr
 -- collection of bits.
 --
 -- The order of bits is determined by the 'Bits' instance of 'Integer'.
-newtype BitString = BitString {unBitString :: Integer}
+newtype BitString = BitString {unBitString :: Natural}
   deriving stock (Show, Eq, Ord, Generic)
   deriving anyclass (NFData, Aeson.ToJSON)
   deriving newtype (Bits)
 
-writeBitString :: (PrimMonad m) => Int -> Ptr Word64 -> BitString -> m ()
+writeBitString :: PrimMonad m => Int -> Ptr Word64 -> BitString -> m ()
 writeBitString numberWords p (BitString x₀) = do
   let go !i !x
         | i < numberWords = do
@@ -40,22 +40,22 @@ writeBitString numberWords p (BitString x₀) = do
         | otherwise = pure ()
   go 0 x₀
 
-writeManyBitStrings :: (PrimMonad m) => Int -> Ptr Word64 -> [BitString] -> m ()
+writeManyBitStrings :: PrimMonad m => Int -> Ptr Word64 -> [BitString] -> m ()
 writeManyBitStrings numberWords = go
   where
     go !ptr (y : ys) = writeBitString numberWords ptr y >> go (P.advancePtr ptr numberWords) ys
     go _ [] = pure ()
 
-readBitString :: (PrimMonad m) => Int -> Ptr Word64 -> m BitString
+readBitString :: PrimMonad m => Int -> Ptr Word64 -> m BitString
 readBitString numberWords p = do
   let go !i !x
         | i < numberWords = do
-            y <- BitString . (fromIntegral :: Word64 -> Integer) <$> P.readOffPtr p i
+            y <- BitString . (fromIntegral :: Word64 -> Natural) <$> P.readOffPtr p i
             go (i + 1) ((y `shiftL` (64 * i)) .|. x)
         | otherwise = pure x
   go 0 zeroBits
 
-wordsFromBitString :: (Vector v Word64) => Int -> BitString -> v Word64
+wordsFromBitString :: Vector v Word64 => Int -> BitString -> v Word64
 wordsFromBitString numberWords (BitString x₀) = runST $ do
   mvector <- GM.unsafeNew numberWords
   let go !i !x

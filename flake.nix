@@ -15,7 +15,7 @@
       inputs.flake-utils.follows = "flake-utils";
     };
     halide-haskell = {
-      url = "github:twesterhout/halide-haskell";
+      url = "github:twesterhout/halide-haskell/dynamic-dimensions";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.flake-utils.follows = "flake-utils";
     };
@@ -155,12 +155,10 @@
               # export CHPL_HOST_MEM=jemalloc
               # export CHPL_TARGET_MEM=jemalloc
               # export CHPL_LAUNCHER=none
-              export CFLAGS='-Wno-use-after-free'
-              export CHPL_CFLAGS='-I${pkgs.lattice-symmetries.kernels_v2}/include'
+              export CHPL_CFLAGS='-I${pkgs.lattice-symmetries.kernels_v2}/include --no-ieee-float'
               export CHPL_LDFLAGS='-L${pkgs.lattice-symmetries.haskell.lib}/lib'
               export HDF5_CFLAGS='-I${pkgs.hdf5.dev}/include'
               export HDF5_LDFLAGS='-L${pkgs.hdf5}/lib -lhdf5_hl -lhdf5 -lrt'
-              export TEST_DATA='${pkgs.lattice-symmetries.test-data}/share'
               export HALIDE_PATH='${pkgs.halide}'
 
               rm -f src/FFI.chpl

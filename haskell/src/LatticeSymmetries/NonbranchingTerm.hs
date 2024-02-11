@@ -7,10 +7,18 @@ module LatticeSymmetries.NonbranchingTerm
   ( NonbranchingTerm (..)
   , HasNonbranchingRepresentation (..)
   , nbtIsDiagonal
+  , getMaxNumberOffDiag
+  , unsafeEstimateMaxNumberOffDiag
   )
 where
 
+import Control.Monad.ST (runST)
 import Data.Bits
+import Data.Set qualified as Set
+import Data.Vector (Vector)
+import Data.Vector.Algorithms.Intro qualified
+import Data.Vector.Generic qualified as G
+import Data.Vector.Generic.Mutable qualified as GM
 import LatticeSymmetries.BitString
 import LatticeSymmetries.ComplexRational
 
@@ -53,7 +61,7 @@ instance Semigroup NonbranchingTerm where
       r = rᵦ .|. andWithComplement rₐ mᵦ
       l = lₐ .|. andWithComplement lᵦ mₐ
       x = l `xor` r
-      s = (sₐ `xor` sᵦ) .&. complement m
+      s = andWithComplement (sₐ `xor` sᵦ) m
       z = (r .&. sᵦ) `xor` xᵦ
       p = popCount $ (r .&. sᵦ) `xor` (z .&. sₐ)
 
@@ -70,3 +78,44 @@ class HasNonbranchingRepresentation g where
 -- | Checks whether an operator is diagonal.
 nbtIsDiagonal :: NonbranchingTerm -> Bool
 nbtIsDiagonal t = nbtX t == zeroBits
+
+step :: HasCallStack => (NonbranchingTerm -> BitString) -> Int -> Vector NonbranchingTerm -> Vector (Vector NonbranchingTerm)
+step !p !i !v = G.filter (not . G.null) $ fromListN 2 [ups <> nones, downs <> nones]
+  where
+    hasConstraint t = testBit (p t) i || testBit t.nbtM i
+    unsafeGetConstraint t = testBit (p t) i
+    (ups, downs, nones) = runST $ do
+      mv <- G.unsafeThaw v
+      k1 <- GM.unstablePartition hasConstraint mv
+      if k1 == 0
+        then pure (G.empty, G.empty, v)
+        else do
+          k2 <- GM.unstablePartition unsafeGetConstraint (GM.take k1 mv)
+          (,,) <$> G.unsafeFreeze (GM.take k2 mv)
+              <*> G.unsafeFreeze (GM.slice k2 (k1 - k2) mv)
+              <*> G.unsafeFreeze (GM.drop k1 mv)
+
+getNumberUnique :: (G.Vector v a, Ord a) => v a -> Int
+getNumberUnique = Set.size . Set.fromList . G.toList
+
+unsafeEstimateMaxNumberOffDiag' :: (NonbranchingTerm -> BitString) -> Int -> Vector NonbranchingTerm -> Int
+unsafeEstimateMaxNumberOffDiag' p numberBits v0 = if G.null v0 then 0 else go 0 (G.singleton v0)
+  where
+    go :: Int -> Vector (Vector NonbranchingTerm) -> Int
+    go !i !vs
+      | i < numberBits = go (i + 1) $ runST $ do
+          let expanded = G.map (\x -> (getNumberUnique $ (.nbtX) <$> x, x)) $ G.concatMap (step p i) vs
+          mv <- G.unsafeThaw expanded -- G.concatMap (step p i) vs
+          let k = min (GM.length mv) 16
+          Data.Vector.Algorithms.Intro.selectBy (comparing (negate . fst)) mv k
+          G.map snd . G.take k <$> G.unsafeFreeze mv
+      | otherwise = G.maximum $ getNumberUnique . G.map (.nbtX) <$> vs
+
+unsafeEstimateMaxNumberOffDiag :: Int -> Maybe Int -> Vector NonbranchingTerm -> Int
+unsafeEstimateMaxNumberOffDiag numberBits _hammingWeigh terms = max l r
+  where
+    !l = unsafeEstimateMaxNumberOffDiag' (.nbtL) numberBits terms
+    !r = unsafeEstimateMaxNumberOffDiag' (.nbtR) numberBits terms
+
+getMaxNumberOffDiag :: Int -> Maybe Int -> Vector NonbranchingTerm -> Int
+getMaxNumberOffDiag _numberBits _hammingWeight terms = getNumberUnique $ (.nbtX) <$> terms

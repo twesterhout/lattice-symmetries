@@ -18,17 +18,14 @@ module LatticeSymmetries.Algebra
   , Algebra (..)
   , simplifyPolynomial
   , swapGenerators
-  , sortVectorBy
   , HasProperGeneratorType
   , HasProperIndexType
   , IsBasis
   )
 where
 
-import Control.Monad.ST
 import Data.List qualified as List
 import Data.Vector (Vector)
-import Data.Vector.Algorithms.Intro qualified
 import Data.Vector.Fusion.Bundle qualified as Bundle (inplace)
 import Data.Vector.Fusion.Bundle.Size (toMax)
 import Data.Vector.Fusion.Stream.Monadic (Step (..), Stream (..))
@@ -40,6 +37,7 @@ import LatticeSymmetries.Generator
 import LatticeSymmetries.NonbranchingTerm
 import Prettyprinter (Pretty (..))
 import Prelude hiding (Product, Sum, identity, toList)
+import LatticeSymmetries.Utils (sortVectorBy)
 
 -- | Represents a term of the form @c × g@ where @c@ is typically a scalar and @g@ is some
 -- expression.
@@ -267,12 +265,6 @@ instance Num c => Num (Polynomial c g) where
   abs = fmap (\(Scaled c g) -> Scaled (abs c) g)
   signum _ = error "Num instance of Sum does not implement signum"
   fromInteger _ = error "Num instance of Sum does not implement fromInteger"
-
-sortVectorBy :: G.Vector v a => (a -> a -> Ordering) -> v a -> v a
-sortVectorBy comp v = runST $ do
-  buffer <- G.thaw v
-  Data.Vector.Algorithms.Intro.sortBy comp buffer
-  G.unsafeFreeze buffer
 
 -- | Swaps generators at positions @i@ and @i+1@
 swapGenerators :: (Fractional c, Algebra g) => Int -> Product g -> Polynomial c g

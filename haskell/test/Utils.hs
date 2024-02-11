@@ -71,7 +71,7 @@ instance Arbitrary (RepElement Permutation) where
     pure $ RepElement p (s % n)
 
 instance Arbitrary BitString where
-  arbitrary = sized $ \k -> BitString <$> chooseInteger (0, bit k - 1)
+  arbitrary = sized $ \k -> BitString . fromIntegral <$> chooseInteger (0, bit k - 1)
 
 instance Arbitrary ComplexRational where
   arbitrary = ComplexRational <$> arbitrary <*> arbitrary

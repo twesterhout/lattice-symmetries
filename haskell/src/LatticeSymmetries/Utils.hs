@@ -12,6 +12,7 @@ module LatticeSymmetries.Utils
     loopM
   , iFoldM
   , rightM
+  , sortVectorBy
 
     -- ** Error handling
   , throwC
@@ -36,6 +37,7 @@ module LatticeSymmetries.Utils
 where
 
 import Control.Exception.Safe (handleAnyDeep)
+import Control.Monad.ST (runST)
 import Data.Aeson
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Types (Parser)
@@ -43,6 +45,7 @@ import Data.Aeson.Types qualified as Aeson
 import Data.ByteString (packCString, useAsCString)
 import Data.ByteString.Internal (ByteString (..))
 import Data.Complex
+import Data.Vector.Algorithms.Intro qualified
 import Data.Vector.Generic qualified as G
 import Foreign.C.String (CString)
 import Foreign.C.Types (CChar, CDouble (..))
@@ -74,6 +77,12 @@ iFoldM i₀ cond inc x₀ action = go x₀ i₀
       | cond i = do !x' <- action x i; go x' (inc i)
       | otherwise = pure x
 {-# INLINE iFoldM #-}
+
+sortVectorBy :: G.Vector v a => (a -> a -> Ordering) -> v a -> v a
+sortVectorBy comp v = runST $ do
+  buffer <- G.thaw v
+  Data.Vector.Algorithms.Intro.sortBy comp buffer
+  G.unsafeFreeze buffer
 
 -- foreign import ccall unsafe "ls_hs_error"
 --   ls_hs_error :: CString -> IO ()

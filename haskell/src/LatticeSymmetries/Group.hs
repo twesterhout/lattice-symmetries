@@ -67,12 +67,11 @@ import Data.Vector.Generic qualified as G
 import Data.Vector.Unboxed qualified as U
 import Data.Vector.Unboxed.Mutable qualified as UM
 import GHC.Records (HasField (..))
-import LatticeSymmetries.Algebra (sortVectorBy)
 import LatticeSymmetries.Automorphisms
 import LatticeSymmetries.Dense
 import LatticeSymmetries.Generator
 import LatticeSymmetries.Permutation
-import LatticeSymmetries.Utils (eitherToParser)
+import LatticeSymmetries.Utils (eitherToParser, sortVectorBy)
 import Prelude hiding (group, identity, permutations, second, toList)
 
 -- | Representation of a permutation
