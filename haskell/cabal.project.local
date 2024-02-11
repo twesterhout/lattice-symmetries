@@ -6,7 +6,6 @@ test-show-details: streaming
 package lattice-symmetries-haskell
   flags: +no-standalone
   -- +no-foreign-lib
-  ghc-options: -g2
-  -- -fprof-auto
-  -- profiling: True
+  -- ghc-options: -g2 -fprof-auto
+  profiling: True
   optimization: 2
