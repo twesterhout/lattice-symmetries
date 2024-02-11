@@ -43,27 +43,32 @@ proc applyDiagKernel(
   }
 }
 
-proc applyOffDiagKernel(off_diag_terms : c_ptrConst(ls_hs_nonbranching_terms),
+proc applyOffDiagKernel(const ref matrix : ls_chpl_batched_operator,
                         chunk : range(int),
                         alphas : c_ptrConst(uint(64)),
-                        betas : c_ptr(uint(64)),
-                        coeffs : c_ptr(complex(128)),
-                        offsets : c_ptr(c_ptrdiff),
-                        targetStates : c_ptr(uint(64)),
-                        estimatedNumberTerms : int,
                         param left : bool = false) {
 
   const batch_size = chunk.size;
+  if batch_size > matrix.batch_size then
+    halt(try! "buffer overflow: allocated space for %i elements, but chunk.size=%i".format(matrix.batch_size, batch_size));
+  if matrix.betas == nil || matrix.coeffs == nil || matrix.offsets == nil || matrix.target_states == nil then
+    halt("betas, coeffs, offsets, and target_states should be pre-allocated");
+
+  const off_diag_terms = matrix.matrix.deref().off_diag_terms;
   // Nothing to apply
   if (off_diag_terms == nil || off_diag_terms.deref().number_terms == 0) {
-    POSIX.memset(offsets, 0, (batch_size + 1):c_size_t * c_sizeof(c_ptrdiff));
+    POSIX.memset(matrix.offsets, 0, (batch_size + 1):c_size_t * c_sizeof(c_ptrdiff));
     return;
   }
 
   const ref terms = off_diag_terms.deref();
   const number_terms = terms.number_terms;
+  const estimatedNumberTerms = matrix.matrix.deref().max_number_off_diag_estimate;
+  const ref basisInfo = getBasisInfo(matrix.matrix.deref().basis);
+  const spinInversionMask = (1:uint(64) << basisInfo.number_sites) - 1;
+  const spinInversionCharacter = basisInfo.spin_inversion;
 
-  offsets[0] = 0;
+  matrix.offsets[0] = 0;
   var offset = 0;
   for batch_idx in 0 ..# batch_size {
     const oldOffset = offset;
@@ -79,31 +84,27 @@ proc applyOffDiagKernel(off_diag_terms : c_ptrConst(ls_hs_nonbranching_terms),
         const delta = (alpha & terms.m[term_idx]) == l_or_r;
         if delta {
           const sign = 1 - 2 * parity(alpha & terms.s[term_idx]):real;
-          const coeff = terms.v[term_idx] * sign; //  + (terms.v[term_idx].im * sign) * 1.0i;
-          // const beta = alpha ^ tX;
+          const coeff = terms.v[term_idx] * sign;
           acc += coeff;
-
-          // if beta != old_beta {
-          //   if old_beta != alpha {
-          //     coeffs[offset] = old_coeff;
-          //     betas[offset] = old_beta;
-          //     targetStates[offset] = chunk.low + batch_idx;
-          //     offset += 1;
-          //   }
-          //   old_beta = beta;
-          //   old_coeff = coeff;
-          // }
-          // else {
-          //   old_coeff += coeff;
-          // }
+          // writeln(try! "acc += %r".format(coeff.re));
         }
         term_idx += 1;
       } while term_idx < number_terms && terms.x[term_idx] == tX;
 
       if acc != 0 {
-        coeffs[offset] = acc;
-        betas[offset] = alpha ^ tX;
-        targetStates[offset] = chunk.low + batch_idx;
+        var beta = alpha ^ tX;
+        if spinInversionCharacter != 0 {
+          const inverted = beta ^ spinInversionMask;
+          if inverted < beta {
+            beta = inverted;
+            acc *= spinInversionCharacter;
+            // writeln(try! "acc *= %i".format(spinInversionCharacter));
+          }
+        }
+        matrix.coeffs[offset] = acc;
+        matrix.betas[offset] = beta;
+        matrix.target_states[offset] = chunk.low + batch_idx;
+        // writeln(try! "y[%i] += %r <%u|x>".format(chunk.low + batch_idx, acc.re, beta));
         offset += 1;
       }
     } while term_idx < number_terms;
@@ -113,56 +114,7 @@ proc applyOffDiagKernel(off_diag_terms : c_ptrConst(ls_hs_nonbranching_terms),
       halt(try! "buffer overflow in applyOffDiagKernel: estimatedNumberTerms=%i, but written %i".format(
                 estimatedNumberTerms, offset - oldOffset));
 
-    offsets[batch_idx + 1] = offset;
-
-    /*
-    const oldOffset = offset;
-    const alpha = alphas[batch_idx];
-    // we know that we can never get alpha again since all terms are off
-    // diagonal, so using alpha as a special state is fine.
-    var old_beta = alpha;
-    var old_coeff : complex(128) = 0;
-    for term_idx in 0 ..# number_terms {
-      // Right: T|α> = v * δ_{α^m,r} * (−1)^{h(α^s)} |α⊕x>,
-      // Left:  <α|T = v * δ_{α^m,l} * (−1)^{h(α^s)} <α⊕x|,
-      const l_or_r = if left then terms.l[term_idx] else terms.r[term_idx];
-      const delta = (alpha & terms.m[term_idx]) == l_or_r;
-      if delta {
-        const sign = 1 - 2 * parity(alpha & terms.s[term_idx]):real;
-        const coeff = terms.v[term_idx].re * sign + (terms.v[term_idx].im * sign) * 1.0i;
-        const beta = alpha ^ terms.x[term_idx];
-        if beta != old_beta {
-          if old_beta != alpha {
-            coeffs[offset] = old_coeff;
-            betas[offset] = old_beta;
-            targetStates[offset] = chunk.low + batch_idx;
-            offset += 1;
-          }
-          old_beta = beta;
-          old_coeff = coeff;
-        }
-        else {
-          old_coeff += coeff;
-        }
-      }
-    }
-    if old_beta != alpha {
-      coeffs[offset] = old_coeff;
-      betas[offset] = old_beta;
-      targetStates[offset] = chunk.low + batch_idx;
-      offset += 1;
-    }
-    if offset - oldOffset > estimatedNumberTerms {
-      for k in oldOffset .. offset - 1 {
-        writeln(betas[k], ", ", coeffs[k]);
-      }
-      writeln("alpha=", alpha);
-
-      halt(try! "buffer overflow in applyOffDiagKernel: estimatedNumberTerms=%i, but written %i".format(
-                estimatedNumberTerms, offset - oldOffset));
-    }
-    offsets[batch_idx + 1] = offset;
-    */
+    matrix.offsets[batch_idx + 1] = offset;
   }
 }
 
@@ -190,48 +142,7 @@ private proc computeOffDiagNoProjection(const ref matrix : ls_chpl_batched_opera
                                         alphas : c_ptrConst(uint(64)),
                                         param left : bool) {
   const _timer = recordTime(getRoutineName());
-  const count = chunk.size;
-  if count > matrix.batch_size then
-    halt(try! "buffer overflow: allocated space for %i elements, but count=%i".format(matrix.batch_size, count));
-  if matrix.betas == nil || matrix.coeffs == nil || matrix.offsets == nil then
-    halt("betas, coeffs, or offsets should be pre-allocated");
-
-  const estimatedNumberTerms = matrix.matrix.deref().max_number_off_diag_estimate;
-  applyOffDiagKernel(
-    matrix.matrix.deref().off_diag_terms,
-    chunk,
-    alphas,
-    matrix.betas,
-    matrix.coeffs,
-    matrix.offsets,
-    matrix.target_states,
-    estimatedNumberTerms,
-    left);
-}
-private proc computeOffDiagOnlyInversion(const ref matrix : ls_chpl_batched_operator,
-                                         chunk,
-                                         alphas : c_ptrConst(uint(64)),
-                                         param left : bool) {
-  const _timer = recordTime("computeOffDiagOnlyInversion");
-  // computeOffDiagNoProjection(matrix, chunk, alphas, xs, left);
-  assert(false,
-         "computeOffDiagOnlyInversion is not yet implemented");
-
-  // const totalCount = matrix.offsets[count];
-  // const mask = (1:uint(64) << matrix.basis.info.number_sites) - 1;
-  // const character = matrix.basis.info.spin_inversion;
-  // assert(character != 0);
-
-  // if timers != nil then timers!.stateInfoTimer.start();
-  // foreach i in 0 ..# totalCount {
-  //   const current = others.betas[i];
-  //   const inverted = current ^ mask;
-  //   if inverted < current {
-  //     others.betas[i] = inverted;
-  //     others.coeffs[i] *= character;
-  //   }
-  // }
-  // if timers != nil then timers!.stateInfoTimer.stop();
+  applyOffDiagKernel(matrix, chunk, alphas, left);
 }
 private proc computeOffDiagWithProjection(const ref matrix : ls_chpl_batched_operator,
                                           chunk,
@@ -293,12 +204,8 @@ private inline proc computeOffDiagGeneric(const ref basisInfo : ls_hs_basis_info
                                           alphas : c_ptrConst(uint(64)),
                                           param left : bool) {
   // Simple case when no symmetries are used
-  if !basisInfo.requires_projection {
+  if !basisInfo.has_permutation_symmetries {
     computeOffDiagNoProjection(matrix, chunk, alphas, left);
-  }
-  // Another simple case when no permutations were given, only the spin inversion
-  else if !basisInfo.has_permutation_symmetries && basisInfo.spin_inversion != 0 {
-    computeOffDiagOnlyInversion(matrix, chunk, alphas, left);
   }
   // The tricky case when we have to project betas first
   else {
@@ -489,11 +396,12 @@ record BatchedOperator {
 
   proc ref computeOffDiag(chunk : range(int), alphas : c_ptrConst(uint(64)), param left : bool)
       : (int, c_ptr(uint(64)), c_ptr(complex(128)), c_ptr(uint(64))) {
+
     const count = chunk.size;
     if count == 0 || matrix.max_number_off_diag == 0 then
       return (0, nil, nil, nil);
-    if count > raw.batch_size then
-      halt(try! "buffer overflow in BatchedOperator: count=%i, batch_size=%i".format(count, raw.batch_size));
+    // if count > raw.batch_size then
+    //   halt(try! "buffer overflow in BatchedOperator: count=%i, batch_size=%i".format(count, raw.batch_size));
 
     computeOffDiagGeneric(basisInfo, raw, chunk, alphas, left);
     const totalCount = raw.offsets[count];

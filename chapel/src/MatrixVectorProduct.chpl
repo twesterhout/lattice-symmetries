@@ -102,10 +102,6 @@ inline proc encodeAsWord(x : int) { return x:uint(64); }
 inline proc decodeFromWord(w : uint(64), ref x : int) { x = w:int; }
 
 
-// var localProcessCounts : Vector(int);
-// localProcessCounts.reserve(7000);
-// var localProcessCountsLock : chpl_LocalSpinlock;
-
 private proc localProcessExperimental(const ref basis : Basis,
                                       xs : c_ptrConst(?coeffType),
                                       size : int,
@@ -143,91 +139,6 @@ private proc localProcessExperimental(const ref basis : Basis,
         k += 1;
       }
       targetCoeffs[targetIndex - minTargetIndex] += acc;
-    }
-    // foreach k in 0 ..# size {
-    //   const x = xs[indices[k]:int];
-    //   if x != 0 then
-    //     targetCoeffs[targetIndices[k] - minTargetIndex] += coeffs[k]:coeffType * x;
-    // }
-  }
-}
-
-private proc localProcess(const ref basis : Basis,
-                          ref accessor : ConcurrentAccessor(?coeffType),
-                          basisStates : c_ptrConst(uint(64)),
-                          coeffs : c_ptr(?t),
-                          size : int) {
-  const _timer = recordTime("localProcess");
-
-  // localProcessCountsLock.lock();
-  // localProcessCounts.pushBack(size);
-  // localProcessCountsLock.unlock();
-
-  local {
-    // count == 0 has to be handled separately because c_ptrTo(indices) fails
-    // when the size of indices is 0.
-    if size == 0 then return;
-
-    // Special case when we don't have to call ls_hs_state_index
-    if numLocales == 1 && basis.info.is_state_index_identity {
-      foreach k in 0 ..# size {
-        const i = basisStates[k]:int;
-        const c = coeffs[k]:coeffType;
-        accessor.localAdd(i, c);
-      }
-    }
-    else {
-      var indices = allocate(int, size);
-      defer deallocate(indices);
-      basisStatesToIndices(basis, size, basisStates, indices);
-
-      /*
-      const _t = recordTime("localProcess.unstableRadixOneStep");
-      var keys = allocate(uint(8), size);
-      defer deallocate(keys);
-      var offsets : c_array(int, 257);
-
-      foreach k in 0 ..# size do
-        keys[k] = (indices[k] >> 12):uint(8);
-
-      unstableRadixOneStep(size, keys, offsets, indices, coeffs);
-
-      const dataPtr = accessor._data:c_ptr(void):c_ptr(coeffType);
-      for j in 0 ..# 256 {
-        if offsets[j + 1] - offsets[j] > 0 {
-          ref lock = accessor._locks[j];
-          while lock.l.read() || lock.l.testAndSet(memoryOrder.acquire) {
-            // nothing
-          }
-
-          foreach k in offsets[j] .. offsets[j + 1] - 1 {
-            const i = indices[k];
-            const c = coeffs[k]:coeffType;
-            dataPtr[i] += c;
-          }
-
-          lock.l.clear(memoryOrder.release);
-        }
-      }
-      */
-
-      {
-        const _t = recordTime("localProcess.localAdd");
-        foreach k in 0 ..# size {
-          const i = indices[k];
-          const c = coeffs[k]:coeffType;
-          if c != 0 {
-            // Importantly, the user could have made a mistake and given us an
-            // operator which does not respect the basis symmetries. Then we could
-            // have that a |σ⟩ was generated that doesn't belong to our basis. In
-            // this case, we should throw an error.
-            if i >= 0 then accessor.localAdd(i, c);
-                      else halt("invalid index: " + i:string +
-                                " for state " + basisStates[k]:string +
-                                " with coeff " + c:string);
-          }
-        }
-      }
     }
   }
 }
@@ -397,15 +308,15 @@ proc ref LocaleState.processReceivedData(msg : BufferFilledMessage) {
     numberCompleted.add(1);
   }
   else {
+    assert(false);
     ref buffer = localBuffers[msg.srcLocaleIdx, msg.srcTaskIdx];
     assert(msg.size <= buffer.capacity);
-    localProcess(basis, accessor,
-                 buffer.basisStates,
-                 buffer.coeffs, // :c_ptrConst(buffer.coeffs.eltType),
-                 msg.size);
+    // localProcess(basis, accessor,
+    //              buffer.basisStates,
+    //              buffer.coeffs, // :c_ptrConst(buffer.coeffs.eltType),
+    //              msg.size);
 
     // Send a message back to srcTaskIdx on srcLocaleIdx saying that the buffer is free again
-    assert(false);
     // ref queue = remoteQueues[msg.srcLocaleIdx, msg.srcTaskIdx];
     // queue.push(new BufferEmptiedMessage(localeIdx=msg.srcLocaleIdx, taskIdx=msg.srcTaskIdx));
   }
@@ -474,9 +385,6 @@ record Worker {
       }
       else if n > 0 {
         // Process all the generated data locally
-        // const accumulators = allocate(localeState.coeffType, chunk.size);
-        // defer deallocate(accumulators);
-
         localProcessExperimental(localeState.basis,
                                  localeState.xPtr,
                                  n,
@@ -490,9 +398,6 @@ record Worker {
 
         foreach k in 0 ..# chunk.size do
           localeState.yPtr[chunk.low + k] += accumulators[k];
-        // foreach k in 0 ..# chunk.size do
-        //   if accumulators[k] != 0 then
-        //     localeState.accessor.localAdd(chunk.low + k, accumulators[k]);
       }
     } // end while true
 

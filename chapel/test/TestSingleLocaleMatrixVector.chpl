@@ -14,33 +14,75 @@ config const kVectors = "../test/test_4_2_10_10_arrays.json";
 config const kVerbose = false;
 
 record TestInfo {
+  var states: list(uint);
   var x_real : list(real);
   var x_imag : list(real);
   var y_real : list(real);
   var y_imag : list(real);
 }
 
+/*
+proc unpackToFullBasis(const ref basis : Basis,
+                       const ref basisStates : [] uint(64),
+                       const ref norms : [] uint(16),
+                       const ref xs : [] ?eltType) {
+
+  const numberBits = basis.info.number_bits;
+  const spinInversion = basis.info.spin_inversion;
+  assert(basis.info.is_state_index_identity);
+
+  const numberTargetStates = 1:uint(64) << numberBits;
+  var ys : [0 ..# numberTargetStates] eltType;
+
+  const groupSize = if spinInversion != 0 then 2 else 1;
+  const spinInversionMask = (1:uint(64) << numberBits) - 1;
+
+  forall (basisState, norm, x, i) in zip(basisStates, norms, xs, 0..) {
+    ys[basisState:int] = x * math.sqrt(norm / groupSize);
+    if spinInversion != 0 {
+      const invertedBasisState = basisState ^ spinInversionMask;
+      ys[invertedBasisState:int] = x * spinInversion * math.sqrt(norm / groupSize);
+    }
+  }
+
+  return ys;
+}
+*/
+
+
 proc main() {
   initRuntime();
   defer deinitRuntime();
 
   const matrix = loadOperatorFromFile(kHamiltonian);
+  const ref basis = matrix.basis;
   // writeln((new OperatorForeignInterface()).to_json(matrix.payload));
 
   const basisStates, norms, keys;
-  enumerateStates(matrix.basis, basisStates, norms, keys);
+  enumerateStates(basis, basisStates, norms, keys);
 
   const testData = open(kVectors, ioMode.r).reader(deserializer=new jsonDeserializer()).read(TestInfo);
   const x = [(re, im) in zip(testData.x_real, testData.x_imag)] re + im * 1.0i;
   const y = [(re, im) in zip(testData.y_real, testData.y_imag)] re + im * 1.0i;
-
   var z : [x.domain] x.eltType;
   perLocaleMatrixVector(matrix, x, z, basisStates[here]);
 
   if kVerbose {
-    writeln(y);
-    writeln(z);
+    writeln("basisStates = ", basisStates[here]);
+    writeln("expectedBasisStates = ", testData.states.toArray());
+    writeln("x = ", x);
+    writeln("y = ", y);
+    writeln("z = ", z);
   }
 
-  checkArraysEqual(z, y);
+  checkArraysEqual(testData.states.toArray(), basisStates[here]);
+  if matrix.basis.info.spin_inversion == -1 { // we do not trust QuSpin when spin_inversion==-1
+    const absZ = abs(z);
+    const absY = abs(y);
+    checkArraysEqual(absZ, absY);
+  }
+  else {
+    checkArraysEqual(z, y);
+  }
+
 }

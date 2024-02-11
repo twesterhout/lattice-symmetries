@@ -258,7 +258,7 @@ private proc _enumStatesComputeMasksAndCounts(const ref states, ref outMasks) {
 private proc _enumerateStatesProjected(r : range(uint(64)),
                                        const ref basis : Basis,
                                        ref outStates : Vector(uint(64)),
-                                       ref outNorms : Vector(real(64))) {
+                                       ref outNorms : Vector(uint(16))) {
   var _timer = recordTime("_enumerateStatesProjected");
   if r.size == 0 then return;
   const ref basisInfo = basis.info;
@@ -283,7 +283,7 @@ private proc _enumerateStatesProjected(r : range(uint(64)),
     for i in 0 ..# written do
       if norms[i] > 0 {
         outStates.pushBack(buffer[i]);
-        outNorms.pushBack(norms[i]);
+        outNorms.pushBack(norms[i]:uint(16));
       }
 
     if last == upper then break;
@@ -295,7 +295,7 @@ private proc _enumerateStatesProjected(r : range(uint(64)),
 private proc _enumerateStatesUnprojected(r : range(uint(64)),
                                          const ref basis : Basis,
                                          ref outStates : Vector(uint(64)),
-                                         ref outNorms : Vector(real(64))) {
+                                         ref outNorms : Vector(uint(16))) {
   var _timer = recordTime("_enumerateStatesUnprojected");
   const ref basisInfo = basis.info;
   const isHammingWeightFixed = basisInfo.hamming_weight != -1;
@@ -307,8 +307,8 @@ private proc _enumerateStatesUnprojected(r : range(uint(64)),
     const numberSites = basisInfo.number_sites;
     const mask = (1:uint(64) << numberSites) - 1; // isolate the lower numberSites bits
     high = min(high, high ^ mask);
-    assert(popCount(high) == popCount(low),
-           "Hamming weight changed upon spin flip of " + high:string);
+    if isHammingWeightFixed && popCount(high) != popCount(low) then
+      halt(try! "Hamming weight changed upon a spin flip of %u".format(high));
   }
 
   const (lowIdx, highIdx) = unprojectedStateToIndex((low, high), isHammingWeightFixed);
@@ -317,14 +317,16 @@ private proc _enumerateStatesUnprojected(r : range(uint(64)),
     outStates.resize(totalCount);
     outNorms.resize(totalCount);
     manyNextState(low, high, outStates._arr, isHammingWeightFixed);
-    // All norms are 1 since no projection takes place
+    // All norms are 1, because
+    // - either no projection takes place (i.e., hasSpinInversionSymmetry==false)
+    // - or we apply spin inversion, but x is always not equal to invert(x)
     outNorms._arr[0 ..# totalCount] = 1;
   }
 }
 private proc _enumerateStatesUnprojectedSpinfulFermion(r : range(uint(64)),
                                                        const ref basis : Basis,
                                                        ref outStates : Vector(uint(64)),
-                                                       ref outNorms : Vector(real(64))) {
+                                                       ref outNorms : Vector(uint(16))) {
   const ref basisInfo = basis.info;
   assert(basisInfo.particle_type == LS_HS_SPINFUL_FERMION,
          "_enumerateStatesUnprojectedSpinfulFermion only works for LS_HS_SPINFUL_FERMION, but particle_type="
@@ -364,7 +366,7 @@ private proc _enumerateStatesUnprojectedSpinfulFermion(r : range(uint(64)),
 proc _enumerateStatesGeneric(r : range(uint(64)),
                              const ref basis : Basis,
                              ref outStates : Vector(uint(64)),
-                             ref outNorms : Vector(real(64))) {
+                             ref outNorms : Vector(uint(16))) {
   const ref basisInfo = basis.info;
   select basisInfo.particle_type {
     when LS_HS_SPIN {
@@ -416,7 +418,7 @@ proc distributeByKeys(n : int, keysPtr : c_ptrConst(uint(8)),
 
 class Bucket {
   var basisStates : Vector(uint(64));
-  var norms : Vector(real(64));
+  var norms : Vector(uint(16));
   var keys : Vector(uint(8));
   var offsets : c_array(int, 257);
 }
@@ -501,11 +503,11 @@ proc enumerateStates(ranges : [] range(uint(64)), const ref basis : Basis, out _
   const perLocaleCounts = sum(perBucketLocaleCounts, dim=0); // [0 ..# numLocales]
   const totalCount = sum(perLocaleCounts);
   var basisStates = new BlockVector(uint(64), perLocaleCounts);
-  var norms = new BlockVector(real(64), perLocaleCounts);
+  var norms = new BlockVector(uint(16), perLocaleCounts);
 
   // Perform transfers to target locales
   const basisStatesPtrs : [0 ..# numLocales] c_ptr(uint(64)) = basisStates._dataPtrs;
-  const normsPtrs : [0 ..# numLocales] c_ptr(real(64)) = norms._dataPtrs;
+  const normsPtrs : [0 ..# numLocales] c_ptr(uint(16)) = norms._dataPtrs;
   const perLocaleOffsets = prefixSum(perBucketLocaleCounts, dim=0); // [0 ..# buckets.size, 0 ..# numLocales]
   forall (bucket, _i) in zip(buckets, 0..) {
     assert(here == bucket.locale);
@@ -526,7 +528,7 @@ proc enumerateStates(ranges : [] range(uint(64)), const ref basis : Basis, out _
       Communication.put(dest = myNormsPtrs[targetLocaleIdx] + destOffset,
                         src = bucket.norms.data + srcOffset,
                         destLocID = targetLocaleIdx,
-                        numBytes = count:c_size_t * c_sizeof(real(64)));
+                        numBytes = count:c_size_t * c_sizeof(uint(16)));
     }
 
     // we're done with bucket.basisStates and bucket.norms, so we can free up some memory

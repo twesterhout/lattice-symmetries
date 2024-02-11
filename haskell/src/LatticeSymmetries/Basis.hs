@@ -238,9 +238,6 @@ mkSpinHeader n (Just h) (Just k) _
   | n /= 2 * h = fail $ "invalid spin inversion: " <> show k <> "; " <> show n <> " spins, but the Hamming weight is " <> show h
 mkSpinHeader n _ _ g
   | maybe False (/= n) g.numberBits = fail "invalid symmetries"
--- If the user didn't specify a Hamming weight, but did specify spin inversion,
--- we know that Hamming weight is actually n / 2
-mkSpinHeader n Nothing (Just i) g = mkSpinHeader n (Just (n `div` 2)) (Just i) g
 mkSpinHeader n h i g = pure $ SpinBasis n h i g
 
 -- instance IsBasis t => FromJSON (Basis t) where
@@ -534,7 +531,9 @@ getParticleTag x = case x of
 
 isStateIndexIdentity :: Basis t -> Bool
 isStateIndexIdentity x = case x of
-  SpinBasis _ Nothing Nothing g -> G.null (unRepresentation g)
+  -- TODO: only fixed Hamming weight or lattice symmetries break the trivial index<->state mapping
+  -- Setting spin inversion limits the domain to representatives, but keeps the index<->state identity.
+  SpinBasis _ Nothing _ g -> G.null (unRepresentation g)
   SpinfulFermionBasis _ SpinfulNoOccupation -> True
   SpinlessFermionBasis _ Nothing -> True
   _ -> False
@@ -581,7 +580,7 @@ maxStateEstimate x = case x of
       $ if isNothing i
         then (bit h - 1) `shiftL` (n - h)
         else (bit h - 1) `shiftL` (n - h - 1)
-  -- TODO: improve the bound for fixed spin inversion
+  SpinBasis n Nothing (Just _) _ -> BasisState n . BitString $ bit (n - 1) - 1
   SpinBasis n Nothing _ _ -> BasisState n . BitString $ bit n - 1
   SpinfulFermionBasis n SpinfulNoOccupation ->
     unsafeCastBasisState $
@@ -600,7 +599,6 @@ maxStateEstimate x = case x of
 minStateEstimate :: Basis t -> BasisState t
 minStateEstimate x = case x of
   SpinBasis n (Just h) _ _ -> BasisState n . BitString $ bit h - 1
-  -- TODO: improve the bound for fixed spin inversion
   SpinBasis n Nothing _ _ -> BasisState n . BitString $ zeroBits
   SpinfulFermionBasis n SpinfulNoOccupation ->
     unsafeCastBasisState $
@@ -701,7 +699,7 @@ ls_hs_init_state_info_kernel basisPtr = withCbasis basisPtr $ foldSomeBasis $ \c
 
 ls_hs_init_state_to_index_kernel :: Ptr Cbasis -> IO ()
 ls_hs_init_state_to_index_kernel basisPtr = withCbasis basisPtr $ foldSomeBasis $ \case
-  SpinBasis numberSites (Just hammingWeight) Nothing symmetries
+  SpinBasis numberSites (Just hammingWeight) _spinInversion symmetries
     | nullRepresentation symmetries -> do
         funPtr <- createFixedHammingStateToIndexKernel numberSites hammingWeight
         [CU.block| void {

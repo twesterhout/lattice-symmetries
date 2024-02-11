@@ -19,6 +19,7 @@ import Data.Vector (Vector)
 import Data.Vector.Algorithms.Intro qualified
 import Data.Vector.Generic qualified as G
 import Data.Vector.Generic.Mutable qualified as GM
+import Data.Vector.Unboxed qualified as U
 import LatticeSymmetries.BitString
 import LatticeSymmetries.ComplexRational
 
@@ -79,43 +80,128 @@ class HasNonbranchingRepresentation g where
 nbtIsDiagonal :: NonbranchingTerm -> Bool
 nbtIsDiagonal t = nbtX t == zeroBits
 
-step :: HasCallStack => (NonbranchingTerm -> BitString) -> Int -> Vector NonbranchingTerm -> Vector (Vector NonbranchingTerm)
-step !p !i !v = G.filter (not . G.null) $ fromListN 2 [ups <> nones, downs <> nones]
+-- countingMerge :: G.Vector v a => (a -> a -> Ordering) -> v a -> v a -> (Int, v a)
+-- countingMerge cmp va vb = runST $ do
+--   let !na = G.length va
+--       !nb = G.length vb
+--   dest <- GM.unsafeNew (na + nb)
+--   let write !count !i !x
+--         | i > 0 = do
+--             y <- GM.unsafeRead dest (i - 1)
+--             GM.unsafeWrite dest i x
+--             case cmp y x of
+--               EQ -> pure count
+--               _ -> pure (count + 1)
+--         | otherwise = do
+--             GM.unsafeWrite dest i x
+--             pure (count + 1)
+--   let go !ia !ib !count
+--         | ia < na && ib < nb = do
+--             let !a = G.unsafeIndex va ia
+--                 !b = G.unsafeIndex vb ib
+--             case cmp a b of
+--               LT -> go (ia + 1) ib =<< write count (ia + ib) a
+--               GT -> go ia (ib + 1) =<< write count (ia + ib) b
+--               EQ -> do
+--                 count' <- write count (ia + ib) a
+--                 GM.unsafeWrite dest (ia + ib + 1) b
+--                 go (ia + 1) (ib + 1) count'
+--         | ia < na = go (ia + 1) ib =<< write count (ia + ib) (G.unsafeIndex va ia)
+--         | ib < nb = go ia (ib + 1) =<< write count (ia + ib) (G.unsafeIndex vb ib)
+--         | otherwise = pure count
+--   count <- go 0 0 0
+--   (count,) <$> G.unsafeFreeze dest
+-- {-# SCC countingMerge #-}
+
+mergeX :: U.Vector (Word64, Word64, Word64) -> U.Vector (Word64, Word64, Word64) -> U.Vector (Word64, Word64, Word64)
+mergeX !va !vb = runST $ do
+  let !na = G.length va
+      !nb = G.length vb
+  dest <- GM.unsafeNew (na + nb)
+  let remainderA !ia !ib
+        | ia < na = G.unsafeIndexM va ia >>= GM.unsafeWrite dest (ia + ib) >> remainderA (ia + 1) ib
+        | otherwise = pure ()
+  let remainderB !ia !ib
+        | ib < nb = G.unsafeIndexM vb ib >>= GM.unsafeWrite dest (ia + ib) >> remainderB ia (ib + 1)
+        | otherwise = pure ()
+  let go !ia !ib
+        | ia < na && ib < nb = do
+            let a@(!_, !_, !xa) = G.unsafeIndex va ia
+                b@(!_, !_, !xb) = G.unsafeIndex vb ib
+            case compare xa xb of
+              LT -> GM.unsafeWrite dest (ia + ib) a >> go (ia + 1) ib
+              GT -> GM.unsafeWrite dest (ia + ib) b >> go ia (ib + 1)
+              EQ -> GM.unsafeWrite dest (ia + ib) a >> GM.unsafeWrite dest (ia + ib + 1) b >> go (ia + 1) (ib + 1)
+        | ia < na = remainderA ia ib
+        | ib < nb = remainderB ia ib
+        | otherwise = pure ()
+  go 0 0
+  G.unsafeFreeze dest
+{-# SCC mergeX #-}
+
+getCountX :: U.Vector (Word64, Word64, Word64) -> Int
+getCountX !v
+  | G.null v = 0
+  | otherwise = let !r = go 1 (G.unsafeIndex v 0) 1 in r
   where
-    hasConstraint t = testBit (p t) i || testBit t.nbtM i
-    unsafeGetConstraint t = testBit (p t) i
-    (ups, downs, nones) = runST $ do
-      mv <- G.unsafeThaw v
-      k1 <- GM.unstablePartition hasConstraint mv
-      if k1 == 0
-        then pure (G.empty, G.empty, v)
-        else do
-          k2 <- GM.unstablePartition unsafeGetConstraint (GM.take k1 mv)
-          (,,) <$> G.unsafeFreeze (GM.take k2 mv)
-              <*> G.unsafeFreeze (GM.slice k2 (k1 - k2) mv)
-              <*> G.unsafeFreeze (GM.drop k1 mv)
+    go !n (!_, !_, !xa) !i
+      | i < G.length v =
+          let b@(!_, !_, !xb) = G.unsafeIndex v i
+           in if xa == xb then go n b (i + 1) else go (n + 1) b (i + 1)
+      | otherwise = n
+{-# SCC getCountX #-}
+
+stepU :: Int -> (Int, U.Vector (Word64, Word64, Word64)) -> Vector (Int, U.Vector (Word64, Word64, Word64))
+stepU !i (!n, !v)
+  | n <= 1 = G.singleton (n, v)
+  | otherwise = runST $ do
+      let (!upsAndDowns, !nones) = U.partition hasConstraint v
+      mv <- G.unsafeThaw upsAndDowns
+      k2 <- GM.unstablePartition unsafeGetConstraint mv
+      let (ups, downs) = GM.splitAt k2 mv
+      Data.Vector.Algorithms.Intro.sortBy comparingX ups
+      Data.Vector.Algorithms.Intro.sortBy comparingX downs
+      v1 <- mergeX <$> G.unsafeFreeze ups <*> pure nones
+      v2 <- mergeX <$> G.unsafeFreeze downs <*> pure nones
+      pure $ fromListN 2 [(getCountX v1, v1), (getCountX v2, v2)]
+  where
+    hasConstraint (!r, !m, !_) = testBit r i || testBit m i
+    unsafeGetConstraint (!r, !_, !_) = testBit r i
+    comparingX (!_, !_, !x1) (!_, !_, !x2) = compare x1 x2
+{-# SCC stepU #-}
 
 getNumberUnique :: (G.Vector v a, Ord a) => v a -> Int
 getNumberUnique = Set.size . Set.fromList . G.toList
 
-unsafeEstimateMaxNumberOffDiag' :: (NonbranchingTerm -> BitString) -> Int -> Vector NonbranchingTerm -> Int
-unsafeEstimateMaxNumberOffDiag' p numberBits v0 = if G.null v0 then 0 else go 0 (G.singleton v0)
+unsafeEstimateMaxNumberOffDiag' :: Int -> U.Vector (Word64, Word64, Word64) -> Int
+unsafeEstimateMaxNumberOffDiag' numberBits v0
+  | G.null v0 = 0
+  | otherwise = go 0 $ G.singleton (getNumberUnique (G.map getX v0), v0)
   where
-    go :: Int -> Vector (Vector NonbranchingTerm) -> Int
+    getX (!_, !_, x) = x
+    go :: Int -> Vector (Int, U.Vector (Word64, Word64, Word64)) -> Int
     go !i !vs
       | i < numberBits = go (i + 1) $ runST $ do
-          let expanded = G.map (\x -> (getNumberUnique $ (.nbtX) <$> x, x)) $ G.concatMap (step p i) vs
-          mv <- G.unsafeThaw expanded -- G.concatMap (step p i) vs
-          let k = min (GM.length mv) 16
-          Data.Vector.Algorithms.Intro.selectBy (comparing (negate . fst)) mv k
-          G.map snd . G.take k <$> G.unsafeFreeze mv
-      | otherwise = G.maximum $ getNumberUnique . G.map (.nbtX) <$> vs
+          let expanded = G.concatMap (stepU i) vs
+          mv <- G.unsafeThaw expanded
+          let k = min (GM.length mv) 64
+          Data.Vector.Algorithms.Intro.selectBy (\(n1, _) (n2, _) -> compare n2 n1) mv k
+          G.take k <$> G.unsafeFreeze mv
+      | otherwise = G.maximum $ G.map fst vs
 
 unsafeEstimateMaxNumberOffDiag :: Int -> Maybe Int -> Vector NonbranchingTerm -> Int
-unsafeEstimateMaxNumberOffDiag numberBits _hammingWeigh terms = max l r
+unsafeEstimateMaxNumberOffDiag numberBits hammingWeight terms
+  | numberBits > 64 = getMaxNumberOffDiag numberBits hammingWeight terms
+  | otherwise = max l r
   where
-    !l = unsafeEstimateMaxNumberOffDiag' (.nbtL) numberBits terms
-    !r = unsafeEstimateMaxNumberOffDiag' (.nbtR) numberBits terms
+    toW :: BitString -> Word64
+    toW = fromIntegral . unBitString
+    !l =
+      unsafeEstimateMaxNumberOffDiag' numberBits . G.convert $
+        G.map (\t -> (toW t.nbtL, toW t.nbtM, toW t.nbtX)) terms
+    !r =
+      unsafeEstimateMaxNumberOffDiag' numberBits . G.convert $
+        G.map (\t -> (toW t.nbtR, toW t.nbtM, toW t.nbtX)) terms
 
 getMaxNumberOffDiag :: Int -> Maybe Int -> Vector NonbranchingTerm -> Int
 getMaxNumberOffDiag _numberBits _hammingWeight terms = getNumberUnique $ (.nbtX) <$> terms

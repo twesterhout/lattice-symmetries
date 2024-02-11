@@ -252,7 +252,10 @@ module ForeignTypes {
     proc from_json(s : c_ptrConst(c_char)) throws {
       const c_str = ls_hs_operator_from_json(s);
       defer ls_hs_destroy_string(c_str);
+      return from_foreign_result(c_str);
+    }
 
+    proc from_foreign_result(c_str : c_ptrConst(c_char)) throws {
       var file = openMemFile();
       var writer = file.writer();
       writer.write(string.createBorrowingBuffer(c_str));
@@ -479,6 +482,12 @@ module ForeignTypes {
     proc init(p : c_ptrConst(ls_hs_operator), owning : bool) {
       assert(owning == false);
       init(p:c_ptr(ls_hs_operator), owning);
+    }
+    proc init(basis : c_ptrConst(ls_hs_basis), expr : c_ptrConst(ls_hs_expr), owning : bool) {
+      assert(owning == false);
+      const c_str = ls_hs_create_operator(basis, expr);
+      defer ls_hs_destroy_string(c_str);
+      init(wrapper.foreignInterface.from_foreign_result(c_str), owning=true);
     }
     proc init(jsonString : string) {
       this.wrapper = new HsWrapper(ls_hs_operator, jsonString);

@@ -87,19 +87,22 @@ const smallBasesJsonDefs = [
   "{ \"number_spins\": 1 }",
   "{ \"number_spins\": 1, \"hamming_weight\": 0 }",
   "{ \"number_spins\": 1, \"hamming_weight\": 1 }",
-  // "{ \"number_spins\": 2, \"spin_inversion\": 1 }", // TODO: fix me !!!
+  "{ \"number_spins\": 2, \"spin_inversion\": 1 }",
+  "{ \"number_spins\": 4, \"hamming_weight\": 2, \"spin_inversion\": -1 }",
 ];
 const smallBasesExpectedStates = [
-  new Vector([0:uint, 1:uint]),
-  new Vector([0:uint]),
-  new Vector([1:uint]),
-  // new Vector([1:uint]), // TODO: fix me !!!
+  new Vector([0b0:uint, 0b1:uint]),
+  new Vector([0b0:uint]),
+  new Vector([0b1:uint]),
+  new Vector([0b00:uint, 0b01:uint]),
+  new Vector([0b0011:uint, 0b0101:uint, 0b0110]),
 ];
 const smallBasesExpectedNorms = [
   new Vector([1.0, 1.0]),
   new Vector([1.0]),
   new Vector([1.0]),
-  // new Vector([0.5]), // TODO: fix me !!!
+  new Vector([1.0, 1.0]),
+  new Vector([1.0, 1.0, 1.0]),
 ];
 
 proc test__enumerateStatesGeneric() {
