@@ -529,6 +529,10 @@ addDeclarations
   , "ls_hs_expr_is_real"
   , "ls_hs_expr_is_identity"
   , "ls_hs_expr_permutation_group"
+  , "ls_hs_expr_spin_inversion_invariant"
+  , "ls_hs_expr_conserves_number_particles"
+  , "ls_hs_expr_particle_type"
+  , "ls_hs_expr_number_sites"
   , ------------------------
     -- Operator
 

@@ -57,7 +57,7 @@ data ParticleTy
     SpinfulFermionTy
   | -- | A spinless fermion
     SpinlessFermionTy
-  deriving stock (Show, Eq, Typeable)
+  deriving stock (Show, Eq, Ord, Enum, Typeable)
 
 instance Pretty ParticleTy where
   pretty SpinTy = "spin-1/2"
@@ -118,7 +118,7 @@ prettyBitString n bits = mconcat $ prettyBool . testBit bits <$> reverse [0 .. n
 
 -- | Type-level analog of 'ParticleTy'.
 data ParticleTag (t :: ParticleTy) where
-  SpinTag :: ParticleTag 'SpinTy
+  SpinTag :: (IndexType 'SpinTy ~ Int, GeneratorType 'SpinTy ~ SpinGeneratorType) => ParticleTag 'SpinTy
   SpinfulFermionTag :: ParticleTag 'SpinfulFermionTy
   SpinlessFermionTag :: ParticleTag 'SpinlessFermionTy
 
@@ -262,15 +262,15 @@ instance HasIdentity g => HasIdentity (Generator i g) where
   isIdentity (Generator _ g) = isIdentity g
 
 class HasSiteIndex i where
-  getSiteIndex :: i -> Int
+  -- getSiteIndex :: i -> Int
   mapSiteIndex :: (Int -> Int) -> i -> i
 
 instance HasSiteIndex Int where
-  getSiteIndex = id
+  -- getSiteIndex = id
   mapSiteIndex f = f
 
 instance HasSiteIndex (SpinIndex, Int) where
-  getSiteIndex (_, i) = i
+  -- getSiteIndex (_, i) = i
   mapSiteIndex f (σ, i) = (σ, f i)
 
 flattenIndex :: forall t. Typeable t => Int -> IndexType t -> Int

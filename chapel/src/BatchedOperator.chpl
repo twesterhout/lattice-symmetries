@@ -51,13 +51,13 @@ proc applyOffDiagKernel(const ref matrix : ls_chpl_batched_operator,
   const batch_size = chunk.size;
   if batch_size > matrix.batch_size then
     halt(try! "buffer overflow: allocated space for %i elements, but chunk.size=%i".format(matrix.batch_size, batch_size));
-  if matrix.betas == nil || matrix.coeffs == nil || matrix.offsets == nil || matrix.target_states == nil then
-    halt("betas, coeffs, offsets, and target_states should be pre-allocated");
+  if matrix.betas == nil || matrix.coeffs == nil || matrix.offsets == nil then
+    halt("betas, coeffs, and offsets should be pre-allocated");
 
   const off_diag_terms = matrix.matrix.deref().off_diag_terms;
   // Nothing to apply
   if (off_diag_terms == nil || off_diag_terms.deref().number_terms == 0) {
-    POSIX.memset(matrix.offsets, 0, (batch_size + 1):c_size_t * c_sizeof(c_ptrdiff));
+    POSIX.memset(matrix.offsets, 0, batch_size:c_size_t * c_sizeof(c_ptrdiff));
     return;
   }
 
@@ -68,7 +68,7 @@ proc applyOffDiagKernel(const ref matrix : ls_chpl_batched_operator,
   const spinInversionMask = (1:uint(64) << basisInfo.number_sites) - 1;
   const spinInversionCharacter = basisInfo.spin_inversion;
 
-  matrix.offsets[0] = 0;
+  // matrix.offsets[0] = 0;
   var offset = 0;
   for batch_idx in 0 ..# batch_size {
     const oldOffset = offset;
@@ -103,7 +103,8 @@ proc applyOffDiagKernel(const ref matrix : ls_chpl_batched_operator,
         }
         matrix.coeffs[offset] = acc;
         matrix.betas[offset] = beta;
-        matrix.target_states[offset] = chunk.low + batch_idx;
+        if matrix.target_states != nil then
+          matrix.target_states[offset] = chunk.low + batch_idx;
         // writeln(try! "y[%i] += %r <%u|x>".format(chunk.low + batch_idx, acc.re, beta));
         offset += 1;
       }
@@ -114,7 +115,7 @@ proc applyOffDiagKernel(const ref matrix : ls_chpl_batched_operator,
       halt(try! "buffer overflow in applyOffDiagKernel: estimatedNumberTerms=%i, but written %i".format(
                 estimatedNumberTerms, offset - oldOffset));
 
-    matrix.offsets[batch_idx + 1] = offset;
+    matrix.offsets[batch_idx] = offset;
   }
 }
 
@@ -355,7 +356,7 @@ record BatchedOperator {
     raw.betas = allocate(uint(64), capacity);
     raw.coeffs = allocate(complex(128), capacity);
     raw.target_states = allocate(uint(64), capacity);
-    raw.offsets = allocate(int(64), raw.batch_size + 1);
+    raw.offsets = allocate(int(64), raw.batch_size);
     if basisInfo.has_permutation_symmetries {
       raw.temp_spins = allocate(uint(64), capacity);
       raw.temp_coeffs = allocate(complex(128), capacity);
@@ -404,7 +405,7 @@ record BatchedOperator {
     //   halt(try! "buffer overflow in BatchedOperator: count=%i, batch_size=%i".format(count, raw.batch_size));
 
     computeOffDiagGeneric(basisInfo, raw, chunk, alphas, left);
-    const totalCount = raw.offsets[count];
+    const totalCount = raw.offsets[count - 1];
     // if totalCount > maxTotalCount then
     //   maxTotalCount = totalCount;
     // computeKeys(totalCount, pointers.betas, pointers.localeIdxs, timers.keysTimer);

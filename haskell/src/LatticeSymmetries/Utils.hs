@@ -1,6 +1,6 @@
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 -- |
 -- Module      : LatticeSymmetries.Utils
@@ -13,10 +13,11 @@ module LatticeSymmetries.Utils
   , iFoldM
   , rightM
   , sortVectorBy
+  , unique
 
     -- ** Error handling
-  , throwC
-  , propagateErrorToC
+  -- , throwC
+  -- , propagateErrorToC
 
     -- ** String handling
   , peekUtf8
@@ -36,15 +37,15 @@ module LatticeSymmetries.Utils
   )
 where
 
-import Control.Exception.Safe (handleAnyDeep)
 import Control.Monad.ST (runST)
 import Data.Aeson
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Types (Parser)
 import Data.Aeson.Types qualified as Aeson
-import Data.ByteString (packCString, useAsCString)
+import Data.ByteString (packCString)
 import Data.ByteString.Internal (ByteString (..))
 import Data.Complex
+import Data.Containers.ListUtils (nubOrd)
 import Data.Vector.Algorithms.Intro qualified
 import Data.Vector.Generic qualified as G
 import Foreign.C.String (CString)
@@ -55,7 +56,6 @@ import Foreign.Marshal.Utils (copyBytes)
 import Foreign.Ptr (Ptr, castPtr)
 import Foreign.Storable (Storable (..))
 import Language.Halide (Arguments (..), UnCurry (..))
-import LatticeSymmetries.Context
 import Prettyprinter (Pretty (..))
 import Prettyprinter qualified as Pretty
 import Prettyprinter.Render.Text (renderStrict)
@@ -86,17 +86,17 @@ sortVectorBy comp v = runST $ do
 
 -- foreign import ccall unsafe "ls_hs_error"
 --   ls_hs_error :: CString -> IO ()
-ls_hs_error :: CString -> IO ()
-ls_hs_error = undefined
+-- ls_hs_error :: CString -> IO ()
+-- ls_hs_error = undefined
 
 -- | Invoke the 'ls_hs_error' error handling function with the given message.
-throwC :: HasCallStack => a -> Text -> IO a
-throwC def msg = do
-  useAsCString (encodeUtf8 msg) ls_hs_error
-  pure def
+-- throwC :: HasCallStack => a -> Text -> IO a
+-- throwC def msg = do
+--   useAsCString (encodeUtf8 msg) ls_hs_error
+--   pure def
 
-propagateErrorToC :: (HasCallStack, NFData a) => a -> IO a -> IO a
-propagateErrorToC def = handleAnyDeep (throwC def . show)
+-- propagateErrorToC :: (HasCallStack, NFData a) => a -> IO a -> IO a
+-- propagateErrorToC def = handleAnyDeep (throwC def . show)
 
 infix 4 ≈
 
@@ -156,11 +156,6 @@ instance FromJSON a => FromJSON (Complex a) where
 instance ToJSON a => ToJSON (Complex a) where
   toJSON (a :+ b) = object ["real" .= a, "imag" .= b]
 
-newCobject :: a -> Ptr Cobject
-newCobject = undefined
-
-newtype JSONArguments ts = JSONArguments (Arguments ts)
-
 class ArgumentsFromJSON (ts :: [Type]) where
   argumentsFromJSON :: [Aeson.Value] -> Aeson.Parser (Arguments ts)
   expectedNumberArgs :: Proxy ts -> Int
@@ -212,3 +207,6 @@ ls_hs_destroy_string = free
 rightM :: (b -> IO c) -> Either a b -> IO (Either a c)
 rightM _ (Left a) = pure (Left a)
 rightM f (Right b) = Right <$> f b
+
+unique :: (Ord a, G.Vector v a) => v a -> v a
+unique = G.fromList . nubOrd . G.toList

@@ -13,7 +13,7 @@ module LatticeSymmetries.Conversion
   )
 where
 
-import Control.Exception.Safe (assert)
+import Control.Exception (assert)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromJust)
 import Data.Text qualified as Text

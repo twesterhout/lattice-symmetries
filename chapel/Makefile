@@ -5,16 +5,12 @@ PREFIX ?= /usr/local
 TEST_DATA ?= $(PWD)
 CHPL_ARGS ?=
 CHPL_CFLAGS ?= --fast
-
-# --target-compiler=llvm
-# TODO: enable later to get rid of __primitive calls: -s cPtrToLogicalValue=true
-LDFLAGS = -llattice_symmetries_haskell
+CHPL_LDFLAGS = -llattice_symmetries_haskell
 
 PRIMME_CFLAGS = -I$(PRIMME_PATH)/include
 PRIMME_LDFLAGS = -L$(PRIMME_PATH)/lib -lprimme -llapacke -lopenblas -lm -lgomp -lpthread
 
 HALIDE_CFLAGS = -I$(HALIDE_PATH)/include
-# HALIDE_LDFLAGS = -L$(HALIDE_PATH)/lib -lHalide
 
 ifeq ($(shell uname -s), Linux)
   HDF5_CFLAGS ?= $(shell pkg-config --cflags hdf5)
@@ -26,61 +22,41 @@ else
   SHARED_EXT = dylib
 endif
 
-# MODULES = src/ApplyOperator.chpl src/StatesEnumeration.chpl src/helper.c
-LIB_MODULES = src/CommonParameters.chpl \
+LIB_MODULES = src/library.c \
+              src/CommonParameters.chpl \
               src/FFI.chpl \
               src/Utils.chpl \
-              src/Timing.c \
-              src/Timing.chpl \
-              src/ForeignTypes.c \
               src/ForeignTypes.chpl \
+              src/Timing.c src/Timing.chpl \
               src/Vector.chpl \
-              src/StatesEnumeration.chpl
-
-# LIB_MODULES = src/LatticeSymmetries.chpl \
-#               src/FFI.chpl \
-#               src/ForeignTypes.chpl \
-#               src/ForeignTypes.c \
-#               src/Vector.chpl \
-#               src/ConcurrentAccessor.chpl \
-#               src/StatesEnumeration.chpl \
-#               src/BatchedOperator.chpl \
-#               src/DistributedMatrixVector.chpl \
-#               src/CommonParameters.chpl \
-#               src/CSR.chpl \
-#               src/Utils.chpl
-
-APP_MODULES = $(LIB_MODULES)
-# APP_MODULES = $(LIB_MODULES) \
-#               src/HashedToBlock.chpl \
-#               src/BlockToHashed.chpl \
-#               src/MyHDF5.chpl
+              src/BatchedOperator.chpl \
+              src/ConcurrentQueue.c src/ConcurrentQueue.chpl \
+              src/StatesEnumeration.chpl \
+              src/CSR.chpl \
+              src/MatrixVectorProduct.chpl \
+              src/LatticeSymmetries.chpl
 
 .PHONY: all
 all: lib
 
-.PHONY: check
-check: check-states-enumeration check-matrix-vector-product
-
 lib: lib/liblattice_symmetries_chapel.$(SHARED_EXT)
 
-src/library.o: src/library.c
-	$(CC) -c $^ -fPIC -o $@
-
-lib/liblattice_symmetries_chapel.$(SHARED_EXT): $(LIB_MODULES) src/library.o
+lib/liblattice_symmetries_chapel.$(SHARED_EXT): $(LIB_MODULES)
 	@mkdir -p $(@D)
 	@rm -rf $(@D)/*
 	CHPL_LIB_PIC=pic chpl \
 		$(CHPL_CFLAGS) \
 		$(HALIDE_CFLAGS) \
-		--library --dynamic -o lattice_symmetries_chapel $^ \
+		--library --dynamic -o lattice_symmetries_chapel \
+		--ccflags -DLS_CHPL_LIBRARY=1 \
+		$^ \
 		$(CHPL_LDFLAGS) -llattice_symmetries_haskell
 
 install: lib
 	@mkdir -p $(PREFIX)/lib
-	# @mkdir -p $(PREFIX)/include
+	@mkdir -p $(PREFIX)/include
 	install -m 755 lib/liblattice_symmetries_chapel.$(SHARED_EXT) $(PREFIX)/lib/
-	# install -m 644 lib/lattice_symmetries_chapel.h $(PREFIX)/include/
+	install -m 644 src/lattice_symmetries_chapel.h $(PREFIX)/include/
 
 # .PHONY: benchmark-states-enumeration
 # benchmark-states-enumeration: bin/TestStatesEnumeration
@@ -114,17 +90,12 @@ bin/TestBatchedOperator: test/TestBatchedOperator.chpl \
 	@mkdir -p $(@D)
 	chpl $(CHPL_CFLAGS) $(HALIDE_CFLAGS) -I src/ -o $@ --main-module $(@F) $^ $(CHPL_LDFLAGS) $(LDFLAGS)
 
-bin/TestSingleLocaleMatrixVector: test/TestSingleLocaleMatrixVector.chpl \
-                                  src/FFI.chpl \
-                                  src/Utils.chpl \
-                                  src/ForeignTypes.c src/ForeignTypes.chpl \
-                                  src/Timing.c src/Timing.chpl \
-                                  src/CommonParameters.chpl \
-                                  src/BatchedOperator.chpl \
-                                  src/ConcurrentQueue.c src/ConcurrentQueue.chpl \
-                                  src/HDF5Extensions.chpl \
-                                  src/StatesEnumeration.chpl \
-                                  src/MatrixVectorProduct.chpl
+bin/TestSingleLocaleMatrixVector: test/TestSingleLocaleMatrixVector.chpl $(LIB_MODULES)
+	@mkdir -p $(@D)
+	chpl $(CHPL_CFLAGS) $(HALIDE_CFLAGS) $(HDF5_CFLAGS) -I src/ -o $@ --main-module $(@F) $^ $(HDF5_CFLAGS) $(CHPL_LDFLAGS) $(LDFLAGS)
+
+
+bin/TestToCsr: test/TestToCsr.chpl $(LIB_MODULES)
 	@mkdir -p $(@D)
 	chpl $(CHPL_CFLAGS) $(HALIDE_CFLAGS) $(HDF5_CFLAGS) -I src/ -o $@ --main-module $(@F) $^ $(HDF5_CFLAGS) $(CHPL_LDFLAGS) $(LDFLAGS)
 

@@ -1,10 +1,11 @@
-import HDF5Extensions;
+import Timing;
+use CSR;
 use ForeignTypes;
 use MatrixVectorProduct;
 use StatesEnumeration;
 use Utils;
-import Timing;
 
+use CTypes;
 use IO;
 use JSON;
 use List;
@@ -21,35 +22,6 @@ record TestInfo {
   var y_imag : list(real);
 }
 
-/*
-proc unpackToFullBasis(const ref basis : Basis,
-                       const ref basisStates : [] uint(64),
-                       const ref norms : [] uint(16),
-                       const ref xs : [] ?eltType) {
-
-  const numberBits = basis.info.number_bits;
-  const spinInversion = basis.info.spin_inversion;
-  assert(basis.info.is_state_index_identity);
-
-  const numberTargetStates = 1:uint(64) << numberBits;
-  var ys : [0 ..# numberTargetStates] eltType;
-
-  const groupSize = if spinInversion != 0 then 2 else 1;
-  const spinInversionMask = (1:uint(64) << numberBits) - 1;
-
-  forall (basisState, norm, x, i) in zip(basisStates, norms, xs, 0..) {
-    ys[basisState:int] = x * math.sqrt(norm / groupSize);
-    if spinInversion != 0 {
-      const invertedBasisState = basisState ^ spinInversionMask;
-      ys[invertedBasisState:int] = x * spinInversion * math.sqrt(norm / groupSize);
-    }
-  }
-
-  return ys;
-}
-*/
-
-
 proc main() {
   initRuntime();
   defer deinitRuntime();
@@ -65,7 +37,17 @@ proc main() {
   const x = [(re, im) in zip(testData.x_real, testData.x_imag)] re + im * 1.0i;
   const y = [(re, im) in zip(testData.y_real, testData.y_imag)] re + im * 1.0i;
   var z : [x.domain] x.eltType;
-  perLocaleMatrixVector(matrix, x, z, basisStates[here]);
+
+  const csrMatrix = convertOffDiagToCsr(matrix, complex(128), basisStates[here], norms[here]);
+  const diag = extractDiag(matrix, complex(128), basisStates[here], norms[here]);
+
+  // const capacity = basisStates[here].size * (matrix.max_number_off_diag_estimate + 1);
+  // writeln(makeArrayFromPtr(csrMatrix.matrixElements:c_ptr(complex(128)), {0 ..# capacity}));
+  // writeln(makeArrayFromPtr(csrMatrix.colIndices:c_ptr(int(64)), {0 ..# capacity}));
+  // writeln(makeArrayFromPtr(csrMatrix.rowOffsets:c_ptr(int(64)), {0 ..# (basisStates[here].size + 1)}));
+
+  csrMatvec(csrMatrix, c_ptrToConst(x), c_ptrTo(z));
+  z += diag * x;
 
   if kVerbose {
     writeln("basisStates = ", basisStates[here]);
@@ -76,13 +58,13 @@ proc main() {
   }
 
   checkArraysEqual(testData.states.toArray(), basisStates[here]);
-  // if matrix.basis.info.spin_inversion == -1 { // we do not trust QuSpin when spin_inversion==-1
-  //   const absZ = abs(z);
-  //   const absY = abs(y);
-  //   checkArraysEqual(absZ, absY);
-  // }
-  // else {
+  if matrix.basis.info.spin_inversion == -1 { // we do not trust QuSpin when spin_inversion==-1
+    const absZ = abs(z);
+    const absY = abs(y);
+    checkArraysEqual(absZ, absY);
+  }
+  else {
     checkArraysEqual(z, y);
-  // }
+  }
 
 }

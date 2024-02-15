@@ -3,10 +3,10 @@ module LatticeSymmetries {
   // public use MyHDF5;
   public use ForeignTypes;
   public use StatesEnumeration;
-  // public use MatrixVectorProduct;
-  public use DistributedMatrixVector;
+  public use MatrixVectorProduct;
+  // public use DistributedMatrixVector;
   public use BatchedOperator;
-  public use ConcurrentAccessor;
+  // public use ConcurrentAccessor;
   // public use CommunicationQueue;
   // public use MultiwayMerge;
   public use Vector;

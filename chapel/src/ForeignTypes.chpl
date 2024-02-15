@@ -11,7 +11,8 @@ module ForeignTypes {
   use JSON;
   // use Time;
 
-  require "ForeignTypes.h";
+  require "lattice_symmetries_chapel.h";
+
   extern proc ls_chpl_get_basis_info(p : c_ptrConst(ls_hs_basis)) : c_ptrConst(ls_hs_basis_info);
   extern proc ls_chpl_get_is_representative_kernel(p : c_ptrConst(ls_hs_basis)) : c_fn_ptr;
   extern proc ls_chpl_invoke_is_representative_kernel(kernel : c_fn_ptr, count : int(64),

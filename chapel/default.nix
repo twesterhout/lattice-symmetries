@@ -1,11 +1,9 @@
-{ stdenv
-, chapel
-, chapelFixupBinary
+{ chapel
 , halide
-, lib
 , lattice-symmetries
+, removeReferencesTo
+, stdenv
 , version
-, sse4_2Support ? stdenv.targetPlatform.sse4_2Support
 }:
 
 stdenv.mkDerivation {
@@ -17,31 +15,28 @@ stdenv.mkDerivation {
   preBuild = ''
     makeFlagsArray+=(
       PREFIX="$out"
-      OPTIMIZATION="--debug -g --preserve-inlined-line-numbers --task-tracking --savec tmp"
-      CHPL_CFLAGS="--no-ieee-float -I${lattice-symmetries.kernels}/include"
+      CHPL_CFLAGS="-I${lattice-symmetries.kernels_v2}/include -I${lattice-symmetries.haskell}/include --no-ieee-float --local --no-debug --fast"
       CHPL_LDFLAGS="-L${lattice-symmetries.haskell.lib}/lib"
       HALIDE_PATH="${halide}"
     )
-  ''; # + lib.optionalString sse4_2Support "makeFlagsArray+=( CHPL_TARGET_CPU=\"nehalem\" )";
-  preInstall = ''
-    # for f in $(ls lib); do
-    #   chapelFixupBinary lib/$f
-    # done
-    # for f in $(ls bin); do
-    #   chapelFixupBinary bin/$f
-    # done
   '';
-  dontStrip = true;
+  preInstall = ''
+    for f in $(ls lib); do
+      chapelFixupBinary lib/$f
+      # These are only needed during compilation
+      remove-references-to -t ${lattice-symmetries.kernels_v2} lib/$f
+      remove-references-to -t ${lattice-symmetries.haskell} lib/$f
+    done
+  '';
 
-  buildInputs = [ lattice-symmetries.kernels2 lattice-symmetries.haskell.lib ];
+  buildInputs = [
+    halide
+    lattice-symmetries.kernels_v2
+    lattice-symmetries.haskell
+    lattice-symmetries.haskell.lib
+  ];
   nativeBuildInputs = [
-    (chapel.override {
-      compiler = "llvm";
-      settings = {
-        CHPL_LIB_PIC = "pic";
-        CHPL_UNWIND = "system";
-      };
-    })
-    chapelFixupBinary
+    chapel
+    removeReferencesTo
   ];
 }

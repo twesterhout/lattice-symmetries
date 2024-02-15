@@ -104,11 +104,9 @@ library
         , inline-c
         , megaparsec
         , mtl
-        , parallel
         , parser-combinators
         , prettyprinter       >=1.7
         , primitive
-        , safe-exceptions
         , scientific
         , template-haskell
         , text
@@ -118,7 +116,10 @@ library
         , vector-algorithms
         , vector-stream
         , vector-th-unbox
-        , yaml
+
+    -- , parallel
+    -- , safe-exceptions
+    -- , yaml
 
     -- , binary
     -- , vector-binary-instances

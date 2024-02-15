@@ -20,12 +20,10 @@ import Foreign.Ptr (Ptr)
 import GHC.Exts (IsList (..))
 import GHC.Stack
 import LatticeSymmetries.Algebra
-import LatticeSymmetries.Basis (Basis)
 import LatticeSymmetries.BitString
 import LatticeSymmetries.ComplexRational
 import LatticeSymmetries.Context
 import LatticeSymmetries.Expr
-import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
 import LatticeSymmetries.Group
 import LatticeSymmetries.Permutation

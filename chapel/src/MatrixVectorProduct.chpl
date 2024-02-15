@@ -1,8 +1,8 @@
 module MatrixVectorProduct {
 
 private use BatchedOperator;
+private use CSR;
 private use CommonParameters;
-private use ConcurrentAccessor;
 private use ConcurrentQueue;
 private use FFI;
 private use ForeignTypes;
@@ -13,6 +13,7 @@ private import Reflection.getRoutineName;
 private use AllLocalesBarriers;
 private use CTypes;
 private use ChapelLocks;
+private use DynamicIters;
 private use IO.FormattedIO;
 private use OS.POSIX;
 private use RangeChunk;
@@ -198,7 +199,6 @@ record LocaleState {
   var matrix : Operator;
   var basis : Basis;
   var localeIdxFn;
-  var accessor : ConcurrentAccessor(coeffType);
   var numberStates : int;
   var xPtr : c_ptrConst(coeffType);
   var yPtr : c_ptr(coeffType);
@@ -206,8 +206,8 @@ record LocaleState {
 
   proc init(const ref matrix : Operator,
             const ref representatives : [] uint(64),
-            const ref xs : [] ?coeffType,
-            ref ys : [] coeffType,
+            xs : c_ptrConst(?coeffType),
+            ys : c_ptr(coeffType),
             numChunks : int,
             numTasks : int,
             remoteBufferSize : int) {
@@ -215,38 +215,31 @@ record LocaleState {
 
     this._chunksDom = {0 ..# numChunks};
     this._chunks = chunks(0 ..# representatives.size, numChunks);
-    // this.chunkIndicesQueue = new ConcurrentQueueWrapper(numChunks, nullElement=-1);
 
-    const D1 = {0 ..# numLocales, 0 ..# numTasks};
+    const D1 = if numLocales > 1 then {0 ..# numLocales, 0 ..# numTasks} else {0 .. -1, 0 .. -1};
     this._localBuffersDom = D1;
     this.localBuffers = [_i in D1] new WorkerBuffers(new WorkerBuffersView(coeffType, remoteBufferSize));
 
-    const D2 = {0 ..# numTasks, 0 ..# numLocales};
+    const D2 = if numLocales > 1 then {0 ..# numTasks, 0 ..# numLocales} else {0 .. -1, 0 .. -1};
     this._remoteBuffersDom = D2;
     this.remoteBuffers = [_i in D2] new WorkerBuffersView(coeffType);
 
-    this.localQueue = new ConcurrentQueueWrapper(capacity=numLocales * numTasks,
+    this.localQueue = new ConcurrentQueueWrapper(capacity=if numLocales > 1 then numLocales * numTasks else 1,
                                                  nullElement=new BufferFilledMessage(-1, -1, 0));
 
-    const D3 = {0 ..# numLocales};
+    const D3 = if numLocales > 1 then {0 ..# numLocales} else {0 .. -1};
     this._remoteQueuesDom = D3;
     this.remoteQueues = [i in D3] new ConcurrentQueueWrapper(BufferFilledMessage, nil:c_ptr(ConcurrentQueue), i, false);
 
     this.matrix = matrix;
     this.basis = new Basis(this.matrix.payload.deref().basis, owning=false);
     this.localeIdxFn = this.basis.getLocaleIdxFn();
-    this.accessor = new ConcurrentAccessor(ys);
     this.numberStates = representatives.size;
-    this.xPtr = c_ptrToConst(xs);
-    this.yPtr = c_ptrTo(ys);
+    this.xPtr = xs;
+    this.yPtr = ys;
     this.representativesPtr = c_ptrToConst(representatives);
     init this;
 
-    // for i in _chunksDom {
-    //   const success = chunkIndicesQueue.tryPush(i);
-    //   if !success then
-    //     halt("failed to push to chunkIndicesQueue");
-    // }
     chunkIndex.write(0);
     numberCompleted.write(0);
 
@@ -254,6 +247,15 @@ record LocaleState {
     if !basis.info.is_state_index_identity || numLocales != 1 {
       const _stateToIndexKernel = ls_chpl_get_state_to_index_kernel(basis.payload);
     }
+  }
+  proc init(const ref matrix : Operator,
+            const ref representatives : [] uint(64),
+            const ref xs : [] ?coeffType,
+            ref ys : [] coeffType,
+            numChunks : int,
+            numTasks : int,
+            remoteBufferSize : int) {
+    this.init(matrix, representatives, c_ptrToConst(xs), c_ptrTo(ys), numChunks, numTasks, remoteBufferSize);
   }
 }
 
@@ -265,37 +267,35 @@ proc ref LocaleState.getRemoteView() {
 }
 
 proc ref LocaleState.completeInitialization(const ref globalStore) {
-  const numTasks = remoteBuffers.dim(0).size;
-  for localeIdx in 0 ..# numLocales {
-    const view : RemoteLocaleStateView = globalStore[localeIdx];
+  if numLocales > 1 {
+    const numTasks = remoteBuffers.dim(0).size;
+    for localeIdx in 0 ..# numLocales {
+      const view : RemoteLocaleStateView = globalStore[localeIdx];
 
-    for taskIdx in 0 ..# numTasks {
-      var remoteBufferView : WorkerBuffersView(coeffType);
-      const rvfPtr = view.localBuffersPtr:c_ptrConst(WorkerBuffers(coeffType)) + localeIdx * numTasks + taskIdx;
-      on Locales[localeIdx] do
-        remoteBufferView = rvfPtr.deref().raw;
+      for taskIdx in 0 ..# numTasks {
+        var remoteBufferView : WorkerBuffersView(coeffType);
+        const rvfPtr = view.localBuffersPtr:c_ptrConst(WorkerBuffers(coeffType)) + localeIdx * numTasks + taskIdx;
+        on Locales[localeIdx] do
+          remoteBufferView = rvfPtr.deref().raw;
 
-      remoteBuffers[taskIdx, localeIdx] = remoteBufferView;
+        remoteBuffers[taskIdx, localeIdx] = remoteBufferView;
+      }
+
+      ref queue = remoteQueues[localeIdx];
+      assert(queue.queuePtr == nil);
+      assert(queue.owning == false);
+      assert(queue.localeId == localeIdx);
+      queue.queuePtr = view.localQueuePtr:c_ptr(ConcurrentQueue);
     }
-
-    ref queue = remoteQueues[localeIdx];
-    assert(queue.queuePtr == nil);
-    assert(queue.owning == false);
-    assert(queue.localeId == localeIdx);
-    queue.queuePtr = view.localQueuePtr:c_ptr(ConcurrentQueue);
   }
 }
 
 proc ref LocaleState.getNextChunkIndex() {
-  // var i : int;
-  // const success = chunkIndicesQueue.tryPop(i);
-  // return if success then i else -1;
   const i = chunkIndex.fetchAdd(1);
   return if i < _chunksDom.size then i else -1;
 }
 
 proc LocaleState.allCompleted() : bool {
-  // logDebug("allCompleted: numberCompleted.read()=", numberCompleted.read());
   const numTasks = localBuffers.dim(1).size;
   return numberCompleted.read() == (numLocales - 1) * numTasks;
 }
@@ -433,12 +433,13 @@ proc perLocaleOffDiagonal(matrix : Operator,
         representatives.size);
 
   var localeState = new LocaleState(matrix, representatives, xs, ys, numChunks, numTasks, remoteBufferSize);
-  globalLocaleStateStore[here.id] = localeState.getRemoteView();
-  allLocalesBarrier.barrier();
-  localeState.completeInitialization(globalLocaleStateStore);
-
-  // TODO: do we need this?
-  allLocalesBarrier.barrier();
+  if numLocales > 1 {
+    globalLocaleStateStore[here.id] = localeState.getRemoteView();
+    allLocalesBarrier.barrier();
+    localeState.completeInitialization(globalLocaleStateStore);
+    // TODO: do we need this?
+    allLocalesBarrier.barrier();
+  }
 
   const maxChunkSize = max reduce [c in localeState._chunks] c.size;
   coforall taskIdx in 0 ..# numTasks with (ref localeState) {
@@ -448,6 +449,135 @@ proc perLocaleOffDiagonal(matrix : Operator,
 
   // TODO: do we need this?
   allLocalesBarrier.barrier();
+}
+
+proc extractDiag(matrix : Operator,
+                 type eltType,
+                 const ref representatives : [] uint(64),
+                 const ref norms : [] uint(16)) {
+  const _timer = recordTime("extractDiag");
+  assert(matrix.locale == here);
+  assert(representatives.locale == here);
+  assert(norms.locale == here);
+
+  var diag : [0 ..# representatives.size] eltType;
+
+  const numChunks = min(kNumTasks, representatives.size);
+  const ranges = chunks(0 ..# representatives.size, numChunks);
+  forall chunk in ranges {
+    applyDiagKernel(
+      matrix.payload.deref().diag_terms,
+      chunk.size,
+      c_ptrToConst(representatives[chunk.low]),
+      c_ptrTo(diag[chunk.low]),
+      nil);
+  }
+
+  return diag;
+}
+
+proc convertOffDiagToCsr(matrix : Operator,
+                         type eltType,
+                         const ref representatives : [] uint(64),
+                         const ref norms : [] uint(16)) {
+  const _timer = recordTime("convertOffDiagToCsr");
+  assert(matrix.locale == here);
+  assert(representatives.locale == here);
+  assert(norms.locale == here);
+
+  const ref basisInfo = matrix.basis.info;
+
+  const numTasks = kNumTasks;
+  const numChunks = min(representatives.size, kToCsrNumChunks);
+  var localeState = new LocaleState(matrix, representatives, nil:c_ptrConst(complex(128)), nil:c_ptr(complex(128)),
+                                    numChunks, numTasks, remoteBufferSize=0);
+  const maxChunkSize = max reduce [c in localeState._chunks] c.size;
+
+  const estimatedNumberTerms = matrix.max_number_off_diag_estimate;
+  const safeNumberTerms = matrix.max_number_off_diag;
+  const capacity =
+    // for the diagonal part
+    representatives.size +
+    // for the off-diagonal part
+    representatives.size * estimatedNumberTerms;
+
+  var matrixElementsPtr = allocate(eltType, capacity);
+  POSIX.memset(matrixElementsPtr, 0, capacity:c_size_t * c_sizeof(eltType));
+  // NOTE: +numChunks is important here
+  var rowOffsetsPtr = allocate(int(64), representatives.size + 1);
+  POSIX.memset(rowOffsetsPtr, 0, (representatives.size + 1):c_size_t * c_sizeof(int(64)));
+  var colIndicesPtr = allocate(int(64), capacity);
+  POSIX.memset(colIndicesPtr, 0, capacity:c_size_t * c_sizeof(int(64)));
+  var numberNonZero : atomic int;
+
+  coforall taskIdx in 0 ..# numTasks with (ref localeState) {
+
+    var betasBuffer : c_ptr(uint(64));
+    if !basisInfo.is_state_index_identity then
+      betasBuffer = allocate(uint(64), maxChunkSize * estimatedNumberTerms);
+
+    while true {
+      const chunkIdx = localeState.getNextChunkIndex();
+      if chunkIdx == -1 { break; }
+      const chunk : range(int) = localeState._chunks[chunkIdx];
+
+      // This is our region
+      const chunkStart = chunk.low * (estimatedNumberTerms + 1);
+      const chunkStop = chunk.high * (estimatedNumberTerms + 1);
+      var batchedOperator = new BatchedOperator(new ls_chpl_batched_operator(
+        matrix=matrix.payload,
+        batch_size=chunk.size,
+        betas=if basisInfo.is_state_index_identity
+                then (colIndicesPtr + chunkStart):c_ptr(uint(64))
+                else betasBuffer,
+        coeffs=matrixElementsPtr + chunkStart,
+        target_states=nil,
+        offsets=(rowOffsetsPtr + 1) + chunk.low,
+        temp_spins=nil,
+        temp_coeffs=nil,
+        temp_norms=nil,
+        locale_indices=nil
+      ));
+      const (totalCount, _, _, _) =
+        batchedOperator.computeOffDiag(
+          chunk,
+          localeState.representativesPtr + chunk.low,
+          left=false);
+      // for k in 0 ..# totalCount {
+      //   assert(batchedOperator.raw.coeffs[k] != 0);
+      //   writeln("chunkIdx=", chunkIdx, ", coeff=", batchedOperator.raw.coeffs[k], ", index=", batchedOperator.raw.betas[k]);
+      // }
+      // writeln("chunkIdx=", chunkIdx, ", chunkSize=", totalCount);
+
+      if !basisInfo.is_state_index_identity && totalCount > 0 then
+        basisStatesToIndices(matrix.basis, totalCount, betasBuffer, colIndicesPtr + chunkStart);
+
+      numberNonZero.add(totalCount);
+    } // end while true
+
+    if betasBuffer != nil then deallocate(betasBuffer);
+  }
+
+  var offset = 0;
+  for chunkIdx in 0 ..# numChunks {
+    const chunk = localeState._chunks[chunkIdx];
+    const chunkStart = chunk.low * (estimatedNumberTerms + 1);
+    const chunkSize = rowOffsetsPtr[1 + chunk.high];
+    // writeln(chunk, ", ", chunkSize, ", ", offset);
+    foreach k in chunk {
+      rowOffsetsPtr[1 + k] += offset;
+    }
+    if offset < chunkStart {
+      POSIX.memmove(matrixElementsPtr + offset, matrixElementsPtr + chunkStart,
+                    chunkSize:c_size_t * c_sizeof(eltType));
+      POSIX.memmove(colIndicesPtr + offset, colIndicesPtr + chunkStart,
+                    chunkSize:c_size_t * c_sizeof(int(64)));
+    }
+    offset += chunkSize;
+  }
+
+  return new CSR(complex(128), int(64), matrixElementsPtr, rowOffsetsPtr, colIndicesPtr,
+                 representatives.size, representatives.size, numberNonZero.read());
 }
 
 proc perLocaleMatrixVector(matrix : Operator,
@@ -464,6 +594,85 @@ proc perLocaleMatrixVector(matrix : Operator,
   if matrix.payload.deref().max_number_off_diag > 0 then
     perLocaleOffDiagonal(matrix, x, y, representatives);
   // logDebug("== FINISH perLocaleMatrixVector");
+}
+
+proc ls_chpl_matrix_vector_product(matrixPtr : c_ptrConst(ls_hs_operator),
+                                   numVectors : c_int,
+                                   xPtr : c_ptrConst(?eltType),
+                                   yPtr : c_ptr(eltType)) {
+  if matrixPtr == nil || xPtr == nil || yPtr == nil then
+    halt("matrixPtr, xPtr, and yPtr must not be nil");
+
+  var matrix = new Operator(matrixPtr, owning=false);
+  const ref basis = matrix.basis;
+  const numberStates = basis.payload.deref().local_representatives.num_elts;
+  const basisStatesPtr = basis.payload.deref().local_representatives.elts:c_ptrConst(uint(64));
+  const normsPtr = basis.payload.deref().local_norms.elts:c_ptrConst(uint(16));
+  if basisStatesPtr == nil || normsPtr == nil then
+    halt("basis states have not been built");
+
+  // NOTE: the cast from c_ptrConst to c_ptr is fine since we save the array in
+  // a const variable afterwards thus regaining const correctness
+  const representatives = makeArrayFromPtr(basisStatesPtr:c_ptr(uint(64)), {0 ..# numberStates});
+  for k in 0 ..# (numVectors:int) {
+    // NOTE: same thing applies to the cast here
+    const x = makeArrayFromPtr(xPtr:c_ptr(eltType) + k * numberStates, {0 ..# numberStates});
+    var y = makeArrayFromPtr(yPtr + k * numberStates, {0 ..# numberStates});
+    perLocaleMatrixVector(matrix, x, y, representatives);
+  }
+}
+
+export proc ls_chpl_matrix_vector_product_f64(matrixPtr : c_ptrConst(ls_hs_operator),
+                                              numVectors : c_int,
+                                              xPtr : c_ptrConst(real(64)),
+                                              yPtr : c_ptr(real(64))) {
+  ls_chpl_matrix_vector_product(matrixPtr, numVectors, xPtr, yPtr);
+}
+
+export proc ls_chpl_matrix_vector_product_c128(matrixPtr : c_ptrConst(ls_hs_operator),
+                                               numVectors : c_int,
+                                               xPtr : c_ptrConst(complex(128)),
+                                               yPtr : c_ptr(complex(128))) {
+  ls_chpl_matrix_vector_product(matrixPtr, numVectors, xPtr, yPtr);
+}
+
+export proc ls_chpl_off_diag_to_csr_c128(matrixPtr : c_ptrConst(ls_hs_operator),
+                                         matrixElements : c_ptr(chpl_external_array),
+                                         rowOffsets : c_ptr(chpl_external_array),
+                                         colIndices : c_ptr(chpl_external_array)) {
+
+  const matrix = new Operator(matrixPtr, owning=false);
+  const ref basis = matrix.basis;
+  const numberStates = basis.payload.deref().local_representatives.num_elts;
+  const basisStatesPtr = basis.payload.deref().local_representatives.elts:c_ptrConst(uint(64));
+  const normsPtr = basis.payload.deref().local_norms.elts:c_ptrConst(uint(16));
+  if basisStatesPtr == nil || normsPtr == nil then
+    halt("basis states have not been built");
+
+  const basisStates = makeArrayFromPtr(basisStatesPtr:c_ptr(uint(64)), {0 ..# numberStates});
+  const norms = makeArrayFromPtr(normsPtr:c_ptr(uint(16)), {0 ..# numberStates});
+  var csr = convertOffDiagToCsr(matrix, complex(128), basisStates, norms);
+
+  matrixElements.deref() = chpl_make_external_array_ptr_free(csr.matrixElements:c_ptr(void), csr.numberNonZero);
+  rowOffsets.deref() = chpl_make_external_array_ptr_free(csr.rowOffsets:c_ptr(void), csr.numberRows + 1);
+  colIndices.deref() = chpl_make_external_array_ptr_free(csr.colIndices:c_ptr(void), csr.numberNonZero);
+}
+
+export proc ls_chpl_extract_diag_c128(matrixPtr : c_ptrConst(ls_hs_operator),
+                                      diag : c_ptr(chpl_external_array)) {
+  const matrix = new Operator(matrixPtr, owning=false);
+  const ref basis = matrix.basis;
+  const numberStates = basis.payload.deref().local_representatives.num_elts;
+  const basisStatesPtr = basis.payload.deref().local_representatives.elts:c_ptrConst(uint(64));
+  const normsPtr = basis.payload.deref().local_norms.elts:c_ptrConst(uint(16));
+  if basisStatesPtr == nil || normsPtr == nil then
+    halt("basis states have not been built");
+
+  const basisStates = makeArrayFromPtr(basisStatesPtr:c_ptr(uint(64)), {0 ..# numberStates});
+  const norms = makeArrayFromPtr(normsPtr:c_ptr(uint(16)), {0 ..# numberStates});
+
+  var arr = extractDiag(matrix, complex(128), basisStates, norms);
+  diag.deref() = convertToExternalArray(arr);
 }
 
 }

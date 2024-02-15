@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -21,11 +22,12 @@ module LatticeSymmetries.Expr
   , exprPermutationGroup
   , fromSExpr
   , estimateNumberSites
+  , isInvariantUponSpinInversion
+  , conservesNumberParticles
   )
 where
 
 import Data.Foldable (Foldable (maximum))
-import Data.List qualified as List
 import Data.Set qualified as Set
 import Data.Vector.Generic qualified as G
 import LatticeSymmetries.Algebra
@@ -37,6 +39,8 @@ import LatticeSymmetries.Permutation (Permutation (..))
 import Prettyprinter (Pretty (..))
 import Prettyprinter qualified as Pretty
 import Prelude hiding (Product, Sum, identity, toList)
+import LatticeSymmetries.Utils (unique, sortVectorBy)
+import Data.Vector (Vector)
 
 newtype Expr t = Expr
   { unExpr :: Polynomial ComplexRational (Generator (IndexType t) (GeneratorType t))
@@ -70,12 +74,12 @@ mapIndices f = mapGenerators (\(Generator i g) -> Generator (f i) g)
 mapIndicesM :: Monad m => (IndexType t -> m (IndexType t)) -> Expr t -> m (Expr t)
 mapIndicesM f = mapGeneratorsM (\(Generator i g) -> Generator <$> f i <*> pure g)
 
-collectIndices :: Ord (IndexType t) => Expr t -> [IndexType t]
-collectIndices = List.nub . List.sort . collectSum . unExpr
+collectIndices :: Ord (IndexType t) => Expr t -> Vector (IndexType t)
+collectIndices = unique . sortVectorBy compare . collectSum . unExpr
   where
-    collectSum (Sum v) = concatMap collectScaled (G.toList v)
+    collectSum (Sum v) = G.concatMap collectScaled v
     collectScaled (Scaled _ p) = collectProduct p
-    collectProduct (Product v) = (\(Generator i _) -> i) <$> G.toList v
+    collectProduct (Product v) = (\(Generator i _) -> i) <$> v
 
 foldlCoeffs' :: (a -> ComplexRational -> a) -> a -> Expr t -> a
 foldlCoeffs' combine x₀ (Expr (Sum s)) =
@@ -250,3 +254,29 @@ exprPermutationGroup numberSites expr = hypergraphAutomorphisms (isInvariantG to
         SpinlessFermionTag -> k - 1
         SpinfulFermionTag -> 2 * k - 1
     hypergraph = (mapHypergraph to (exprToHypergraph expr)) {vertices = vertices}
+
+isInvariantUponSpinInversion :: forall t. IsBasis t => Expr t -> Bool
+isInvariantUponSpinInversion expr = case particleDispatch @t of
+  SpinTag ->
+    let prim = \case
+          SpinIdentity -> (1 :: Int, SpinIdentity)
+          SpinZ -> (-1, SpinZ)
+          SpinPlus -> (1, SpinMinus)
+          SpinMinus -> (1, SpinPlus)
+        gen (Generator i g) = let (c, g') = prim g in (c, Generator i g')
+        prod (Scaled z (Product gs)) =
+          let (cs', gs') = G.unzip (gen <$> gs) in Scaled (fromIntegral (G.product cs') * z) (Product gs')
+        expr' = simplifyExpr . Expr @t . fmap prod . unExpr $ expr
+     in expr' == expr
+  SpinlessFermionTag -> True
+  SpinfulFermionTag -> undefined
+
+conservesNumberParticles :: forall t. IsBasis t => Expr t -> Bool
+conservesNumberParticles expr = case particleDispatch @t of
+  SpinTag ->
+    let n = estimateNumberSites expr
+        m = Expr . Sum $ G.generate n (\i -> Scaled 1 (Product (G.singleton (Generator i SpinZ))))
+     in expr * m == m * expr
+  SpinlessFermionTag -> undefined
+  SpinfulFermionTag -> undefined
+

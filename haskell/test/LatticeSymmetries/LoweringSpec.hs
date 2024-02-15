@@ -3,14 +3,10 @@ module LatticeSymmetries.LoweringSpec (spec) where
 import Control.Exception (bracket)
 import Data.Bits
 import Data.Maybe (fromJust)
-import Data.Vector qualified as B
-import Data.Vector.Generic qualified as G
 import Data.Vector.Storable qualified as S
 import Data.Vector.Storable.Mutable qualified as SM
 import LatticeSymmetries.Basis
 import LatticeSymmetries.BitString
-import LatticeSymmetries.Dense (DenseMatrix (DenseMatrix))
-import LatticeSymmetries.Generator
 import LatticeSymmetries.Group
 import LatticeSymmetries.Lowering
 import LatticeSymmetries.Permutation
@@ -65,12 +61,12 @@ instance Arbitrary FixedHammingBitStrings where
 referenceIsRepresentative :: Int -> Representation Permutation -> S.Vector Word64 -> S.Vector Double
 referenceIsRepresentative n group = S.map (maybe 0 realToFrac . isRepresentativeSlow group Nothing . BasisState n . BitString . fromIntegral)
 
-referenceStateInfo :: Int -> Representation Permutation -> S.Vector Word64 -> (S.Vector Word64, S.Vector Int32)
-referenceStateInfo n group states = let (rs, is) = unzip $ fmap f (S.toList states) in (S.fromList rs, S.fromList is)
-  where
-    f x =
-      let (BasisState _ (BitString rep), index) = stateInfoSlow group Nothing (BasisState n . BitString $ fromIntegral x)
-       in (fromIntegral rep, fromIntegral index)
+-- referenceStateInfo :: Int -> Representation Permutation -> S.Vector Word64 -> (S.Vector Word64, S.Vector Int32)
+-- referenceStateInfo n group states = let (rs, is) = unzip $ fmap f (S.toList states) in (S.fromList rs, S.fromList is)
+--   where
+--     f x =
+--       let (BasisState _ (BitString rep), index) = stateInfoSlow group Nothing (BasisState n . BitString $ fromIntegral x)
+--        in (fromIntegral rep, fromIntegral index)
 
 spec :: Spec
 spec = do
@@ -146,7 +142,7 @@ spec = do
               invokeFixedHammingStateToIndexKernel kernelPtr states `shouldReturn` indices
   describe "ls_hs_fixed_hamming_state_to_index" $ do
     prop "computes indices correctly" $
-      \(FixedHammingBitStrings numberSites hammingWeight indices states) -> do
+      \(FixedHammingBitStrings _numberSites _hammingWeight indices states) -> do
         out <- SM.new (S.length states)
         S.unsafeWith states $ \statesPtr ->
           SM.unsafeWith out $ \indicesPtr -> do

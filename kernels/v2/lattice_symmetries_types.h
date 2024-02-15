@@ -215,16 +215,18 @@ void ls_chpl_finalize(void);
 // } ls_chpl_kernels;
 
 // Implemented directly in C to avoid the overhead of going through Haskell's runtime.
-ls_hs_basis_info const *ls_hs_get_basis_info(ls_hs_basis const *);
+// ls_hs_basis_info const *ls_hs_get_basis_info(ls_hs_basis const *);
 
 // ls_chpl_kernels const *ls_hs_internal_get_chpl_kernels(void);
 // WARNING: ls_hs_internal_set_chpl_kernels is not thread-safe
 // void ls_hs_internal_set_chpl_kernels(ls_chpl_kernels const *kernels);
+/* python-cffi: START */
 void ls_hs_internal_destroy_external_array(chpl_external_array *arr);
 
 void ls_hs_internal_object_init(ls_hs_object *, int refcount, void *haskell_payload);
 int ls_hs_internal_object_inc_ref_count(ls_hs_object *);
 int ls_hs_internal_object_dec_ref_count(ls_hs_object *);
+/* python-cffi: STOP */
 
 ls_hs_is_representative_kernel_type_v2
 ls_hs_internal_mk_is_representative_kernel(halide_buffer_t const *masks,

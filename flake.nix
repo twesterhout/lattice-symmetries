@@ -122,6 +122,7 @@
               lattice-symmetries.haskell
               hdf5
               hdf5.dev
+              halide
             ];
             nativeBuildInputs = [
               # (chapel.override {
@@ -139,7 +140,7 @@
               #   settings = { CHPL_COMM = "gasnet"; CHPL_COMM_SUBSTRATE = "smp"; CHPL_UNWIND = "none"; };
               # })
               (chapel.override {
-                settings = { "CHPL_TARGET_CPU" = "haswell"; };
+                settings = { "CHPL_LIB_PIC" = "pic"; "CHPL_TARGET_CPU" = "haswell"; };
               })
               # (pr_XXX.override { compiler = "gnu"; })
               gcc

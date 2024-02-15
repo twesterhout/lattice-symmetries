@@ -5,7 +5,6 @@ module LatticeSymmetries.ExprSpec (spec) where
 import Control.Exception (bracket)
 import Data.Aeson qualified as Aeson
 import Data.ByteString (packCString, useAsCString)
-import Data.Text.IO qualified as Text.IO
 import Foreign (fromBool)
 import Foreign.C (CString)
 import LatticeSymmetries.Algebra
@@ -79,3 +78,23 @@ spec = do
     prop "identities match" $ do
       nonbranchingRepresentation (Generator (1 :: Int) SpinIdentity)
         `shouldBe` nonbranchingRepresentation (Generator (2 :: Int) FermionIdentity)
+  describe "isInvariantUponSpinInversion" $ do
+    it "works for SpinTy" $ do
+      isInvariantUponSpinInversion <$> mkExpr SpinTag "2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁"
+        `shouldBe` Right True
+      isInvariantUponSpinInversion <$> mkExpr SpinTag "σ⁺₀ σ⁻₁"
+        `shouldBe` Right False
+      isInvariantUponSpinInversion <$> mkExpr SpinTag "σᶻ₁"
+        `shouldBe` Right False
+      isInvariantUponSpinInversion <$> mkExpr SpinTag "S^x_10"
+        `shouldBe` Right True
+  describe "conservesNumberParticles" $ do
+    it "works for SpinTy" $ do
+      conservesNumberParticles <$> mkExpr SpinTag "2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁"
+        `shouldBe` Right True
+      conservesNumberParticles <$> mkExpr SpinTag "σᶻ₀ σᶻ₁"
+        `shouldBe` Right True
+      conservesNumberParticles <$> mkExpr SpinTag "2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀)"
+        `shouldBe` Right True
+      conservesNumberParticles <$> mkExpr SpinTag "σ⁺₀ σ⁺₁ + σ⁻₁ σ⁻₀"
+        `shouldBe` Right False

@@ -32,7 +32,11 @@ import typing
 from typing import Any, List, Dict, Optional, Tuple, Union, overload, Callable
 
 import numpy as np
+from numpy.typing import NDArray
 from loguru import logger
+from scipy.sparse import csr_matrix
+from scipy.sparse.linalg import LinearOperator
+from scipy.special import binom
 
 from lattice_symmetries._ls_hs import ffi, lib
 
@@ -48,19 +52,17 @@ class _RuntimeInitializer:
     def __init__(self):
         logger.trace("Initializing Haskell runtime...")
         lib.ls_hs_init()
-        # logger.trace("Initializing Chapel runtime...")
-        # lib.ls_chpl_init()
-        logger.trace("Setting Python exception handler...")
-        lib.set_python_exception_handler()
+        logger.trace("Initializing Chapel runtime...")
+        lib.ls_chpl_init()
 
     def __del__(self):
         # NOTE: The order of these should actually be reversed, but ls_chpl_finalize calls exit(0) :/
         logger.trace("Deinitializing Haskell runtime...")
         lib.ls_hs_exit()
-        # logger.trace("Deinitializing Chapel runtime...")
+        logger.trace("Deinitializing Chapel runtime...")
         # sys.stdout.flush()
         # sys.stderr.flush()
-        # lib.ls_chpl_finalize()
+        lib.ls_chpl_finalize()
 
 
 _runtime_init = _RuntimeInitializer()
@@ -122,14 +124,14 @@ _runtime_init = _RuntimeInitializer()
 
 
 class LatticeSymmetriesEncoder(json.JSONEncoder):
-    def default(self, obj):
-        name = type(obj).__name__
+    def default(self, o):
+        name = type(o).__name__
         try:
             encoder = getattr(self, f"encode_{name}")
         except AttributeError:
-            super().default(obj)
+            super().default(o)
         else:
-            encoded = encoder(obj)
+            encoded = encoder(o)
             if isinstance(encoded, dict):
                 encoded["__type__"] = name
             return encoded
@@ -524,6 +526,36 @@ def _assert_subtype(variable, required_type):
 #     new_i_ptr[0] = new_i
 
 
+class ExternalArrayWrapper:
+    payload: ffi.CData
+    keep_alive: Optional[Any]
+    finalizer: Optional[weakref.finalize]
+
+    def __init__(
+        self,
+        arr: ffi.CData,
+        typestr: str,
+        keep_alive: Optional[Any] = None,
+        finalizer=lib.ls_hs_internal_destroy_external_array,
+    ):
+        self.payload = arr
+        self.keep_alive = keep_alive
+
+        if finalizer is not None:
+            self.finalizer = weakref.finalize(self, finalizer, self.payload)
+        else:
+            self.finalizer = None
+
+        n = arr.num_elts
+        p = int(ffi.cast("uintptr_t", arr.elts))
+        self.__array_interface__ = {
+            "version": 3,
+            "typestr": typestr,
+            "data": (p, True),
+            "shape": (n,),
+        }
+
+
 class HsWrapper(object):
     _payload: ffi.CData
     _finalizer: Optional[weakref.finalize]
@@ -575,6 +607,205 @@ class Permutation(HsWrapper):
         return self._info["permutation"]
 
 
+class Basis(HsWrapper):
+    def __init__(
+        self,
+        json_string: str = "",
+        payload: ffi.CData | int = 0,
+        finalizer: Callable[[ffi.CData], None] = lib.ls_hs_destroy_basis,
+    ):
+        if len(json_string) > 0:
+            payload = _from_json(lib.ls_hs_basis_from_json(json_string.encode("utf-8")))
+        elif payload == 0:
+            raise ValueError(
+                "incompatible arguments: either 'payload' and 'finalizer' "
+                "or 'json_string' may be specified"
+            )
+
+        if isinstance(payload, int):
+            payload = ffi.cast("ls_hs_basis *", payload)
+
+        super().__init__(payload=payload, finalizer=finalizer)
+        # NOTE: Important!! Pre-initialize the basis info
+        lib.ls_hs_init_basis_info(self._payload)
+
+    def _get_info(self):
+        return self._payload.info
+
+    @property
+    def hamming_weight(self) -> Optional[int]:
+        h = self._get_info().hamming_weight
+        return int(h) if h != -1 else None
+
+    @property
+    def spin_inversion(self) -> Optional[int]:
+        i = self._get_info().spin_inversion
+        return int(i) if i != 0 else None
+
+    @property
+    def min_state_estimate(self) -> int:
+        return int(self._get_info().min_state_estimate)
+
+    @property
+    def max_state_estimate(self) -> int:
+        return int(self._get_info().max_state_estimate)
+
+    @property
+    def number_bits(self) -> int:
+        return int(self._get_info().number_bits)
+
+    @property
+    def number_words(self) -> int:
+        return int(self._get_info().number_words)
+
+    @property
+    def has_permutation_symmetries(self) -> bool:
+        return bool(self._get_info().has_permutation_symmetries)
+
+    @property
+    def requires_projection(self) -> bool:
+        return bool(self._get_info().requires_projection)
+
+    @property
+    def is_state_index_identity(self) -> bool:
+        return bool(self._get_info().is_state_index_identity)
+
+    @property
+    def is_real(self) -> bool:
+        return bool(self._get_info().is_real)
+
+    @property
+    def is_built(self) -> bool:
+        return self._payload.local_representatives.elts != ffi.NULL
+
+    def check_is_built(self):
+        if not self.is_built:
+            raise ValueError(
+                "basis states have not been built yet; "
+                "if you wish to do so, use the basis.build() function"
+            )
+
+    def build(self) -> None:
+        """Generate a list of representatives.
+
+        These can later be accessed using the `number_states` and `states` attributes.
+        """
+        if not self.is_built:
+            lib.ls_chpl_local_enumerate_states(
+                self._payload, self.min_state_estimate, self.max_state_estimate
+            )
+        assert self.is_built
+
+    @property
+    def number_states(self) -> int:
+        self.check_is_built()
+        return self._payload.local_representatives.num_elts
+
+    @property
+    def states(self) -> NDArray[np.uint64]:
+        self.check_is_built()
+        arr = ExternalArrayWrapper(
+            arr=self._payload.local_representatives,
+            typestr="u8",
+            keep_alive=self,
+            finalizer=None,
+        )
+        return np.array(arr, copy=False)
+
+    def index(self, x: int | NDArray[np.uint64]) -> int | NDArray[np.int64]:
+        """Return the index of a basis state."""
+        if self.number_bits > 64:
+            raise ValueError(
+                "it is impractical to compute indices of states with more than 64 bits"
+            )
+
+        is_scalar = False
+        x = np.asarray(x, dtype=np.uint64, order="C")
+        if x.ndim == 0:
+            is_scalar = True
+            x = np.expand_dims(x, axis=0)
+
+        if self.is_state_index_identity:
+            indices = x.astype(np.int64)
+        elif not self.has_permutation_symmetries:
+            if self._get_info().state_to_index_kernel == ffi.NULL:
+                lib.ls_hs_init_state_to_index_kernel(self._payload)
+
+            count = x.shape[0]
+            indices = np.zeros(count, dtype=np.int64)
+
+            pass
+        else:
+            raise NotImplementedError()
+
+        # count = x.shape[0]
+        # indices = np.zeros(count, dtype=np.int64)
+
+        # x_ptr = ffi.from_buffer("uint64_t const*", x, require_writable=False)
+        # indices_ptr = ffi.from_buffer("ptrdiff_t *", indices, require_writable=True)
+        # lib.ls_hs_state_index(self._payload, count, x_ptr, 1, indices_ptr, 1)
+
+        if is_scalar:
+            return int(indices[0])
+        else:
+            return indices
+
+
+#
+#     def build(self) -> None:
+#         """Generate a list of representatives.
+#
+#         These can later be accessed using the `number_states` and `states` attributes.
+#         """
+#         if not self.is_built:
+#             lib.ls_hs_basis_build(self._payload)
+#         assert self.is_built
+#
+#     @property
+#     def number_states(self) -> int:
+#         self.check_is_built()
+#         return int(self._payload.representatives.num_elts)
+#
+#     @property
+#     def states(self) -> NDArray[np.uint64]:
+#         n = self.number_states
+#         p = int(ffi.cast("uintptr_t", self._payload.representatives.elts))
+#         # int(ffi.cast("uintptr_t", lib.ls_hs_basis_states(self._payload)))
+#
+#         class StatesWrapper(object):
+#             def __init__(self, wrapped):
+#                 self.wrapped = wrapped
+#                 self.__array_interface__ = {
+#                     "version": 3,
+#                     "typestr": "u8",
+#                     "data": (p, True),
+#                     "shape": (n,),
+#                 }
+#
+#         return np.array(StatesWrapper(self), copy=False)
+#
+
+
+class SpinBasis(Basis):
+    def __init__(
+        self,
+        number_spins: int,
+        hamming_weight: Optional[int] = None,
+        spin_inversion: Optional[int] = None,
+    ):
+        """Create a Hilbert space basis for `number_spins` spin-1/2 particles."""
+        super().__init__(
+            json_string=json.dumps(
+                {
+                    "particle": "spin-1/2",
+                    "number_spins": number_spins,
+                    "hamming_weight": hamming_weight,
+                    "spin_inversion": spin_inversion,
+                }
+            )
+        )
+
+
 class Expr(HsWrapper):
     def __init__(
         self,
@@ -594,16 +825,15 @@ class Expr(HsWrapper):
             if particle is not None:
                 json_object["particle"] = particle
             payload = _from_json(lib.ls_hs_expr_from_json(json.dumps(json_object).encode("utf-8")))
-            self.__init__(payload=payload)
         else:
             if not (len(expression) == 0 and sites is None and particle is None):
                 raise ValueError(
                     "incompatible arguments: either 'payload' and 'finalizer' "
                     "or 'expression', 'sites', and 'particle' may be specified"
                 )
-            if isinstance(payload, int):
-                payload = ffi.cast("ls_hs_expr *", payload)
-            super().__init__(payload=payload, finalizer=finalizer)
+        if isinstance(payload, int):
+            payload = ffi.cast("ls_hs_expr *", payload)
+        super().__init__(payload=payload, finalizer=finalizer)
 
     def permutation_group(self) -> List[List[int]]:
         return _from_json(lib.ls_hs_expr_permutation_group(self._payload))
@@ -639,6 +869,11 @@ class Expr(HsWrapper):
             )
         )
 
+    def on(self, graph) -> "Expr":
+        if ig is not None and isinstance(graph, ig.Graph):
+            return Expr(expression=str(self), sites=graph)
+        return Expr(expression=str(self), sites=[list(edge) for edge in graph])
+
     def adjoint(self) -> "Expr":
         return Expr(payload=lib.ls_hs_expr_adjoint(self._payload))
 
@@ -646,8 +881,9 @@ class Expr(HsWrapper):
         coeff = complex(coeff)
         return Expr(payload=lib.ls_hs_expr_scale(coeff.real, coeff.imag, self._payload))
 
-    def __eq__(self, other: "Expr") -> bool:
+    def __eq__(self, other: object) -> bool:
         _assert_subtype(other, Expr)
+        other = typing.cast(Expr, other)
         return lib.ls_hs_expr_equal(self._payload, other._payload) != 0
 
     def __add__(self, other: "Expr") -> "Expr":
@@ -671,117 +907,259 @@ class Expr(HsWrapper):
         else:
             return NotImplemented
 
+    @property
+    def particle_type(self) -> str:
+        return _from_haskell_string(lib.ls_hs_expr_particle_type(self._payload))
 
-# @ffi.def_extern()
-# def python_process_symmetries(s_ptr):
-#     assert process_symmetries_impl is not None
-#     process_symmetries_impl(s_ptr)
+    @property
+    def conserves_number_particles(self) -> bool:
+        return bool(lib.ls_hs_expr_conserves_number_particles(self._payload))
+
+    @property
+    def spin_inversion_invariant(self) -> bool:
+        return bool(lib.ls_hs_expr_spin_inversion_invariant(self._payload))
+
+    @property
+    def number_sites(self) -> int:
+        return int(lib.ls_hs_expr_number_sites(self._payload))
+
+    def get_possible_spin_inversion(self, desired: bool | int) -> List[Optional[int]]:
+        if self.spin_inversion_invariant:
+            if isinstance(desired, bool):
+                return [-1, 1] if bool(desired) else [None]
+            else:
+                return [desired]
+        else:
+            if isinstance(desired, bool):
+                return [None]
+            else:
+                raise ValueError(
+                    f"specified spin_inversion={desired}, but the expression "
+                    "is not spin inversion-invariant"
+                )
+
+    def get_possible_hamming_weights(self, desired: bool | int) -> List[Optional[int]]:
+        if self.conserves_number_particles:
+            if isinstance(desired, bool):
+                return list(range(0, self.number_sites + 1)) if desired else [None]
+            else:
+                return [int(desired)]
+        else:
+            if isinstance(desired, bool):
+                return [None]
+            else:
+                raise ValueError(
+                    f"specified particle_conservation={desired}, but the expression "
+                    "does not conserve the number of particles"
+                )
+
+    def symmetric_basis(
+        self,
+        particle_conservation: bool | int = True,
+        spin_inversion: bool | int = True,
+        symmetries: bool = False,
+    ):
+        if symmetries:
+            return NotImplemented
+
+        tp = self.particle_type
+        if tp == "spin-1/2":
+            n = self.number_sites
+            configs = []
+            for h in self.get_possible_hamming_weights(desired=particle_conservation):
+                if h is None or 2 * h == n:
+                    for i in self.get_possible_spin_inversion(desired=spin_inversion):
+                        configs.append((h, i))
+                else:
+                    configs.append((h, None))
+
+            def estimate(args):
+                h, i = args
+                if h is not None:
+                    d = binom(n, h)
+                    h = -h
+                else:
+                    d = 1 << n
+                if i is not None:
+                    d /= 2
+                return (d, h, i)
+
+            configs = sorted(configs, key=estimate, reverse=True)
+            for h, i in configs:
+                yield SpinBasis(number_spins=n, hamming_weight=h, spin_inversion=i)
+
+        else:
+            return NotImplemented
 
 
-# class Operator(LinearOperator):
-#     _payload: ffi.CData
-#     _finalizer: weakref.finalize
-#
-#     # def _make_from_payload(self, basis: Basis, expression: Expr, payload: ffi.CData):
-#     #     """
-#     #     !!! warning
-#     #         This is an internal function. Do not use it directly unless you know what you're doing.
-#
-#     #     Create a quantum operator from its C representation.
-#     #     """
-#     #     self._payload = payload
-#     #     self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_operator_v2, self._payload)
-#     #     self.basis = basis
-#     #     self.expression = expression
-#
-#     # def _make_from_expression(self, basis: Basis, expression: str, sites: ArrayLike):
-#     #     """Create a quantum operator from a mathematical expression.
-#
-#     #     `basis` specifies the Hilbert space on which the operator will be defined. `expression` is a
-#     #     mathematical expression specifying the interaction, e.g. `"σ⁺₀ σ⁻₁"` or `"n↑₀ n↓₁"`.
-#     #     """
-#     #     _assert_subtype(expression, str)
-#     #     c_sites = _normalize_site_indices(sites)
-#     #     c_expression = expression.encode("utf-8")
-#     #     self._payload = lib.ls_hs_create_operator(
-#     #         basis._payload,
-#     #         c_expression,
-#     #         c_sites.shape[0],
-#     #         c_sites.shape[1],
-#     #         ffi.from_buffer("int[]", c_sites),
-#     #     )
-#     #     self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_operator_v2, self._payload)
-#     #     self.basis = basis
-#
-#     @singledispatchmethod
-#     def __init__(self, basis: Basis, expression: Expr):
-#         _assert_subtype(basis, Basis)
-#         _assert_subtype(expression, Expr)
-#         self._payload = lib.ls_hs_create_operator(basis._payload, expression._payload)
-#         self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_operator, self._payload)
-#
-#     @__init__.register
-#     def _(self, payload: ffi.CData, owner: bool = True):
-#         self._payload = payload
-#         if owner:
-#             self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_operator, self._payload)
-#         else:
-#             self._finalizer = None
-#
-#     @property
-#     def basis(self):
-#         return Basis(payload=lib.ls_hs_operator_get_basis(self._payload))
-#
-#     @property
-#     def expression(self):
-#         return Expr(lib.ls_hs_operator_get_expr(self._payload))
-#
-#     # def adjoint(self):
-#     #     return Operator(self.basis, lib.ls_hs_operator_hermitian_conjugate(self._payload))
-#
-#     # @property
-#     # def is_identity(self) -> bool:
-#     #     return lib.ls_hs_operator_is_identity(self._payload)
-#
-#     # @property
-#     # def is_hermitian(self) -> bool:
-#     #     return lib.ls_hs_operator_is_hermitian(self._payload)
-#     @property
-#     def is_real(self) -> bool:
-#         return self.basis.is_real and self.expression.is_real
-#
-#     def __add__(self, other):
-#         """Add two operators."""
-#         _assert_subtype(other, Operator)
-#         return Operator(self.basis, self.expression + other.expression)
-#
-#     def __sub__(self, other):
-#         """Subtract `other` Operator from `self`."""
-#         _assert_subtype(other, Operator)
-#         return Operator(self.basis, self.expression - other.expression)
-#
-#     def scale(self, coeff: complex) -> "Operator":
-#         return Operator(self.basis, self.expression.scale(coeff))
-#
-#     def __mul__(self, other):
-#         """Multiply `self` by `other` Operator."""
-#         if isinstance(other, Operator):
-#             return Operator(self.basis, self.expression * other.expression)
-#         else:
-#             return NotImplemented
-#
-#     def __rmul__(self, other: complex):
-#         """Scale `self` by a scalar `other`."""
-#         if np.isscalar(other):
-#             return self.scale(other)
-#         else:
-#             return NotImplemented
-#
-#     def __matmul__(self, other: NDArray[Any]) -> NDArray[Any]:
-#         return self.apply_to_state_vector(other)
-#
-#     def __repr__(self):
-#         return "<Operator defined on {}>".format(self.basis.__class__.__name__)
+class Operator(HsWrapper, LinearOperator):
+    _basis: Basis
+    _expression: Expr
+
+    def __init__(
+        self,
+        expression: Optional[Expr] = None,
+        basis: Optional[Basis] = None,
+        payload: ffi.CData | int = 0,
+        finalizer: Callable[[ffi.CData], None] = lib.ls_hs_destroy_operator,
+    ):
+        if expression is not None:
+            _assert_subtype(expression, Expr)
+            if basis is None:
+                basis = next(expression.symmetric_basis())
+            _assert_subtype(basis, Basis)
+
+            payload = _from_json(lib.ls_hs_create_operator(basis._payload, expression._payload))
+        else:
+            if basis is not None or payload == 0:
+                raise ValueError(
+                    "incompatible arguments: either 'payload' and 'finalizer' "
+                    "or 'expression' and 'basis' may be specified"
+                )
+
+        if isinstance(payload, int):
+            payload = ffi.cast("ls_hs_operator *", payload)
+
+        # Manually increase refcounts, because self.basis and self.expression
+        # Python objects will automatically with decrease them on destruction
+        lib.ls_hs_internal_object_inc_ref_count(ffi.addressof(payload.basis, "base"))  # type: ignore
+        lib.ls_hs_internal_object_inc_ref_count(ffi.addressof(payload.expr, "base"))  # type: ignore
+        self._basis = Basis(payload=payload.basis)  # type: ignore
+        self._expression = Expr(payload=payload.expr)  # type: ignore
+
+        super().__init__(payload=payload, finalizer=finalizer)
+
+    @staticmethod
+    def from_json(json_string: str) -> "Operator":
+        return Operator(
+            payload=_from_json(lib.ls_hs_operator_from_json(json_string.encode("utf-8")))
+        )
+
+    @property
+    def shape(self) -> Tuple[int, int]:
+        n = self.basis.number_states
+        return (n, n)
+
+    @property
+    def basis(self):
+        return self._basis
+
+    @property
+    def expression(self):
+        return self._expression
+
+    def apply_to_state_vector(self, vector: NDArray, out: Optional[NDArray] = None) -> NDArray:
+        self.basis.check_is_built()
+
+        if vector.ndim > 2 or vector.shape[0] != self.basis.number_states:
+            raise ValueError(
+                "'vector' has invalid shape: {}; expected {}"
+                "".format(vector.shape, (self.basis.number_states,))
+            )
+
+        operator_is_real = self.basis.is_real and self.expression.is_real
+        vector_is_real = np.isrealobj(vector)
+
+        if vector_is_real and operator_is_real:
+            vector = np.asfortranarray(vector, dtype=np.float64)
+            c_type_str = "double[]"
+            fn = lib.ls_chpl_matrix_vector_product_f64
+        else:
+            vector = np.asfortranarray(vector, dtype=np.complex128)
+            c_type_str = "ls_hs_scalar[]"
+            fn = lib.ls_chpl_matrix_vector_product_c128
+
+        if out is None:
+            out = np.zeros_like(vector)
+        else:
+            if out.shape != vector.shape:
+                raise ValueError(
+                    "'out' has invalid shape: {}; expected {}" "".format(out.shape, vector.shape)
+                )
+            if not out.flags.f_contiguous:
+                raise ValueError("'out' must be Fortran contiguous")
+
+        x_ptr = ffi.from_buffer(c_type_str, vector, require_writable=False)
+        y_ptr = ffi.from_buffer(c_type_str, out, require_writable=True)
+        num_vectors = out.shape[1] if out.ndim > 1 else 1
+        fn(self._payload, num_vectors, x_ptr, y_ptr)
+        return out
+
+    def _matvec(self, x):
+        return self.apply_to_state_vector(x)
+
+    #
+    #     # def adjoint(self):
+    #     #     return Operator(self.basis, lib.ls_hs_operator_hermitian_conjugate(self._payload))
+    #
+    #     # @property
+    #     # def is_identity(self) -> bool:
+    #     #     return lib.ls_hs_operator_is_identity(self._payload)
+    #
+    #     # @property
+    #     # def is_hermitian(self) -> bool:
+    #     #     return lib.ls_hs_operator_is_hermitian(self._payload)
+    #     @property
+    #     def is_real(self) -> bool:
+    #         return self.basis.is_real and self.expression.is_real
+    #
+    def __add__(self, other):
+        """Add two operators."""
+        if isinstance(other, Operator):
+            return Operator(self.expression + other.expression, self.basis)
+        else:
+            return NotImplemented
+
+    def __sub__(self, other):
+        """Subtract `other` Operator from `self`."""
+        if isinstance(other, Operator):
+            return Operator(self.expression - other.expression, self.basis)
+        else:
+            return NotImplemented
+
+    def scale(self, coeff: complex) -> "Operator":
+        return Operator(self.expression.scale(coeff), self.basis)
+
+    def __mul__(self, other):
+        """Multiply `self` by `other` Operator."""
+        if isinstance(other, Operator):
+            return Operator(self.expression * other.expression, self.basis)
+        else:
+            return NotImplemented
+
+    def __rmul__(self, other: complex):
+        """Scale `self` by a scalar `other`."""
+        if np.isscalar(other):
+            return self.scale(typing.cast(complex, other))
+        else:
+            return NotImplemented
+
+    def __matmul__(self, other: NDArray[Any]) -> NDArray[Any]:
+        return self.apply_to_state_vector(other)
+
+    def __repr__(self):
+        return "<Operator defined on {}>".format(self.basis.__class__.__name__)
+
+    def diag_to_array(self) -> NDArray[Any]:
+        self.basis.check_is_built()
+        diag = ffi.new("chpl_external_array *")
+        lib.ls_chpl_extract_diag_c128(self._payload, diag)
+        arr = ExternalArrayWrapper(arr=diag, typestr="c16")
+        return np.array(arr, copy=False)
+
+    def off_diag_to_csr(self) -> csr_matrix:
+        self.basis.check_is_built()
+        c_coeffs = ffi.new("chpl_external_array *")
+        c_offsets = ffi.new("chpl_external_array *")
+        c_indices = ffi.new("chpl_external_array *")
+
+        lib.ls_chpl_off_diag_to_csr_c128(self._payload, c_coeffs, c_offsets, c_indices)
+        coeffs = ExternalArrayWrapper(c_coeffs, "c16")
+        offsets = ExternalArrayWrapper(c_offsets, "i8")
+        indices = ExternalArrayWrapper(c_indices, "i8")
+        return csr_matrix((coeffs, indices, offsets), shape=self.shape, dtype=np.complex128)
+
+
 #
 #     # def apply_off_diag_to_basis_states(
 #     #     op: ls.Operator, alphas: npt.NDArray[np.uint64]
@@ -903,34 +1281,6 @@ class Expr(HsWrapper):
 #         return scipy.sparse.csr_matrix(
 #             (coeffs_arr[:size], indices_arr[:size], offsets_arr), shape=(dim, dim)
 #         )
-#
-#     def apply_to_state_vector(self, vector: NDArray) -> NDArray:
-#         self._check_basis_is_built("apply_to_state_vector")
-#         kernels = lib.ls_hs_internal_get_chpl_kernels()
-#
-#         operator_is_real = self.is_real
-#         vector_is_real = np.isrealobj(vector)
-#
-#         if vector_is_real and operator_is_real:
-#             vector = np.ascontiguousarray(vector, dtype=np.float64)
-#             matrix_vector_product = kernels.matrix_vector_product_f64
-#             c_type_str = "double[]"
-#         else:
-#             vector = np.ascontiguousarray(vector, dtype=np.complex128)
-#             matrix_vector_product = kernels.matrix_vector_product_c128
-#             c_type_str = "ls_hs_scalar[]"
-#
-#         if vector.shape != (self.basis.number_states,):
-#             raise ValueError(
-#                 "'vector' has invalid shape: {}; expected {}"
-#                 "".format(vector.shape, (self.basis.number_states,))
-#             )
-#
-#         out = np.empty_like(vector)
-#         x_ptr = ffi.from_buffer(c_type_str, vector, require_writable=False)
-#         y_ptr = ffi.from_buffer(c_type_str, out, require_writable=True)
-#         matrix_vector_product(self._payload, 1, x_ptr, y_ptr)
-#         return out
 #
 #     def _check_basis_is_built(self, attribute):
 #         if not self.basis.is_built:

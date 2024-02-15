@@ -221,6 +221,7 @@ def generate_test_file(
         mask = (1 << basis.L) - 1
         need_flipping = (basis_states ^ mask) < basis_states
         x[need_flipping] *= basis.blocks["zblock"]
+        y[need_flipping] *= basis.blocks["zblock"]
         basis_states = np.minimum(basis_states, basis_states ^ mask)
 
     permutation = np.argsort(basis_states)
@@ -270,21 +271,6 @@ def generate_tests():
                         hamming_weight=hamming_weight,
                         spin_inversion=spin_inversion,
                     )
-
-        # for hamming_weight in range(0, number_sites + 1):
-        #     generate_test_file(
-        #         f"test_{number_sites}_{hamming_weight}_{max_order}_{number_terms}",
-        #         *random_M_conserving_operator(
-        #             number_terms, max_order, number_sites, hamming_weight
-        #         ),
-        #     )
-        # if number_sites <= 10:
-        #     generate_test_file(
-        #         f"test_{number_sites}_None_{max_order}_{number_terms}",
-        #         *random_M_conserving_operator(
-        #             number_terms, max_order, number_sites, None
-        #         ),
-        #     )
 
 
 if __name__ == "__main__":

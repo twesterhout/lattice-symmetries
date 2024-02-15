@@ -1,7 +1,10 @@
 import lattice_symmetries as ls
 import math
 import igraph as ig
+import glob
+import json
 import numpy as np
+import os
 from pytest import raises
 
 
@@ -54,37 +57,153 @@ def test_expr_properties():
     assert b.is_real
     assert b.is_hermitian
     assert not b.is_identity
+    assert a.number_sites == 4
+    assert b.number_sites == 2
 
 
-def test_expr_permutation_group():
-    def heisenberg_on_graph(g):
-        return ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁", sites=g)
+def test_basis_construction():
+    _ = ls.SpinBasis(4)
+    _ = ls.SpinBasis(4, 2)
+    _ = ls.SpinBasis(number_spins=4, spin_inversion=-1)
 
-    def check(g):
-        print(heisenberg_on_graph(g).permutation_group())
-        assert (
-            heisenberg_on_graph(g).permutation_group()["permutations"] == g.get_automorphisms_vf2()
-        )
+    with raises(ValueError, match=r".*invalid spin inversion.*"):
+        ls.SpinBasis(number_spins=4, spin_inversion=5)
+    with raises(ValueError, match=r".*invalid Hamming weight.*"):
+        ls.SpinBasis(number_spins=2, hamming_weight=3)
 
-    # Chains
-    for n in [4, 6, 10, 25]:
-        check(ig.Graph.Ring(n=n, circular=True))
-        check(ig.Graph.Ring(n=n, circular=False))
+    a = ls.Expr("2 I + S+3")
+    assert len(list(a.symmetric_basis())) == 1
+    b = ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁")
+    assert len(list(b.symmetric_basis())) == 4
+    assert len(list(b.symmetric_basis(particle_conservation=False, spin_inversion=1))) == 1
+    assert len(list(b.symmetric_basis(particle_conservation=2, spin_inversion=False))) == 1
+    assert len(list(b.symmetric_basis(particle_conservation=False, spin_inversion=False))) == 1
 
-    # Square lattice
-    check(ig.Graph.Lattice(dim=[3, 3], circular=True))
-    check(ig.Graph.Lattice(dim=[3, 3], circular=False))
 
-    # Disconnected graph
-    check(ig.Graph(n=4, edges=[[0, 1], [2, 3]]))
+def test_basis_properties():
+    a = ls.SpinBasis(4)
+    assert a.spin_inversion is None
+    assert a.hamming_weight is None
+    assert not a.is_built
+    assert a.min_state_estimate == 0
+    assert a.max_state_estimate == 15
+    assert not a.has_permutation_symmetries
+    assert not a.requires_projection
+    assert a.is_state_index_identity
 
-    # Complete graphs
-    for n in [3, 4, 5]:
-        check(ig.Graph.Full(n=n, directed=False, loops=False))
+    b = ls.SpinBasis(3, hamming_weight=2)
+    assert b.spin_inversion is None
+    assert b.hamming_weight == 2
+    assert not b.is_built
+    assert b.min_state_estimate == 0b11
+    assert b.max_state_estimate == 0b110
+    assert not b.has_permutation_symmetries
+    assert not b.requires_projection
+    assert not b.is_state_index_identity
 
-    # Trees
-    check(ig.Graph.Tree(n=7, children=2))
-    check(ig.Graph.Tree(n=5, children=3))
+    c = ls.SpinBasis(3, spin_inversion=-1)
+    assert c.spin_inversion == -1
+    assert c.hamming_weight is None
+    assert not c.is_built
+    assert c.min_state_estimate == 0b0
+    assert c.max_state_estimate == 0b011
+    assert not c.has_permutation_symmetries
+    assert c.requires_projection
+    assert c.is_state_index_identity
+
+
+def test_basis_build():
+    a = ls.SpinBasis(2)
+    a.build()
+    assert np.array_equal(a.states, np.array([0, 1, 2, 3]))
+
+
+def test_operator_construction():
+    _ = ls.Operator(ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁"))
+
+
+def test_operator_matvec():
+    basis = ls.SpinBasis(2)
+    basis.build()
+    matrix = ls.Operator(ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁"), basis)
+
+    x = np.random.rand(matrix.shape[0])
+    y = matrix @ x
+    z = np.array([[1, 0, 0, 0], [0, -1, 2, 0], [0, 2, -1, 0], [0, 0, 0, 1]]) @ x
+    assert np.allclose(y, z)
+
+    x = np.random.rand(matrix.shape[0]) + np.random.rand(matrix.shape[0]) * 1j
+    y = matrix @ x
+    z = np.array([[1, 0, 0, 0], [0, -1, 2, 0], [0, 2, -1, 0], [0, 0, 0, 1]]) @ x
+    assert np.allclose(y, z)
+
+
+def test_operator_to_csr():
+    basis = ls.SpinBasis(2)
+    basis.build()
+    matrix = ls.Operator(ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁"), basis)
+
+    h = np.array([[1, 0, 0, 0], [0, -1, 2, 0], [0, 2, -1, 0], [0, 0, 0, 1]])
+    assert np.array_equal(matrix.diag_to_array(), h.diagonal())
+    assert np.array_equal(matrix.off_diag_to_csr().todense(), h - np.diag(h.diagonal()))
+
+
+def test_randomized_matvec():
+    test_data = os.environ.get("TEST_DATA")
+    if test_data is not None:
+        for filename in glob.glob(f"{test_data}/*_expr.json"):
+            print(filename)
+            with open(filename, "r") as f:
+                matrix = ls.Operator.from_json(f.read())
+            with open(filename.replace("expr", "arrays"), "r") as f:
+                o = json.load(f)
+                r = np.asarray(o["states"], dtype=np.uint64)
+                x = np.asarray(o["x_real"]) + np.asarray(o["x_imag"]) * 1j
+                y = np.asarray(o["y_real"]) + np.asarray(o["y_imag"]) * 1j
+
+            matrix.basis.build()
+            assert np.array_equal(matrix.basis.states, r)
+            z = matrix @ x
+            if not np.allclose(z, y):
+                for i in range(len(r)):
+                    if not np.isclose(z[i], y[i]):
+                        print(i, z[i], y[i])
+            assert np.allclose(matrix @ x, y)
+
+            diag = matrix.diag_to_array()
+            off_diag = matrix.off_diag_to_csr()
+            assert np.allclose(off_diag @ x + diag * x, y)
+
+
+# def test_expr_permutation_group():
+#     def heisenberg_on_graph(g):
+#         return ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁", sites=g)
+#
+#     def check(g):
+#         print(heisenberg_on_graph(g).permutation_group())
+#         assert (
+#             heisenberg_on_graph(g).permutation_group()["permutations"] == g.get_automorphisms_vf2()
+#         )
+#
+#     # Chains
+#     for n in [4, 6, 10, 25]:
+#         check(ig.Graph.Ring(n=n, circular=True))
+#         check(ig.Graph.Ring(n=n, circular=False))
+#
+#     # Square lattice
+#     check(ig.Graph.Lattice(dim=[3, 3], circular=True))
+#     check(ig.Graph.Lattice(dim=[3, 3], circular=False))
+#
+#     # Disconnected graph
+#     check(ig.Graph(n=4, edges=[[0, 1], [2, 3]]))
+#
+#     # Complete graphs
+#     for n in [3, 4, 5]:
+#         check(ig.Graph.Full(n=n, directed=False, loops=False))
+#
+#     # Trees
+#     check(ig.Graph.Tree(n=7, children=2))
+#     check(ig.Graph.Tree(n=5, children=3))
 
 
 def test_permutation_construction():

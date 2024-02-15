@@ -30,6 +30,10 @@ module LatticeSymmetries.Some
   , ls_hs_expr_is_identity
   , ls_hs_replace_indices
   , ls_hs_expr_permutation_group
+  , ls_hs_expr_spin_inversion_invariant
+  , ls_hs_expr_conserves_number_particles
+  , ls_hs_expr_particle_type
+  , ls_hs_expr_number_sites
   )
 where
 
@@ -45,7 +49,7 @@ import Data.Vector.Fusion.Bundle.Monadic qualified as Bundle
 import Data.Vector.Fusion.Util (Id (unId))
 import Data.Vector.Generic qualified as G
 import Foreign (fromBool)
-import Foreign.C (CBool, CString)
+import Foreign.C (CBool, CString, CInt)
 import Foreign.Ptr (Ptr, castPtr)
 import GHC.Show (Show (showsPrec))
 import LatticeSymmetries.Algebra
@@ -119,11 +123,11 @@ binaryOp op (SomeExpr SpinTag a) (SomeExpr SpinTag b) = pure $ op a b
 binaryOp op (SomeExpr SpinlessFermionTag a) (SomeExpr SpinlessFermionTag b) = pure $ op a b
 binaryOp op (SomeExpr SpinfulFermionTag a) (SomeExpr SpinfulFermionTag b) = pure $ op a b
 binaryOp _ (SomeExpr t1 _) (SomeExpr t2 _) =
-  Left
-    $ "Expressions are defined for different particle types: "
-    <> show (particleTagToType t1)
-    <> " and "
-    <> show (particleTagToType t2)
+  Left $
+    "Expressions are defined for different particle types: "
+      <> show (particleTagToType t1)
+      <> " and "
+      <> show (particleTagToType t2)
 
 -- instance Num SomeExpr where
 --   (+) = binaryOp (+)
@@ -177,16 +181,29 @@ exprFromJSON f expand = withObject "Expr" $ \v -> do
     Left e -> parserThrowError [Key "expression"] (toString e)
     Right x -> pure x
 
+expandExpr :: forall t m v. (IsBasis t, MonadFail m, G.Vector v Int) => B.Vector (v Int) -> Expr t -> m (Expr t)
+expandExpr indices expr =
+    Data.Stream.Monadic.foldl1M' (\a b -> pure $ Expr (unExpr a + unExpr b)) $
+      Data.Stream.Monadic.mapM replaceSiteIndicesList $
+        (Bundle.elements . Bundle.trans (pure . unId)) $
+          G.stream indices
+  where
+    !indices0 = getSiteIndex @t <$> collectIndices expr
+
+    replaceSiteIndicesList :: v Int -> m (Expr t)
+    replaceSiteIndicesList is
+      | G.length is == G.length indices0 = pure $ replaceSiteIndices mapping expr
+      | otherwise = fail $ "cannot replace indices " <> show indices0 <> " with " <> show (G.toList is) <> "; size mismatch"
+      where
+        mapping = IntMap.fromAscList (zip (G.toList indices0) (G.toList is))
+
 instance FromJSON SomeExpr where
   parseJSON = exprFromJSON mkSomeExpr expandSomeExpr
     where
       expandSomeExpr :: B.Vector (B.Vector Int) -> SomeExpr -> Either Text SomeExpr
-      expandSomeExpr [] expr = pure $ mapSomeExpr (scale (0 :: ComplexRational)) expr
-      expandSomeExpr indices expr =
-        Data.Stream.Monadic.foldl1M' (exprBinaryOp (+))
-          $ Data.Stream.Monadic.mapM (replaceSiteIndicesList expr)
-          $ (Bundle.elements . Bundle.trans (pure . unId))
-          $ G.stream indices
+      expandSomeExpr indices (SomeExpr tag expr)
+        | G.null indices = pure . SomeExpr tag . Expr . Sum . G.singleton . Scaled 0 $ Product G.empty
+        | otherwise = SomeExpr tag <$> expandExpr indices expr
 
 ls_hs_destroy_expr :: MutablePtr Cexpr -> IO ()
 ls_hs_destroy_expr = ls_hs_destroy_object (const (pure ())) . castPtr @Cexpr @Cobject
@@ -261,18 +278,8 @@ getSiteIndex = case particleDispatch @t of
   SpinlessFermionTag -> id
   SpinfulFermionTag -> snd
 
-replaceSiteIndices :: IntMap Int -> SomeExpr -> SomeExpr
-replaceSiteIndices mapping = mapSomeExpr $ \(expr :: Expr t) ->
-  simplifyExpr $ mapIndices (replaceSiteIndicesFn @t mapping) expr
-
-replaceSiteIndicesList :: G.Vector v Int => SomeExpr -> v Int -> Either Text SomeExpr
-replaceSiteIndicesList expr indices
-  | G.length indices == n = pure $ replaceSiteIndices mapping expr
-  | otherwise = fail $ "cannot replace indices " <> show indices0 <> " with " <> show (G.toList indices) <> "; size mismatch"
-  where
-    !indices0 = foldSomeExpr (\(e :: Expr t) -> getSiteIndex @t <$> collectIndices e) expr
-    !n = length indices0
-    mapping = IntMap.fromAscList (zip indices0 (G.toList indices))
+replaceSiteIndices :: forall t. IsBasis t => IntMap Int -> Expr t -> Expr t
+replaceSiteIndices mapping expr = simplifyExpr $ mapIndices (replaceSiteIndicesFn @t mapping) expr
 
 replaceSpinIndices :: Map SpinIndex SpinIndex -> SomeExpr -> SomeExpr
 replaceSpinIndices mapping = mapSomeExpr $ \(expr :: Expr t) ->
@@ -284,13 +291,26 @@ ls_hs_replace_indices expr jsonString = do
   newCencoded
     =<< rightM newCexpr
     =<< case Aeson.decode @[(Int, Int)] s of
-      Just m -> withCexpr expr (pure . Right . replaceSiteIndices (IntMap.fromList m))
+      Just m -> withCexpr expr (pure . Right . mapSomeExpr (replaceSiteIndices (IntMap.fromList m)))
       Nothing -> case Aeson.decode @[(SpinIndex, SpinIndex)] s of
         Just m -> withCexpr expr (pure . Right . replaceSpinIndices (Map.fromList m))
         Nothing -> pure . Left @Text $ "ls_hs_replace_indices: invalid argument: expected a list of index replacements"
 
 ls_hs_expr_permutation_group :: Ptr Cexpr -> IO CString
 ls_hs_expr_permutation_group =
-  foldCexpr
-    $ foldSomeExpr (pure . exprPermutationGroup Nothing)
-    >=> newCencoded
+  foldCexpr $
+    foldSomeExpr (pure . exprPermutationGroup Nothing)
+      >=> newCencoded
+
+ls_hs_expr_spin_inversion_invariant :: Ptr Cexpr -> IO CBool
+ls_hs_expr_spin_inversion_invariant = foldCexpr $ foldSomeExpr $ pure . fromBool . isInvariantUponSpinInversion
+
+ls_hs_expr_conserves_number_particles :: Ptr Cexpr -> IO CBool
+ls_hs_expr_conserves_number_particles = foldCexpr $ foldSomeExpr $ pure . fromBool . conservesNumberParticles
+
+ls_hs_expr_particle_type :: Ptr Cexpr -> IO CString
+ls_hs_expr_particle_type = foldCexpr $ \(SomeExpr t _) ->
+  newCString . encodeUtf8 . toPrettyText $ particleTagToType t
+
+ls_hs_expr_number_sites :: Ptr Cexpr -> IO CInt
+ls_hs_expr_number_sites = foldCexpr $ foldSomeExpr $ pure . fromIntegral . estimateNumberSites

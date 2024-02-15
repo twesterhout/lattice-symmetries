@@ -571,6 +571,31 @@ proc enumerateStates(const ref basis : Basis, out basisStates, out norms, out ke
   enumerateStates(chunks, basis, basisStates, norms, keys);
 }
 
+export proc ls_chpl_local_enumerate_states(p : c_ptr(ls_hs_basis),
+                                           lower : uint(64),
+                                           upper : uint(64)) {
+  const basis = new Basis(p, owning=false);
+  // var rs = localEnumerateRepresentatives(basis, lower, upper);
+  const basisStates;
+  const norms;
+  const keys;
+
+  const ref basisInfo = basis.info;
+  const r = lower .. upper;
+  // If we don't have to project, the enumeration ranges can be split equally,
+  // so there's no need to use more chunks than there are cores
+  const numChunks = min(r.size,
+                        if !basisInfo.requires_projection
+                          then numLocales * here.maxTaskPar
+                          else kEnumerateStatesNumChunks);
+  const chunks = determineEnumerationRanges(r, numChunks, basisInfo);
+  enumerateStates(chunks, basis, basisStates, norms, keys);
+
+
+  p.deref().local_representatives = convertToExternalArray(basisStates[here]);
+  p.deref().local_norms = convertToExternalArray(norms[here]);
+}
+
 /*
 proc _enumStatesCountsToOffsets(counts, out _totalCounts) {
   const numChunks = counts.shape[0];

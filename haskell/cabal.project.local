@@ -7,5 +7,5 @@ package lattice-symmetries-haskell
   flags: +no-standalone
   -- +no-foreign-lib
   -- ghc-options: -g2 -fprof-auto
-  profiling: True
+  -- profiling: True
   optimization: 2

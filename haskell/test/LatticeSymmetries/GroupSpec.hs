@@ -1,26 +1,19 @@
-{-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 
 module LatticeSymmetries.GroupSpec (spec) where
 
-import Data.Aeson qualified as Aeson
-import Data.Bits
 import Data.Complex
 import Data.Ratio
-import Data.Text.IO qualified
 import Data.Vector (Vector)
 import Data.Vector.Generic qualified as G
-import LatticeSymmetries.Benes
-import LatticeSymmetries.Expr (exprPermutationGroup, mkExpr, Expr, mapIndices)
+import LatticeSymmetries.Expr (Expr, exprPermutationGroup, mapIndices, mkExpr)
 import LatticeSymmetries.Generator
 import LatticeSymmetries.Group
-import LatticeSymmetries.Lowering
 import LatticeSymmetries.Permutation
-import LatticeSymmetries.Utils (toPrettyText)
 import Test.Hspec
 import Test.Hspec.QuickCheck
-import Test.QuickCheck
 import Utils
 
 -- syms :: [Either Text Symmetry] -> IO Symmetries
