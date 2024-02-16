@@ -1041,6 +1041,13 @@ class Operator(HsWrapper, LinearOperator):
         return (n, n)
 
     @property
+    def dtype(self):
+        if self.basis.is_real and self.expression.is_real:
+            return np.dtype("float64")
+        else:
+            return np.dtype("complex128")
+
+    @property
     def basis(self):
         return self._basis
 
