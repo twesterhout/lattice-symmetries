@@ -125,7 +125,6 @@ private proc localProcessExperimental(const ref basis : Basis,
       indices = basisStates:c_ptr(int(64));
     }
     else {
-      const _timer = recordTime("allocate and basisStatesToIndices");
       indices = indicesBuffer;
       basisStatesToIndices(basis, size, basisStates, indices);
     }

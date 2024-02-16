@@ -1,5 +1,6 @@
 module Timing {
 
+private import Reflection;
 private use CTypes;
 private use IO;
 private use Map;
@@ -48,61 +49,73 @@ record TimingCombined : writeSerializable {
   }
 
   proc ref combine(const ref r : TimingRecord) {
-    assert(r.count > 0);
-    this.totalTime += r.time;
-    this.minTime = min(this.minTime, r.time);
-    this.maxTime = max(this.maxTime, r.time);
-    this.totalCount += r.count;
-    this.minCount = min(this.minCount, r.count);
-    this.maxCount = max(this.maxCount, r.count);
-    this._n += 1;
+    if r.count > 0 {
+      this.totalTime += r.time;
+      this.minTime = min(this.minTime, r.time);
+      this.maxTime = max(this.maxTime, r.time);
+      this.totalCount += r.count;
+      this.minCount = min(this.minCount, r.count);
+      this.maxCount = max(this.maxCount, r.count);
+      this._n += 1;
+    }
   }
 }
 
 proc TimingCombined.serialize(writer : fileWriter(?), ref serializer) throws {
   var ser = serializer.startRecord(writer, "TimingCombined", 9);
   try ser.writeField("totalTime", totalTime);
-  try ser.writeField("avgTime", totalTime / _n);
-  try ser.writeField("minTime", minTime);
-  try ser.writeField("maxTime", maxTime);
+  try ser.writeField("avgTime", if _n > 0 then totalTime / _n else -1);
+  try ser.writeField("minTime", if _n > 0 then minTime else -1);
+  try ser.writeField("maxTime", if _n > 0 then maxTime else -1);
   try ser.writeField("totalCount", totalCount);
-  try ser.writeField("avgCount", totalCount:real / _n);
-  try ser.writeField("minCount", minCount);
-  try ser.writeField("maxCount", maxCount);
+  try ser.writeField("avgCount", if _n > 0 then totalCount:real / _n else -1);
+  try ser.writeField("minCount", if _n > 0 then minCount else -1);
+  try ser.writeField("maxCount", if _n > 0 then maxCount else -1);
   try ser.writeField("numTasks", _n);
   ser.endClass();
 }
 
+// This part is pretty ugly, but at least the runtime overhead of accessing a
+// field is much lower than doing a hash table lookup 😄
+record Store {
+  var _enumerateStatesProjected : TimingRecord;
+  var _enumerateStatesUnprojected : TimingRecord;
+  var basisStatesToIndices : TimingRecord;
+  var computeOffDiagNoProjection : TimingRecord;
+  var computeOffDiagWithProjection : TimingRecord;
+  var convertOffDiagToCsr : TimingRecord;
+  var determineEnumerationRanges : TimingRecord;
+  var extractDiag : TimingRecord;
+  var isRepresentative : TimingRecord;
+  var localProcessExperimental : TimingRecord;
+  var perLocaleDiagonal : TimingRecord;
+  var perLocaleMatrixVector : TimingRecord;
+  var perLocaleOffDiagonal : TimingRecord;
+}
+
+
 record TaskLocalStore {
-  var store : map(string, TimingRecord, parSafe=false);
+  var store : Store;
 
-  proc ref add(param func, time : real, count : int = 1) {
-    store._enter(); defer store._leave();
-
-    var (found, slot) = store.table.findAvailableSlot(func);
-    if found {
-      ref value = store.table.table[slot].val;
-      value += new TimingRecord(time, count);
-    }
-    else {
-      store.table.fillSlot(slot, func, new TimingRecord(time, count));
-    }
+  inline proc ref add(param func, time : real, count : int = 1) {
+    ref field = Reflection.getFieldRef(this.store, func);
+    field += new TimingRecord(time, count);
   }
 }
 
 class LocaleLocalStore {
-  var store : map(chpl_taskID_t, TaskLocalStore, parSafe=true);
+  var dom : domain(1);
+  var arr : [dom] TaskLocalStore;
+
+  proc init(capacity : int = 10240) {
+    this.dom = {0 ..# capacity};
+  }
 
   inline proc add(param func, time : real) {
-    const taskId = chpl_task_getId();
-
-    store._enter(); defer store._leave();
-    var (found, slot) = store.table.findAvailableSlot(taskId);
-    if !found {
-      store.table.fillSlot(slot, taskId, new TaskLocalStore());
-    }
-    ref value = store.table.table[slot].val;
-    value.add(func, time);
+    const taskId = chpl_task_getId():int;
+    if taskId >= dom.size then
+      halt(try! "taskId: {}, but capacity={}".format(taskId, dom.size));
+    arr[taskId].add(func, time);
   }
 }
 
@@ -137,21 +150,34 @@ config param kRecordTiming = true;
 inline proc recordTime(param func) where kRecordTiming { return new Recorder(func); }
 inline proc recordTime(param func) where !kRecordTiming { return nil; }
 
+proc summarizeRecursive(ref r, const ref table, param k, param numFields) : none {
+  if k >= numFields {
+    return;
+  }
+  else {
+    param funcName = Reflection.getFieldName(table.type, k);
+    const ref timing = Reflection.getField(table, k);
+    if r.contains(funcName) {
+      r[funcName].combine(timing);
+    }
+    else {
+      var t : TimingCombined;
+      t.combine(timing);
+      r.add(funcName, t);
+    }
+    summarizeRecursive(r, table, k + 1, numFields);
+  }
+}
+
+
 proc summarize() {
   var r : map(string, TimingCombined);
 
-  for table in getLocaleLocalStore().store.values() {
-    for funcName in table.store.keys() {
-      const ref timing = try! table.store[funcName];
-      if r.contains(funcName) {
-        r[funcName].combine(timing);
-      }
-      else {
-        var t : TimingCombined;
-        t.combine(timing);
-        r.add(funcName, t);
-      }
-    }
+  const ref localeStore = getLocaleLocalStore();
+  for x in localeStore.arr {
+    const ref table = x.store;
+    param numFields = Reflection.getNumFields(table.type);
+    summarizeRecursive(r, table, 0, numFields);
   }
 
   var arr = r.toArray();

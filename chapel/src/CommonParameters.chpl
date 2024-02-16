@@ -8,7 +8,7 @@ module CommonParameters {
 
   // MatrixVectorProduct
   config const kMatrixVectorDiagonalNumChunks : int = numLocales * here.maxTaskPar;
-  config const kRemoteBufferSize = 10000;
+  config const kRemoteBufferSize = max(10000, 100000 / numLocales);
   config const kNumTasks = here.maxTaskPar;
 
   // OperatorToCsr

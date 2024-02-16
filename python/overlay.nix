@@ -71,58 +71,24 @@ final: prev: {
         '';
       };
 
-      # quspin = python-final.buildPythonPackage {
-      #   pname = "quspin";
-      #   version = "0.3.7";
-      #   format = "setuptools";
-      #   src = final.fetchFromGitHub {
-      #     owner = "QuSpin";
-      #     repo = "QuSpin";
-      #     rev = "98825222a11771c00dc158b49e78beee52efe8b7";
-      #     hash = "sha256-wAbOCyfECA1u6Yj/Hv11phhz9YzAv79QspfAhk3acik=";
-      #   };
-
-      #   enableParallelBuilding = true;
-
-      #   postPatch = ''
-      #     substituteInPlace setup.py --replace-fail '-march=native' ' '
-      #   '';
-
-      #   env = {
-      #     NIX_CFLAGS_COMPILE = "-fopenmp";
-      #     CFLAGS = "-fopenmp";
-      #   };
-
-      #   nativeBuildInputs = with python-final; [
-      #     cython
-      #     setuptools
-      #   ];
-
-      #   buildInputs = with final; [
-      #     boost
-      #   ];
-      #   propagatedBuildInputs = with python-final; [
-      #     dill
-      #     gmpy2
-      #     joblib
-      #     numba
-      #     numexpr
-      #     numpy
-      #     scipy
-      #     six
-      #   ];
-
-      #   nativeCheckInputs = with python-final; [
-      #     # pip
-      #     # pytestCheckHook
-      #   ];
-
-      # };
-
-
     })
   ];
   lattice-symmetries = (prev.lattice-symmetries or { }) // {
-    python = prev.python3Packages.lattice-symmetries;
+    python = final.python3Packages.lattice-symmetries;
+    apptainer-python-minimal = final.singularity-tools.buildImage {
+      name = "my-project";
+      contents = with final; [
+        (python3.withPackages (ps: with ps; [
+          lattice-symmetries
+          loguru
+          scipy
+          numpy
+        ]))
+        coreutils
+        less # for displaying docs in the Python interpreter
+      ];
+      diskSize = 10240;
+      memSize = 5120;
+    };
   };
 }

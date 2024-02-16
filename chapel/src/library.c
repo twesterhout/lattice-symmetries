@@ -15,6 +15,7 @@ extern void chpl__init_Timing(int64_t _ln, int32_t _fn);
 extern void chpl__init_Vector(int64_t _ln, int32_t _fn);
 extern void chpl__init_BatchedOperator(int64_t _ln, int32_t _fn);
 extern void chpl__init_ConcurrentQueue(int64_t _ln, int32_t _fn);
+extern void chpl__init_CSR(int64_t _ln, int32_t _fn);
 extern void chpl__init_StatesEnumeration(int64_t _ln, int32_t _fn);
 extern void chpl__init_MatrixVectorProduct(int64_t _ln, int32_t _fn);
 extern void chpl__init_LatticeSymmetries(int64_t _ln, int32_t _fn);
@@ -23,8 +24,8 @@ extern void chpl_library_init(int argc, char *argv[]);
 extern void chpl_library_finalize(void);
 
 void ls_chpl_init(void) {
-  int const argc = 1;
-  char const *argv[2] = {"lattice_symmetries", NULL};
+  int const argc = 2;
+  char const *argv[2] = {"lattice_symmetries", "--kDisplayTimings=true", NULL};
   chpl_library_init(argc, (char**)argv);
   chpl__init_CommonParameters(1, 2);
   chpl__init_FFI(1, 2);
@@ -34,6 +35,7 @@ void ls_chpl_init(void) {
   chpl__init_Vector(1, 2);
   chpl__init_BatchedOperator(1, 2);
   chpl__init_ConcurrentQueue(1, 2);
+  chpl__init_CSR(1, 2);
   chpl__init_StatesEnumeration(1, 2);
   chpl__init_MatrixVectorProduct(1, 2);
   chpl__init_LatticeSymmetries(1, 2);

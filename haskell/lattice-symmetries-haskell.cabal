@@ -7,7 +7,7 @@ license:       BSD-3-Clause
 license-file:  LICENSE
 author:        Tom Westerhout
 maintainer:
-    Tom Westerhout <14264576+twesterhout@users.noreply.github.com>
+  Tom Westerhout <14264576+twesterhout@users.noreply.github.com>
 
 copyright:     2021-2023 Tom Westerhout
 category:      Math
@@ -17,248 +17,248 @@ build-type:    Simple
 tested-with:   GHC ==9.6.1
 
 flag no-standalone
-    description:
-        Don't use standalone option for foreign-library (it requires GHC which was built with -fPIC support)
+  description:
+    Don't use standalone option for foreign-library (it requires GHC which was built with -fPIC support)
 
-    manual:      True
-    default:     False
+  manual:      True
+  default:     False
 
 flag no-foreign-lib
-    description: Disable building of the foreign-library
-    manual:      True
-    default:     False
+  description: Disable building of the foreign-library
+  manual:      True
+  default:     False
 
 common common-options
-    build-depends:
-        , base    >=4.13.0.0 && <5
-        , relude
+  build-depends:
+    , base    >=4.13.0.0 && <5
+    , relude
 
-    mixins:
-        base hiding (Prelude),
-        relude (Relude as Prelude)
+  mixins:
+    base hiding (Prelude),
+    relude (Relude as Prelude)
 
-    ghc-options:
-        -W -Wall -Wcompat -Widentities -Wincomplete-uni-patterns
-        -Wincomplete-record-updates
+  ghc-options:
+    -W -Wall -Wcompat -Widentities -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
 
-    default-language:   GHC2021
-    default-extensions:
-        AllowAmbiguousTypes
-        BangPatterns
-        BinaryLiterals
-        DataKinds
-        DeriveAnyClass
-        DeriveGeneric
-        DerivingVia
-        DuplicateRecordFields
-        FlexibleContexts
-        FlexibleInstances
-        GeneralizedNewtypeDeriving
-        MultiParamTypeClasses
-        OverloadedRecordDot
-        OverloadedStrings
-        ScopedTypeVariables
-        StandaloneDeriving
-        TypeApplications
-        TypeFamilies
-        ViewPatterns
+  default-language:   GHC2021
+  default-extensions:
+    AllowAmbiguousTypes
+    BangPatterns
+    BinaryLiterals
+    DataKinds
+    DeriveAnyClass
+    DeriveGeneric
+    DerivingVia
+    DuplicateRecordFields
+    FlexibleContexts
+    FlexibleInstances
+    GeneralizedNewtypeDeriving
+    MultiParamTypeClasses
+    OverloadedRecordDot
+    OverloadedStrings
+    ScopedTypeVariables
+    StandaloneDeriving
+    TypeApplications
+    TypeFamilies
+    ViewPatterns
 
 library
-    import:          common-options
-    hs-source-dirs:  src
-    exposed-modules:
-        LatticeSymmetries.Algebra
-        LatticeSymmetries.Automorphisms
-        LatticeSymmetries.Basis
-        LatticeSymmetries.Benes
-        LatticeSymmetries.BitString
-        LatticeSymmetries.ComplexRational
-        LatticeSymmetries.Context
-        LatticeSymmetries.Conversion
-        LatticeSymmetries.Dense
-        LatticeSymmetries.Expr
-        LatticeSymmetries.FFI
-        LatticeSymmetries.Generator
-        LatticeSymmetries.Group
-        LatticeSymmetries.Lowering
-        LatticeSymmetries.NonbranchingTerm
-        LatticeSymmetries.Operator
-        LatticeSymmetries.Parser
-        LatticeSymmetries.Permutation
-        LatticeSymmetries.Some
-        LatticeSymmetries.Utils
+  import:          common-options
+  hs-source-dirs:  src
+  exposed-modules:
+    LatticeSymmetries.Algebra
+    LatticeSymmetries.Automorphisms
+    LatticeSymmetries.Basis
+    LatticeSymmetries.Benes
+    LatticeSymmetries.BitString
+    LatticeSymmetries.ComplexRational
+    LatticeSymmetries.Context
+    LatticeSymmetries.Conversion
+    LatticeSymmetries.Dense
+    LatticeSymmetries.Expr
+    LatticeSymmetries.FFI
+    LatticeSymmetries.Generator
+    LatticeSymmetries.Group
+    LatticeSymmetries.Lowering
+    LatticeSymmetries.NonbranchingTerm
+    LatticeSymmetries.Operator
+    LatticeSymmetries.Parser
+    LatticeSymmetries.Permutation
+    LatticeSymmetries.Some
+    LatticeSymmetries.Utils
 
-    -- LatticeSymmetries.Yaml
+  -- LatticeSymmetries.Yaml
 
-    include-dirs:    cbits
+  include-dirs:    cbits
 
-    -- build-tool-depends:  hsc2hs:hsc2hs
-    build-depends:
-        , aeson               >=2
-        , bytestring
-        , constraints
-        , containers
-        , derive-storable
-        , directory
-        , halide-haskell
-        , inline-c
-        , megaparsec
-        , mtl
-        , parser-combinators
-        , prettyprinter       >=1.7
-        , primitive
-        , scientific
-        , template-haskell
-        , text
-        , unliftio-core
-        , validity
-        , vector
-        , vector-algorithms
-        , vector-stream
-        , vector-th-unbox
+  -- build-tool-depends:  hsc2hs:hsc2hs
+  build-depends:
+    , aeson               >=2
+    , bytestring
+    , constraints
+    , containers
+    , derive-storable
+    , directory
+    , halide-haskell
+    , inline-c
+    , megaparsec
+    , mtl
+    , parser-combinators
+    , prettyprinter       >=1.7
+    , primitive
+    , scientific
+    , template-haskell
+    , text
+    , unliftio-core
+    , validity
+    , vector
+    , vector-algorithms
+    , vector-stream
+    , vector-th-unbox
 
-    -- , parallel
-    -- , safe-exceptions
-    -- , yaml
+  -- , parallel
+  -- , safe-exceptions
+  -- , yaml
 
-    -- , binary
-    -- , vector-binary-instances
-    -- , exceptions
-    -- , co-log-core
-    -- , vector-algorithms
-    -- , deepseq
-    -- , ghc-prim
-    -- , mtl
-    -- , random >= 1.2.0
-    -- , mwc-random
-    -- , text
-    -- , ghc-dump-core
-    -- , ghc-dump-util
-    -- , template-haskell
-    -- , inline-c
-    -- , binary
-    -- , vector-binary-instances
-    -- , hdf5-hs
-    -- , HaskellForMaths
-    extra-libraries: kernels_v2
+  -- , binary
+  -- , vector-binary-instances
+  -- , exceptions
+  -- , co-log-core
+  -- , vector-algorithms
+  -- , deepseq
+  -- , ghc-prim
+  -- , mtl
+  -- , random >= 1.2.0
+  -- , mwc-random
+  -- , text
+  -- , ghc-dump-core
+  -- , ghc-dump-util
+  -- , template-haskell
+  -- , inline-c
+  -- , binary
+  -- , vector-binary-instances
+  -- , hdf5-hs
+  -- , HaskellForMaths
+  extra-libraries: kernels_v2
 
-    -- pkgconfig-depends:   lattice_symmetries
-    -- c-sources:           kernels/indexing.c
-    --                      kernels/reference.c
-    -- kernels/kernels.c
-    include-dirs:    cbits
-    cc-options:
-        -std=c11 -fPIC -O3 -DNDEBUG -Werror -Wall -Wextra -Wpedantic
-        -Wconversion -Wdouble-promotion -Wformat=2 -Wformat-overflow=2
-        -Winit-self -Wimplicit-fallthrough -Wunused -Wuninitialized
-        -Wstrict-overflow=2 -Wduplicated-branches -Wfloat-equal -Wshadow
-        -Wunused-macros -Wmissing-field-initializers -Wno-variadic-macros
+  -- pkgconfig-depends:   lattice_symmetries
+  -- c-sources:           kernels/indexing.c
+  --                      kernels/reference.c
+  -- kernels/kernels.c
+  include-dirs:    cbits
+  cc-options:
+    -std=c11 -fPIC -O3 -DNDEBUG -Werror -Wall -Wextra -Wpedantic
+    -Wconversion -Wdouble-promotion -Wformat=2 -Wformat-overflow=2
+    -Winit-self -Wimplicit-fallthrough -Wunused -Wuninitialized
+    -Wstrict-overflow=2 -Wduplicated-branches -Wfloat-equal -Wshadow
+    -Wunused-macros -Wmissing-field-initializers -Wno-variadic-macros
 
-    if (os(linux) && !flag(no-standalone))
-        ghc-options: -fPIC -fexternal-dynamic-refs
+  if (os(linux) && !flag(no-standalone))
+    ghc-options: -fPIC -fexternal-dynamic-refs
 
 executable benchmark
-    import:         common-options
-    hs-source-dirs: app
-    main-is:        Main.hs
-    ghc-options:    -threaded -rtsopts
-    build-depends:
-        , gauge
-        , halide-haskell
-        , inline-c
-        , lattice-symmetries-haskell
-        , random
-        , vector
+  import:         common-options
+  hs-source-dirs: app
+  main-is:        Main.hs
+  ghc-options:    -threaded -rtsopts
+  build-depends:
+    , gauge
+    , halide-haskell
+    , inline-c
+    , lattice-symmetries-haskell
+    , random
+    , vector
 
 executable parsing
-    import:         common-options
-    hs-source-dirs: app
-    main-is:        Parsing.hs
-    ghc-options:    -threaded -rtsopts
-    build-depends:
-        , aeson
-        , bytestring
-        , lattice-symmetries-haskell
-        , text
-        , vector
+  import:         common-options
+  hs-source-dirs: app
+  main-is:        Parsing.hs
+  ghc-options:    -threaded -rtsopts
+  build-depends:
+    , aeson
+    , bytestring
+    , lattice-symmetries-haskell
+    , text
+    , vector
 
 foreign-library lattice_symmetries_haskell
-    import:         common-options
-    type:           native-shared
+  import:         common-options
+  type:           native-shared
 
-    if ((os(windows) || os(osx)) || os(osx))
-        options: standalone
+  if ((os(windows) || os(osx)) || os(osx))
+    options: standalone
 
-    -- For some reason libffi is not linked properly
-    if (os(osx) || os(osx))
-        extra-libraries: ffi
+  -- For some reason libffi is not linked properly
+  if (os(osx) || os(osx))
+    extra-libraries: ffi
 
-    if (os(linux) && !flag(no-standalone))
-        options: standalone
+  if (os(linux) && !flag(no-standalone))
+    options: standalone
 
-    --   mod-def-file: MyForeignLib.def
-    hs-source-dirs: lib
-    other-modules:
-        ForeignLibrary
-        HeaderFileGeneration
+  --   mod-def-file: MyForeignLib.def
+  hs-source-dirs: lib
+  other-modules:
+    ForeignLibrary
+    HeaderFileGeneration
 
-    c-sources:      cbits/init.c
-    cc-options:     -fPIC -Wall -Wextra
-    include-dirs:   cbits
-    ghc-options:    -Wno-missing-signatures -threaded
-    build-depends:
-        , aeson
-        , bytestring
-        , containers
-        , directory
-        , filepath
-        , lattice-symmetries-haskell
-        , prettyprinter
-        , safe-exceptions
-        , split
-        , template-haskell
-        , text
-        , vector
+  c-sources:      cbits/init.c
+  cc-options:     -fPIC -Wall -Wextra
+  include-dirs:   cbits
+  ghc-options:    -Wno-missing-signatures -threaded
+  build-depends:
+    , aeson
+    , bytestring
+    , containers
+    , directory
+    , filepath
+    , lattice-symmetries-haskell
+    , prettyprinter
+    , safe-exceptions
+    , template-haskell
+    , text
+    , vector
 
-    if flag(no-foreign-lib)
-        buildable: False
+  if flag(no-foreign-lib)
+    buildable: False
 
 test-suite lattice-symmetries-haskell-test
-    import:         common-options
-    type:           exitcode-stdio-1.0
-    hs-source-dirs: test
-    main-is:        Spec.hs
-    other-modules:
-        LatticeSymmetries.AutomorphismsSpec
-        LatticeSymmetries.BenesSpec
-        LatticeSymmetries.BitStringSpec
-        LatticeSymmetries.ComplexRationalSpec
-        LatticeSymmetries.DenseSpec
-        LatticeSymmetries.ExprSpec
-        LatticeSymmetries.GeneratorSpec
-        LatticeSymmetries.GroupSpec
-        LatticeSymmetries.LoweringSpec
-        LatticeSymmetries.NonbranchingTermSpec
-        LatticeSymmetries.OperatorSpec
-        LatticeSymmetries.ParserSpec
-        LatticeSymmetries.PermutationSpec
-        Utils
+  import:         common-options
+  type:           exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is:        Spec.hs
+  other-modules:
+    LatticeSymmetries.AutomorphismsSpec
+    LatticeSymmetries.BenesSpec
+    LatticeSymmetries.BitStringSpec
+    LatticeSymmetries.ComplexRationalSpec
+    LatticeSymmetries.DenseSpec
+    LatticeSymmetries.ExprSpec
+    LatticeSymmetries.GeneratorSpec
+    LatticeSymmetries.GroupSpec
+    LatticeSymmetries.LoweringSpec
+    LatticeSymmetries.NonbranchingTermSpec
+    LatticeSymmetries.OperatorSpec
+    LatticeSymmetries.ParserSpec
+    LatticeSymmetries.PermutationSpec
+    Utils
 
-    -- LatticeSymmetries.ConversionSpec
-    build-depends:
-        , aeson
-        , bytestring
-        , containers
-        , hspec
-        , HUnit
-        , lattice-symmetries-haskell
-        , megaparsec
-        , prettyprinter
-        , QuickCheck
-        , text
-        , vector
-        , yaml
+  -- LatticeSymmetries.ConversionSpec
+  build-depends:
+    , aeson
+    , bytestring
+    , containers
+    , hspec
+    , HUnit
+    , lattice-symmetries-haskell
+    , megaparsec
+    , prettyprinter
+    , QuickCheck
+    , text
+    , vector
 
-    -- , mwc-random
-    ghc-options:    -Wno-orphans -threaded -rtsopts -with-rtsopts=-N
-    buildable:      True
+  -- , yaml
+
+  -- , mwc-random
+  ghc-options:    -Wno-orphans -threaded -rtsopts -with-rtsopts=-N
+  buildable:      True

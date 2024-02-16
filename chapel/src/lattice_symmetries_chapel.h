@@ -7,6 +7,7 @@
 /* python-cffi: START */
 void ls_chpl_init(void);
 void ls_chpl_finalize(void);
+void ls_chpl_display_timings(void);
 
 ls_hs_basis_info const *ls_chpl_get_basis_info(ls_hs_basis const *basis);
 

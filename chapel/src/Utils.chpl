@@ -29,6 +29,12 @@ proc deinitRuntime() {
     }
 }
 
+export proc ls_chpl_display_timings() {
+  for loc in Locales do on loc {
+    try! IO.stdout.withSerializer(new jsonSerializer()).writeln(Timing.summarize());
+  }
+}
+
 /*
 record Ref {
   type eltType;
