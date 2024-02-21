@@ -1,11 +1,11 @@
 # lattice_symmetries tutorial
 
-##Contents
+## Contents
 
-*[Installing] (#installing)
-*[Introduction] (#introduction)
-*[Examples] (#examples)
-  *[ED] (#ed)
+-[Installing] (#installing)
+-[Introduction] (#introduction)
+-[Examples] (#examples)
+-[ED] (#ed)
 
 ## Installing
 
@@ -15,9 +15,9 @@ The last step is to configure Nix, so that every depencence works nicely. Voila,
 
 ## Introduction
 
-The lattice_symmetries is a powerful package that nicely works with many-body quantum spin systems
+The `lattice_symmetries` is a powerful package that nicely works with many-body quantum spin systems
 and takes into account system symmetries.
-The lattice_symmetries implements fast matrix-vector multiplication that can be applied to various problems, 
+The `lattice_symmetries` implements fast matrix-vector multiplication that can be applied to various problems, 
 such as time evolution or exact diagonalization of many-body Hamiltonians. 
 
 ## Examples
