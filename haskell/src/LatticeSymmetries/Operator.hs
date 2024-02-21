@@ -259,8 +259,10 @@ newCoperator cBasis cExpr operator@(SomeOperator t op) = do
       incRefCountExpr = fromBool (isJust cExpr)
       maxNumberOffDiag = fromIntegral $
         getMaxNumberOffDiag (getNumberBits op.opBasis) (getHammingWeight op.opBasis) offDiag
-      maxNumberOffDiagEstimate = fromIntegral $
-        unsafeEstimateMaxNumberOffDiag (getNumberBits op.opBasis) (getHammingWeight op.opBasis) offDiag
+      -- NOTE: disable computing a better upper bound on the number of terms because it's taking too long...
+      -- TODO: fix me 😈
+      maxNumberOffDiagEstimate = maxNumberOffDiag
+        -- fromIntegral $ unsafeEstimateMaxNumberOffDiag (getNumberBits op.opBasis) (getHammingWeight op.opBasis) offDiag
   [CU.block| void {
     ls_hs_operator* p = $(ls_hs_operator* p);
     ls_hs_internal_object_init(&p->base, 1, $(void* payload));

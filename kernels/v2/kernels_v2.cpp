@@ -7,8 +7,16 @@ using namespace Halide;
 
 namespace lattice_symmetries {
 
+auto from_env(std::string const &name, int const default_value) {
+    auto *const value = getenv(name.c_str());
+    return (value != nullptr) ? std::stoi(value) : default_value;
+}
+
+using FixedHammingStateToIndex = std::function<int(halide_buffer_t *, halide_buffer_t *)>;
+
 auto mk_fixed_hamming_state_to_index_kernel(int const number_sites, int const hamming_weight,
-                                            halide_buffer_t const *_binomials) -> Halide::Callable {
+                                            halide_buffer_t const *_binomials)
+    -> FixedHammingStateToIndex {
     ImageParam _x{halide_type_of<uint64_t>(), 1, "x"};
     Func out{"out"};
 
@@ -32,17 +40,18 @@ auto mk_fixed_hamming_state_to_index_kernel(int const number_sites, int const ha
 
         out(batch_idx) = temp(batch_idx)[0];
 
-        Var i_inner{"i_inner"}, i_outer{"i_outer"};
+        Var i_inner{"i_inner"};
+        Var i_outer{"i_outer"};
 
         auto *const vector_size_str = getenv("LS_S2I_BLOCK_SIZE");
         auto vector_size = 8;
-        if (vector_size_str != NULL) {
+        if (vector_size_str != nullptr) {
             vector_size = std::stoi(vector_size_str);
         }
 
         auto *const unroll_str = getenv("LS_S2I_UNROLL");
         auto unroll = true;
-        if (unroll_str != NULL) {
+        if (unroll_str != nullptr) {
             unroll = std::stoi(unroll_str) != 0;
         }
 
@@ -62,17 +71,17 @@ auto mk_fixed_hamming_state_to_index_kernel(int const number_sites, int const ha
     target.set_features({Target::Feature::NoAsserts, Target::Feature::NoBoundsQuery});
     // out.compile_to_lowered_stmt("state_to_index.html", {_x}, Halide::HTML, target);
     // out.compile_to_assembly("state_to_index.S", {_x}, "fixed_hamming_state_to_index", target);
-    return out.compile_to_callable({_x}, target);
+    auto callable = out.compile_to_callable({_x}, target);
+    return callable.make_std_function<halide_buffer_t *, halide_buffer_t *>();
 }
 
 auto invoke_fixed_hamming_state_to_index_kernel(void *data, va_alist alist) noexcept -> void {
-    auto *ctx = static_cast<std::tuple<Halide::Callable, void *> *>(data);
-    auto const &fn = std::get<0>(*ctx);
+    auto *fn_ptr = static_cast<FixedHammingStateToIndex *>(data);
     va_start_void(alist);
     auto *basis_states = va_arg_ptr(alist, halide_buffer_t *);
     auto *indices = va_arg_ptr(alist, halide_buffer_t *);
     try {
-        fn(basis_states, indices);
+        (*fn_ptr)(basis_states, indices);
     } catch (RuntimeError &e) {
         fprintf(stderr, "Halide::RuntimeError: %s\n", e.what());
         abort();
@@ -202,8 +211,88 @@ auto invoke_is_representative_kernel(void *data, va_alist alist) noexcept -> voi
     va_return_void(alist);
 }
 
+auto mk_state_info_kernel_v3(halide_buffer_t const *_masks, halide_buffer_t const *_shifts,
+                             int spin_inversion) -> Halide::Callable {
+    auto masks = Halide::Buffer{Halide::Runtime::Buffer<uint64_t, 2>{*_masks}.copy(), "masks"};
+    auto shifts = Halide::Buffer{Halide::Runtime::Buffer<uint64_t, 1>{*_shifts}.copy(), "shifts"};
+    ImageParam _x{halide_type_of<uint64_t>(), 1, "basis_states"};
+
+    auto depth = masks.dim(1).extent();
+    auto number_masks = masks.dim(0).extent();
+
+    Var batch_idx{"batch_idx"};
+    Var group_idx{"group_idx"};
+    RDom depth_idx{0, depth, "depth_idx"};
+    Func y{"y"};
+
+    auto const unroll = static_cast<bool>(from_env("LS_HS_STATE_INFO_UNROLL", 1));
+    if (unroll) {
+        auto const *shifts_raw = reinterpret_cast<uint64_t const *>(_shifts->host);
+        Expr p = _x(batch_idx);
+        for (auto i = 0; i < depth; ++i) {
+            p = bit_permute_step_64(p, masks(group_idx, i), cast<uint64_t>(Expr{shifts_raw[i]}));
+        }
+        y(batch_idx, group_idx) = p;
+    } else {
+        y(batch_idx, group_idx) = _x(batch_idx);
+        y(batch_idx, group_idx) = bit_permute_step_64(
+            y(batch_idx, group_idx), masks(group_idx, depth_idx), shifts(depth_idx));
+    }
+
+    Func temp{"temp"};
+    RDom rgroup_idx{0, number_masks, "rgroup_idx"};
+    temp(batch_idx) = Tuple{_x(batch_idx), cast<int32_t>(-1)};
+    auto const current_r = temp(batch_idx)[0];
+    auto const current_j = temp(batch_idx)[1];
+    auto const is_less = y(batch_idx, rgroup_idx) < current_r;
+    auto const next_r = select(is_less, y(batch_idx, rgroup_idx), current_r);
+    auto const next_j = select(is_less, rgroup_idx, current_j);
+    temp(batch_idx) = Tuple{next_r, next_j};
+
+    Func out{"out"};
+    out(batch_idx) = temp(batch_idx);
+
+    _x.dim(0).set_min(0).set_stride(1);
+    out.output_buffers()[0].dim(0).set_min(0).set_stride(1).set_extent(_x.dim(0).extent());
+
+    Var outer{"outer"};
+    Var inner{"inner"};
+    auto const block_size = from_env("LS_HS_STATE_INFO_BLOCK_SIZE", 16);
+    constexpr auto strategy = TailStrategy::RoundUp;
+
+    out.split(batch_idx, outer, inner, block_size, strategy).vectorize(inner);
+
+    temp.split(batch_idx, outer, inner, block_size, strategy).vectorize(inner);
+    temp.update(0)
+        .split(batch_idx, outer, inner, block_size, strategy)
+        .reorder(inner, rgroup_idx, outer)
+        .vectorize(inner);
+    temp.compute_at(out, outer).store_in(MemoryType::Register);
+
+    if (unroll) {
+        y.split(batch_idx, outer, inner, block_size, strategy)
+            .reorder(inner, group_idx, outer)
+            .vectorize(inner);
+    } else {
+        y.split(batch_idx, outer, inner, block_size, strategy).vectorize(inner);
+        y.update(0)
+            .split(batch_idx, outer, inner, block_size, strategy)
+            .reorder(inner, depth_idx, group_idx, outer)
+            .vectorize(inner);
+    }
+    y.compute_at(temp, rgroup_idx).store_in(MemoryType::Register);
+
+    // out.print_loop_nest();
+    auto target = get_jit_target_from_environment();
+    target.set_features({Target::Feature::NoAsserts, Target::Feature::NoBoundsQuery});
+    // out.compile_to_lowered_stmt("state_info.html", {_x}, Halide::HTML, target);
+    auto callable = out.compile_to_callable({_x}, target);
+    return callable;
+}
+
 auto mk_state_info_kernel(halide_buffer_t const *_masks, halide_buffer_t const *_shifts,
                           int spin_inversion) -> Halide::Callable {
+
     auto masks = Halide::Buffer{Halide::Runtime::Buffer<uint64_t, 2>{*_masks}.copy(), "masks"};
     auto shifts = Halide::Buffer{Halide::Runtime::Buffer<uint64_t, 1>{*_shifts}.copy(), "shifts"};
     // auto const flip_mask = 0;
@@ -313,6 +402,9 @@ auto invoke_state_info_kernel(void *data, va_alist alist) noexcept -> void {
     auto *indices = va_arg_ptr(alist, halide_buffer_t *);
     try {
         fn(basis_states, representatives, indices);
+    } catch (RuntimeError &e) {
+        fprintf(stderr, "Halide::RuntimeError: %s\n", e.what());
+        abort();
     } catch (InternalError &e) {
         fprintf(stderr, "Halide::InternalError: %s\n", e.what());
         abort();
@@ -322,16 +414,14 @@ auto invoke_state_info_kernel(void *data, va_alist alist) noexcept -> void {
 
 } // namespace lattice_symmetries
 
-extern "C" ls_hs_state_to_index_kernel_type
-mk_fixed_hamming_state_to_index_kernel(int const number_sites, int const hamming_weight,
-                                       halide_buffer_t const *binomials) {
+extern "C" ls_hs_state_to_index_kernel_type ls_hs_internal_mk_fixed_hamming_state_to_index_kernel(
+    int const number_sites, int const hamming_weight, halide_buffer_t const *binomials) {
+    using namespace lattice_symmetries;
     try {
         // fprintf(stderr, "mk_fixed_hamming_state_to_index_kernel\n");
-        auto fn = lattice_symmetries::mk_fixed_hamming_state_to_index_kernel(
-            number_sites, hamming_weight, binomials);
-        auto closure =
-            alloc_callback(&lattice_symmetries::invoke_fixed_hamming_state_to_index_kernel,
-                           new std::tuple<Halide::Callable, void *>{fn, nullptr});
+        auto fn = mk_fixed_hamming_state_to_index_kernel(number_sites, hamming_weight, binomials);
+        auto closure = alloc_callback(&invoke_fixed_hamming_state_to_index_kernel,
+                                      reinterpret_cast<void *>(new FixedHammingStateToIndex{fn}));
         return reinterpret_cast<ls_hs_state_to_index_kernel_type>(closure);
     } catch (CompileError &e) {
         fprintf(stderr, "Halide::CompileError: %s\n", e.what());
@@ -344,10 +434,30 @@ mk_fixed_hamming_state_to_index_kernel(int const number_sites, int const hamming
         abort();
     }
 }
+extern "C" void ls_hs_internal_destroy_fixed_hamming_state_to_index_kernel(
+    ls_hs_state_to_index_kernel_type closure) {
+    using namespace lattice_symmetries;
+
+    if (closure == nullptr) {
+        return;
+    }
+    LS_CHECK(is_callback(reinterpret_cast<void *>(closure)),
+             "trying to destroy a normal function pointer. This "
+             "should never happen. Please, submit a bug report.");
+
+    FixedHammingStateToIndex *fn_ptr = reinterpret_cast<FixedHammingStateToIndex *>(
+        callback_data(reinterpret_cast<callback_t>(closure)));
+    LS_CHECK(fn_ptr != nullptr,
+             "callback_data is NULL. This should never happen. Please, submit a bug report.");
+
+    delete fn_ptr;
+    free_callback(reinterpret_cast<callback_t>(closure));
+}
 
 extern "C" ls_hs_is_representative_kernel_type_v2
-mk_is_representative_kernel(halide_buffer_t const *masks, halide_buffer_t const *eigvals_re,
-                            halide_buffer_t const *shifts, int spin_inversion) {
+ls_hs_internal_mk_is_representative_kernel(halide_buffer_t const *masks,
+                                           halide_buffer_t const *eigvals_re,
+                                           halide_buffer_t const *shifts, int spin_inversion) {
     try {
         auto fn = lattice_symmetries::mk_is_representative_kernel(masks, eigvals_re, shifts,
                                                                   spin_inversion);
@@ -365,10 +475,66 @@ mk_is_representative_kernel(halide_buffer_t const *masks, halide_buffer_t const 
         abort();
     }
 }
+extern "C" void
+ls_hs_internal_destroy_is_representative_kernel(ls_hs_is_representative_kernel_type_v2 closure) {
+    using namespace lattice_symmetries;
 
-extern "C" ls_hs_state_info_kernel_type_v2 mk_state_info_kernel(halide_buffer_t const *masks,
-                                                                halide_buffer_t const *shifts,
-                                                                int spin_inversion) {
+    if (closure == nullptr) {
+        return;
+    }
+    LS_CHECK(is_callback(reinterpret_cast<void *>(closure)),
+             "trying to destroy a normal function pointer. This "
+             "should never happen. Please, submit a bug report.");
+
+    auto *data = reinterpret_cast<std::tuple<Halide::Callable, void *> *>(
+        callback_data(reinterpret_cast<callback_t>(closure)));
+    LS_CHECK(data != nullptr,
+             "callback_data is NULL. This should never happen. Please, submit a bug report.");
+    delete data;
+    free_callback(reinterpret_cast<callback_t>(closure));
+}
+
+extern "C" ls_hs_state_info_kernel_type_v2
+ls_hs_internal_mk_state_info_kernel_v3(halide_buffer_t const *masks, halide_buffer_t const *shifts,
+                                       int spin_inversion) {
+    try {
+        auto fn = lattice_symmetries::mk_state_info_kernel_v3(masks, shifts, spin_inversion);
+        auto closure = alloc_callback(&lattice_symmetries::invoke_state_info_kernel,
+                                      new std::tuple<Halide::Callable, void *>{fn, nullptr});
+        return reinterpret_cast<ls_hs_state_info_kernel_type_v2>(closure);
+    } catch (CompileError &e) {
+        fprintf(stderr, "Halide::CompileError: %s\n", e.what());
+        abort();
+    } catch (InternalError &e) {
+        fprintf(stderr, "Halide::InternalError: %s\n", e.what());
+        abort();
+    } catch (RuntimeError &e) {
+        fprintf(stderr, "Halide::RuntimeError: %s\n", e.what());
+        abort();
+    }
+}
+extern "C" void
+ls_hs_internal_destroy_state_info_kernel_v3(ls_hs_state_info_kernel_type_v2 closure) {
+    using namespace lattice_symmetries;
+
+    if (closure == nullptr) {
+        return;
+    }
+    LS_CHECK(is_callback(reinterpret_cast<void *>(closure)),
+             "trying to destroy a normal function pointer. This "
+             "should never happen. Please, submit a bug report.");
+
+    auto *data = reinterpret_cast<std::tuple<Halide::Callable, void *> *>(
+        callback_data(reinterpret_cast<callback_t>(closure)));
+    LS_CHECK(data != nullptr,
+             "callback_data is NULL. This should never happen. Please, submit a bug report.");
+    delete data;
+    free_callback(reinterpret_cast<callback_t>(closure));
+}
+
+extern "C" ls_hs_state_info_kernel_type_v2
+ls_hs_internal_mk_state_info_kernel(halide_buffer_t const *masks, halide_buffer_t const *shifts,
+                                    int spin_inversion) {
     try {
         auto fn = lattice_symmetries::mk_state_info_kernel(masks, shifts, spin_inversion);
         auto closure = alloc_callback(&lattice_symmetries::invoke_state_info_kernel,
@@ -384,4 +550,21 @@ extern "C" ls_hs_state_info_kernel_type_v2 mk_state_info_kernel(halide_buffer_t 
         fprintf(stderr, "Halide::RuntimeError: %s\n", e.what());
         abort();
     }
+}
+extern "C" void ls_hs_internal_destroy_state_info_kernel(ls_hs_state_info_kernel_type_v2 closure) {
+    using namespace lattice_symmetries;
+
+    if (closure == nullptr) {
+        return;
+    }
+    LS_CHECK(is_callback(reinterpret_cast<void *>(closure)),
+             "trying to destroy a normal function pointer. This "
+             "should never happen. Please, submit a bug report.");
+
+    auto *data = reinterpret_cast<std::tuple<Halide::Callable, void *> *>(
+        callback_data(reinterpret_cast<callback_t>(closure)));
+    LS_CHECK(data != nullptr,
+             "callback_data is NULL. This should never happen. Please, submit a bug report.");
+    delete data;
+    free_callback(reinterpret_cast<callback_t>(closure));
 }

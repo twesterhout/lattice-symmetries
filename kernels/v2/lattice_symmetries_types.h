@@ -5,6 +5,8 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #else
 #if defined(LS_C2CHAPEL) || defined(PYTHON_CFFI) // c2chapel and cffi do not support C11 atomics
 #define _Atomic
@@ -14,6 +16,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #endif
 
 #if defined(__cplusplus)
@@ -96,13 +100,17 @@ typedef struct ls_hs_representation ls_hs_representation;
 
 typedef void (*ls_hs_is_representative_kernel_type_v2)(halide_buffer_t const *basis_states,
                                                        halide_buffer_t *norms);
+typedef void (*ls_hs_is_representative_destructor_type)(
+    ls_hs_is_representative_kernel_type_v2 closure);
 
 typedef void (*ls_hs_state_info_kernel_type_v2)(halide_buffer_t const *basis_states,
                                                 halide_buffer_t *representatives,
                                                 halide_buffer_t *indices);
+typedef void (*ls_hs_state_info_destructor_type)(ls_hs_state_info_kernel_type_v2 closure);
 
 typedef void (*ls_hs_state_to_index_kernel_type)(halide_buffer_t const *basis_states,
                                                  halide_buffer_t *indices);
+typedef void (*ls_hs_state_to_index_destructor_type)(ls_hs_state_to_index_kernel_type closure);
 
 typedef enum ls_hs_particle_type {
     LS_HS_SPIN,
@@ -125,18 +133,27 @@ typedef struct ls_hs_basis_info {
     uint64_t min_state_estimate;
     uint64_t max_state_estimate;
     ls_hs_particle_type particle_type;
+    ls_hs_scalar const *characters;
 } ls_hs_basis_info;
 
 typedef struct ls_hs_basis {
     // Reference count and Haskell payload
     ls_hs_object base;
+
     // Kernels for working with symmetry-adapted bases. Initialized lazily.
     LS_HS_ATOMIC(ls_hs_is_representative_kernel_type_v2) is_representative_kernel;
+    ls_hs_is_representative_destructor_type is_representative_destructor;
+
     LS_HS_ATOMIC(ls_hs_state_info_kernel_type_v2) state_info_kernel;
+    ls_hs_state_info_destructor_type state_info_destructor;
+
     LS_HS_ATOMIC(ls_hs_state_to_index_kernel_type) state_to_index_kernel;
+    ls_hs_state_to_index_destructor_type state_to_index_destructor;
+
     // Pre-computed representatives & norms
     chpl_external_array local_representatives; // uint64_t [N]
     chpl_external_array local_norms;           // uint16_t [N]
+
     // Auxiliary information. Initialized lazily upon request. By using atomic, we can ensure that
     // multiple threads don't write to it at the same time.
     LS_HS_ATOMIC(ls_hs_basis_info *) info;
@@ -174,11 +191,10 @@ typedef struct ls_chpl_batched_operator {
     int64_t batch_size;
     uint64_t *betas;
     ls_hs_scalar *coeffs;
-    uint64_t *target_states;
+    uint64_t *target_indices;
     int64_t *offsets;
     uint64_t *temp_spins;
-    ls_hs_scalar *temp_coeffs;
-    double *temp_norms;
+    int32_t *temp_group_indices;
     uint8_t *locale_indices;
 } ls_chpl_batched_operator;
 /* python-cffi: STOP */
@@ -232,14 +248,62 @@ ls_hs_is_representative_kernel_type_v2
 ls_hs_internal_mk_is_representative_kernel(halide_buffer_t const *masks,
                                            halide_buffer_t const *eigvals_re,
                                            halide_buffer_t const *shifts, int spin_inversion);
+void ls_hs_internal_destroy_is_representative_kernel(
+    ls_hs_is_representative_kernel_type_v2 closure);
 
 ls_hs_state_info_kernel_type_v2 ls_hs_internal_mk_state_info_kernel(halide_buffer_t const *masks,
                                                                     halide_buffer_t const *shifts,
                                                                     int spin_inversion);
+void ls_hs_internal_destroy_state_info_kernel(ls_hs_state_info_kernel_type_v2 closure);
+
+ls_hs_state_info_kernel_type_v2
+ls_hs_internal_mk_state_info_kernel_v3(halide_buffer_t const *masks, halide_buffer_t const *shifts,
+                                       int spin_inversion);
+void ls_hs_internal_destroy_state_info_kernel_v3(ls_hs_state_info_kernel_type_v2 closure);
 
 ls_hs_state_to_index_kernel_type
-mk_fixed_hamming_state_to_index_kernel(int number_sites, int hamming_weight,
-                                       halide_buffer_t const *binomials);
+ls_hs_internal_mk_fixed_hamming_state_to_index_kernel(int number_sites, int hamming_weight,
+                                                      halide_buffer_t const *binomials);
+void ls_hs_internal_destroy_fixed_hamming_state_to_index_kernel(
+    ls_hs_state_to_index_kernel_type closure);
+
+ls_hs_state_to_index_kernel_type
+ls_hs_internal_mk_binary_search_state_to_index_kernel(int64_t number_representatives,
+                                                      uint64_t const *representatives,
+                                                      unsigned number_bits, unsigned prefix_bits);
+void ls_hs_internal_destroy_binary_search_state_to_index_kernel(
+    ls_hs_state_to_index_kernel_type closure);
+
+__attribute__((noreturn)) static inline void ls_hs_fatal_error(char const *func, int const line,
+                                                               char const *message) {
+    fprintf(stderr, "[Error]   [%s#%i] %s\n[Error]   Aborting ...", func, line, message);
+    abort();
+}
+
+#define LS_FATAL_ERROR(msg) ls_hs_fatal_error(__func__, __LINE__, msg)
+
+#define LS_CHECK(cond, msg) ((cond) ? ((void)0) : ls_hs_fatal_error(__func__, __LINE__, msg))
+
+#define LS_HS_INTERNAL_INIT_KERNEL(type, dest_kernel, dest_destructor, value_kernel,               \
+                                   value_destructor)                                               \
+    do {                                                                                           \
+        type expected = NULL;                                                                      \
+        type const desired = value_kernel;                                                         \
+        if (!atomic_compare_exchange_strong(dest_kernel, &expected, desired)) {                    \
+            (value_destructor)(desired);                                                           \
+        } else {                                                                                   \
+            *(dest_destructor) = value_destructor;                                                 \
+        }                                                                                          \
+    } while (false)
+
+#define LS_HS_INTERNAL_DESTROY_KERNEL(type, variable, destructor)                                  \
+    do {                                                                                           \
+        type const kernel = atomic_load(&(variable));                                              \
+        if (kernel != NULL) {                                                                      \
+            LS_CHECK((destructor) != NULL, "kernel destructor is NULL");                           \
+            (destructor)(kernel);                                                                  \
+        }                                                                                          \
+    } while (false)
 
 #ifdef __cplusplus
 } // extern "C"

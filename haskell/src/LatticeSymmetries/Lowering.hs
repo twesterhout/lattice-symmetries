@@ -7,6 +7,8 @@ module LatticeSymmetries.Lowering
   , destroyIsRepresentativeKernel_v2
   , createStateInfoKernel_v2
   , destroyStateInfoKernel_v2
+  , createStateInfoKernel_v3
+  , destroyStateInfoKernel_v3
   , createFixedHammingStateToIndexKernel
   , destroyFixedHammingStateToIndexKernel
   , invokeIsRepresentativeKernel
@@ -17,6 +19,8 @@ module LatticeSymmetries.Lowering
   , fixedHammingIndexToState
   , fixedHammingStateToIndex
   , toFun_fixed_hamming_state_to_index_kernel
+  , toFun_state_info_kernel
+  , toFun_is_representative_kernel
   , ls_hs_fixed_hamming_state_to_index
   , ls_hs_fixed_hamming_index_to_state
   , binomial
@@ -31,8 +35,8 @@ import Data.Vector qualified as B
 import Data.Vector.Generic qualified as G
 import Data.Vector.Generic.Mutable qualified as GM
 import Data.Vector.Storable qualified as S
-import Foreign (FunPtr, Storable, castPtr, nullFunPtr)
-import Foreign.C (CInt (..))
+import Foreign (FunPtr, Storable, castPtr)
+import Foreign.C (CInt (..), CUInt (..))
 import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
 import Language.C.Inline.Unsafe qualified as CU
 import Language.Halide hiding (dim)
@@ -116,12 +120,9 @@ fixedHammingIndexToState hammingWeight = go hammingWeight 0
 --     cpuDataPtr = unsafeForeignPtrToPtr . fst . S.unsafeToForeignPtr0 $ v
 
 transposeDenseMatrix :: G.Vector v a => DenseMatrix v a -> DenseMatrix v a
-transposeDenseMatrix m
-  | m.dmRows /= m.dmCols = error "cannot transpose a rectangular matrix"
-  | otherwise = DenseMatrix n n $ G.generate (m.dmRows * m.dmCols) f
+transposeDenseMatrix m = DenseMatrix m.dmCols m.dmRows $ G.generate (m.dmRows * m.dmCols) f
   where
-    !n = m.dmRows
-    f !k = let (i, j) = k `divMod` n in indexDenseMatrix m (j, i)
+    f !k = let (r, c) = k `divMod` m.dmRows in indexDenseMatrix m (c, r)
 
 -- matrixToManagedHalideBuffer :: (Storable a, IsHalideType a) => DenseMatrix S.Vector a -> IO (Ptr (ManagedHalideBuffer 2 a))
 -- matrixToManagedHalideBuffer m = managedFromCpuPtrShapeStrides m cpuDataPtr [m.dmRows, m.dmCols] [m.dmCols, 1]
@@ -142,65 +143,6 @@ foreign import ccall unsafe "dynamic"
 
 foreign import ccall unsafe "dynamic"
   toFun_fixed_hamming_state_to_index_kernel :: FunPtr RawStateToIndexKernel -> RawStateToIndexKernel
-
--- |
--- @
--- int ls_internal_is_representative_general_kernel(struct halide_buffer_t *_x_buffer, uint64_t _flip_mask, struct halide_buffer_t *_masks_buffer, struct halide_buffer_t *_eigvals_re_buffer, struct halide_buffer_t *_shifts_buffer, struct halide_buffer_t *_is_representative__3_buffer, struct halide_buffer_t *_norm__3_buffer);
--- @
--- foreign import ccall unsafe "ls_internal_is_representative_general_kernel"
---   ls_hs_internal_is_representative_kernel
---     :: Ptr RawHalideBuffer
---     -- ^ x
---     -> Word64
---     -- ^ flip_mask
---     -> Ptr (HalideBuffer 2 Word64)
---     -- ^ masks
---     -> Ptr (HalideBuffer 1 Double)
---     -- ^ eigvals_re
---     -> Ptr (HalideBuffer 1 Double)
---     -- ^ eigvals_im
---     -> Ptr (HalideBuffer 1 Word64)
---     -- ^ shifts
---     -> Ptr (HalideBuffer 1 Word8)
---     -- ^ is_representative
---     -> Ptr (HalideBuffer 1 Double)
---     -- ^ norm
---     -> IO ()
-foreign import ccall unsafe "mk_is_representative_kernel"
-  mk_is_representative_kernel
-    :: Ptr (HalideBuffer 2 Word64)
-    -- ^ masks
-    -> Ptr (HalideBuffer 1 Double)
-    -- ^ eigvals_re
-    -> Ptr (HalideBuffer 1 Word64)
-    -- ^ shifts
-    -> CInt
-    -- ^ spin_inversion
-    -> IO (FunPtr RawIsRepresentativeKernel)
-
-foreign import ccall unsafe "mk_state_info_kernel"
-  mk_state_info_kernel
-    :: Ptr (HalideBuffer 2 Word64)
-    -- ^ masks
-    -> Ptr (HalideBuffer 1 Word64)
-    -- ^ shifts
-    -> CInt
-    -- ^ spin_inversion
-    -> IO (FunPtr RawStateInfoKernel)
-
-foreign import ccall unsafe "mk_fixed_hamming_state_to_index_kernel"
-  mk_fixed_hamming_state_to_index_kernel
-    :: CInt
-    -> CInt
-    -> Ptr (HalideBuffer 2 Word64)
-    -> IO (FunPtr RawStateToIndexKernel)
-
--- getBufferShape :: Ptr RawHalideBuffer -> IO [Int]
--- getBufferShape p = do
---   buf <- peek p
---   forM [0 .. fromIntegral buf.halideBufferDimensions - 1] $
---     fmap (fromIntegral . (.halideDimensionExtent))
---       . peekElemOff buf.halideBufferDim
 
 data Symmetries = Symmetries
   { symmGroup :: !PermutationGroup
@@ -230,42 +172,69 @@ compileGroupRepresentation (unRepresentation -> symmetries)
     charactersReal = G.map realPart characters
     charactersImag = G.map imagPart characters
 
+
+
+
+
+
 createIsRepresentativeKernel_v2 :: HasCallStack => Representation Permutation -> Maybe Int -> IO (FunPtr RawIsRepresentativeKernel)
 createIsRepresentativeKernel_v2 _ (Just _) = error "not yet implemented"
 createIsRepresentativeKernel_v2 group Nothing = do
   let !symms = compileGroupRepresentation group
   when (nullSymmetries symms) $ error "cannot compile for an empty or trivial group"
-  withHalideBuffer @2 @Word64 symms.symmNetwork.bbnMasks $ \masksBuf ->
-    withHalideBuffer @1 @Double symms.symmCharactersReal $ \eigvalsReBuf ->
-      withHalideBuffer @1 @Word64 symms.symmNetwork.bbnShifts $ \shiftsBuf ->
-        mk_is_representative_kernel
-          masksBuf
-          eigvalsReBuf
-          shiftsBuf
-          0
+  withHalideBuffer @2 @Word64 symms.symmNetwork.bbnMasks $ \(castPtr -> masksBuf) ->
+    withHalideBuffer @1 @Double symms.symmCharactersReal $ \(castPtr -> eigvalsReBuf) ->
+      withHalideBuffer @1 @Word64 symms.symmNetwork.bbnShifts $ \(castPtr -> shiftsBuf) ->
+        [CU.exp| ls_hs_is_representative_kernel_type_v2 {
+          ls_hs_internal_mk_is_representative_kernel($(halide_buffer_t* masksBuf),
+                                                     $(halide_buffer_t* eigvalsReBuf),
+                                                     $(halide_buffer_t* shiftsBuf),
+                                                     0)
+        } |]
 
 createStateInfoKernel_v2 :: HasCallStack => Representation Permutation -> Maybe Int -> IO (FunPtr RawStateInfoKernel)
 createStateInfoKernel_v2 _ (Just _) = error "not yet implemented"
 createStateInfoKernel_v2 group Nothing = do
   let !symms = compileGroupRepresentation group
   when (nullSymmetries symms) $ error "cannot compile for an empty or trivial group"
-  withHalideBuffer @2 @Word64 symms.symmNetwork.bbnMasks $ \masksBuf ->
-    withHalideBuffer @1 @Word64 symms.symmNetwork.bbnShifts $ \shiftsBuf ->
-      mk_state_info_kernel
-        masksBuf
-        shiftsBuf
-        0
+  withHalideBuffer @2 @Word64 symms.symmNetwork.bbnMasks $ \(castPtr -> masksBuf) ->
+    withHalideBuffer @1 @Word64 symms.symmNetwork.bbnShifts $ \(castPtr -> shiftsBuf) ->
+      [CU.exp| ls_hs_state_info_kernel_type_v2 {
+          ls_hs_internal_mk_state_info_kernel($(halide_buffer_t* masksBuf),
+                                              $(halide_buffer_t* shiftsBuf),
+                                              0)
+        } |]
 
-freeFunPtrClosureIfNotNull :: FunPtr f -> IO ()
-freeFunPtrClosureIfNotNull p
-  | p /= nullFunPtr = freeFunPtrClosure p
-  | otherwise = pure ()
+createStateInfoKernel_v3 :: HasCallStack => Representation Permutation -> Maybe Int -> IO (FunPtr RawStateInfoKernel)
+createStateInfoKernel_v3 _ (Just _) = error "not yet implemented"
+createStateInfoKernel_v3 group Nothing = do
+  let !symms = compileGroupRepresentation group
+  when (nullSymmetries symms) $ error "cannot compile for an empty or trivial group"
+  withHalideBuffer @2 @Word64 (transposeDenseMatrix symms.symmNetwork.bbnMasks) $ \(castPtr -> masksBuf) ->
+    withHalideBuffer @1 @Word64 symms.symmNetwork.bbnShifts $ \(castPtr -> shiftsBuf) ->
+      [CU.exp| ls_hs_state_info_kernel_type_v2 {
+          ls_hs_internal_mk_state_info_kernel_v3($(halide_buffer_t* masksBuf),
+                                                 $(halide_buffer_t* shiftsBuf),
+                                                 0)
+        } |]
 
 destroyIsRepresentativeKernel_v2 :: FunPtr RawIsRepresentativeKernel -> IO ()
-destroyIsRepresentativeKernel_v2 = freeFunPtrClosureIfNotNull
+destroyIsRepresentativeKernel_v2 kernel =
+  [CU.block| void {
+    ls_hs_internal_destroy_is_representative_kernel($(ls_hs_is_representative_kernel_type_v2 kernel));
+  } |]
 
 destroyStateInfoKernel_v2 :: FunPtr RawStateInfoKernel -> IO ()
-destroyStateInfoKernel_v2 = freeFunPtrClosureIfNotNull
+destroyStateInfoKernel_v2 kernel =
+  [CU.block| void {
+    ls_hs_internal_destroy_state_info_kernel($(ls_hs_state_info_kernel_type_v2 kernel));
+  } |]
+
+destroyStateInfoKernel_v3 :: FunPtr RawStateInfoKernel -> IO ()
+destroyStateInfoKernel_v3 kernel =
+  [CU.block| void {
+    ls_hs_internal_destroy_state_info_kernel_v3($(ls_hs_state_info_kernel_type_v2 kernel));
+  } |]
 
 invokeIsRepresentativeKernel :: FunPtr RawIsRepresentativeKernel -> S.Vector Word64 -> IO (S.Vector Double)
 invokeIsRepresentativeKernel funPtr basisStates =
@@ -275,24 +244,31 @@ invokeIsRepresentativeKernel funPtr basisStates =
       S.fromList <$> peekToList normsBuf
 
 invokeStateInfoKernel :: FunPtr RawStateInfoKernel -> S.Vector Word64 -> IO (S.Vector Word64, S.Vector Int32)
-invokeStateInfoKernel funPtr basisStates =
-  withHalideBuffer @1 @Word64 basisStates $ \basisStatesBuf ->
-    allocaCpuBuffer [S.length basisStates] $ \repsBuf ->
-      allocaCpuBuffer [S.length basisStates] $ \indicesBuf -> do
-        toFun_state_info_kernel funPtr (castPtr basisStatesBuf) (castPtr repsBuf) (castPtr indicesBuf)
-        (,) <$> (S.fromList <$> peekToList repsBuf) <*> (S.fromList <$> peekToList indicesBuf)
+invokeStateInfoKernel funPtr basisStates = do
+  let n = S.length basisStates
+      maxBlockSize = 64
+      size = maxBlockSize * ((n + maxBlockSize - 1) `Prelude.div` maxBlockSize)
+  withHalideBuffer @1 @Word64 (S.concat [basisStates, S.replicate (size - n) 0]) $ \basisStatesBuf ->
+     allocaCpuBuffer [size] $ \repsBuf ->
+          allocaCpuBuffer [size] $ \indicesBuf -> do
+            toFun_state_info_kernel funPtr (castPtr basisStatesBuf) (castPtr repsBuf) (castPtr indicesBuf)
+            (,) <$> (S.take n . S.fromList <$> peekToList repsBuf) <*> (S.take n . S.fromList <$> peekToList indicesBuf)
 
-createFixedHammingStateToIndexKernel :: HasCallStack => Int -> Int -> IO (FunPtr RawStateToIndexKernel)
-createFixedHammingStateToIndexKernel numberSites hammingWeight = do
-  -- let !binomials = binomialsCache -- (computeBinomials {-numberSites-} 65)
-  withHalideBuffer @2 @Word64 binomialsCache $ \binomialsPtr ->
-    mk_fixed_hamming_state_to_index_kernel
-      (fromIntegral numberSites)
-      (fromIntegral hammingWeight)
-      binomialsPtr
+createFixedHammingStateToIndexKernel :: Int -> Int -> IO (FunPtr RawStateToIndexKernel)
+createFixedHammingStateToIndexKernel (fromIntegral -> numberSites) (fromIntegral -> hammingWeight) = do
+  withHalideBuffer @2 @Word64 binomialsCache $ \(castPtr -> binomialsPtr) ->
+    [CU.block| ls_hs_state_to_index_kernel_type {
+      unsigned const numberSites = $(unsigned numberSites);
+      unsigned const hammingWeight = $(unsigned hammingWeight);
+      halide_buffer_t *binomialsPtr = $(halide_buffer_t* binomialsPtr);
+      return ls_hs_internal_mk_fixed_hamming_state_to_index_kernel(numberSites, hammingWeight, binomialsPtr);
+    } |]
 
 destroyFixedHammingStateToIndexKernel :: FunPtr RawStateToIndexKernel -> IO ()
-destroyFixedHammingStateToIndexKernel = freeFunPtrClosure
+destroyFixedHammingStateToIndexKernel kernel =
+  [CU.block| void {
+    ls_hs_internal_destroy_fixed_hamming_state_to_index_kernel($(ls_hs_state_to_index_kernel_type kernel));
+  } |]
 
 invokeFixedHammingStateToIndexKernel :: FunPtr RawStateToIndexKernel -> S.Vector Word64 -> IO (S.Vector Int64)
 invokeFixedHammingStateToIndexKernel funPtr basisStates =

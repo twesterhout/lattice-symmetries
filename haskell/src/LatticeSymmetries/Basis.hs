@@ -79,7 +79,9 @@ where
 import Data.Aeson
 import Data.Aeson.Types (Pair, Parser)
 import Data.Bits
+import Data.Maybe (fromJust)
 import Data.Vector.Generic qualified as G
+import Data.Vector.Storable qualified as S
 import Foreign (fromBool)
 import Foreign.C (CString)
 import Foreign.C.Types
@@ -96,6 +98,7 @@ import LatticeSymmetries.Group
 import LatticeSymmetries.Lowering
 import LatticeSymmetries.Permutation (Permutation)
 import LatticeSymmetries.Utils
+import Text.Read (read)
 import Prelude hiding (state)
 
 importLS
@@ -550,10 +553,16 @@ hasSpinInversionSymmetry x = case x of
 {-# INLINE hasSpinInversionSymmetry #-}
 
 hasPermutationSymmetries :: Basis t -> Bool
-hasPermutationSymmetries x = case x of
-  SpinBasis _ _ _ g -> not (G.null (unRepresentation g))
-  _ -> False
+hasPermutationSymmetries x = case getPermutationSymmetries x of
+  Nothing -> False
+  Just g -> not $ G.null (unRepresentation g)
 {-# INLINE hasPermutationSymmetries #-}
+
+getPermutationSymmetries :: Basis t -> Maybe (Representation Permutation)
+getPermutationSymmetries = \case
+  SpinBasis _ _ _ g -> Just g
+  _ -> Nothing
+{-# INLINE getPermutationSymmetries #-}
 
 hasFixedHammingWeight :: Basis t -> Bool
 hasFixedHammingWeight x = case x of
@@ -668,44 +677,94 @@ ls_hs_destroy_basis :: Ptr Cbasis -> IO ()
 ls_hs_destroy_basis = ls_hs_destroy_object $ \p -> do
   [CU.block| void {
     ls_hs_basis* p = $(ls_hs_basis* p);
+
+    LS_HS_INTERNAL_DESTROY_KERNEL(ls_hs_is_representative_kernel_type_v2,
+                                  p->is_representative_kernel,
+                                  p->is_representative_destructor);
+    LS_HS_INTERNAL_DESTROY_KERNEL(ls_hs_state_info_kernel_type_v2,
+                                  p->state_info_kernel,
+                                  p->state_info_destructor);
+    LS_HS_INTERNAL_DESTROY_KERNEL(ls_hs_state_to_index_kernel_type,
+                                  p->state_to_index_kernel,
+                                  p->state_to_index_destructor);
+
     ls_hs_internal_destroy_external_array(&p->local_representatives);
     ls_hs_internal_destroy_external_array(&p->local_norms);
+
     if (p->info != NULL) {
+      if (p->info->characters != NULL) {
+        // remove const qualifiers
+        free((void *)p->info->characters);
+      }
       free(p->info);
     }
   } |]
-  destroyIsRepresentativeKernel_v2
-    =<< [CU.exp| ls_hs_is_representative_kernel_type_v2 { $(ls_hs_basis* p)->is_representative_kernel } |]
-  destroyStateInfoKernel_v2
-    =<< [CU.exp| ls_hs_state_info_kernel_type_v2 { $(ls_hs_basis* p)->state_info_kernel } |]
 
 ls_hs_init_is_representative_kernel :: Ptr Cbasis -> IO ()
-ls_hs_init_is_representative_kernel basisPtr = withCbasis basisPtr $ foldSomeBasis $ \case
-  SpinBasis _numberSpins _hammingWeight spinInversion symmetries -> do
-    funPtr <- createIsRepresentativeKernel_v2 symmetries spinInversion
-    [CU.block| void {
-      $(ls_hs_basis* basisPtr)->is_representative_kernel = $(ls_hs_is_representative_kernel_type_v2 funPtr);
-    } |]
-  _ -> error "cannot build is_representative kernel for this basis type"
+ls_hs_init_is_representative_kernel basisPtr = withCbasis basisPtr $ foldSomeBasis $ \basis ->
+  if hasPermutationSymmetries basis
+    then do
+      kernel <- createIsRepresentativeKernel_v2 (fromJust $ getPermutationSymmetries basis) (getSpinInversion basis)
+      [CU.block| void {
+        ls_hs_basis* const basisPtr = $(ls_hs_basis* basisPtr);
+        LS_HS_INTERNAL_INIT_KERNEL(ls_hs_is_representative_kernel_type_v2,
+                                   &basisPtr->is_representative_kernel,
+                                   &basisPtr->is_representative_destructor,
+                                   $(ls_hs_is_representative_kernel_type_v2 kernel),
+                                   &ls_hs_internal_destroy_is_representative_kernel);
+      } |]
+    else error "do not call ls_hs_init_is_representative_kernel on a basis without permutation symmetries"
 
 ls_hs_init_state_info_kernel :: Ptr Cbasis -> IO ()
-ls_hs_init_state_info_kernel basisPtr = withCbasis basisPtr $ foldSomeBasis $ \case
-  SpinBasis _numberSpins _hammingWeight spinInversion symmetries -> do
-    funPtr <- createStateInfoKernel_v2 symmetries spinInversion
-    [CU.block| void {
-      $(ls_hs_basis* basisPtr)->state_info_kernel = $(ls_hs_state_info_kernel_type_v2 funPtr);
-    } |]
-  _ -> error "cannot build state_info kernel for this basis type"
+ls_hs_init_state_info_kernel basisPtr = withCbasis basisPtr $ foldSomeBasis $ \basis ->
+  if hasPermutationSymmetries basis
+    then do
+      kernel <- createStateInfoKernel_v2 (fromJust $ getPermutationSymmetries basis) (getSpinInversion basis)
+      [CU.block| void {
+        ls_hs_basis* const basisPtr = $(ls_hs_basis* basisPtr);
+        LS_HS_INTERNAL_INIT_KERNEL(ls_hs_state_info_kernel_type_v2,
+                                   &basisPtr->state_info_kernel,
+                                   &basisPtr->state_info_destructor,
+                                   $(ls_hs_state_info_kernel_type_v2 kernel),
+                                   &ls_hs_internal_destroy_state_info_kernel);
+      } |]
+    else error "do not call ls_hs_init_state_info_kernel on a basis without permutation symmetries"
+
+isBasisBuilt :: Ptr Cbasis -> IO Bool
+isBasisBuilt basis = toEnum . fromIntegral <$> [CU.exp| bool { $(ls_hs_basis const* basis)->local_representatives.elts != NULL } |]
 
 ls_hs_init_state_to_index_kernel :: Ptr Cbasis -> IO ()
-ls_hs_init_state_to_index_kernel basisPtr = withCbasis basisPtr $ foldSomeBasis $ \case
-  SpinBasis numberSites (Just hammingWeight) _spinInversion symmetries
-    | nullRepresentation symmetries -> do
-        funPtr <- createFixedHammingStateToIndexKernel numberSites hammingWeight
-        [CU.block| void {
-          $(ls_hs_basis* basisPtr)->state_to_index_kernel = $(ls_hs_state_to_index_kernel_type funPtr);
-        } |]
-  _ -> error "cannot build state_to_index kernel for this basis type"
+ls_hs_init_state_to_index_kernel basisPtr = withCbasis basisPtr $ foldSomeBasis $ \basis ->
+  if isJust (getHammingWeight basis) && not (hasPermutationSymmetries basis)
+    then do
+      kernel <- createFixedHammingStateToIndexKernel (getNumberBits basis) (fromJust $ getHammingWeight basis)
+      [CU.block| void {
+        ls_hs_basis* const basisPtr = $(ls_hs_basis* basisPtr);
+        LS_HS_INTERNAL_INIT_KERNEL(ls_hs_state_to_index_kernel_type,
+                                   &basisPtr->state_to_index_kernel,
+                                   &basisPtr->state_to_index_destructor,
+                                   $(ls_hs_state_to_index_kernel_type kernel),
+                                   &ls_hs_internal_destroy_fixed_hamming_state_to_index_kernel);
+      } |]
+    else
+      isBasisBuilt basisPtr >>= \case
+        True -> do
+          let numberBits = fromIntegral (getNumberBits basis)
+          prefixBits <- maybe 26 read <$> lookupEnv "LS_HS_CACHE_NUM_BITS"
+          [CU.block| void {
+            ls_hs_basis* const basisPtr = $(ls_hs_basis* basisPtr);
+            ls_hs_state_to_index_kernel_type const kernel =
+              ls_hs_internal_mk_binary_search_state_to_index_kernel((int64_t)basisPtr->local_representatives.num_elts,
+                                                                    (uint64_t const*)basisPtr->local_representatives.elts,
+                                                                    $(unsigned numberBits),
+                                                                    $(unsigned prefixBits));
+            LS_HS_INTERNAL_INIT_KERNEL(ls_hs_state_to_index_kernel_type,
+                                       &basisPtr->state_to_index_kernel,
+                                       &basisPtr->state_to_index_destructor,
+                                       kernel,
+                                       &ls_hs_internal_destroy_binary_search_state_to_index_kernel);
+          } |]
+        False -> error "cannot initialize the binary_search_state_to_index_kernel because the basis has not been built"
 
 newCbasis :: IsBasis t => Basis t -> IO (Ptr Cbasis)
 newCbasis x = do
@@ -733,6 +792,19 @@ ls_hs_init_basis_info p =
           BasisState k (BitString n) -> if k <= 64 then fromIntegral n else minBound
         max_state_estimate = case maxStateEstimate basis of
           BasisState k (BitString n) -> if k <= 64 then fromIntegral n else maxBound
+    characters <-
+      case getPermutationSymmetries basis of
+        Just (Representation gs) ->
+          S.unsafeWith (G.convert (coerce . (.character) <$> gs)) $ \src -> do
+            let n = fromIntegral (G.length gs)
+            [CU.block| ls_hs_scalar const* {
+              size_t const num_bytes = $(size_t n) * sizeof(ls_hs_scalar);
+              ls_hs_scalar* dest = aligned_alloc(/*alignment=*/64U, /*size=*/num_bytes);
+              LS_CHECK(dest != NULL, "ls_hs_init_basis_info: aligned_alloc failed");
+              memcpy(dest, $(ls_hs_scalar const* src), num_bytes);
+              return dest;
+            } |]
+        Nothing -> pure nullPtr
     [CU.block| void {
       ls_hs_basis* const p = $(ls_hs_basis* p);
       if (atomic_load(&p->info) == NULL) {
@@ -755,7 +827,8 @@ ls_hs_init_basis_info p =
           .hamming_weight = $(int hamming_weight),
           .spin_inversion = $(int spin_inversion),
           .min_state_estimate = $(uint64_t min_state_estimate),
-          .max_state_estimate = $(uint64_t max_state_estimate)
+          .max_state_estimate = $(uint64_t max_state_estimate),
+          .characters = $(ls_hs_scalar const* characters)
         };
 
         ls_hs_basis_info* _Atomic expected = NULL;
@@ -773,10 +846,6 @@ ls_hs_init_basis_info p =
         // In our case the return value false means that another thread beat us to constructing
         // info, so we don't need to set p->info anymore.
         if (!atomic_compare_exchange_strong(&p->info, &expected, desired)) {
-          if (atomic_load(&expected) == NULL) {
-            fprintf(stderr, "ls_hs_init_basis_info: this should never happen, aborting...\n");
-            abort();
-          }
           free(info);
         }
       }

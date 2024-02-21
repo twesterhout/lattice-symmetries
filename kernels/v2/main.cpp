@@ -8,7 +8,8 @@ int main() {
     Runtime::Buffer<uint64_t, 2> binomials(16, 16);
 
     try {
-        auto f = mk_fixed_hamming_state_to_index_kernel(16, 8, binomials.raw_buffer());
+        auto f =
+            ls_hs_internal_mk_fixed_hamming_state_to_index_kernel(16, 8, binomials.raw_buffer());
     } catch (CompileError &e) {
         fprintf(stderr, "%s\n", e.what());
         return 1;

@@ -89,20 +89,23 @@ const smallBasesJsonDefs = [
   "{ \"number_spins\": 1, \"hamming_weight\": 1 }",
   "{ \"number_spins\": 2, \"spin_inversion\": 1 }",
   "{ \"number_spins\": 4, \"hamming_weight\": 2, \"spin_inversion\": -1 }",
+  "{ \"number_spins\": 3, \"symmetries\": [ { \"permutation\": [1, 2, 0], \"sector\": 0 } ] }",
 ];
 const smallBasesExpectedStates = [
   new Vector([0b0:uint, 0b1:uint]),
   new Vector([0b0:uint]),
   new Vector([0b1:uint]),
   new Vector([0b00:uint, 0b01:uint]),
-  new Vector([0b0011:uint, 0b0101:uint, 0b0110]),
+  new Vector([0b0011:uint, 0b0101:uint, 0b0110:uint]),
+  new Vector([0b000:uint, 0b001:uint, 0b011:uint, 0b111:uint]),
 ];
 const smallBasesExpectedNorms = [
-  new Vector([1.0, 1.0]),
-  new Vector([1.0]),
-  new Vector([1.0]),
-  new Vector([1.0, 1.0]),
-  new Vector([1.0, 1.0, 1.0]),
+  new Vector([1:uint(16), 1:uint(16)]),
+  new Vector([1:uint(16)]),
+  new Vector([1:uint(16)]),
+  new Vector([1:uint(16), 1:uint(16)]),
+  new Vector([1:uint(16), 1:uint(16), 1:uint(16)]),
+  new Vector([3:uint(16), 1:uint(16), 1:uint(16), 3:uint(16)]),
 ];
 
 proc test__enumerateStatesGeneric() {
@@ -120,7 +123,7 @@ proc test__enumerateStatesGeneric() {
     const b = new Basis(basisDef);
     const r = b.info.min_state_estimate .. b.info.max_state_estimate;
     var s = new Vector(uint(64));
-    var n = new Vector(real(64));
+    var n = new Vector(uint(16));
     _enumerateStatesGeneric(r, b, s, n);
 
     checkArraysEqual(s.toArray(), expectedStates.toArray());

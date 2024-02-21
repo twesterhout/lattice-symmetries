@@ -45,6 +45,7 @@ importLS =
       , C.include "<stdio.h>" -- fprintf, stderr
       , C.include "<string.h>" -- memset
       , C.include "<lattice_symmetries_types.h>"
+      , C.include "<HalideRuntime.h>" -- halide_buffer_t
       ]
 
 type RawIsRepresentativeKernel = Ptr RawHalideBuffer -> Ptr RawHalideBuffer -> IO ()
@@ -109,22 +110,7 @@ lsTypePairs =
       , ("ls_hs_rep_element", "Crep_element")
       , ("ls_hs_representation", "Crepresentation")
       , ("ls_hs_scalar", "Cscalar")
-      , ("Halide::Internal::Dimension", "CxxDimension")
-      , ("Halide::Internal::FusedPair", "FusedPair")
-      , ("Halide::Internal::PrefetchDirective", "PrefetchDirective")
-      , ("Halide::Internal::ReductionVariable", "ReductionVariable")
-      , ("Halide::Internal::Split", "Split")
-      , ("Halide::Internal::StageSchedule", "CxxStageSchedule")
-      , ("Halide::Argument", "CxxArgument")
-      , ("Halide::Buffer", "CxxBuffer")
-      , ("Halide::LoopLevel", "CxxLoopLevel")
-      , ("Halide::Stage", "CxxStage")
-      , ("Halide::Range", "CxxRange")
-      , ("Halide::RDom", "CxxRDom")
-      , ("halide_buffer_t", "Language.Halide.Buffer.RawHalideBuffer")
-      , ("halide_device_interface_t", "HalideDeviceInterface")
-      , ("halide_dimension_t", "HalideDimension")
-      , ("halide_trace_event_t", "TraceEvent")
+      , ("halide_buffer_t", "RawHalideBuffer")
       ]
   where
     optional :: (CIdentifier, String) -> Q [(TypeSpecifier, TypeQ)]

@@ -510,6 +510,9 @@ proc enumerateStates(ranges : [] range(uint(64)), const ref basis : Basis, out _
   const normsPtrs : [0 ..# numLocales] c_ptr(uint(16)) = norms._dataPtrs;
   const perLocaleOffsets = prefixSum(perBucketLocaleCounts, dim=0); // [0 ..# buckets.size, 0 ..# numLocales]
   forall (bucket, _i) in zip(buckets, 0..) {
+    // logDebug(_i, "|", bucket);
+
+
     assert(here == bucket.locale);
     // TODO: check that these are bulk transferred
     const myBasisStatesPtrs = basisStatesPtrs;
@@ -521,14 +524,16 @@ proc enumerateStates(ranges : [] range(uint(64)), const ref basis : Basis, out _
       const count = bucket.offsets[targetLocaleIdx + 1] - bucket.offsets[targetLocaleIdx];
       const srcOffset = bucket.offsets[targetLocaleIdx];
       const destOffset = myPerLocaleOffsets[targetLocaleIdx];
-      Communication.put(dest = myBasisStatesPtrs[targetLocaleIdx] + destOffset,
-                        src = bucket.basisStates.data + srcOffset,
-                        destLocID = targetLocaleIdx,
-                        numBytes = count:c_size_t * c_sizeof(uint(64)));
-      Communication.put(dest = myNormsPtrs[targetLocaleIdx] + destOffset,
-                        src = bucket.norms.data + srcOffset,
-                        destLocID = targetLocaleIdx,
-                        numBytes = count:c_size_t * c_sizeof(uint(16)));
+      if count > 0 {
+        Communication.put(dest = myBasisStatesPtrs[targetLocaleIdx] + destOffset,
+                          src = bucket.basisStates.data + srcOffset,
+                          destLocID = targetLocaleIdx,
+                          numBytes = count:c_size_t * c_sizeof(uint(64)));
+        Communication.put(dest = myNormsPtrs[targetLocaleIdx] + destOffset,
+                          src = bucket.norms.data + srcOffset,
+                          destLocID = targetLocaleIdx,
+                          numBytes = count:c_size_t * c_sizeof(uint(16)));
+      }
     }
 
     // we're done with bucket.basisStates and bucket.norms, so we can free up some memory

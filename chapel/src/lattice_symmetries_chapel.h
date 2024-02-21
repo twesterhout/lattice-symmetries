@@ -21,6 +21,11 @@ void ls_chpl_invoke_state_to_index_kernel(ls_hs_state_to_index_kernel_type kerne
                                           int64_t count, uint64_t const *basis_states,
                                           int64_t *indices);
 
+ls_hs_state_info_kernel_type_v2 ls_chpl_get_state_info_kernel(ls_hs_basis const *basis);
+void ls_chpl_invoke_state_info_kernel(ls_hs_state_info_kernel_type_v2 kernel,
+                                      int64_t count, uint64_t const *basis_states,
+                                      uint64_t *representatives, int32_t *indices);
+
 void ls_chpl_local_enumerate_states(ls_hs_basis* p, uint64_t lower, uint64_t upper);
 
 void ls_chpl_matrix_vector_product_f64(ls_hs_operator const* matrix, int numVectors,

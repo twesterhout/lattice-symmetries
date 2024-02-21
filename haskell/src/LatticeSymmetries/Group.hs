@@ -295,7 +295,6 @@ stateInfoSlow
   -> BasisState t
   -- ^ Basis state
   -> (BasisState t, Int)
-  -- ^ Norm if the state is a representative, nothing otherwise
 stateInfoSlow (B.toList . unRepresentation -> group) spinInversion basisState1 = case spinInversion of
   Nothing -> go (basisState1, -1) 0 basisState1 group
   Just _ -> error "not implemented"

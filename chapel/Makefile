@@ -99,13 +99,7 @@ bin/TestToCsr: test/TestToCsr.chpl $(LIB_MODULES)
 	@mkdir -p $(@D)
 	chpl $(CHPL_CFLAGS) $(HALIDE_CFLAGS) $(HDF5_CFLAGS) -I src/ -o $@ --main-module $(@F) $^ $(HDF5_CFLAGS) $(CHPL_LDFLAGS) $(LDFLAGS)
 
-bin/TestStatesEnumeration: test/TestStatesEnumeration.chpl \
-                           src/FFI.chpl \
-                           src/Utils.chpl \
-                           src/ForeignTypes.c src/ForeignTypes.chpl \
-                           src/Timing.c src/Timing.chpl \
-                           src/CommonParameters.chpl \
-                           src/StatesEnumeration.chpl
+bin/TestStatesEnumeration: test/TestStatesEnumeration.chpl $(LIB_MODULES)
 	@mkdir -p $(@D)
 	chpl $(CHPL_CFLAGS) $(HALIDE_CFLAGS) -I src/ -o $@ --main-module $(@F) $^ $(CHPL_LDFLAGS) $(LDFLAGS)
 

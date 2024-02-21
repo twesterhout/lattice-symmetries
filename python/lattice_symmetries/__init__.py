@@ -838,11 +838,11 @@ class Expr(HsWrapper):
     def permutation_group(self) -> List[List[int]]:
         return _from_json(lib.ls_hs_expr_permutation_group(self._payload))
 
-    # def to_json(self) -> str:
-    #     c_str = lib.ls_hs_expr_to_json(self._payload)
-    #     s = ffi.string(c_str).decode("utf-8")
-    #     lib.ls_hs_destroy_string(c_str)
-    #     return s
+    def to_json(self) -> str:
+        c_str = lib.ls_hs_expr_to_json(self._payload)
+        s = ffi.string(c_str).decode("utf-8")
+        lib.ls_hs_destroy_string(c_str)
+        return s
 
     def __str__(self) -> str:
         """Get the string representation of the underlying expression."""

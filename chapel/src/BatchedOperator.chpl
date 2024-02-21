@@ -103,8 +103,8 @@ proc applyOffDiagKernel(const ref matrix : ls_chpl_batched_operator,
         }
         matrix.coeffs[offset] = acc;
         matrix.betas[offset] = beta;
-        if matrix.target_states != nil then
-          matrix.target_states[offset] = chunk.low + batch_idx;
+        if matrix.target_indices != nil then
+          matrix.target_indices[offset] = chunk.low + batch_idx;
         // writeln(try! "y[%i] += %r <%u|x>".format(chunk.low + batch_idx, acc.re, beta));
         offset += 1;
       }
@@ -138,58 +138,6 @@ private proc computeKeys(totalCount, betas, keys, ref keysTimer) {
 }
 */
 
-private proc computeOffDiagNoProjection(const ref matrix : ls_chpl_batched_operator,
-                                        chunk,
-                                        alphas : c_ptrConst(uint(64)),
-                                        param left : bool) {
-  const _timer = recordTime(getRoutineName());
-  applyOffDiagKernel(matrix, chunk, alphas, left);
-}
-private proc computeOffDiagWithProjection(const ref matrix : ls_chpl_batched_operator,
-                                          chunk,
-                                          alphas : c_ptrConst(uint(64)),
-                                          param left : bool) {
-  const _timer = recordTime("computeOffDiagWithProjection");
-  assert(false,
-         "computeOffDiagWithProjection is not yet implemented");
-  /*
-  assert(others.tempNorms != nil && others.tempSpins != nil && others.tempCoeffs != nil);
-  // computeOffDiagNoProjection stores its results in others.betas and others.coeffs,
-  // but we need them in others.tempSpins and others.tempCoeffs
-  others.betas <=> others.tempSpins;
-  others.coeffs <=> others.tempCoeffs;
-  computeOffDiagNoProjection(matrix, count, alphas, xs, others, left, timers);
-  // revert the swaps
-  others.betas <=> others.tempSpins;
-  others.coeffs <=> others.tempCoeffs;
-
-  const totalCount = others.offsets[count];
-  // We are also interested in norms of alphas, so we append them to tempSpins
-  if timers != nil then timers!.memcpyTimer.start();
-  POSIX.memcpy(others.tempSpins + totalCount, alphas, count:c_size_t * c_sizeof(uint(64)));
-  if timers != nil then timers!.memcpyTimer.stop();
-
-  if timers != nil then timers!.stateInfoTimer.start();
-  ls_hs_state_info(
-    matrix.basis.payload,
-    totalCount + count,
-    others.tempSpins, 1,
-    others.betas, 1,
-    others.coeffs,
-    others.tempNorms);
-  if timers != nil then timers!.stateInfoTimer.stop();
-
-  if timers != nil then timers!.coeffTimer.start();
-  foreach i in 0 ..# count {
-    foreach k in others.offsets[i] ..< others.offsets[i + 1] {
-      const c = if left then conj(others.coeffs[k]) else others.coeffs[k];
-      others.coeffs[k] = c * others.tempCoeffs[k] * others.tempNorms[k] / others.tempNorms[totalCount + i];
-    }
-  }
-  if timers != nil then timers!.coeffTimer.stop();
-  */
-}
-
 // Given `count` basis vectors `alphas` with corresponding coefficients `xs`,
 // we apply the operator to each basis vector.
 //
@@ -199,18 +147,53 @@ private proc computeOffDiagWithProjection(const ref matrix : ls_chpl_batched_ope
 //
 // where the number of cⱼ coefficients depends on the basis vector |α⟩, but is
 // bounded by `_numberOffDiagTerms`.
-private inline proc computeOffDiagGeneric(const ref basisInfo : ls_hs_basis_info,
-                                          const ref matrix : ls_chpl_batched_operator,
-                                          chunk,
-                                          alphas : c_ptrConst(uint(64)),
-                                          param left : bool) {
+private inline proc computeOffDiag(const ref basisInfo : ls_hs_basis_info,
+                                   const ref matrix : ls_chpl_batched_operator,
+                                   chunk,
+                                   alphas : c_ptrConst(uint(64)),
+                                   norms : c_ptrConst(uint(16)),
+                                   param left : bool) {
+  const _timer = recordTime(getRoutineName());
   // Simple case when no symmetries are used
   if !basisInfo.has_permutation_symmetries {
-    computeOffDiagNoProjection(matrix, chunk, alphas, left);
+    applyOffDiagKernel(matrix, chunk, alphas, left);
   }
   // The tricky case when we have to project betas first
   else {
-    computeOffDiagWithProjection(matrix, chunk, alphas, left);
+    if matrix.temp_spins == nil || matrix.temp_group_indices == nil then
+      halt("temp_spins, temp_norms, and temp_coeffs should be pre-allocated");
+    if basisInfo.characters == nil then
+      halt("info->characters should not be NULL...");
+
+    // applyOffDiagKernel stores its results in matrix.betas and matrix.coeffs,
+    // but we need them in matrix.temp_spins.
+    matrix.betas <=> matrix.temp_spins;
+    applyOffDiagKernel(matrix, chunk, alphas, left);
+    // undo the swaps
+    matrix.betas <=> matrix.temp_spins;
+
+    const totalCount = matrix.offsets[chunk.size - 1];
+    const kernel = ls_chpl_get_state_info_kernel(matrix.matrix.deref().basis);
+    if kernel == nil then
+      halt("ls_chpl_get_state_info_kernel returned NULL");
+    ls_chpl_invoke_state_info_kernel(kernel, totalCount, matrix.temp_spins,
+                                     matrix.betas, matrix.temp_group_indices);
+
+    const characters : c_ptrConst(complex(128)) = basisInfo.characters;
+    if chunk.size > 0 {
+      foreach k in 0 ..< matrix.offsets[0] {
+        const c = matrix.coeffs[k];
+        const g = matrix.temp_group_indices[k];
+        matrix.coeffs[k] = c * characters[g] / sqrt(matrix.norms[0]:real);
+      }
+      foreach i in 1 ..< count {
+        foreach k in matrix.offsets[i] ..< matrix.offsets[i + 1] {
+          const c = matrix.coeffs[k];
+          const g = matrix.temp_group_indices[k];
+          matrix.coeffs[k] = c * characters[g] / sqrt(matrix.norms[i]:real);
+        }
+      }
+    }
   }
 }
 
@@ -322,6 +305,10 @@ record BatchedOperatorPointers {
 }
 */
 
+proc roundUpToMultipleOf(n: ?eltType, k : eltType) where isIntegral(eltType) {
+  return k * ((n + (k - 1)) / k);
+}
+
 // A wrapper around the Operator class that allows applying the operator to a
 // batch of basis vectors instead of one.
 //
@@ -348,19 +335,16 @@ record BatchedOperator {
   proc ref allocateBuffers() {
     const safeNumberTerms = max(matrix.max_number_off_diag, 1);
     const estimatedNumberTerms = max(matrix.max_number_off_diag_estimate, 1);
-    // It is important to have `+ safeNumberTerms` here. See the POSIX.memcpy
-    // call in computeOffDiagWithProjection for why.
-    const capacity = (raw.batch_size - 1) * estimatedNumberTerms + safeNumberTerms // Always needed
-                     + safeNumberTerms; // Specifically for symmetrized bases
+    // NOTE: We round capacity up to a multiple of 64...
+    const capacity = roundUpToMultipleOf((raw.batch_size - 1) * estimatedNumberTerms + safeNumberTerms, 64);
 
     raw.betas = allocate(uint(64), capacity);
     raw.coeffs = allocate(complex(128), capacity);
-    raw.target_states = allocate(uint(64), capacity);
+    raw.target_indices = allocate(uint(64), capacity);
     raw.offsets = allocate(int(64), raw.batch_size);
     if basisInfo.has_permutation_symmetries {
       raw.temp_spins = allocate(uint(64), capacity);
-      raw.temp_coeffs = allocate(complex(128), capacity);
-      raw.temp_norms = allocate(real(64), capacity);
+      raw.temp_group_indices = allocate(int(32), capacity);
     }
     if numLocales > 1 {
       raw.locale_indices = allocate(uint(8), capacity);
@@ -371,12 +355,11 @@ record BatchedOperator {
     // logDebug("BatchedOperator.deallocateBuffers");
     if raw.betas != nil then deallocate(raw.betas);
     if raw.coeffs != nil then deallocate(raw.coeffs);
-    if raw.target_states != nil then deallocate(raw.target_states);
+    if raw.target_indices != nil then deallocate(raw.target_indices);
     if raw.offsets != nil then deallocate(raw.offsets);
     if raw.locale_indices != nil then deallocate(raw.locale_indices);
     if raw.temp_spins != nil then deallocate(raw.temp_spins);
-    if raw.temp_coeffs != nil then deallocate(raw.temp_coeffs);
-    if raw.temp_norms != nil then deallocate(raw.temp_norms);
+    if raw.temp_group_indices != nil then deallocate(raw.temp_group_indices);
   }
 
   proc init(raw : ls_chpl_batched_operator) {

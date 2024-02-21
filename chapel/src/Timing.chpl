@@ -107,14 +107,13 @@ class LocaleLocalStore {
   var dom : domain(1);
   var arr : [dom] TaskLocalStore;
 
-  proc init(capacity : int = 10240) {
-    this.dom = {0 ..# capacity};
+  proc init() {
+    this.dom = {0 ..# here.maxTaskPar};
   }
 
   inline proc add(param func, time : real) {
-    const taskId = chpl_task_getId():int;
-    if taskId >= dom.size then
-      halt(try! "taskId: {}, but capacity={}".format(taskId, dom.size));
+    // NOTE: this should mimick the current task->core mapping in qthreads, but not sure...
+    const taskId = chpl_task_getId():int % here.maxTaskPar;
     arr[taskId].add(func, time);
   }
 }

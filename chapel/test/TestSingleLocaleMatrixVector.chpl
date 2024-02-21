@@ -54,35 +54,29 @@ proc main() {
   initRuntime();
   defer deinitRuntime();
 
-  const matrix = loadOperatorFromFile(kHamiltonian);
-  const ref basis = matrix.basis;
-  // writeln((new OperatorForeignInterface()).to_json(matrix.payload));
-
-  const basisStates, norms, keys;
-  enumerateStates(basis, basisStates, norms, keys);
-
   const testData = open(kVectors, ioMode.r).reader(deserializer=new jsonDeserializer()).read(TestInfo);
   const x = [(re, im) in zip(testData.x_real, testData.x_imag)] re + im * 1.0i;
   const y = [(re, im) in zip(testData.y_real, testData.y_imag)] re + im * 1.0i;
-  var z : [x.domain] x.eltType;
-  perLocaleMatrixVector(matrix, x, z, basisStates[here]);
 
+  const matrix = loadOperatorFromFile(kHamiltonian);
+  const ref basis = matrix.basis;
+
+  const basisStates, norms, keys;
+  enumerateStates(basis, basisStates, norms, keys);
   if kVerbose {
     writeln("basisStates = ", basisStates[here]);
     writeln("expectedBasisStates = ", testData.states.toArray());
+  }
+  checkArraysEqual(testData.states.toArray(), basisStates[here]);
+  matrix.basis.payload.deref().local_representatives = convertToExternalArray(basisStates[here]);
+  matrix.basis.payload.deref().local_norms = convertToExternalArray(norms[here]);
+
+  var z : [x.domain] x.eltType;
+  perLocaleMatrixVector(matrix, x, z, basisStates[here]);
+  if kVerbose {
     writeln("x = ", x);
     writeln("y = ", y);
     writeln("z = ", z);
   }
-
-  checkArraysEqual(testData.states.toArray(), basisStates[here]);
-  // if matrix.basis.info.spin_inversion == -1 { // we do not trust QuSpin when spin_inversion==-1
-  //   const absZ = abs(z);
-  //   const absY = abs(y);
-  //   checkArraysEqual(absZ, absY);
-  // }
-  // else {
-    checkArraysEqual(z, y);
-  // }
-
+  checkArraysEqual(z, y);
 }

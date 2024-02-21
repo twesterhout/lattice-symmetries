@@ -8,11 +8,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-// void ls_hs_fatal_error(char const *func, int const line, char const *message) {
-//     fprintf(stderr, "[Error]   [%s#%i] %s\n[Error]   Aborting ...", func, line, message);
-//     abort();
-// }
-
 // typedef void (*error_handler_type)(char const *);
 // static _Atomic error_handler_type ls_hs_internal_error_handler;
 //
@@ -40,7 +35,7 @@
 typedef void (*ls_hs_internal_chpl_free_func)(void *);
 
 void ls_hs_internal_destroy_external_array(chpl_external_array *arr) {
-    // LS_CHECK(arr != NULL, "trying to destroy a NULL chpl_external_array");
+    LS_CHECK(arr != NULL, "trying to destroy a NULL chpl_external_array");
     if (arr->freer != NULL) {
         ls_hs_internal_chpl_free_func const free_func = (ls_hs_internal_chpl_free_func)arr->freer;
         (*free_func)(arr->elts);
@@ -48,17 +43,17 @@ void ls_hs_internal_destroy_external_array(chpl_external_array *arr) {
 }
 
 void ls_hs_internal_object_init(ls_hs_object *object, int refcount, void *haskell_payload) {
-    // LS_CHECK(object != NULL, "trying to init a NULL object");
+    LS_CHECK(object != NULL, "trying to init a NULL object");
     atomic_store(&object->refcount, refcount);
     object->haskell_payload = haskell_payload;
 }
 int ls_hs_internal_object_inc_ref_count(ls_hs_object *object) {
-    // LS_CHECK(object != NULL, "trying to increase refcount of a NULL object");
+    LS_CHECK(object != NULL, "trying to increase refcount of a NULL object");
     return atomic_fetch_add(&object->refcount, 1);
     // fprintf(stderr, "refcount: %d -> %d\n", r, r + 1);
 }
 int ls_hs_internal_object_dec_ref_count(ls_hs_object *object) {
-    // LS_CHECK(object != NULL, "trying to decrease refcount of a NULL object");
+    LS_CHECK(object != NULL, "trying to decrease refcount of a NULL object");
     return atomic_fetch_sub(&object->refcount, 1);
     // fprintf(stderr, "refcount: %d -> %d\n", r, r - 1);
 }

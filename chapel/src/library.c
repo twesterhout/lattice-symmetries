@@ -126,3 +126,48 @@ void ls_chpl_invoke_state_to_index_kernel(ls_hs_state_to_index_kernel_type kerne
         .padding = 0};
     kernel(&basis_states_buf, &indices_buf);
 }
+
+ls_hs_state_info_kernel_type_v2 ls_chpl_get_state_info_kernel(ls_hs_basis const *basis) {
+    ls_hs_state_info_kernel_type_v2 fun = atomic_load(&basis->state_info_kernel);
+    if (fun == NULL) {
+        ls_hs_init_state_info_kernel(basis);
+        fun = atomic_load(&basis->state_info_kernel);
+    }
+    return fun;
+}
+
+void ls_chpl_invoke_state_info_kernel(ls_hs_state_info_kernel_type_v2 kernel,
+                                      int64_t const count, uint64_t const *basis_states,
+                                      uint64_t *representatives, int32_t *indices) {
+    halide_dimension_t dims[1] = {
+        (halide_dimension_t){.min = 0, .extent = (int32_t)count, .stride = 1}};
+    halide_buffer_t basis_states_buf = (halide_buffer_t){
+        .device = 0,
+        .device_interface = 0,
+        .host = (uint8_t *)basis_states,
+        .flags = 0,
+        .type = (struct halide_type_t){.code = halide_type_uint, .bits = 64, .lanes = 1},
+        .dimensions = 1,
+        .dim = dims,
+        .padding = 0};
+    halide_buffer_t representatives_buf = (halide_buffer_t){
+        .device = 0,
+        .device_interface = 0,
+        .host = (uint8_t *)representatives,
+        .flags = 0,
+        .type = (struct halide_type_t){.code = halide_type_uint, .bits = 64, .lanes = 1},
+        .dimensions = 1,
+        .dim = dims,
+        .padding = 0};
+    halide_buffer_t indices_buf = (halide_buffer_t){
+        .device = 0,
+        .device_interface = 0,
+        .host = (uint8_t *)indices,
+        .flags = 0,
+        .type = (struct halide_type_t){.code = halide_type_int, .bits = 32, .lanes = 1},
+        .dimensions = 1,
+        .dim = dims,
+        .padding = 0};
+    kernel(&basis_states_buf, &representatives_buf, &indices_buf);
+}
+
