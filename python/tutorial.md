@@ -2,10 +2,10 @@
 
 ##Contents
 
-*[Installing]
-*[Introduction]
-*[Examples]
-  *[ED]
+*[Installing] (#installing)
+*[Introduction] (#introduction)
+*[Examples] (#examples)
+  *[ED] (#ed)
 
 ## Installing
 
