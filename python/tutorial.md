@@ -1,4 +1,4 @@
-# lattice_symmetries tutorial
+# `lattice_symmetries` tutorial
 
 ## Contents
 
@@ -52,6 +52,12 @@ nix develop .#python
 Voila, and you have the working package.
 If you open a new terminal, the last step should be repeated ,i.e., moving to  `lattice-symmetries/python` and typing `nix develop .#python`.
 
+## Introduction
+
+The `lattice_symmetries` is a powerful package that nicely works with many-body quantum spin systems
+and takes into account system symmetries.
+The `lattice_symmetries` implements fast matrix-vector multiplication that can be applied to various problems, 
+such as time evolution or exact diagonalization of many-body Hamiltonians. 
 
 ## Examples
 
