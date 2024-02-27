@@ -3,9 +3,15 @@
 ## Contents
 
 - [Installing](#Installing)
-- [Introduction](#Introduction)
+- [Introduction, basic concepts and functions](#Introduction, basic concepts and functions)
+    -[Basis](#Basis)
+    -[Expressions](#Expression)
+    -[Operators](#Operators)
+    -[Symmetries](#Symmetries)
 - [Examples](#Examples)
-    - [ED](#ED)
+    - [Simple ED](#Simple ED)
+    - [More complicated ED](#More complicated ED)
+    - [Time evolution](#Time evolution)
 
 ## Installing
 
@@ -52,17 +58,41 @@ nix develop .#python
 Voila, and you have the working package.
 If you open a new terminal, the last step should be repeated ,i.e., moving to  `lattice-symmetries/python` and typing `nix develop .#python`.
 
-## Introduction
+## Introduction, basic concepts and functions
 
 The `lattice_symmetries` is a powerful package that nicely works with many-body quantum spin systems
 and takes into account system symmetries.
 The `lattice_symmetries` implements fast matrix-vector multiplication that can be applied to various problems, 
-such as time evolution or exact diagonalization of many-body Hamiltonians. 
+such as time evolution or exact diagonalization of many-body Hamiltonians.
+
+The basic objects upon which the machinery is built are Basis, Expression, Operator, and Symmetry.
+- Basis objects allow to construct basis of many-body hamiltonians (spin and fermion) with appropriate symmetries.
+The Basis objects als
+- Expression objects is a nice way to work with symbolic representations of operators. It is possible to add
+
+### Basis
+
+### Expressions
+
+### Operators
+
+### Symmetries
+
+The full power of `lattice_symmetries` manifests if one use symmetries when constructing 
+symmetry adapted basis and linear operators acting on teh corresponding Hilbert space.
 
 ## Examples
 
 Here we will take a look at different examples of lattice_symmetries applications.
 
-### ED
+### Simple ED
 
 Now we will consider the simplest example of exact diagonalization.
+
+### More complicated ED
+
+Now let's consider a more complicated example of ED.
+
+### Time evolution
+
+Another example of capabilities of `lattice_symmetries` is time evolution.
