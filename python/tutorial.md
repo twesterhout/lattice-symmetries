@@ -3,15 +3,15 @@
 ## Contents
 
 - [Installing](#Installing)
-- [Introduction, basic concepts and functions](#Introduction, basic concepts and functions)
-    -[Basis](#Basis)
-    -[Expressions](#Expression)
-    -[Operators](#Operators)
-    -[Symmetries](#Symmetries)
+- [Introduction, basic concepts and functions](#Intro)
+    - [Basis](#Basis)
+    - [Expressions](#Expressions)
+    - [Operators](#Operators)
+    - [Symmetries](#Symmetries)
 - [Examples](#Examples)
-    - [Simple ED](#Simple ED)
-    - [More complicated ED](#More complicated ED)
-    - [Time evolution](#Time evolution)
+    - [Simple ED](#Simple_ED)
+    - [More complicated ED](#Complex_ED)
+    - [Time evolution](#Time_evolution)
 
 ## Installing
 
