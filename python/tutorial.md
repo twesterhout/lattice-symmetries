@@ -6,7 +6,8 @@
 - [Basic concepts and functions](#Basic-concepts-and-functions)
     - [Basis](#Basis)
         - [Spin basis](#Spin-basis)
-        - [Fermionic basis](#Fermionic-basis)
+        - [Spinful Fermionic basis](#Spinful-fermionic-basis)
+        - [Spinless Fermionic basis](#Spinless-fermionic-basis)
     - [Expressions](#Expressions)
     - [Operators](#Operators)
     - [Symmetries](#Symmetries)
@@ -92,7 +93,7 @@ basis.build() #build basis
 print(basis.index(basis.states)) #Print array of indices of basis states
 print(basis.number_states) #Print total number of states in the basis
 for i in range(basis.number_states): #Here we print all basis states as they stored in memory. Without symmetries, basis states equal their index
-    print(basis.states[i], basis.state_to_string(i)) #The last function represents basis states as a sequence of 0s and 1s  
+for i in range(basis.number_states): #Here we print all basis states as they stored in memory. Without symmetries, basis states equal their index
 ```
 
 The result looks like:
@@ -110,8 +111,75 @@ The result looks like:
 ```
 The basis states are equal to their indices and binary representations as they should be.
 
-#### Fermionic basis
-We can also consider fermionic basis:
+We can also consider only a part of the whole Hilbert space with given number of spin ups (i.e. hamming weight of binary representaions).
+We can specify it as follows:
+```sh
+basis = ls.SpinBasis(3, hamming_weight=2) #We want the subspace with only 2 spins up 
+basis.build() #build basis
+for i in range(basis.number_states): #Print the states in the basis
+    print(basis.states[i], basis.state_to_string(basis.states[i]))  
+```
+The output is:
+```sh
+3 |011⟩
+5 |101⟩
+6 |110⟩
+```
+We see that basis states include only spins with 2 spins up. It is also interesting to note that in this case a basis state is not equal to its index.
+
+Sometimes our system has spin inversion symmetry, and we can additionally shorten our basis. In this case, we can specify it as follows:
+```sh
+basis = ls.SpinBasis(4, spin_inversion=-1) #Spin inversion is present. It is not nessecary to specify hamming weight here, since it is fixed by spin inversion symmetry. 
+basis.build() #build basis
+for i in range(basis.number_states):
+    print(basis.states[i], basis.state_to_string(basis.states[i]))  
+```
+We have the basis states:
+```sh
+3 |011⟩
+5 |101⟩
+6 |110⟩
+```
+
+#### Spinless Fermionic basis
+We can also consider basis of fermions without spins. The basis states are stored as integers as for spin basis, however the binary representation has a second quantization interpretation.
+Each basis state is given by the sequence of 0s and 1s, where 1 means that there is a fermion on the corresponding site, and 0 means that the site is vacant.
+Let's consider the simplest example of fermions on two sites:
+```sh
+basis = ls.SpinlessFermionBasis(2) #We create fermionic basis on 2 sites
+basis.build() #build basis
+for i in range(basis.number_states):
+    print(basis.states[i], basis.state_to_string(basis.states[i])) 
+```
+which gives:
+```sh
+0 |00⟩
+1 |01⟩
+2 |10⟩
+3 |11⟩
+```
+as one would expect.
+
+We can specify the number of particles as well:
+```sh
+basis = ls.SpinlessFermionBasis(4, number_particles=3) #We create fermionic basis on 4 sites with only 3 fermions
+basis.build() #build basis
+for i in range(basis.number_states):
+    print(basis.states[i], basis.state_to_string(basis.states[i])) 
+```
+which gives:
+```sh
+7 |0111⟩
+11 |1011⟩
+13 |1101⟩
+14 |1110⟩
+```
+We can see that the basis consists of states with three fermions.
+
+#### Spinful Fermionic basis
+
+The last case includes fermions with spin. The binary representations of basis states can be read as a pair of (fermions with spin up on lattice, fermions with spin down on a lattice).
+We can create a basis of spinful fermions as follows:
 
 
 ### Expressions
@@ -122,8 +190,47 @@ Let's take a look at a few examples.
 ### Operators
 
 Based on an expression and a basis, we can build the corresponding operator acting on the chosen basis. Let's consider an example.
+```sh
+basis = ls.SpinfulFermionBasis(2) #We create basis of spinful fermions on 2 sites
+basis.build() #build basis
+for i in range(basis.number_states):
+    print(basis.states[i], basis.state_to_string(basis.states[i])) 
+```
+which gives:
+```sh
+0 |00⟩|00⟩
+1 |00⟩|01⟩
+2 |00⟩|10⟩
+3 |00⟩|11⟩
+4 |01⟩|00⟩
+5 |01⟩|01⟩
+6 |01⟩|10⟩
+7 |01⟩|11⟩
+8 |10⟩|00⟩
+9 |10⟩|01⟩
+10 |10⟩|10⟩
+11 |10⟩|11⟩
+12 |11⟩|00⟩
+13 |11⟩|01⟩
+14 |11⟩|10⟩
+15 |11⟩|11⟩
+```
+We see that now binary representation has the meaning of second quantization of fermions with two spins.
 
+As before, we can specify a sector of the total Hilbert space with given number of fermions with spin down and spin up:
 
+```sh
+basis = ls.SpinfulFermionBasis(2, number_particles=(2,1)) #We specify the numbers of fermions with spins down and up (N_down, N_up)=(2,1)
+basis.build() #build basis
+for i in range(basis.number_states):
+    print(basis.states[i], basis.state_to_string(basis.states[i])) 
+```
+which gives:
+```sh
+7 |01⟩|11⟩
+11 |10⟩|11⟩
+```
+as expected.
 
 ### Symmetries
 
