@@ -210,7 +210,7 @@ We see that binary representation now means the second quantization of fermions 
 As before, we can specify a sector of the total Hilbert space with a given number of fermions with spin down and spin up:
 
 ```sh
-basis = ls.SpinfulFermionBasis(2, number_particles=(2,1)) #We specify the numbers of fermions with spins down and up (N_down, N_up)=(2,1)
+basis = ls.SpinfulFermionBasis(2, number_particles=(2,1)) #We specify the numbers of fermions with spins up and down (N_up, N_down)=(2,1)
 basis.build()
 for i in range(basis.number_states):
     print(basis.states[i], basis.state_to_string(basis.states[i])) 
