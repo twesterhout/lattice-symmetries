@@ -93,7 +93,7 @@ basis.build() #build basis
 print(basis.index(basis.states)) #Print array of indices of basis states
 print(basis.number_states) #Print total number of states in the basis
 for i in range(basis.number_states): #Here we print all basis states as they stored in memory. Without symmetries, basis states equal their index
-for i in range(basis.number_states): #Here we print all basis states as they stored in memory. Without symmetries, basis states equal their index
+    print(basis.states[i], basis.state_to_string(basis.states[i]))  
 ```
 
 The result looks like:
@@ -115,7 +115,7 @@ We can also consider only a part of the whole Hilbert space with a given number 
 We can specify it as follows:
 ```sh
 basis = ls.SpinBasis(3, hamming_weight=2) #We want the subspace with only 2 spins up 
-basis.build() #build basis
+basis.build()
 for i in range(basis.number_states): #Print the states in the basis
     print(basis.states[i], basis.state_to_string(basis.states[i]))  
 ```
@@ -130,7 +130,7 @@ We see that basis states include only spins with 2 spins up. It is also interest
 Sometimes, our system has spin inversion symmetry, and we can additionally shorten our basis. In this case, we can specify it as follows:
 ```sh
 basis = ls.SpinBasis(4, spin_inversion=-1) #Spin inversion is present. It is not nessecary to specify hamming weight here, since it is fixed by spin inversion symmetry. 
-basis.build() #build basis
+basis.build()
 for i in range(basis.number_states):
     print(basis.states[i], basis.state_to_string(basis.states[i]))  
 ```
@@ -147,7 +147,7 @@ Each basis state is given by the sequence of 0s and 1s, where 1 means a fermion 
 Let's consider the simplest example of fermions on two sites:
 ```sh
 basis = ls.SpinlessFermionBasis(2) #We create fermionic basis on 2 sites
-basis.build() #build basis
+basis.build()
 for i in range(basis.number_states):
     print(basis.states[i], basis.state_to_string(basis.states[i])) 
 ```
@@ -163,7 +163,7 @@ as one would expect.
 We can specify the number of particles as well:
 ```sh
 basis = ls.SpinlessFermionBasis(4, number_particles=3) #We create fermionic basis on 4 sites with only 3 fermions
-basis.build() #build basis
+basis.build()
 for i in range(basis.number_states):
     print(basis.states[i], basis.state_to_string(basis.states[i])) 
 ```
@@ -182,7 +182,7 @@ The last case includes fermions with spin. The binary representations of basis s
 We can create a basis of spinful fermions as follows:
 ```sh
 basis = ls.SpinfulFermionBasis(2) #We create basis of spinful fermions on 2 sites
-basis.build() #build basis
+basis.build()
 for i in range(basis.number_states):
     print(basis.states[i], basis.state_to_string(basis.states[i])) 
 ```
@@ -211,7 +211,7 @@ As before, we can specify a sector of the total Hilbert space with a given numbe
 
 ```sh
 basis = ls.SpinfulFermionBasis(2, number_particles=(2,1)) #We specify the numbers of fermions with spins down and up (N_down, N_up)=(2,1)
-basis.build() #build basis
+basis.build()
 for i in range(basis.number_states):
     print(basis.states[i], basis.state_to_string(basis.states[i])) 
 ```
