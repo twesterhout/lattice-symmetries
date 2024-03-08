@@ -3,7 +3,7 @@
 ## Contents
 
 - [Installing](#Installing)
-- [Introduction, basic concepts and functions](#Introduction,-basic-concepts-and-functions)
+- [Basic concepts and functions](#Basic-concepts-and-functions)
     - [Basis](#Basis)
         - [Spin basis](#Spin-basis)
         - [Fermionic basis](#Fermionic-basis)
@@ -60,7 +60,7 @@ nix develop .#python
 Voila, and you have the working package.
 If you open a new terminal, the last step should be repeated ,i.e., moving to  `lattice-symmetries/python` and typing `nix develop .#python`.
 
-## Introduction, basic concepts and functions
+## Basic concepts and functions
 
 The `lattice_symmetries` is a powerful package that nicely works with many-body quantum spin systems
 and takes into account system symmetries.
