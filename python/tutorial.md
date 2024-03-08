@@ -5,15 +5,15 @@
 - [Installing](#Installing)
 - [Introduction, basic concepts and functions](#Intro)
     - [Basis](#Basis)
-        - [Spin basis](#Spin_basis)
-        - [Fermionic basis](#Fermionic basis)
+        - [Spin basis](#Spin-basis)
+        - [Fermionic basis](#Fermionic-basis)
     - [Expressions](#Expressions)
     - [Operators](#Operators)
     - [Symmetries](#Symmetries)
 - [Examples](#Examples)
-    - [Simple ED](#Simple_ED)
-    - [More complicated ED](#Complex_ED)
-    - [Time evolution](#Time_evolution)
+    - [Simple ED](#Simple-ED)
+    - [More complicated ED](#More-complicated-ED)
+    - [Time evolution](#Time-evolution)
 
 ## Installing
 
@@ -68,10 +68,10 @@ The `lattice_symmetries` implements fast matrix-vector multiplication that can b
 such as time evolution or exact diagonalization of many-body Hamiltonians.
 
 The basic objects upon which the machinery is built are `Basis`, `Expression`, `Operator`, and `Symmetry`.
-- `Basis` objects allow to construct basis of many-body Hilbert space consisting of spins or fermions with appropriate symmetries.
-Each basis state is represented as a sequence of $0$s and $1$s (i.e. bits), which can be interpreted as a binary number.
-- `Expression` objects is a nice way to work with symbolic representations of operators. It is possible to sum expressions, multiply them to numbers and each other.
-`Expressions` allow not to think about an explicit matrix representation of an operator, and user can work directly with analytical formulae as if they are written in paper. 
+- `Basis` object stores a basis of a many-body Hilbert space consisting of spins or fermions with appropriate symmetries.
+Each basis state is represented as a sequence of 0s and 1s (i.e. a sequence of bits), which can be interpreted as a binary number.
+- `Expression` object is a nice way to work with symbolic representations of operators. It is possible to sum expressions, and multiply them by numbers and each other.
+`Expression` allows not to think about an explicit matrix representation of an operator, and the user can work directly with analytical formulae. 
 - `Operator` object is an actual operator that can act on individual basis states and their linear combinations. 
 - `Symmetry` is a method to work with symmetry adapted basises.
 If an operator has symmmetries, it is useful to work in symmetry-adapted basis, since it can drastically decrease the dimension of the Hilbert space.
@@ -80,7 +80,8 @@ Now we will take a look at basic functions and methods for these objects.
 
 ### Basis
 #### Spin basis
-Let's take a look at simple examples, and at first we will not consider additional symmetries.
+Let's look at simple examples; at first we will not consider additional symmetries.
+
 The simplest example would be a spin basis:
 
 ```sh
@@ -91,7 +92,7 @@ basis.build() #build basis
 print(basis.index(basis.states)) #Print array of indices of basis states
 print(basis.number_states) #Print total number of states in the basis
 for i in range(basis.number_states): #Here we print all basis states as they stored in memory. Without symmetries, basis states equal their index
-    print(basis.states[i], basis.state_to_string(i)) #The last function represents basis states as a sequence of $0$s and $1$s  
+    print(basis.states[i], basis.state_to_string(i)) #The last function represents basis states as a sequence of 0s and 1s  
 ```
 
 The result looks like:
@@ -107,7 +108,7 @@ The result looks like:
 6 |110⟩
 7 |111⟩
 ```
-The basis states are equal to their indices and binary represenations as they should.
+The basis states are equal to their indices and binary representations as they should be.
 
 #### Fermionic basis
 We can also consider fermionic basis:
