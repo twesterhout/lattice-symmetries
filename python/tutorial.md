@@ -6,7 +6,7 @@
 - [Introduction, basic concepts and functions](#Intro)
     - [Basis](#Basis)
         - [Spin basis](#Spin_basis)
-        - [Fermionic basis](Fermionic basis)
+        - [Fermionic basis](#Fermionic basis)
     - [Expressions](#Expressions)
     - [Operators](#Operators)
     - [Symmetries](#Symmetries)
@@ -83,7 +83,7 @@ Now we will take a look at basic functions and methods for these objects.
 Let's take a look at simple examples, and at first we will not consider additional symmetries.
 The simplest example would be a spin basis:
 
-`
+```sh
 import lattice_symmetries as ls
  
 basis = ls.SpinBasis(3) #We create basis consisting of three $\frac{1}{2}$-spins (each spin can be |0⟩ or |1⟩) 
@@ -92,9 +92,10 @@ print(basis.index(basis.states)) #Print array of indices of basis states
 print(basis.number_states) #Print total number of states in the basis
 for i in range(basis.number_states): #Here we print all basis states as they stored in memory. Without symmetries, basis states equal their index
     print(basis.states[i], basis.state_to_string(i)) #The last function represents basis states as a sequence of $0$s and $1$s  
-`
+```
+
 The result looks like:
-`
+```sh
 [0 1 2 3 4 5 6 7]
 8
 0 |000⟩
@@ -105,7 +106,7 @@ The result looks like:
 5 |101⟩
 6 |110⟩
 7 |111⟩
-`
+```
 The basis states are equal to their indices and binary represenations as they should.
 
 #### Fermionic basis
