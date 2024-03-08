@@ -3,7 +3,7 @@
 ## Contents
 
 - [Installing](#Installing)
-- [Introduction, basic concepts and functions](#Intro)
+- [Introduction, basic concepts and functions](#Introduction,-basic-concepts-and-functions)
     - [Basis](#Basis)
         - [Spin basis](#Spin-basis)
         - [Fermionic basis](#Fermionic-basis)
