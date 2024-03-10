@@ -4,16 +4,15 @@ import Control.Exception
 import Data.Maybe (fromJust)
 import Data.Vector.Storable qualified as S
 import Data.Vector.Storable.Mutable qualified as SM
-import Foreign (castPtr, Bits (bit))
+import Foreign (Bits (bit), castPtr)
 import Gauge.Benchmark
 import Gauge.Main
 import Language.Halide hiding ((==))
+import LatticeSymmetries.Group (fromGenerators, mkSymmetry)
 import LatticeSymmetries.Lowering
-import System.Random
 import LatticeSymmetries.Permutation (mkPermutation)
-import LatticeSymmetries.Group (mkSymmetry, fromGenerators)
+import System.Random
 import Prelude hiding (group)
-
 
 benchmarkFixedHammingStateToIndex :: IO ()
 benchmarkFixedHammingStateToIndex = do
@@ -63,25 +62,27 @@ benchmarkStateInfo = do
   representatives <- SM.new @_ @Word64 (S.length basisStates)
   indices <- SM.new @_ @Int32 (S.length basisStates)
 
-  bracket (createStateInfoKernel_v2 group Nothing) destroyStateInfoKernel_v2 $ \kernelPtr ->
+  -- bracket (createStateInfoKernel_v2 group Nothing) destroyStateInfoKernel_v2 $ \kernelPtr ->
+  --   withHalideBuffer @1 @Word64 basisStates $ \basisStatesBuf ->
+  --     withHalideBuffer @1 @Word64 representatives $ \representativesBuf ->
+  --       withHalideBuffer @1 @Int32 indices $ \indicesBuf -> do
+  --         let !b = nfIO $ toFun_state_info_kernel kernelPtr (castPtr basisStatesBuf) (castPtr representativesBuf) (castPtr indicesBuf)
+  --         benchmark b
 
+  -- bracket (createStateInfoKernel_v3 group Nothing) destroyStateInfoKernel_v3 $ \kernelPtr ->
+  --   withHalideBuffer @1 @Word64 basisStates $ \basisStatesBuf ->
+  --     withHalideBuffer @1 @Word64 representatives $ \representativesBuf ->
+  --       withHalideBuffer @1 @Int32 indices $ \indicesBuf -> do
+  --         let !b = nfIO $ toFun_state_info_kernel kernelPtr (castPtr basisStatesBuf) (castPtr representativesBuf) (castPtr indicesBuf)
+  --         benchmark b
+
+  norms <- SM.new @_ @Word16 (S.length basisStates)
+  bracket (createIsRepresentativeKernel_v2 group Nothing) destroyIsRepresentativeKernel_v2 $ \kernelPtr ->
     withHalideBuffer @1 @Word64 basisStates $ \basisStatesBuf ->
-      withHalideBuffer @1 @Word64 representatives $ \representativesBuf ->
-        withHalideBuffer @1 @Int32 indices $ \indicesBuf -> do
-          let !b = nfIO $ toFun_state_info_kernel kernelPtr (castPtr basisStatesBuf) (castPtr representativesBuf) (castPtr indicesBuf)
-          benchmark b
-
-  bracket (createStateInfoKernel_v3 group Nothing) destroyStateInfoKernel_v3 $ \kernelPtr ->
-    withHalideBuffer @1 @Word64 basisStates $ \basisStatesBuf ->
-      withHalideBuffer @1 @Word64 representatives $ \representativesBuf ->
-        withHalideBuffer @1 @Int32 indices $ \indicesBuf -> do
-          let !b = nfIO $ toFun_state_info_kernel kernelPtr (castPtr basisStatesBuf) (castPtr representativesBuf) (castPtr indicesBuf)
-          benchmark b
-
-
+      withHalideBuffer @1 @Word16 norms $ \normsBuf -> do
+        let !b = nfIO $ toFun_is_representative_kernel kernelPtr (castPtr basisStatesBuf) (castPtr normsBuf)
+        benchmark b
 
 main :: IO ()
 main = do
   benchmarkStateInfo
-
-

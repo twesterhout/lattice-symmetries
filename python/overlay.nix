@@ -31,6 +31,7 @@ final: prev: {
           loguru
           numpy
           scipy
+          sympy
         ];
 
         nativeCheckInputs = with python-final; [

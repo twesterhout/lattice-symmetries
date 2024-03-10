@@ -460,6 +460,7 @@ typesTable
   , ([t|Cbasis|], "ls_hs_basis")
   , ([t|Cexpr|], "ls_hs_expr")
   , ([t|Cpermutation|], "ls_hs_permutation")
+  , ([t|Cpermutation_group|], "ls_hs_permutation_group")
   , -- , ([t|Cscalar|], "ls_hs_scalar")
     ([t|Coperator|], "ls_hs_operator")
   , -- , -- , ([t|Cyaml_config|], "ls_hs_yaml_config")
@@ -496,11 +497,6 @@ addDeclarations
     -- Utilities
     "ls_hs_destroy_string"
   , ------------------------
-    -- Symmetries
-    "ls_hs_create_permutation"
-  , "ls_hs_destroy_permutation"
-  , "ls_hs_permutation_info"
-  , ------------------------
     -- Basis
     "ls_hs_basis_from_json"
   , "ls_hs_basis_to_json"
@@ -511,6 +507,7 @@ addDeclarations
   , "ls_hs_init_state_to_index_kernel"
   , "ls_hs_fixed_hamming_state_to_index"
   , "ls_hs_fixed_hamming_index_to_state"
+  , "ls_hs_basis_permutation_group"
   , ------------------------
     -- Expr
     "ls_hs_expr_to_json"
@@ -528,11 +525,12 @@ addDeclarations
   , "ls_hs_expr_is_hermitian"
   , "ls_hs_expr_is_real"
   , "ls_hs_expr_is_identity"
-  , "ls_hs_expr_permutation_group"
   , "ls_hs_expr_spin_inversion_invariant"
   , "ls_hs_expr_conserves_number_particles"
   , "ls_hs_expr_particle_type"
   , "ls_hs_expr_number_sites"
+  , "ls_hs_expr_permutation_group"
+  , "ls_hs_expr_hilbert_space_sectors"
   , ------------------------
     -- Operator
 
@@ -540,6 +538,7 @@ addDeclarations
   , "ls_hs_destroy_operator"
   , "ls_hs_operator_from_json"
   , "ls_hs_operator_to_json"
+  , "ls_hs_operator_max_number_off_diag"
   -- , "ls_hs_operator_get_expr"
   -- , "ls_hs_operator_get_basis"
   -- , "ls_hs_operator_abelian_representations"

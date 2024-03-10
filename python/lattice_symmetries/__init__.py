@@ -1,4 +1,4 @@
-# Copyright (c) 2022, Tom Westerhout
+# Copyright (c) 2022-2024, Tom Westerhout
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -37,6 +37,7 @@ from loguru import logger
 from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import LinearOperator
 from scipy.special import binom
+from sympy.combinatorics import Permutation, PermutationGroup
 
 from lattice_symmetries._ls_hs import ffi, lib
 
@@ -66,61 +67,6 @@ class _RuntimeInitializer:
 
 
 _runtime_init = _RuntimeInitializer()
-
-
-# class Symmetry:
-#     """Lattice symmetry.
-#
-#     >>> # Lattice momentum with eigenvalue -ⅈ for a chain of 4 spins.
-#     >>> p = lattice_symmetries.Symmetry([1, 2, 3, 0], sector=1)
-#     >>> p.sector
-#     1
-#     >>> p.permutation
-#     [1, 2, 3, 0]
-#     >>> p.phase
-#     0.25
-#     """
-#
-#     permutation: NDArray[np.int32]
-#     sector: int
-#     phase: float
-#     periodicity: int
-#     character: complex
-#
-#     def __init__(self, permutation: ArrayLike, sector: int):
-#         self.permutation = np.asarray(permutation, dtype=np.int32)
-#         self.sector = int(sector)
-#         for name, value in _from_json(lib.ls_hs_symmetry_more_info(_to_json(self))).items():
-#             setattr(self, name, value)
-#
-#     def __repr__(self) -> str:
-#         return "Symmetry(permutation={}, sector={})".format(self.permutation, self.sector)
-#
-#     def __len__(self) -> int:
-#         return len(self.permutation)
-
-
-# class Symmetries:
-#     """Lattice symmetry group representation."""
-#
-#     elements: List[Symmetry]
-#
-#     def __init__(self, generators: List[Symmetry] = []):
-#         # TODO: add a Haskell function that expects a list of generators rather
-#         # than a JSON representation of Symmetries to avoid recursive calls
-#         self.elements = _from_json(lib.ls_hs_symmetries_from_generators(_to_json(generators)))
-#
-#     def __repr__(self):
-#         return "Symmetries({})".format(self.elements)
-#
-#     def __len__(self):
-#         return len(self.elements)
-#
-#     def __iter__(self):
-#         return iter(self.elements)
-#
-#     def compile(self):
-#         return _from_json(lib.ls_hs_compile_symmetries(_to_json(self.elements)))
 
 
 class LatticeSymmetriesEncoder(json.JSONEncoder):
@@ -188,342 +134,9 @@ def _from_json(obj) -> Any:
     return json.loads(obj, object_hook=LatticeSymmetriesDecoder().object_hook)
 
 
-# def _basis_state_to_array(state: int, number_words: int) -> ffi.CData:
-#     state = int(state)
-#     arr = ffi.new("uint64_t[]", number_words)
-#     for i in range(number_words):
-#         arr[i] = state & 0xFFFFFFFFFFFFFFFF
-#         state >>= 64
-#     return arr
-
-
-# class Basis:
-#     _payload: ffi.CData
-#     _finalizer: weakref.finalize
-#
-#     @overload
-#     def __init__(self, payload: ffi.CData):
-#         ...
-#
-#     @overload
-#     def __init__(self, json_string: bytes):
-#         ...
-#
-#     def _init_from_json(self, json_string: bytes):
-#         print("_init_from_json:", json_string.decode("utf-8"))
-#         self._payload = lib.ls_hs_basis_from_json(json_string)
-#         assert self._payload != ffi.NULL
-#         self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_basis, self._payload)
-#
-#     def _init_from_payload(self, payload: ffi.CData):
-#         self._payload = payload
-#         assert self._payload != ffi.NULL
-#         self._finalizer = weakref.finalize(self, lib.ls_hs_destroy_basis, self._payload)
-#
-#     def __init__(self, *args, **kwargs):
-#         if "json_string" in kwargs:
-#             self._init_from_json(*args, **kwargs)
-#         elif "payload" in kwargs:
-#             self._init_from_payload(*args, **kwargs)
-#         else:
-#             raise NotImplementedError("Invalid arguments: {}, {}".format(args, kwargs))
-#
-#     @property
-#     def is_built(self) -> bool:
-#         return self._payload.representatives.elts != ffi.NULL
-#
-#     def check_is_built(self):
-#         if not self.is_built:
-#             raise ValueError(
-#                 "basis states have not been built yet; "
-#                 "if you wish to do so, use the basis.build() function"
-#             )
-#
-#     def build(self) -> None:
-#         """Generate a list of representatives.
-#
-#         These can later be accessed using the `number_states` and `states` attributes.
-#         """
-#         if not self.is_built:
-#             lib.ls_hs_basis_build(self._payload)
-#         assert self.is_built
-#
-#     @property
-#     def number_states(self) -> int:
-#         self.check_is_built()
-#         return int(self._payload.representatives.num_elts)
-#
-#     @property
-#     def states(self) -> NDArray[np.uint64]:
-#         n = self.number_states
-#         p = int(ffi.cast("uintptr_t", self._payload.representatives.elts))
-#         # int(ffi.cast("uintptr_t", lib.ls_hs_basis_states(self._payload)))
-#
-#         class StatesWrapper(object):
-#             def __init__(self, wrapped):
-#                 self.wrapped = wrapped
-#                 self.__array_interface__ = {
-#                     "version": 3,
-#                     "typestr": "u8",
-#                     "data": (p, True),
-#                     "shape": (n,),
-#                 }
-#
-#         return np.array(StatesWrapper(self), copy=False)
-#
-#     @property
-#     def min_state_estimate(self) -> int:
-#         return lib.ls_hs_min_state_estimate(self._payload)
-#
-#     @property
-#     def max_state_estimate(self) -> int:
-#         return lib.ls_hs_max_state_estimate(self._payload)
-#
-#     @property
-#     def number_bits(self) -> int:
-#         return lib.ls_hs_basis_number_bits(self._payload)
-#
-#     @property
-#     def number_words(self) -> int:
-#         return lib.ls_hs_basis_number_words(self._payload)
-#
-#     @property
-#     def has_spin_inversion_symmetry(self) -> bool:
-#         return lib.ls_hs_basis_has_spin_inversion_symmetry(self._payload) != 0
-#
-#     @property
-#     def has_permutation_symmetries(self) -> bool:
-#         return lib.ls_hs_basis_has_permutation_symmetries(self._payload) != 0
-#
-#     @property
-#     def is_real(self) -> bool:
-#         return lib.ls_hs_basis_is_real(self._payload) != 0
-#
-#     @property
-#     def requires_projection(self) -> bool:
-#         return lib.ls_hs_basis_requires_projection(self._payload) != 0
-#
-#     def state_to_string(self, state: int) -> str:
-#         """Pretty-print a basis state."""
-#         arr = _basis_state_to_array(state, self.number_words)
-#         c_str = lib.ls_hs_basis_state_to_string(self._payload, arr)
-#         s = ffi.string(c_str).decode("utf-8")
-#         lib.ls_hs_destroy_string(c_str)
-#         return s
-#
-#     def state_info(self, x):
-#         assert self.number_bits <= 64
-#         is_scalar = isinstance(x, int)
-#         if is_scalar:
-#             x = np.array([x], dtype=np.uint64)
-#         else:
-#             x = np.asarray(x, dtype=np.uint64, order="C")
-#
-#         count = x.shape[0]
-#         betas: NDArray[np.uint64]
-#         characters: NDArray[np.complex128]
-#         norms: NDArray[np.float64]
-#         if self.has_permutation_symmetries:
-#             betas = np.zeros_like(x)
-#             characters = np.zeros(count, dtype=np.complex128)
-#             norms = np.zeros(count, dtype=np.float64)
-#
-#             x_ptr = ffi.from_buffer("uint64_t[]", x, require_writable=False)
-#             betas_ptr = ffi.from_buffer("uint64_t[]", betas, require_writable=True)
-#             characters_ptr = ffi.from_buffer("ls_hs_scalar[]", characters, require_writable=True)
-#             norms_ptr = ffi.from_buffer("double[]", norms, require_writable=True)
-#             lib.ls_hs_state_info(
-#                 self._payload, count, x_ptr, 1, betas_ptr, 1, characters_ptr, norms_ptr
-#             )
-#         elif self.has_spin_inversion_symmetry:
-#             mask = (1 << self.number_bits) - 1
-#             betas = np.bitwise_xor(x, np.uint64(mask))
-#             when = betas < x
-#
-#             betas = np.where(when, betas, x)
-#             characters = np.where(when, float(self.spin_inversion), 1.0)
-#             norms = np.ones(count, dtype=np.float64)
-#         else:
-#             assert not self.requires_projection
-#             betas = x
-#             characters = np.ones(count, dtype=np.complex128)
-#             norms = np.ones(count, dtype=np.float64)
-#
-#         if is_scalar:
-#             return (int(betas[0]), complex(characters[0]), float(norms[0]))
-#         else:
-#             return (betas, characters, norms)
-#
-#     def index(self, x: int | NDArray[np.uint64]) -> int | NDArray[np.int64]:
-#         """Return the index of a basis state."""
-#         assert self.number_bits <= 64
-#         is_scalar = False
-#         x = np.asarray(x, dtype=np.uint64, order="C")
-#         if x.ndim == 0:
-#             is_scalar = True
-#             x = np.expand_dims(x, axis=0)
-#
-#         count = x.shape[0]
-#         indices = np.zeros(count, dtype=np.int64)
-#
-#         x_ptr = ffi.from_buffer("uint64_t const*", x, require_writable=False)
-#         indices_ptr = ffi.from_buffer("ptrdiff_t *", indices, require_writable=True)
-#         lib.ls_hs_state_index(self._payload, count, x_ptr, 1, indices_ptr, 1)
-#
-#         if is_scalar:
-#             return int(indices[0])
-#         else:
-#             return indices
-#
-#     @staticmethod
-#     def from_json(json_string: str) -> "Basis":
-#         _assert_subtype(json_string, str)
-#         return Basis(json_string=json_string.encode("utf-8"))
-#
-#     def to_json(self) -> str:
-#         c_str = lib.ls_hs_basis_to_json(self._payload)
-#         s = ffi.string(c_str).decode("utf-8")
-#         lib.ls_hs_destroy_string(c_str)
-#         return s
-#
-#
-# class SpinBasis(Basis):
-#     def __init__(
-#         self,
-#         number_spins: int,
-#         hamming_weight: Optional[int] = None,
-#         spin_inversion: Optional[int] = None,
-#         symmetries: Optional[Symmetries] = None,
-#     ):
-#         """Create a Hilbert space basis for `number_spins` spin-1/2 particles."""
-#         super().__init__(
-#             json_string=_to_json(
-#                 {
-#                     "particle": "spin-1/2",
-#                     "number_spins": number_spins,
-#                     "hamming_weight": hamming_weight,
-#                     "spin_inversion": spin_inversion,
-#                     "symmetries": symmetries if symmetries is not None else Symmetries(),
-#                 }
-#             )
-#         )
-#
-#     @property
-#     def has_fixed_hamming_weight(self) -> bool:
-#         return lib.ls_hs_basis_has_fixed_hamming_weight(self._payload)
-#
-#     @property
-#     def spin_inversion(self) -> Optional[int]:
-#         i = self._payload.spin_inversion
-#         return int(i) if i != 0 else None
-#
-#
-# class SpinlessFermionBasis(Basis):
-#     def __init__(
-#         self,
-#         number_sites: int,
-#         number_particles: Optional[int] = None,
-#     ):
-#         """Create a Hilbert space basis for spinless fermions living on a lattice with
-#         `number_sites` sites. The number of fermions may be optionally specified by the
-#         `number_particles` argument."""
-#         super().__init__(
-#             json_string=_to_json(
-#                 {
-#                     "particle": "spinless-fermion",
-#                     "number_sites": number_sites,
-#                     "number_particles": number_particles,
-#                 }
-#             )
-#         )
-#
-#
-# class SpinfulFermionBasis(Basis):
-#     def __init__(
-#         self,
-#         number_sites: int,
-#         number_particles: Union[None, int, Tuple[int, int]] = None,
-#     ):
-#         """Create a Hilbert space basis for spinful fermions living on a lattice with `number_sites`
-#         sites. The total number of fermions may be optionally specified with an integer
-#         `number_particles` argument. Alternatively, the number of fermions with spin up and spin
-#         down can be specified separately by setting `number_particles` to a tuple
-#         `(N_up, N_down)`."""
-#         super().__init__(
-#             json_string=_to_json(
-#                 {
-#                     "particle": "spinful-fermion",
-#                     "number_sites": number_sites,
-#                     "number_particles": number_particles,
-#                 }
-#             )
-#         )
-
-
-# def _normalize_site_indices(sites):
-#     sites_arr = np.asarray(sites, dtype=np.int32, order="C")
-#     if sites_arr.ndim == 0 or sites_arr.ndim > 2:
-#         raise ValueError("invalid array of site indices: {}".format(sites))
-#     if sites_arr.ndim == 1:
-#         sites_arr = sites_arr.reshape(-1, 1)
-#     return sites_arr
-
-
 def _assert_subtype(variable, required_type):
     if not isinstance(variable, required_type):
         raise TypeError("expected a '{}', but got '{}'".format(required_type, type(variable)))
-
-
-# def _chpl_external_array_as_ndarray(arr: ffi.CData, dtype) -> NDArray[Any]:
-#     if not isinstance(dtype, np.dtype):
-#         dtype = np.dtype(dtype)
-#     buf = ffi.buffer(arr.elts, arr.num_elts * dtype.itemsize)
-#     weakref.finalize(buf, lambda: lib.ls_hs_internal_destroy_external_array(arr))
-#     return np.frombuffer(buf, dtype=dtype)
-
-
-# def _to_spin_index(i) -> str:
-#     if isinstance(i, int):
-#         if i == 0:
-#             return "↑"
-#         elif i == 1:
-#             return "↓"
-#         else:
-#             raise ValueError("invalid spin index: {}; expected either 0 or 1".format(i))
-#     elif isinstance(i, str):
-#         if i == "↑" or i == "↓":
-#             return i
-#         else:
-#             raise ValueError("invalid spin index: {}; expected either ↑ or ↓".format(i))
-#     else:
-#         raise TypeError("invalid spin index: {}".format(i))
-
-
-# def _from_spin_index(i) -> int:
-#     if isinstance(i, int):
-#         if i == 0:
-#             return 0
-#         elif i == 1:
-#             return 1
-#         else:
-#             raise ValueError("invalid spin index: {}; expected either 0 or 1".format(i))
-#     elif isinstance(i, str):
-#         if i == "↑":
-#             return 0
-#         elif i == "↓":
-#             return 1
-#         else:
-#             raise ValueError("invalid spin index: {}; expected either ↑ or ↓".format(i))
-#     else:
-#         raise TypeError("invalid spin index: {}".format(i))
-
-
-# @ffi.def_extern()
-# def python_replace_indices(s, i, new_s_ptr, new_i_ptr):
-#     assert replace_indices_impl is not None
-#     (new_s, new_i) = replace_indices_impl(s, i)
-#     new_s_ptr[0] = new_s
-#     new_i_ptr[0] = new_i
 
 
 class ExternalArrayWrapper:
@@ -567,44 +180,6 @@ class HsWrapper(object):
         self._finalizer = (
             weakref.finalize(self, finalizer, self._payload) if finalizer is not None else None
         )
-
-
-class Permutation(HsWrapper):
-    _info: Optional[Dict[str, Any]]
-
-    def __init__(
-        self,
-        permutation: List[int] = [],
-        payload: ffi.CData | int = 0,
-        finalizer: Callable[[ffi.CData], None] = lib.ls_hs_destroy_permutation,
-    ):
-        if len(permutation) > 0:
-            permutation = [int(i) for i in permutation]
-            payload = _from_json(
-                lib.ls_hs_create_permutation(json.dumps(permutation).encode("utf-8"))
-            )
-            self.__init__(payload=payload)
-        else:
-            if isinstance(payload, int):
-                payload = ffi.cast("ls_hs_permutation *", payload)
-            super().__init__(payload=payload, finalizer=finalizer)
-            self._info = None
-
-    def _init_info(self) -> None:
-        if self._info is None:
-            self._info = _from_json(lib.ls_hs_permutation_info(self._payload))
-
-    @property
-    def periodicity(self) -> int:
-        self._init_info()
-        assert self._info is not None
-        return self._info["periodicity"]
-
-    @property
-    def permutation(self) -> List[int]:
-        self._init_info()
-        assert self._info is not None
-        return self._info["permutation"]
 
 
 class Basis(HsWrapper):
@@ -790,17 +365,19 @@ class SpinBasis(Basis):
     def __init__(
         self,
         number_spins: int,
-        hamming_weight: Optional[int] = None,
-        spin_inversion: Optional[int] = None,
+        hamming_weight: int | None = None,
+        spin_inversion: int | None = None,
+        symmetries: list[Tuple[Permutation, int]] = [],
     ):
         """Create a Hilbert space basis for `number_spins` spin-1/2 particles."""
         super().__init__(
             json_string=json.dumps(
                 {
                     "particle": "spin-1/2",
-                    "number_spins": number_spins,
+                    "number_sites": number_spins,
                     "hamming_weight": hamming_weight,
                     "spin_inversion": spin_inversion,
+                    "symmetries": symmetries,
                 }
             )
         )
@@ -953,7 +530,18 @@ class Expr(HsWrapper):
                     "does not conserve the number of particles"
                 )
 
-    def symmetric_basis(
+    def full_basis(self) -> Basis:
+        return Basis(
+            json_string=json.dumps(
+                dict(particle=self.particle_type, number_sites=self.number_sites)
+            )
+        )
+
+    def hilbert_space_sectors(self):
+        r = _from_json(lib.ls_hs_expr_hilbert_space_sectors(self._payload))
+        return [Basis(payload=p) for p in r]
+
+    def symmetric_bases(
         self,
         particle_conservation: bool | int = True,
         spin_inversion: bool | int = True,
@@ -991,6 +579,11 @@ class Expr(HsWrapper):
         else:
             return NotImplemented
 
+    def to_dense(self) -> NDArray:
+        m = Operator(self)
+        m.basis.build()
+        return m.to_dense()
+
 
 class Operator(HsWrapper, LinearOperator):
     _basis: Basis
@@ -1006,7 +599,7 @@ class Operator(HsWrapper, LinearOperator):
         if expression is not None:
             _assert_subtype(expression, Expr)
             if basis is None:
-                basis = next(expression.symmetric_basis())
+                basis = expression.full_basis()
             _assert_subtype(basis, Basis)
 
             payload = _from_json(lib.ls_hs_create_operator(basis._payload, expression._payload))
@@ -1165,6 +758,34 @@ class Operator(HsWrapper, LinearOperator):
         offsets = ExternalArrayWrapper(c_offsets, "i8")
         indices = ExternalArrayWrapper(c_indices, "i8")
         return csr_matrix((coeffs, indices, offsets), shape=self.shape, dtype=np.complex128)
+
+    def to_dense(self) -> NDArray[Any]:
+        m = self.off_diag_to_csr().todense()
+        m += np.diag(self.diag_to_array())
+        return m
+
+    def estimate_max_number_off_diag(self) -> int:
+        return lib.ls_hs_operator_max_number_off_diag(self._payload)
+
+
+def _axpy(alpha: complex, x: NDArray, y: NDArray):
+    if x.dtype != y.dtype or x.dtype != np.dtype("complex128"):
+        raise ValueError("_axpy currently only supports complex128")
+    if x.shape != y.shape:
+        raise ValueError(f"shape mismatch: {x.shape} != {y.shape}")
+    if not (
+        x.flags.c_contiguous
+        and y.flags.c_contiguous
+        or x.flags.f_contiguous
+        and y.flags.f_contiguous
+    ):
+        raise ValueError("x and y must be contiguous arrays")
+
+    size = x.size
+    alpha = complex(alpha)
+    x_ptr = ffi.from_buffer("ls_hs_scalar[]", x, require_writable=False)
+    y_ptr = ffi.from_buffer("ls_hs_scalar[]", y, require_writable=True)
+    lib.ls_chpl_experimental_axpy_c128(size, alpha.real, alpha.imag, x_ptr, y_ptr, y_ptr)
 
 
 #

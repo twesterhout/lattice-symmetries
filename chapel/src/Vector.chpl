@@ -176,9 +176,11 @@ class BlockVector {
   }
 
   proc deinit() {
+    // logDebug("BlockVector(" + eltType:string + ", " + rank:string + ").deinit");
     forall locBlock in _locBlocks {
       delete locBlock;
     }
+    // logDebug("BlockVector(" + eltType:string + ", " + rank:string + ").deinit done");
   }
 
   proc init(type t, param rank : int) {

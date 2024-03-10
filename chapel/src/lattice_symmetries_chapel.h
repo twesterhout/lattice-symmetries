@@ -14,7 +14,7 @@ ls_hs_basis_info const *ls_chpl_get_basis_info(ls_hs_basis const *basis);
 ls_hs_is_representative_kernel_type_v2 ls_chpl_get_is_representative_kernel(ls_hs_basis const *basis);
 void ls_chpl_invoke_is_representative_kernel(ls_hs_is_representative_kernel_type_v2 kernel,
                                              int64_t count, uint64_t const *basis_states,
-                                             double *norms);
+                                             uint16_t *norms);
 
 ls_hs_state_to_index_kernel_type ls_chpl_get_state_to_index_kernel(ls_hs_basis const *basis);
 void ls_chpl_invoke_state_to_index_kernel(ls_hs_state_to_index_kernel_type kernel,
@@ -40,4 +40,8 @@ void ls_chpl_off_diag_to_csr_c128(ls_hs_operator const* matrix,
                                   chpl_external_array* colIndices);
 
 void ls_chpl_extract_diag_c128(ls_hs_operator const* matrix, chpl_external_array* diag);
+
+void ls_chpl_experimental_axpy_c128(int64_t size, double alpha_re, double alpha_im,
+                                    ls_hs_scalar const* xs, ls_hs_scalar const* ys,
+                                    ls_hs_scalar* out);
 /* python-cffi: STOP */

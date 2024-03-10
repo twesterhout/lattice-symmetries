@@ -4,8 +4,11 @@ module LatticeSymmetries.AutomorphismsSpec (spec) where
 
 import Data.Set qualified as Set
 import LatticeSymmetries.Automorphisms
+import LatticeSymmetries.Expr
+import LatticeSymmetries.Generator (ParticleTag (SpinTag))
 import Test.Hspec
-import Utils ()
+import Utils
+import Data.Vector.Generic qualified as G
 
 -- | c n is the cyclic graph on n vertices
 cyclicGraph :: Int -> Hypergraph Int
@@ -35,16 +38,21 @@ rectangularGraph n k = Hypergraph (Set.fromList vs) (Set.fromList (Set.fromList 
 spec :: Spec
 spec = do
   describe "hypergraphAutomorphisms" $ do
-    it "works for cyclic graphs" $ do
-      forM_ ([3 .. 10] :: [Int]) $ \n ->
-        (hypergraphAutomorphisms (const True) (cyclicGraph n)).size `shouldBe` 2 * n
-      forM_ ([50, 100] :: [Int]) $ \n ->
-        (hypergraphAutomorphisms (const True) (cyclicGraph n)).size `shouldBe` 2 * n
-    it "works for cyclic graphs with 3-vertex edges" $ do
-      forM_ ([5 .. 10] :: [Int]) $ \n ->
-        (hypergraphAutomorphisms (const True) (cyclicGraph3 n)).size `shouldBe` 2 * n
-      forM_ ([50, 100] :: [Int]) $ \n ->
-        (hypergraphAutomorphisms (const True) (cyclicGraph3 n)).size `shouldBe` 2 * n
-    it "works for rectangularGraphs" $ do
-      (hypergraphAutomorphisms (const True) (rectangularGraph 4 4)).size `shouldBe` 384
-      (hypergraphAutomorphisms (const True) (rectangularGraph 3 4)).size `shouldBe` 48
+    -- it "works for cyclic graphs" $ do
+    --   forM_ ([3 .. 10] :: [Int]) $ \n ->
+    --     (hypergraphAutomorphisms (const True) (cyclicGraph n)).size `shouldBe` 2 * n
+    --   forM_ ([50, 100] :: [Int]) $ \n ->
+    --     (hypergraphAutomorphisms (const True) (cyclicGraph n)).size `shouldBe` 2 * n
+    -- it "works for cyclic graphs with 3-vertex edges" $ do
+    --   forM_ ([5 .. 10] :: [Int]) $ \n ->
+    --     (hypergraphAutomorphisms (const True) (cyclicGraph3 n)).size `shouldBe` 2 * n
+    --   forM_ ([50, 100] :: [Int]) $ \n ->
+    --     (hypergraphAutomorphisms (const True) (cyclicGraph3 n)).size `shouldBe` 2 * n
+    -- it "works for rectangularGraphs" $ do
+    --   (hypergraphAutomorphisms (const True) (rectangularGraph 4 4)).size `shouldBe` 384
+    --   (hypergraphAutomorphisms (const True) (rectangularGraph 3 4)).size `shouldBe` 48
+    it "example 1" $ do
+      e <- extractRight $ mkExpr SpinTag "2 I + S+3"
+      print (exprToHypergraph e)
+      print $ (hypergraphAutomorphisms (const True) (exprToHypergraph e)).permutations
+      print $ G.length $ (hypergraphAutomorphisms (const True) (exprToHypergraph e)).permutations

@@ -155,6 +155,7 @@
               valgrind
               pkg-config
               prettierd
+              parallel
             ];
             shellHook = ''
               # export CHPL_COMM=gasnet

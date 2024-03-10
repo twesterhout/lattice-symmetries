@@ -147,12 +147,12 @@ private proc computeKeys(totalCount, betas, keys, ref keysTimer) {
 //
 // where the number of cⱼ coefficients depends on the basis vector |α⟩, but is
 // bounded by `_numberOffDiagTerms`.
-private inline proc computeOffDiag(const ref basisInfo : ls_hs_basis_info,
-                                   const ref matrix : ls_chpl_batched_operator,
-                                   chunk,
-                                   alphas : c_ptrConst(uint(64)),
-                                   norms : c_ptrConst(uint(16)),
-                                   param left : bool) {
+proc _computeOffDiag(const ref basisInfo : ls_hs_basis_info,
+                     ref matrix : ls_chpl_batched_operator,
+                     chunk,
+                     alphas : c_ptrConst(uint(64)),
+                     norms : c_ptrConst(uint(16)),
+                     param left : bool) {
   const _timer = recordTime(getRoutineName());
   // Simple case when no symmetries are used
   if !basisInfo.has_permutation_symmetries {
@@ -160,6 +160,7 @@ private inline proc computeOffDiag(const ref basisInfo : ls_hs_basis_info,
   }
   // The tricky case when we have to project betas first
   else {
+    // logDebug("_computeOffDiag");
     if matrix.temp_spins == nil || matrix.temp_group_indices == nil then
       halt("temp_spins, temp_norms, and temp_coeffs should be pre-allocated");
     if basisInfo.characters == nil then
@@ -171,28 +172,48 @@ private inline proc computeOffDiag(const ref basisInfo : ls_hs_basis_info,
     applyOffDiagKernel(matrix, chunk, alphas, left);
     // undo the swaps
     matrix.betas <=> matrix.temp_spins;
+    // logDebug("swapping worked");
 
     const totalCount = matrix.offsets[chunk.size - 1];
+    // for k in 0 ..# chunk.size {
+    //   logDebug("offsets[", k, "]=", matrix.offsets[k]);
+    // }
+    // logDebug("totalCount=", totalCount);
     const kernel = ls_chpl_get_state_info_kernel(matrix.matrix.deref().basis);
     if kernel == nil then
       halt("ls_chpl_get_state_info_kernel returned NULL");
-    ls_chpl_invoke_state_info_kernel(kernel, totalCount, matrix.temp_spins,
+    const countWithPadding = roundUpToMaxBlockSize(totalCount);
+    ls_chpl_invoke_state_info_kernel(kernel, countWithPadding, matrix.temp_spins,
                                      matrix.betas, matrix.temp_group_indices);
+    // logDebug("state info worked");
 
+    const numCharacters = basisInfo.number_characters;
     const characters : c_ptrConst(complex(128)) = basisInfo.characters;
     if chunk.size > 0 {
+      // logDebug("start norms...");
       foreach k in 0 ..< matrix.offsets[0] {
         const c = matrix.coeffs[k];
         const g = matrix.temp_group_indices[k];
-        matrix.coeffs[k] = c * characters[g] / sqrt(matrix.norms[0]:real);
+        const character =
+          if g > numCharacters then characters[g - numCharacters] * basisInfo.spin_inversion
+                               else characters[g];
+        // logDebug(try! "k=%i, c=%r + %r im, characters[%i] = %r + %r im, norms[0] = %r".format(k, c.re, c.im, g, characters[g].re, characters[g].im, norms[0]));
+        matrix.coeffs[k] = c * character / sqrt(norms[0]:real);
       }
-      foreach i in 1 ..< count {
-        foreach k in matrix.offsets[i] ..< matrix.offsets[i + 1] {
+      foreach i in 1 ..< chunk.size {
+        foreach k in matrix.offsets[i - 1] ..< matrix.offsets[i] {
+          // assert(matrix.coeffs != nil && matrix.temp_group_indices != nil);
           const c = matrix.coeffs[k];
           const g = matrix.temp_group_indices[k];
-          matrix.coeffs[k] = c * characters[g] / sqrt(matrix.norms[i]:real);
+          const character =
+            if g > numCharacters then characters[g - numCharacters] * basisInfo.spin_inversion
+                                else characters[g];
+          // logDebug(try! "i=%i, k=%i, c=%r + %r im, characters[%i] = %r + %r im, norms[i] = %r".format(i, k, c.re, c.im, g, characters[g].re, characters[g].im, norms[i]));
+          // assert(characters != nil && norms != nil);
+          matrix.coeffs[k] = c * character / sqrt(norms[i]:real);
         }
       }
+      // logDebug("done with norms...");
     }
   }
 }
@@ -305,10 +326,6 @@ record BatchedOperatorPointers {
 }
 */
 
-proc roundUpToMultipleOf(n: ?eltType, k : eltType) where isIntegral(eltType) {
-  return k * ((n + (k - 1)) / k);
-}
-
 // A wrapper around the Operator class that allows applying the operator to a
 // batch of basis vectors instead of one.
 //
@@ -335,8 +352,8 @@ record BatchedOperator {
   proc ref allocateBuffers() {
     const safeNumberTerms = max(matrix.max_number_off_diag, 1);
     const estimatedNumberTerms = max(matrix.max_number_off_diag_estimate, 1);
-    // NOTE: We round capacity up to a multiple of 64...
-    const capacity = roundUpToMultipleOf((raw.batch_size - 1) * estimatedNumberTerms + safeNumberTerms, 64);
+    // NOTE: We round capacity up to a multiple of LS_HS_MAX_BLOCK_SIZE...
+    const capacity = roundUpToMaxBlockSize((raw.batch_size - 1) * estimatedNumberTerms + safeNumberTerms);
 
     raw.betas = allocate(uint(64), capacity);
     raw.coeffs = allocate(complex(128), capacity);
@@ -378,7 +395,7 @@ record BatchedOperator {
     if owning then deallocateBuffers();
   }
 
-  proc ref computeOffDiag(chunk : range(int), alphas : c_ptrConst(uint(64)), param left : bool)
+  proc ref computeOffDiag(chunk : range(int), alphas : c_ptrConst(uint(64)), norms : c_ptrConst(uint(16)), param left : bool)
       : (int, c_ptr(uint(64)), c_ptr(complex(128)), c_ptr(uint(64))) {
 
     const count = chunk.size;
@@ -387,12 +404,12 @@ record BatchedOperator {
     // if count > raw.batch_size then
     //   halt(try! "buffer overflow in BatchedOperator: count=%i, batch_size=%i".format(count, raw.batch_size));
 
-    computeOffDiagGeneric(basisInfo, raw, chunk, alphas, left);
+    _computeOffDiag(basisInfo, raw, chunk, alphas, norms, left);
     const totalCount = raw.offsets[count - 1];
     // if totalCount > maxTotalCount then
     //   maxTotalCount = totalCount;
     // computeKeys(totalCount, pointers.betas, pointers.localeIdxs, timers.keysTimer);
-    return (totalCount, raw.betas, raw.coeffs, raw.target_states);
+    return (totalCount, raw.betas, raw.coeffs, raw.target_indices);
   }
 }
 

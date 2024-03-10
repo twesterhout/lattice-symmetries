@@ -92,6 +92,8 @@ typedef struct ls_hs_object {
 } ls_hs_object;
 #endif
 
+#define LS_HS_MAX_BLOCK_SIZE 16
+
 /* python-cffi: START */
 typedef struct ls_hs_permutation ls_hs_permutation;
 typedef struct ls_hs_permutation_group ls_hs_permutation_group;
@@ -133,6 +135,7 @@ typedef struct ls_hs_basis_info {
     uint64_t min_state_estimate;
     uint64_t max_state_estimate;
     ls_hs_particle_type particle_type;
+    int number_characters;
     ls_hs_scalar const *characters;
 } ls_hs_basis_info;
 
@@ -244,10 +247,9 @@ int ls_hs_internal_object_inc_ref_count(ls_hs_object *);
 int ls_hs_internal_object_dec_ref_count(ls_hs_object *);
 /* python-cffi: STOP */
 
-ls_hs_is_representative_kernel_type_v2
-ls_hs_internal_mk_is_representative_kernel(halide_buffer_t const *masks,
-                                           halide_buffer_t const *eigvals_re,
-                                           halide_buffer_t const *shifts, int spin_inversion);
+ls_hs_is_representative_kernel_type_v2 ls_hs_internal_mk_is_representative_kernel(
+    halide_buffer_t const *masks, halide_buffer_t const *eigvals_re, halide_buffer_t const *shifts,
+    unsigned number_bits, int spin_inversion);
 void ls_hs_internal_destroy_is_representative_kernel(
     ls_hs_is_representative_kernel_type_v2 closure);
 
@@ -257,8 +259,9 @@ ls_hs_state_info_kernel_type_v2 ls_hs_internal_mk_state_info_kernel(halide_buffe
 void ls_hs_internal_destroy_state_info_kernel(ls_hs_state_info_kernel_type_v2 closure);
 
 ls_hs_state_info_kernel_type_v2
-ls_hs_internal_mk_state_info_kernel_v3(halide_buffer_t const *masks, halide_buffer_t const *shifts,
-                                       int spin_inversion);
+ls_hs_internal_mk_state_info_kernel_v3(halide_buffer_t const *_masks,
+                                       halide_buffer_t const *_shifts, unsigned number_bits,
+                                       bool spin_inversion);
 void ls_hs_internal_destroy_state_info_kernel_v3(ls_hs_state_info_kernel_type_v2 closure);
 
 ls_hs_state_to_index_kernel_type
@@ -273,6 +276,9 @@ ls_hs_internal_mk_binary_search_state_to_index_kernel(int64_t number_representat
                                                       unsigned number_bits, unsigned prefix_bits);
 void ls_hs_internal_destroy_binary_search_state_to_index_kernel(
     ls_hs_state_to_index_kernel_type closure);
+
+void ls_hs_internal_axpy(int64_t size, double alpha_re, double alpha_im, ls_hs_scalar const *x,
+                         ls_hs_scalar const *y, ls_hs_scalar *out);
 
 __attribute__((noreturn)) static inline void ls_hs_fatal_error(char const *func, int const line,
                                                                char const *message) {

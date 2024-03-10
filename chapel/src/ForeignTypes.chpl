@@ -16,10 +16,14 @@ module ForeignTypes {
   extern proc ls_chpl_get_basis_info(p : c_ptrConst(ls_hs_basis)) : c_ptrConst(ls_hs_basis_info);
   extern proc ls_chpl_get_is_representative_kernel(p : c_ptrConst(ls_hs_basis)) : c_fn_ptr;
   extern proc ls_chpl_invoke_is_representative_kernel(kernel : c_fn_ptr, count : int(64),
-                                                      basis_states : c_ptrConst(uint(64)), norms : c_ptr(real(64)));
+                                                      basis_states : c_ptrConst(uint(64)), norms : c_ptr(uint(16)));
   extern proc ls_chpl_get_state_to_index_kernel(p : c_ptrConst(ls_hs_basis)) : c_fn_ptr;
   extern proc ls_chpl_invoke_state_to_index_kernel(kernel : c_fn_ptr, count : int(64),
                                                    basis_states : c_ptrConst(uint(64)), indices : c_ptr(int(64)));
+  extern proc ls_chpl_get_state_info_kernel(p : c_ptrConst(ls_hs_basis)) : c_fn_ptr;
+  extern proc ls_chpl_invoke_state_info_kernel(kernel : c_fn_ptr, count : int(64),
+                                               basis_states : c_ptrConst(uint(64)),
+                                               representatives : c_ptr(uint(64)), indices : c_ptr(int(32)));
 
   // pragma "fn synchronization free"
   // private extern proc c_pointer_return(const ref x : ?t) : c_ptr(t);
@@ -433,7 +437,7 @@ module ForeignTypes {
 
   proc isRepresentative(const ref basis : Basis,
                         const ref alphas : [?D1] uint(64),
-                        ref norms : [?D2] real(64)) where D1.rank == 1 && D2.rank == 1 {
+                        ref norms : [?D2] uint(16)) where D1.rank == 1 && D2.rank == 1 {
     const _timer = recordTime(getRoutineName());
     const count = alphas.size;
     if norms.size != count then
@@ -448,7 +452,7 @@ module ForeignTypes {
     ls_chpl_invoke_is_representative_kernel(kernel, count, c_ptrToConst(alphas), c_ptrTo(norms));
   }
   proc isRepresentative(const ref basis : Basis, const ref alphas : [?D] uint(64)) where D.rank == 1 {
-    var norms : [0 ..# alphas.size] real(64) = noinit;
+    var norms : [0 ..# alphas.size] uint(16) = noinit;
     isRepresentative(basis, alphas, norms);
     return norms;
   }

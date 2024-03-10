@@ -5,12 +5,15 @@ private use CommonParameters;
 private use FFI;
 private import Timing;
 
+extern const LS_HS_MAX_BLOCK_SIZE : c_int;
+
 // System modules
 private import IO;
 private import JSON.jsonSerializer;
 private import OS.POSIX;
 private use BlockDist;
 private use CTypes;
+private use RangeChunk;
 
 proc initRuntime() {
   coforall loc in Locales do on loc {
@@ -33,6 +36,13 @@ export proc ls_chpl_display_timings() {
   for loc in Locales do on loc {
     try! IO.stdout.withSerializer(new jsonSerializer()).writeln(Timing.summarize());
   }
+}
+
+proc safe_c_ptrToConst(const ref x : [] ?t) : c_ptrConst(t) {
+  return if x.size == 0 then nil else c_ptrToConst(x);
+}
+proc safe_c_ptrTo(ref x : [] ?t) : c_ptr(t) {
+  return if x.size == 0 then nil else c_ptrTo(x);
 }
 
 /*
@@ -303,7 +313,7 @@ proc approxEqual(a : [], b : [], atol = kAbsTol, rtol = kRelTol) {
   return [i in a.domain] approxEqual(a[i], b[i], atol, rtol);
 }
 
-proc checkArraysEqual(arr1 : [] ?eltType, arr2 : [] eltType) {
+proc checkArraysEqual(const ref arr1 : [] ?eltType, const ref arr2 : [] eltType) {
   if arr1.size != arr2.size {
     writeln("Failed: array sizes differ: arr1.size=", arr1.size, " arr2.size=", arr2.size);
     halt("checkArraysEqual test failed");
@@ -321,12 +331,34 @@ proc checkArraysEqual(arr1 : [] ?eltType, arr2 : [] eltType) {
           writeln("...");
           break;
         }
-        writeln(i, ": ", x1, " != ", x2);
+        writeln(i, ": ", x1, " != ", x2, " (Δ = ", x2 - x1, ")");
         count += 1;
       }
     }
     halt("checkArraysEqual test failed");
   }
+}
+
+export proc ls_chpl_experimental_axpy_c128(size : int(64),
+                                           alpha_re : real(64),
+                                           alpha_im : real(64),
+                                           xs : c_ptrConst(complex(128)),
+                                           ys : c_ptrConst(complex(128)),
+                                           zs : c_ptr(complex(128))) {
+  const minNumberChunks = 1 + 2 * size / max(int(32));
+  const numChunks = min(size, max(minNumberChunks, here.maxTaskPar));
+  const ranges : [0 ..# numChunks] range(int, boundKind.both, strideKind.one) = chunks(0 ..# size, numChunks);
+  forall r in ranges do
+    ls_hs_internal_axpy(r.size, alpha_re, alpha_im, xs + r.low, ys + r.low, zs + r.low);
+}
+
+proc roundUpToMultipleOf(n: ?eltType, k : eltType) where isIntegral(eltType) {
+  return k * ((n + (k - 1)) / k);
+}
+
+
+proc roundUpToMaxBlockSize(n: ?eltType) where isIntegral(eltType) {
+  return roundUpToMultipleOf(n, LS_HS_MAX_BLOCK_SIZE);
 }
 
 } // module Utils

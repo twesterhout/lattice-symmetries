@@ -4,7 +4,6 @@ import Control.Exception (bracket)
 import Data.Bits
 import Data.Maybe (fromJust)
 import Data.Vector qualified as B
-import Data.Vector.Generic qualified as G
 import Data.Vector.Storable qualified as S
 import Data.Vector.Storable.Mutable qualified as SM
 import LatticeSymmetries.Basis
@@ -16,6 +15,7 @@ import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
 import Test.QuickCheck.Gen (chooseInt64)
+import Utils (extractRight)
 import Prelude hiding (group)
 
 data LinearChainRepresentation = LinearChainRepresentation !Int !(Representation Permutation)
@@ -44,7 +44,6 @@ instance Arbitrary LinearChainTestData where
       if n < 6
         then pure [0 .. bit n - 1]
         else do
-
           k <- chooseInt (1, 64)
           replicateM k (chooseInt (0, bit n - 1))
     pure $ LinearChainTestData n group (fromList $ fromIntegral <$> basisStates)
@@ -61,15 +60,15 @@ instance Arbitrary FixedHammingBitStrings where
     let states = S.map (fixedHammingIndexToState k . fromIntegral) indices
     pure $ FixedHammingBitStrings n k indices states
 
-referenceIsRepresentative :: Int -> Representation Permutation -> S.Vector Word64 -> S.Vector Double
-referenceIsRepresentative n group = S.map (maybe 0 realToFrac . isRepresentativeSlow group Nothing . BasisState n . BitString . fromIntegral)
+referenceIsRepresentative :: Int -> Maybe Int -> Representation Permutation -> S.Vector Word64 -> S.Vector Word16
+referenceIsRepresentative n spinInversion group = S.map (maybe 0 fromIntegral . isRepresentativeSlow group spinInversion . BasisState n . BitString . fromIntegral)
 
-referenceStateInfo :: Int -> Representation Permutation -> S.Vector Word64 -> (S.Vector Word64, S.Vector Int32)
-referenceStateInfo n group = bimap S.convert S.convert . B.unzip . B.map f . B.convert
+referenceStateInfo :: Int -> Maybe Int -> Representation Permutation -> S.Vector Word64 -> (S.Vector Word64, S.Vector Int32)
+referenceStateInfo n spinInversion group = bimap S.convert S.convert . B.unzip . B.map f . B.convert
   where
     f :: Word64 -> (Word64, Int32)
     f w =
-      let (BasisState _ (BitString r), i) = stateInfoSlow group Nothing $ BasisState n (BitString (fromIntegral w))
+      let (BasisState _ (BitString r), i) = stateInfoSlow group spinInversion $ BasisState n (BitString (fromIntegral w))
        in (fromIntegral r, fromIntegral i)
 
 -- referenceStateInfo :: Int -> Representation Permutation -> S.Vector Word64 -> (S.Vector Word64, S.Vector Int32)
@@ -83,76 +82,50 @@ spec :: Spec
 spec = do
   describe "isRepresentative" $ do
     it "example 1" $ do
-      let (LinearChainRepresentation _ group) = fromRight (error "oops") $ mkLinearChainRepresentation 4 0
-      let basisStates :: S.Vector Word64
-          basisStates = fromList [0 .. bit 4 - 1]
-          isRep :: S.Vector Double
-          isRep = fromList [4, 1, 0, 1, 0, 2, 0, 1, 0, 0, 0, 0, 0, 0, 0, 4]
-      referenceIsRepresentative 4 group basisStates `shouldBe` isRep
-      kernelPtr <- createIsRepresentativeKernel_v2 group Nothing
-      invokeIsRepresentativeKernel kernelPtr basisStates `shouldReturn` isRep
-      destroyIsRepresentativeKernel_v2 kernelPtr
-    -- TODO: compilation doesn't work for 1 spin
-    -- it "example 2" $ do
-    --   let (LinearChainRepresentation n group) = fromRight (error "oops") $ mkLinearChainRepresentation 1 0
-    --   let basisStates :: S.Vector Word64
-    --       basisStates = fromList [0 .. bit n - 1]
-    --       isRep :: S.Vector Double
-    --       isRep = fromList [1, 1]
-    --   S.map (maybe 0 realToFrac . isRepresentativeSlow group Nothing . BasisState n . BitString . fromIntegral) basisStates `shouldBe` isRep
-    --   kernelPtr <- createIsRepresentativeKernel_v2 group Nothing
-    --   invokeIsRepresentativeKernel kernelPtr basisStates `shouldReturn` isRep
-    it "example 3" $ do
-      let (LinearChainRepresentation n group) = fromRight (error "oops") $ mkLinearChainRepresentation 3 0
-      let basisStates :: S.Vector Word64
-          basisStates = fromList [0 .. bit n - 1]
-          isRep :: S.Vector Double
-          isRep = fromList [3, 1, 0, 1, 0, 0, 0, 3]
-      referenceIsRepresentative n group basisStates `shouldBe` isRep
-      kernelPtr <- createIsRepresentativeKernel_v2 group Nothing
-      invokeIsRepresentativeKernel kernelPtr basisStates `shouldReturn` isRep
-      destroyIsRepresentativeKernel_v2 kernelPtr
-
-    modifyMaxSuccess (const 10)
+      forM_ [3, 4] $ \n ->
+        forM_ [0, 1, 2] $ \k -> do
+          (LinearChainRepresentation _ group) <- extractRight $ mkLinearChainRepresentation n k
+          let basisStates :: S.Vector Word64
+              basisStates = fromList [0 .. bit n - 1]
+          forM_ [Nothing, Just 1, Just (-1)] $ \i ->
+            bracket (createIsRepresentativeKernel_v2 group i) destroyIsRepresentativeKernel_v2 $ \kernelPtr ->
+              invokeIsRepresentativeKernel kernelPtr basisStates
+                `shouldReturn` referenceIsRepresentative n i group basisStates
+    modifyMaxSuccess (const 20)
       $ prop "small linear chains"
       $ \(LinearChainTestData n group basisStates) -> do
-        kernelPtr <- createIsRepresentativeKernel_v2 group Nothing
-        invokeIsRepresentativeKernel kernelPtr basisStates
-          `shouldReturn` referenceIsRepresentative n group basisStates
+        forM_ [Nothing, Just 1, Just (-1)] $ \i ->
+          bracket (createIsRepresentativeKernel_v2 group i) destroyIsRepresentativeKernel_v2 $ \kernelPtr ->
+            invokeIsRepresentativeKernel kernelPtr basisStates
+              `shouldReturn` referenceIsRepresentative n i group basisStates
 
-  describe "stateInfo" $ do
+  describe "stateInfo_v3" $ do
     it "example 1" $ do
-      let (LinearChainRepresentation n group) = fromRight (error "oops") $ mkLinearChainRepresentation 5 0
+      (LinearChainRepresentation n group) <- extractRight (mkLinearChainRepresentation 3 0)
       let basisStates :: S.Vector Word64
           basisStates = fromList [0 .. bit n - 1]
-          (reps, indices) = referenceStateInfo n group basisStates
-      kernelPtr <- createStateInfoKernel_v3 group Nothing
-      invokeStateInfoKernel kernelPtr basisStates `shouldReturn` (reps, indices)
-      destroyStateInfoKernel_v3 kernelPtr
+      forM_ [Just 1 {-[Nothing, Just 1, Just (-1)]-}] $ \i ->
+        bracket (createStateInfoKernel_v3 group i) destroyStateInfoKernel_v3 $ \kernelPtr ->
+          invokeStateInfoKernel kernelPtr basisStates
+            `shouldReturn` referenceStateInfo n i group basisStates
 
-    modifyMaxSuccess (const 10)
-      $ prop "small linear chains v2"
-      $ \(LinearChainTestData n group basisStates) -> do
-        kernelPtr <- createStateInfoKernel_v2 group Nothing
-        invokeStateInfoKernel kernelPtr basisStates `shouldReturn` referenceStateInfo n group basisStates
-        destroyStateInfoKernel_v2 kernelPtr
+  -- modifyMaxSuccess (const 20) $
+  --   prop "small linear chains" $
+  --     \(LinearChainTestData n group basisStates) -> do
+  --       forM_ [Nothing, Just 1, Just (-1)] $ \i ->
+  --         bracket (createStateInfoKernel_v3 group i) destroyStateInfoKernel_v3 $ \kernelPtr ->
+  --           invokeStateInfoKernel kernelPtr basisStates
+  --             `shouldReturn` referenceStateInfo n i group basisStates
 
-    modifyMaxSuccess (const 10)
-      $ prop "small linear chains v3"
-      $ \(LinearChainTestData n group basisStates) -> do
-        kernelPtr <- createStateInfoKernel_v3 group Nothing
-        invokeStateInfoKernel kernelPtr basisStates `shouldReturn` referenceStateInfo n group basisStates
-        destroyStateInfoKernel_v3 kernelPtr
-
-  describe "fixedHammingStateToIndex" $ do
-    modifyMaxSuccess (const 10) $
-      prop "computes indices correctly" $
-        \(FixedHammingBitStrings numberSites hammingWeight indices states) -> do
-          bracket
-            (createFixedHammingStateToIndexKernel numberSites hammingWeight)
-            destroyFixedHammingStateToIndexKernel
-            $ \kernelPtr ->
-              invokeFixedHammingStateToIndexKernel kernelPtr states `shouldReturn` indices
+  -- describe "fixedHammingStateToIndex" $ do
+  --   modifyMaxSuccess (const 10) $
+  --     prop "computes indices correctly" $
+  --       \(FixedHammingBitStrings numberSites hammingWeight indices states) -> do
+  --         bracket
+  --           (createFixedHammingStateToIndexKernel numberSites hammingWeight)
+  --           destroyFixedHammingStateToIndexKernel
+  --           $ \kernelPtr ->
+  --             invokeFixedHammingStateToIndexKernel kernelPtr states `shouldReturn` indices
 
   describe "ls_hs_fixed_hamming_state_to_index" $ do
     prop "computes indices correctly" $

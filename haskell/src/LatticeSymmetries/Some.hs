@@ -297,10 +297,7 @@ ls_hs_replace_indices expr jsonString = do
         Nothing -> pure . Left @Text $ "ls_hs_replace_indices: invalid argument: expected a list of index replacements"
 
 ls_hs_expr_permutation_group :: Ptr Cexpr -> IO CString
-ls_hs_expr_permutation_group =
-  foldCexpr $
-    foldSomeExpr (pure . exprPermutationGroup Nothing)
-      >=> newCencoded
+ls_hs_expr_permutation_group = foldCexpr $ foldSomeExpr $ newCencoded . exprPermutationGroup Nothing
 
 ls_hs_expr_spin_inversion_invariant :: Ptr Cexpr -> IO CBool
 ls_hs_expr_spin_inversion_invariant = foldCexpr $ foldSomeExpr $ pure . fromBool . isInvariantUponSpinInversion
@@ -309,8 +306,7 @@ ls_hs_expr_conserves_number_particles :: Ptr Cexpr -> IO CBool
 ls_hs_expr_conserves_number_particles = foldCexpr $ foldSomeExpr $ pure . fromBool . conservesNumberParticles
 
 ls_hs_expr_particle_type :: Ptr Cexpr -> IO CString
-ls_hs_expr_particle_type = foldCexpr $ \(SomeExpr t _) ->
-  newCString . encodeUtf8 . toPrettyText $ particleTagToType t
+ls_hs_expr_particle_type = foldCexpr $ \(SomeExpr t _) -> newCString . encodeUtf8 . toPrettyText $ particleTagToType t
 
 ls_hs_expr_number_sites :: Ptr Cexpr -> IO CInt
 ls_hs_expr_number_sites = foldCexpr $ foldSomeExpr $ pure . fromIntegral . estimateNumberSites

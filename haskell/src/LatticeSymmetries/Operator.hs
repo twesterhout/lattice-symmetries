@@ -13,6 +13,7 @@ module LatticeSymmetries.Operator
   , withSomeOperator
   , foldSomeOperator
   , getNonbranchingTerms
+  , getHilbertSpaceSectors
   -- , maxNumberOffDiag
   -- , operatorSymmetryGroup
   -- , operatorAbelianRepresentations
@@ -29,9 +30,10 @@ module LatticeSymmetries.Operator
   , newCoperator
   , ls_hs_create_operator
   , ls_hs_destroy_operator
-  -- , ls_hs_operator_max_number_off_diag
+  , ls_hs_operator_max_number_off_diag
   , ls_hs_operator_to_json
   , ls_hs_operator_from_json
+  , ls_hs_expr_hilbert_space_sectors
   )
 where
 
@@ -54,10 +56,12 @@ import LatticeSymmetries.Context
 import LatticeSymmetries.Expr
 import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
+import LatticeSymmetries.Group (Representation (Representation), abelianRepresentations, abelianSubgroup, emptyRepresentation)
 import LatticeSymmetries.NonbranchingTerm
+import LatticeSymmetries.Permutation (Permutation (Permutation))
 import LatticeSymmetries.Some
 import LatticeSymmetries.Utils
-import Prelude hiding (Product, Sum)
+import Prelude hiding (Product, Sum, group)
 
 importLS
 
@@ -212,6 +216,30 @@ getNonbranchingTerms operator =
     flattenGenerator (Generator i g) = Generator (flattenIndex @t numberSites i) g
     opTermsFlat = fmap (fmap flattenGenerator) <$> unExpr operator.opTerms
 
+getHilbertSpaceSectors :: forall t. (HasCallStack, IsBasis t) => Expr t -> Vector (Basis t)
+getHilbertSpaceSectors expr = sortOnDim $ case particleDispatch @t of
+  SpinTag -> G.fromList $ do
+    h <- if hasU1 then Just <$> [0 .. n] else [Nothing]
+    i <-
+      -- Only apply spin inversion when exactly half the spins are up
+      if hasZ2 && maybe True ((== n) . (2 *)) h
+        then [Just 1, Just (-1)]
+        else [Nothing]
+    g <-
+      -- Only apply symmetries when n > 1 and h /= 0 and h /= n
+      if n > 1 && maybe True (\h' -> h' /= 0 || h' /= n) h
+        then G.toList . abelianRepresentations . abelianSubgroup . exprPermutationGroup (Just n) $ expr
+        else [emptyRepresentation]
+    pure $ SpinBasis n h i g
+  SpinlessFermionTag -> G.fromList $ do
+    SpinlessFermionBasis n <$> (if hasU1 then Just <$> [0 .. n] else [Nothing])
+  SpinfulFermionTag -> undefined
+  where
+    n = estimateNumberSites expr
+    hasU1 = conservesNumberParticles expr
+    hasZ2 = isInvariantUponSpinInversion expr
+    sortOnDim = fmap snd . G.reverse . sortVectorBy (comparing fst) . fmap (\x -> (estimateHilbertSpaceDimension x, x))
+
 -- newCoperator :: (IsBasis t, HasCallStack) => Maybe (Ptr Cbasis) -> Operator t -> IO (Ptr Coperator)
 -- newCoperator maybeBasisPtr x = do
 --   let (diag, offDiag) = G.partition nbtIsDiagonal (getNonbranchingTerms x)
@@ -257,12 +285,13 @@ newCoperator cBasis cExpr operator@(SomeOperator t op) = do
   cExpr' <- maybe (newCexpr (SomeExpr t op.opTerms)) pure cExpr
   let incRefCountBasis = fromBool (isJust cBasis)
       incRefCountExpr = fromBool (isJust cExpr)
-      maxNumberOffDiag = fromIntegral $
-        getMaxNumberOffDiag (getNumberBits op.opBasis) (getHammingWeight op.opBasis) offDiag
+      maxNumberOffDiag =
+        fromIntegral $
+          getMaxNumberOffDiag (getNumberBits op.opBasis) (getHammingWeight op.opBasis) offDiag
       -- NOTE: disable computing a better upper bound on the number of terms because it's taking too long...
       -- TODO: fix me 😈
       maxNumberOffDiagEstimate = maxNumberOffDiag
-        -- fromIntegral $ unsafeEstimateMaxNumberOffDiag (getNumberBits op.opBasis) (getHammingWeight op.opBasis) offDiag
+  -- fromIntegral $ unsafeEstimateMaxNumberOffDiag (getNumberBits op.opBasis) (getHammingWeight op.opBasis) offDiag
   [CU.block| void {
     ls_hs_operator* p = $(ls_hs_operator* p);
     ls_hs_internal_object_init(&p->base, 1, $(void* payload));
@@ -295,16 +324,21 @@ ls_hs_destroy_operator = ls_hs_destroy_object $ \p -> do
   ls_hs_destroy_expr =<< [CU.exp| ls_hs_expr* { $(ls_hs_operator* p)->expr } |]
   ls_hs_destroy_basis =<< [CU.exp| ls_hs_basis* { $(ls_hs_operator* p)->basis } |]
 
--- ls_hs_operator_max_number_off_diag :: Ptr Coperator -> IO CInt
--- ls_hs_operator_max_number_off_diag = foldCoperator $ foldSomeOperator $ \operator ->
---   pure . fromIntegral . Set.size . Set.fromList . G.toList . G.map nbtX $
---     G.filter (not . nbtIsDiagonal) (getNonbranchingTerms operator)
+ls_hs_operator_max_number_off_diag :: Ptr Coperator -> IO CInt
+ls_hs_operator_max_number_off_diag = foldCoperator $ foldSomeOperator $ \op -> do
+  pure . fromIntegral $
+    unsafeEstimateMaxNumberOffDiag (getNumberBits op.opBasis) (getHammingWeight op.opBasis) $
+      G.filter (not . nbtIsDiagonal) (getNonbranchingTerms op)
 
 ls_hs_operator_from_json :: CString -> IO CString
 ls_hs_operator_from_json = newCencoded <=< rightM (newCoperator Nothing Nothing) <=< decodeCString @SomeOperator
 
 ls_hs_operator_to_json :: Ptr Coperator -> IO CString
 ls_hs_operator_to_json = foldCoperator newCencoded
+
+ls_hs_expr_hilbert_space_sectors :: Ptr Cexpr -> IO CString
+ls_hs_expr_hilbert_space_sectors = foldCexpr $ foldSomeExpr $ \expr ->
+  newCencoded =<< G.mapM newCbasis (getHilbertSpaceSectors expr)
 
 -- cloneCoperator :: (HasCallStack) => Ptr Coperator -> IO (Ptr Coperator)
 -- cloneCoperator p = do

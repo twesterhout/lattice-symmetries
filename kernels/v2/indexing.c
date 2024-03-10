@@ -85,6 +85,11 @@ ls_hs_state_to_index_binary_search_kernel(halide_buffer_t const *basis_states,
                  basis_states->dim[0].min == 0 && indices->dim[0].min == 0 &&
                  basis_states->dim[0].extent == indices->dim[0].extent,
              "basis_states and indices must be contiguous 1d tensors of matching shape");
+    // fprintf(stderr, "ls_hs_state_to_index_binary_search_kernel...\n");
+    // fprintf(stderr, "state_to_index_binary_search_data { number_states = %zi, representatives = %p, number_bits = %u, shift = %u, range_size = %zi, number_offsets = %zi, offsets = %p }\n", ctx->number_states, ctx->representatives, ctx->number_bits, ctx->shift, ctx->range_size, ctx->number_offsets, ctx->offsets);
+    // for (ptrdiff_t k = 0; k < ctx->number_offsets; ++k) {
+    //     fprintf(stderr, "offsets[%zi] = %zi\n", k, ctx->offsets[k]);
+    // }
 
     ptrdiff_t const batch_size = basis_states->dim[0].extent;
     uint64_t const *spins = (uint64_t const *)basis_states->host;
@@ -92,8 +97,13 @@ ls_hs_state_to_index_binary_search_kernel(halide_buffer_t const *basis_states,
 
     for (ptrdiff_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
         uint64_t const needle = spins[batch_idx];
-        int64_t const guess = ctx->offsets[needle >> ctx->shift];
-        out[batch_idx] = binary_search_x1(ctx->range_size, ctx->representatives, needle, guess);
+        if (needle >= ((uint64_t)1 << ctx->number_bits)) {
+            out[batch_idx] = -1;
+        }
+        else {
+            int64_t const guess = ctx->offsets[needle >> ctx->shift];
+            out[batch_idx] = binary_search_x1(ctx->range_size, ctx->representatives, needle, guess);
+        }
     }
 }
 

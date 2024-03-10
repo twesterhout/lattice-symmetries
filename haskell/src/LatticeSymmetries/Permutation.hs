@@ -1,6 +1,6 @@
+{-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE DefaultSignatures #-}
 
 module LatticeSymmetries.Permutation
   ( Permutation (..)
@@ -14,7 +14,8 @@ module LatticeSymmetries.Permutation
   , Mapping (..)
   , permutationFromMappings
   , minimalSupport
-  -- * FFI
+
+    -- * FFI
   , ls_hs_create_permutation
   , ls_hs_destroy_permutation
   , ls_hs_permutation_info
@@ -25,31 +26,31 @@ import Control.Arrow qualified
 import Control.Monad.ST
 import Data.Aeson (FromJSON (..), ToJSON (..))
 import Data.Bits
+import Data.IntSet qualified as IntSet
 import Data.List qualified as L
 import Data.Set qualified as Set
-import Data.IntSet qualified as IntSet
 import Data.Validity (Validity (validate), check, prettyValidate)
 import Data.Vector.Generic ((!))
 import Data.Vector.Generic qualified as G
 import Data.Vector.Unboxed qualified as U
 import Data.Vector.Unboxed.Deriving (derivingUnbox)
 import Data.Vector.Unboxed.Mutable qualified as UM
-import GHC.Exts (IsList (..))
-import GHC.Records (HasField (getField))
-import LatticeSymmetries.Context
-import LatticeSymmetries.BitString
-import LatticeSymmetries.Utils
-import LatticeSymmetries.FFI
-import Prelude hiding (cycle, identity)
 import Foreign.C (CString)
 import Foreign.Ptr (Ptr)
+import GHC.Exts (IsList (..))
+import GHC.Records (HasField (getField))
+import LatticeSymmetries.BitString
+import LatticeSymmetries.Context
+import LatticeSymmetries.FFI
+import LatticeSymmetries.Utils
+import Prelude hiding (cycle, identity)
 
 -- | A permutation of numbers @[0 .. N - 1]@.
 newtype Permutation = Permutation {unPermutation :: U.Vector Int}
   deriving stock (Show, Eq, Ord, Generic)
   deriving anyclass (NFData)
 
-data PermutationInfo = PermutationInfo { permutation :: U.Vector Int, periodicity :: Int }
+data PermutationInfo = PermutationInfo {permutation :: U.Vector Int, periodicity :: Int}
   deriving stock (Show, Eq, Ord, Generic)
   deriving anyclass (NFData, FromJSON, ToJSON)
 
@@ -79,16 +80,17 @@ fastGetPeriodicity (Permutation p)
   | otherwise = L.foldl1' lcm $ go (IntSet.fromDistinctAscList [1 .. G.length p - 1]) 1 0 0
   where
     go !todo !size !x0 !i
-        | p G.! i == x0 = (size:) $
-          if IntSet.null todo
-            then []
-            else
-              let (x0', todo') = IntSet.deleteFindMin todo
-               in go todo' (1 :: Int) x0' x0'
-        | otherwise =
-            let i' = p G.! i
-                todo' = IntSet.delete i' todo
-             in go todo' (size + 1) x0 i'
+      | p G.! i == x0 =
+          (size :) $
+            if IntSet.null todo
+              then []
+              else
+                let (x0', todo') = IntSet.deleteFindMin todo
+                 in go todo' (1 :: Int) x0' x0'
+      | otherwise =
+          let i' = p G.! i
+              todo' = IntSet.delete i' todo
+           in go todo' (size + 1) x0 i'
 
 instance HasPeriodicity Permutation where
   getPeriodicity = fastGetPeriodicity
@@ -143,7 +145,7 @@ instance Validity Permutation where
       [ check (not (G.null p)) "p is not empty"
       , check
           (Set.toAscList (Set.fromList (G.toList p)) == [0 .. G.length p - 1])
-          ("p is a permutation of [0 .. " <> show (G.length p - 1) <> "]")
+          (show p <> "is a permutation of [0 .. " <> show (G.length p - 1) <> "]")
       ]
 
 instance Semigroup Permutation where
@@ -183,4 +185,3 @@ ls_hs_destroy_permutation = ls_hs_destroy_object $ const (pure ())
 
 ls_hs_permutation_info :: Ptr Cpermutation -> IO CString
 ls_hs_permutation_info = foldCobject $ \p -> newCencoded $ PermutationInfo (unPermutation p) (getPeriodicity p)
-

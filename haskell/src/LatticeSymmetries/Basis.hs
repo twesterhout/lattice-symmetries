@@ -37,6 +37,7 @@ module LatticeSymmetries.Basis
   , getHammingWeight
   , minStateEstimate
   , maxStateEstimate
+  , estimateHilbertSpaceDimension
   , isStateIndexIdentity
   , hasFixedHammingWeight
   , hasSpinInversionSymmetry
@@ -54,6 +55,8 @@ module LatticeSymmetries.Basis
   , ls_hs_init_is_representative_kernel
   , ls_hs_init_state_info_kernel
   , ls_hs_init_state_to_index_kernel
+  , ls_hs_basis_permutation_group
+  -- , ls_hs_basis_permutation_sectors
   -- , Cbasis (..)
   -- basisFromYAML,
   -- objectFromYAML,
@@ -183,7 +186,7 @@ basisHeaderToJSON x
   | (SpinBasis n h i g) <- x =
       object
         [ "particle" .= SpinTy
-        , "number_spins" .= n
+        , "number_sites" .= n
         , "hamming_weight" .= h
         , "spin_inversion" .= i
         , "symmetries" .= unRepresentation g
@@ -205,7 +208,7 @@ basisHeaderFromJSON = withObject "Basis" $ \v -> do
       fmap SomeBasis
         . join
         $ mkSpinHeader
-          <$> (v .: "number_spins")
+          <$> (v .: "number_sites")
           <*> (v .:? "hamming_weight")
           <*> (v .:? "spin_inversion")
           <*> pure g
@@ -241,7 +244,10 @@ mkSpinHeader n (Just h) (Just k) _
   | n /= 2 * h = fail $ "invalid spin inversion: " <> show k <> "; " <> show n <> " spins, but the Hamming weight is " <> show h
 mkSpinHeader n _ _ g
   | maybe False (/= n) g.numberBits = fail "invalid symmetries"
-mkSpinHeader n h i g = pure $ SpinBasis n h i g
+mkSpinHeader n h i g
+  -- For 1 site, there's no need to consider any permutations
+  | n == 1 = pure $ SpinBasis n h i emptyRepresentation
+  | otherwise = pure $ SpinBasis n h i g
 
 -- instance IsBasis t => FromJSON (Basis t) where
 --   parseJSON x = fmap basisFromHeader (parseJSON x)
@@ -623,6 +629,21 @@ minStateEstimate x = case x of
     unsafeCastBasisState $
       minStateEstimate (SpinBasis n p Nothing (Representation G.empty))
 
+estimateHilbertSpaceDimension :: HasCallStack => Basis t -> Integer
+estimateHilbertSpaceDimension x = case x of
+  SpinBasis n h i g ->
+    maybe (bit n) (binom n) h
+      `div` (max 1 (fromIntegral $ G.length (unRepresentation g)) * if isJust i then 2 else 1)
+  where
+    factorial :: Int -> Integer
+    factorial !n
+      | n <= 0 = 1
+      | otherwise = foldl' (*) 1 ([2 .. fromIntegral n] :: [Integer])
+    binom :: Int -> Int -> Integer
+    binom !n !k
+      | k > n = 0
+      | otherwise = factorial n `div` (factorial k * factorial (n - k))
+
 isBasisReal :: Basis t -> Bool
 isBasisReal x = case x of
   SpinBasis _ _ _ g -> isRepresentationReal g
@@ -719,14 +740,14 @@ ls_hs_init_state_info_kernel :: Ptr Cbasis -> IO ()
 ls_hs_init_state_info_kernel basisPtr = withCbasis basisPtr $ foldSomeBasis $ \basis ->
   if hasPermutationSymmetries basis
     then do
-      kernel <- createStateInfoKernel_v2 (fromJust $ getPermutationSymmetries basis) (getSpinInversion basis)
+      kernel <- createStateInfoKernel_v3 (fromJust $ getPermutationSymmetries basis) (getSpinInversion basis)
       [CU.block| void {
         ls_hs_basis* const basisPtr = $(ls_hs_basis* basisPtr);
         LS_HS_INTERNAL_INIT_KERNEL(ls_hs_state_info_kernel_type_v2,
                                    &basisPtr->state_info_kernel,
                                    &basisPtr->state_info_destructor,
                                    $(ls_hs_state_info_kernel_type_v2 kernel),
-                                   &ls_hs_internal_destroy_state_info_kernel);
+                                   &ls_hs_internal_destroy_state_info_kernel_v3);
       } |]
     else error "do not call ls_hs_init_state_info_kernel on a basis without permutation symmetries"
 
@@ -792,13 +813,16 @@ ls_hs_init_basis_info p =
           BasisState k (BitString n) -> if k <= 64 then fromIntegral n else minBound
         max_state_estimate = case maxStateEstimate basis of
           BasisState k (BitString n) -> if k <= 64 then fromIntegral n else maxBound
+        number_characters = maybe 0 (fromIntegral . G.length . unRepresentation) (getPermutationSymmetries basis)
     characters <-
       case getPermutationSymmetries basis of
-        Just (Representation gs) ->
-          S.unsafeWith (G.convert (coerce . (.character) <$> gs)) $ \src -> do
-            let n = fromIntegral (G.length gs)
+        Just (Representation gs) -> do
+          let v = G.convert (coerce . (.character) <$> gs)
+              cs = G.concat [v, G.map (* fromIntegral spin_inversion) v]
+              n = fromIntegral (G.length gs)
+          S.unsafeWith cs $ \src ->
             [CU.block| ls_hs_scalar const* {
-              size_t const num_bytes = $(size_t n) * sizeof(ls_hs_scalar);
+              size_t const num_bytes = 2 * $(size_t n) * sizeof(ls_hs_scalar);
               ls_hs_scalar* dest = aligned_alloc(/*alignment=*/64U, /*size=*/num_bytes);
               LS_CHECK(dest != NULL, "ls_hs_init_basis_info: aligned_alloc failed");
               memcpy(dest, $(ls_hs_scalar const* src), num_bytes);
@@ -828,6 +852,7 @@ ls_hs_init_basis_info p =
           .spin_inversion = $(int spin_inversion),
           .min_state_estimate = $(uint64_t min_state_estimate),
           .max_state_estimate = $(uint64_t max_state_estimate),
+          .number_characters = $(int number_characters),
           .characters = $(ls_hs_scalar const* characters)
         };
 
@@ -856,6 +881,12 @@ ls_hs_basis_from_json = newCencoded <=< rightM (foldSomeBasis newCbasis) <=< dec
 
 ls_hs_basis_to_json :: Ptr Cbasis -> IO CString
 ls_hs_basis_to_json = foldCbasis newCencoded
+
+ls_hs_basis_permutation_group :: Ptr Cbasis -> IO CString
+ls_hs_basis_permutation_group = foldCbasis $ foldSomeBasis $ \basis -> newCencoded $
+  case getPermutationSymmetries basis of
+    Nothing -> G.empty
+    Just rs -> (\r -> (r.element, numerator r.phase, denominator r.phase)) <$> unRepresentation rs
 
 --   -- logDebug' $ "basisFromHeader" <> show x
 --   -- fp <- mallocForeignPtr

@@ -19,7 +19,7 @@ target_include_directories(libffcall INTERFACE ${LIBFFCALL_INCLUDE_DIR})
 add_library(kernels_v2 STATIC kernels_v2.cpp reference.c indexing.c)
 set_target_properties(kernels_v2 PROPERTIES PUBLIC_HEADER lattice_symmetries_types.h)
 target_link_libraries(kernels_v2 PUBLIC Halide::Halide libffcall)
-target_compile_features(kernels_v2 PRIVATE cxx_std_17)
+target_compile_features(kernels_v2 PRIVATE cxx_std_20)
 target_compile_options(kernels_v2 PRIVATE
     # In case support for MSVC is ever added
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX>

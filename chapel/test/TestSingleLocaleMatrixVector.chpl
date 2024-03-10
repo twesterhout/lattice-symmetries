@@ -3,14 +3,16 @@ use ForeignTypes;
 use MatrixVectorProduct;
 use StatesEnumeration;
 use Utils;
+use CSR;
 import Timing;
 
 use IO;
 use JSON;
 use List;
+use CTypes;
 
 config const kHamiltonian = "../test/test_4_2_10_10_expr.json";
-config const kVectors = "../test/test_4_2_10_10_arrays.json";
+config const kVectors = kHamiltonian.replace("_expr", "_arrays");
 config const kVerbose = false;
 
 record TestInfo {
@@ -51,6 +53,7 @@ proc unpackToFullBasis(const ref basis : Basis,
 
 
 proc main() {
+  writeln("Testing ", kHamiltonian, " ...");
   initRuntime();
   defer deinitRuntime();
 
@@ -68,15 +71,30 @@ proc main() {
     writeln("expectedBasisStates = ", testData.states.toArray());
   }
   checkArraysEqual(testData.states.toArray(), basisStates[here]);
-  matrix.basis.payload.deref().local_representatives = convertToExternalArray(basisStates[here]);
-  matrix.basis.payload.deref().local_norms = convertToExternalArray(norms[here]);
+
+  if basisStates[here].size > 0 {
+    matrix.basis.payload.deref().local_representatives =
+      chpl_make_external_array_ptr(c_ptrTo(basisStates[here]), basisStates[here].size);
+    matrix.basis.payload.deref().local_norms =
+      chpl_make_external_array_ptr(c_ptrTo(norms[here]), norms[here].size);
+  }
 
   var z : [x.domain] x.eltType;
-  perLocaleMatrixVector(matrix, x, z, basisStates[here]);
+  perLocaleMatrixVector(matrix, x, z, basisStates[here], norms[here]);
   if kVerbose {
-    writeln("x = ", x);
-    writeln("y = ", y);
-    writeln("z = ", z);
+    writeln("x  = ", x);
+    writeln("y  = ", y);
+    writeln("z  = ", z);
+  }
+  checkArraysEqual(z, y);
+
+  z = 0;
+  const csrMatrix = convertOffDiagToCsr(matrix, complex(128), basisStates[here], norms[here]);
+  const diag = extractDiag(matrix, complex(128), basisStates[here], norms[here]);
+  csrMatvec(csrMatrix, safe_c_ptrToConst(x), safe_c_ptrTo(z));
+  z += diag * x;
+  if kVerbose {
+    writeln("z2 = ", z);
   }
   checkArraysEqual(z, y);
 }

@@ -18,7 +18,7 @@ module LatticeSymmetries.Expr
   , mapIndices
   , mapIndicesM
   , collectIndices
-  -- , exprToHypergraph
+  , exprToHypergraph
   , exprPermutationGroup
   , fromSExpr
   , estimateNumberSites
@@ -226,17 +226,26 @@ isInvariantG to from expr permutation = permuteExprG to from permutation expr ==
 estimateNumberSites :: forall t. IsBasis t => Expr t -> Int
 estimateNumberSites expr =
   1 + case particleDispatch @t of
-    SpinTag -> maximum (collectIndices expr)
-    SpinlessFermionTag -> maximum (collectIndices expr)
-    SpinfulFermionTag -> maximum (snd <$> collectIndices expr)
+    SpinTag -> m (collectIndices expr)
+    SpinlessFermionTag -> m (collectIndices expr)
+    SpinfulFermionTag -> m (snd <$> collectIndices expr)
+  where
+    m v | G.null v = 0
+        | otherwise = G.maximum v
 
 mapHypergraph :: (Ord a, Ord b) => (a -> b) -> Hypergraph a -> Hypergraph b
 mapHypergraph f (Hypergraph vertices edges) =
   Hypergraph (Set.map f vertices) (Set.map (Set.map f) edges)
 
-exprToHypergraph :: IsBasis t => Expr t -> Hypergraph (IndexType t)
-exprToHypergraph (Expr (Sum terms)) = Hypergraph (Set.fromList $ concat hyperedges) (Set.fromList . fmap Set.fromList $ hyperedges)
+exprToHypergraph :: forall t. IsBasis t => Expr t -> Hypergraph (IndexType t)
+exprToHypergraph e@(Expr (Sum terms)) = Hypergraph vertices (Set.fromList . fmap Set.fromList $ hyperedges)
   where
+    n = estimateNumberSites e
+    vertices :: Set (IndexType t)
+    vertices = case particleDispatch @t of
+      SpinTag -> Set.fromAscList [0 .. n]
+      SpinlessFermionTag -> Set.fromAscList [0 .. n]
+      SpinfulFermionTag -> Set.fromList [(s, i) | i <- [0 .. n], s <- [SpinUp, SpinDown]]
     hyperedges = G.toList $ fmap scaledToSet terms
     scaledToSet (Scaled _ p) = productToSet p
     productToSet (Product v) = G.toList $ (\(Generator i _) -> i) <$> v

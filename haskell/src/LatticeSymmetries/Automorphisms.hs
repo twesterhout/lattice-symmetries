@@ -30,10 +30,14 @@ import Data.Vector.Generic qualified as G
 import Data.Vector.Generic.Mutable qualified as GM
 import Data.Vector.Unboxed qualified as U
 import Data.Vector.Unboxed.Mutable qualified as UM
+import Foreign (Ptr, castPtr)
+import Foreign.C (CInt, CString)
 import GHC.Records (HasField (..))
+import LatticeSymmetries.Context
 import LatticeSymmetries.Dense
+import LatticeSymmetries.FFI (ls_hs_destroy_object, newCobject)
 import LatticeSymmetries.Permutation
-import LatticeSymmetries.Utils (sortVectorBy)
+import LatticeSymmetries.Utils (MutablePtr, sortVectorBy)
 import Prelude hiding (group, identity, permutations, second, toList)
 
 data Hypergraph a = Hypergraph {vertices :: !(Set a), hyperedges :: !(Set (Set a))}
@@ -96,7 +100,7 @@ allSingletons (Partitioning xs) = all ((== 1) . G.length) xs
 
 distancePartition
   :: forall a
-   . (UM.Unbox a, Ord a)
+   . (UM.Unbox a, Ord a, Show a)
   => Hypergraph a
   -- ^ The hypergraph to partition
   -> a
@@ -111,7 +115,7 @@ distancePartition g v0 =
   where
     go :: Set a -> [Set a] -> [Set a]
     go !seen hyperedges
-      | Set.null boundary = [foldl' Set.union Set.empty others | not (null others)]
+      | Set.null boundary = let r = g.vertices Set.\\ seen in [r | not (Set.null r)]
       | otherwise = boundary : go (Set.union seen combined) others
       where
         shouldIncludeHyperedge = any (`Set.member` seen) . Set.toList

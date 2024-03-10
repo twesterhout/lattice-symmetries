@@ -81,8 +81,7 @@ record Store {
   var _enumerateStatesProjected : TimingRecord;
   var _enumerateStatesUnprojected : TimingRecord;
   var basisStatesToIndices : TimingRecord;
-  var computeOffDiagNoProjection : TimingRecord;
-  var computeOffDiagWithProjection : TimingRecord;
+  var _computeOffDiag : TimingRecord;
   var convertOffDiagToCsr : TimingRecord;
   var determineEnumerationRanges : TimingRecord;
   var extractDiag : TimingRecord;

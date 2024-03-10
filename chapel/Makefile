@@ -144,15 +144,8 @@ check-states-enumeration: bin/TestStatesEnumeration $(TEST_DATA)/data/matvec
 	done
 
 .PHONY: check-matrix-vector-product
-check-matrix-vector-product: bin/TestMatrixVectorProduct $(TEST_DATA)/data/matvec
-	for yaml_file in $$(cd data/ && ls *.yaml); do \
-		if test -f "$(TEST_DATA)/data/matvec/$${yaml_file%.yaml}.h5"; then \
-			echo "Testing $$yaml_file ..."; \
-			$(CHPL_LIBS) $< $(CHPL_ARGS) \
-				--kHamiltonian "data/$$yaml_file" \
-				--kVectors "$(TEST_DATA)/data/matvec/$${yaml_file%.yaml}.h5"; \
-		fi; \
-	done
+check-matrix-vector-product: bin/TestSingleLocaleMatrixVector
+	find ../test/random_quspin -name "*_expr.json" | xargs -P 4 -I {} ./bin/TestSingleLocaleMatrixVector --kHamiltonian {}
 
 
 TEST_DATA_URL = https://surfdrive.surf.nl/files/index.php/s/OK5527Awfgl1hT2/download

@@ -4,8 +4,9 @@ from quspin.basis import spin_basis_general
 import numpy as np
 from typing import Any, List, Optional, Tuple
 import json
+import itertools
 
-rng = np.random.default_rng(seed=42)
+rng = np.random.default_rng(seed=47)
 
 
 def quspin_static_to_ls(terms) -> str:
@@ -200,8 +201,8 @@ def random_operator(
     symmetry,
     complex_coeff,
 ):
-    if spin_inversion is not None:
-        number_terms = number_terms // 2
+    # if spin_inversion is not None:
+    #     number_terms = number_terms // 2
 
     terms = []
     for _ in range(number_terms):
@@ -218,6 +219,8 @@ def random_operator(
 
     if spin_inversion is not None:
         terms += [t.invert_spin() for t in terms]
+
+    terms = [t for t in terms if t.quspin_str != "I"]
 
     terms = [t.build() for t in terms]
     print(terms)
@@ -243,7 +246,8 @@ def random_operator(
 
     Nup = number_sites - hamming_weight if hamming_weight is not None else None
     if spin_inversion is not None:
-        blocks = dict(zblock=([-(i + 1) for i in range(number_sites)], spin_inversion))
+        sector = 0 if spin_inversion == 1 else 1
+        blocks = dict(zblock=([-(i + 1) for i in range(number_sites)], sector))
     else:
         blocks = dict()
     if symmetry is not None:
@@ -255,9 +259,9 @@ def random_operator(
         static_list=terms,
         dynamic_list=[],
         basis=basis,
-        dtype=np.float64 if not complex_coeff else np.complex128,
+        dtype=np.complex128,  # np.float64 if not complex_coeff else np.complex128,
         check_herm=False,
-        check_symm=True,  # False,
+        check_symm=False,
     )
 
     return quspin_op, ls_expr
@@ -277,11 +281,10 @@ def permute_bits(x, permutation):
     x_permuted = np.zeros_like(x)
     for i in range(permutation.size):
         x_permuted |= ((x >> permutation[i]) & 1) << i
-    print(x, permutation, x_permuted)
     return x_permuted
 
 
-def build_cyclic_group(permutation, sector):
+def build_cyclic_group(permutation, sector=None):
     permutation = np.asarray(permutation)
     identity = np.arange(permutation.size)
 
@@ -289,19 +292,22 @@ def build_cyclic_group(permutation, sector):
     sectors = [0]
 
     p = permutation
-    s = sector
+    s = sector if sector is not None else 0
     n = 1
     while not np.array_equal(p, identity):
         elements.append(p)
         sectors.append(s)
 
         p = p[permutation]
-        s += sector
+        s += sector if sector is not None else 0
         n += 1
 
-    sectors = [s % n for s in sectors]
-    characters = [np.exp(-2j * np.pi * s / n) for s in sectors]
-    return zip(elements, sectors, characters)
+    if sector is not None:
+        sectors = [s % n for s in sectors]
+        characters = [np.exp(+2j * np.pi * s / n) for s in sectors]
+        return zip(elements, sectors, characters)
+    else:
+        return elements
 
 
 def generate_test_file(
@@ -324,10 +330,12 @@ def generate_test_file(
     )
 
     basis = quspin_op.basis
-    x = np.random.rand(basis.Ns) + np.random.rand(basis.Ns) * 1j - (0.5 + 0.5j)
+    x = np.random.rand(basis.Ns) + 0j  # + np.random.rand(basis.Ns) * 1j - (0.5 + 0.5j)
     y = quspin_op.dot(x)
 
     name = "test_{}_{}_{}".format(number_sites, hamming_weight, spin_inversion)
+    if symmetry is not None:
+        name += "_{}_{}".format(symmetry[1], symmetry[2])
     with open("{}_expr.json".format(name), "w") as out:
         json.dump(ls_expr, out)
 
@@ -337,27 +345,27 @@ def generate_test_file(
     #   - It uses 1 to represent ↑, and 0 to represent ↓, but lattice symmetries does the inverse 😭
     basis_states = basis_states ^ ((1 << basis.N) - 1)
 
+    representatives = basis_states
+    characters = np.ones(basis_states.size, dtype=np.complex128)
     if symmetry is not None:
-        assert spin_inversion is None
         _, permutation, sector = symmetry
-        representatives = basis_states
-        characters = np.ones(basis_states.size)
         for p, _, c in build_cyclic_group(permutation, sector):
             permuted = permute_bits(basis_states, p)
-            representatives = np.minimum(representatives, permuted)
             characters[permuted < representatives] = c
-
-        basis_states = representatives
-        x *= characters
-        y *= characters
-
-    if "zblock" in basis.blocks:
-        (_, spin_inversion) = basis.blocks["zblock"]
-        mask = (1 << basis.L) - 1
-        need_flipping = (basis_states ^ mask) < basis_states
-        x[need_flipping] *= spin_inversion
-        y[need_flipping] *= spin_inversion
-        basis_states = np.minimum(basis_states, basis_states ^ mask)
+            representatives = np.minimum(representatives, permuted)
+            if spin_inversion is not None:
+                mask = (1 << basis.N) - 1
+                inverted = permuted ^ mask
+                characters[inverted < representatives] = c * spin_inversion
+                representatives = np.minimum(representatives, inverted)
+    elif spin_inversion is not None:
+        mask = (1 << basis.N) - 1
+        inverted = representatives ^ mask
+        characters[inverted < representatives] = spin_inversion
+        representatives = np.minimum(representatives, inverted)
+    basis_states = representatives
+    x *= characters
+    y *= characters
 
     permutation = np.argsort(basis_states)
     basis_states = basis_states[permutation]
@@ -376,15 +384,53 @@ def generate_test_file(
 
 
 def generate_tests():
-    generate_test_file(
-        3,
-        4,
-        4,
-        hamming_weight=None,
-        spin_inversion=None,
-        symmetry=("Tx", [1, 2, 3, 0], 0),
-        complex_coeff=False,
-    )
+    def possible_permutations(n):
+        yield (None, None)
+        if n <= 3:
+            for p in itertools.permutations(list(range(n))):
+                periodicity = len(list(build_cyclic_group(p)))
+                for s in range(periodicity):
+                    yield (list(p), s)
+        else:
+            for _ in range(3):
+                p = rng.permutation(n).tolist()
+                periodicity = len(list(build_cyclic_group(p)))
+                if periodicity <= 3:
+                    sectors = list(range(periodicity))
+                else:
+                    sectors = rng.choice(periodicity, size=3, replace=False).tolist()
+                for s in sectors:
+                    yield (p, s)
+
+    def possible_hamming_weights(n):
+        yield None
+        if n <= 2:
+            hammings = list(range(n + 1))
+        else:
+            hammings = rng.choice(n + 1, size=3, replace=False).tolist()
+        for h in hammings:
+            yield h
+
+    def posible_spin_inversion(n, h):
+        yield None
+        if h is None or 2 * h == n:
+            yield 1
+            yield -1
+
+    for n in [1, 2, 3, 4, 5, 10]:
+        for p, s in possible_permutations(n):
+            for h in possible_hamming_weights(n):
+                for i in posible_spin_inversion(n, h):
+                    generate_test_file(
+                        number_terms=10,
+                        max_order=10,
+                        number_sites=n,
+                        hamming_weight=h,
+                        spin_inversion=i,
+                        symmetry=("P", p, s) if p is not None else None,
+                        complex_coeff=False,
+                    )
+
     # for number_sites in [1, 2, 3, 4, 5, 10]:
     #     number_terms = 4 * number_sites
     #     max_order = 10

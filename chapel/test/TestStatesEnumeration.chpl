@@ -20,8 +20,11 @@ use CommDiagnostics;
 // config const kHamiltonian = "data/heisenberg_kagome_12.yaml";
 // config const kRepresentatives = "data/heisenberg_kagome_12.h5";
 
+inline proc asUInt64Array(in xs : [] uint(64)) { return xs; }
+inline proc asUInt16Array(in xs : [] uint(16)) { return xs; }
+
 proc test_basis() {
-  const basis = new Basis("{ \"number_spins\": 4, \"hamming_weight\": 2 }");
+  const basis = new Basis("{ \"number_sites\": 4, \"hamming_weight\": 2 }");
   assert(basis.info.number_sites == 4);
   assert(basis.info.hamming_weight == 2);
   assert(basis.info.spin_inversion == 0);
@@ -43,7 +46,7 @@ proc test_basis() {
 }
 
 proc test_determineEnumerationRanges() {
-  const basis1 = new Basis("{ \"number_spins\": 4, \"hamming_weight\": 2 }");
+  const basis1 = new Basis("{ \"number_sites\": 4, \"hamming_weight\": 2 }");
   const ref basisInfo1 = basis1.info;
 
   assert(determineEnumerationRanges(basisInfo1.min_state_estimate .. basisInfo1.max_state_estimate,
@@ -59,7 +62,7 @@ proc test_determineEnumerationRanges() {
   assert(determineEnumerationRanges(basisInfo1.min_state_estimate .. basisInfo1.max_state_estimate,
                                     10, basisInfo1).equals([3 .. 3, 5 .. 5, 6 .. 6, 9 .. 9, 10 .. 10, 12 .. 12]));
 
-  const basis2 = new Basis("{ \"number_spins\": 4, \"hamming_weight\": null }");
+  const basis2 = new Basis("{ \"number_sites\": 4, \"hamming_weight\": null }");
   const ref basisInfo2 = basis2.info;
 
   assert(determineEnumerationRanges(basisInfo2.min_state_estimate .. basisInfo2.max_state_estimate,
@@ -67,7 +70,7 @@ proc test_determineEnumerationRanges() {
   assert(determineEnumerationRanges(basisInfo2.min_state_estimate .. basisInfo2.max_state_estimate,
                                     2, basisInfo2).equals([0 .. 7, 8 .. 15]));
 
-  const basis3 = new Basis("{ \"number_spins\": 36, \"hamming_weight\": 18 }");
+  const basis3 = new Basis("{ \"number_sites\": 36, \"hamming_weight\": 18 }");
   const ref basisInfo3 = basis3.info;
   var t3 = new stopwatch();
   t3.start();
@@ -84,12 +87,13 @@ proc test_determineEnumerationRanges() {
 
 
 const smallBasesJsonDefs = [
-  "{ \"number_spins\": 1 }",
-  "{ \"number_spins\": 1, \"hamming_weight\": 0 }",
-  "{ \"number_spins\": 1, \"hamming_weight\": 1 }",
-  "{ \"number_spins\": 2, \"spin_inversion\": 1 }",
-  "{ \"number_spins\": 4, \"hamming_weight\": 2, \"spin_inversion\": -1 }",
-  "{ \"number_spins\": 3, \"symmetries\": [ { \"permutation\": [1, 2, 0], \"sector\": 0 } ] }",
+  "{ \"number_sites\": 1 }",
+  "{ \"number_sites\": 1, \"hamming_weight\": 0 }",
+  "{ \"number_sites\": 1, \"hamming_weight\": 1 }",
+  "{ \"number_sites\": 2, \"spin_inversion\": 1 }",
+  "{ \"number_sites\": 4, \"hamming_weight\": 2, \"spin_inversion\": -1 }",
+  "{ \"number_sites\": 3, \"symmetries\": [ { \"permutation\": [1, 2, 0], \"sector\": 0 } ] }",
+  "{ \"number_sites\": 64, \"hamming_weight\": 1 }",
 ];
 const smallBasesExpectedStates = [
   new Vector([0b0:uint, 0b1:uint]),
@@ -98,6 +102,7 @@ const smallBasesExpectedStates = [
   new Vector([0b00:uint, 0b01:uint]),
   new Vector([0b0011:uint, 0b0101:uint, 0b0110:uint]),
   new Vector([0b000:uint, 0b001:uint, 0b011:uint, 0b111:uint]),
+  new Vector(asUInt64Array([i in 0 ..# 64] (1:uint<<i))),
 ];
 const smallBasesExpectedNorms = [
   new Vector([1:uint(16), 1:uint(16)]),
@@ -106,10 +111,11 @@ const smallBasesExpectedNorms = [
   new Vector([1:uint(16), 1:uint(16)]),
   new Vector([1:uint(16), 1:uint(16), 1:uint(16)]),
   new Vector([3:uint(16), 1:uint(16), 1:uint(16), 3:uint(16)]),
+  new Vector(asUInt16Array([i in 0 ..# 64] 1:uint(16))),
 ];
 
 proc test__enumerateStatesGeneric() {
-  const basis1 = new Basis("{ \"number_spins\": 5, \"hamming_weight\": 2 }");
+  const basis1 = new Basis("{ \"number_sites\": 5, \"hamming_weight\": 2 }");
   const ref basisInfo1 = basis1.info;
   const r1 = basisInfo1.min_state_estimate .. basisInfo1.max_state_estimate;
   var bucket1 = new Bucket();
@@ -132,7 +138,18 @@ proc test__enumerateStatesGeneric() {
 }
 
 proc test_enumerateStates() {
-  const basis1 = new Basis("{ \"number_spins\": 5, \"hamming_weight\": 2 }");
+  for (basisDef, expectedStates, expectedNorms)
+      in zip(smallBasesJsonDefs, smallBasesExpectedStates, smallBasesExpectedNorms) {
+    const b = new Basis(basisDef);
+    var basisStates;
+    var norms;
+    var keys;
+    enumerateStates(b, basisStates, norms, keys);
+    checkArraysEqual(basisStates[here], expectedStates.toArray());
+    checkArraysEqual(norms[here], expectedNorms.toArray());
+  }
+
+  const basis1 = new Basis("{ \"number_sites\": 5, \"hamming_weight\": 2 }");
   const rs = determineEnumerationRanges(basis1.info.min_state_estimate .. basis1.info.max_state_estimate,
                                         4, basis1.info);
   var basisStates;
@@ -142,7 +159,7 @@ proc test_enumerateStates() {
   writeln(basisStates);
   writeln(norms);
 
-  const basis2 = new Basis("{ \"number_spins\": 3, \"hamming_weight\": 1 }");
+  const basis2 = new Basis("{ \"number_sites\": 3, \"hamming_weight\": 1 }");
   const rs2 = determineEnumerationRanges(basis2.info.min_state_estimate .. basis2.info.max_state_estimate, 4, basis2.info);
   var basisStates2;
   var norms2;

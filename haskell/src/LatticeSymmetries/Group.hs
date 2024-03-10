@@ -269,23 +269,22 @@ isRepresentativeSlow
   -- ^ Basis state
   -> Maybe Int
   -- ^ Norm if the state is a representative, nothing otherwise
-isRepresentativeSlow (B.toList . unRepresentation -> group) spinInversion basisState1 = case spinInversion of
-  Nothing -> go 0 basisState1 group
-  Just _ ->
-    let count1 = go 0 basisState1 group
-        count2 = go 0 basisState2 group
-     in (+) <$> count1 <*> count2
+isRepresentativeSlow (B.toList . unRepresentation -> group) spinInversion basisState0 = go 0 group
   where
-    basisState2 = invertBasisState basisState1
-    go !count _ [] = Just count
-    go !count bits ((RepElement p φ) : rest) = case compare bits' bits of
-      LT -> Nothing
-      EQ
-        | φ /= 0 -> Nothing
-        | otherwise -> go (count + 1) bits rest
-      GT -> go count bits rest
+    spinInversionPhase = case spinInversion of
+      Just 1 -> 0 % 1
+      Just (-1) -> 1 % 2
+      _ -> undefined
+    go !count [] = Just count
+    go !count ((RepElement p φ) : rest)
+      | y < basisState0 = Nothing
+      | y == basisState0 && φ /= 0 = Nothing
+      | isJust spinInversion && invertBasisState y < basisState0 = Nothing
+      | isJust spinInversion && invertBasisState y == basisState0 && φ /= spinInversionPhase = Nothing
+      | otherwise = go (count + ẟ) rest
       where
-        bits' = permuteBasisState p bits
+        ẟ = fromEnum (y == basisState0 || isJust spinInversion && invertBasisState y == basisState0)
+        y = permuteBasisState p basisState0
 
 stateInfoSlow
   :: Representation Permutation
@@ -295,21 +294,19 @@ stateInfoSlow
   -> BasisState t
   -- ^ Basis state
   -> (BasisState t, Int)
-stateInfoSlow (B.toList . unRepresentation -> group) spinInversion basisState1 = case spinInversion of
-  Nothing -> go (basisState1, -1) 0 basisState1 group
-  Just _ -> error "not implemented"
-  -- let count1 = go 0 basisState1 group
-  --     count2 = go 0 basisState2 group
-  --  in (+) <$> count1 <*> count2
+stateInfoSlow (unRepresentation -> group) spinInversion basisState0 = go Nothing 0 basisState0 (B.toList group)
   where
-    basisState2 = invertBasisState basisState1
-    go (!rep, !index) _ _ [] = (rep, index)
-    go (!rep, !index) !k !original ((RepElement p _) : rest) =
-      case compare permuted rep of
-        LT -> go (permuted, k) (k + 1) original rest
-        _ -> go (rep, index) (k + 1) original rest
+    size = G.length group
+
+    go s _ !original [] = fromMaybe (original, -1) s
+    go s !k !original ((RepElement p _) : rest) = case s of
+      Just (rep, _)
+        | rep <= y -> go s (k + 1) original rest
+      _ -> go (Just (y, i)) (k + 1) original rest
       where
-        permuted = permuteBasisState p original
+        permuted1 = permuteBasisState p original
+        permuted2 = invertBasisState permuted1
+        (y, i) = if isNothing spinInversion || permuted1 < permuted2 then (permuted1, k) else (permuted2, size + k)
 
 -- toSymmetryList :: (HasCallStack) => Symmetries -> [Symmetry]
 -- toSymmetryList (Symmetries (PermutationGroup gs) _ λsRe λsIm) =

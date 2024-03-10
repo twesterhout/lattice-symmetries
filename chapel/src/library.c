@@ -66,7 +66,8 @@ ls_chpl_get_is_representative_kernel(ls_hs_basis const *basis) {
 
 void ls_chpl_invoke_is_representative_kernel(ls_hs_is_representative_kernel_type_v2 kernel,
                                              int64_t const count, uint64_t const *basis_states,
-                                             double *norms) {
+                                             uint16_t *norms) {
+    LS_CHECK(count % LS_HS_MAX_BLOCK_SIZE == 0, "make sure to round up count to LS_HS_MAX_BLOCK_SIZE");
     halide_dimension_t dims[1] = {
         (halide_dimension_t){.min = 0, .extent = (int32_t)count, .stride = 1}};
     halide_buffer_t basis_states_buf = (halide_buffer_t){
@@ -83,7 +84,7 @@ void ls_chpl_invoke_is_representative_kernel(ls_hs_is_representative_kernel_type
         .device_interface = 0,
         .host = (uint8_t *)norms,
         .flags = 0,
-        .type = (struct halide_type_t){.code = halide_type_float, .bits = 64, .lanes = 1},
+        .type = (struct halide_type_t){.code = halide_type_uint, .bits = 16, .lanes = 1},
         .dimensions = 1,
         .dim = dims,
         .padding = 0};
@@ -104,6 +105,7 @@ ls_chpl_get_state_to_index_kernel(ls_hs_basis const *basis) {
 void ls_chpl_invoke_state_to_index_kernel(ls_hs_state_to_index_kernel_type kernel,
                                           int64_t const count, uint64_t const *basis_states,
                                           int64_t *indices) {
+    LS_CHECK(count % LS_HS_MAX_BLOCK_SIZE == 0, "make sure to round up count to LS_HS_MAX_BLOCK_SIZE");
     halide_dimension_t dims[1] = {
         (halide_dimension_t){.min = 0, .extent = (int32_t)count, .stride = 1}};
     halide_buffer_t basis_states_buf = (halide_buffer_t){
@@ -139,6 +141,7 @@ ls_hs_state_info_kernel_type_v2 ls_chpl_get_state_info_kernel(ls_hs_basis const 
 void ls_chpl_invoke_state_info_kernel(ls_hs_state_info_kernel_type_v2 kernel,
                                       int64_t const count, uint64_t const *basis_states,
                                       uint64_t *representatives, int32_t *indices) {
+    LS_CHECK(count % LS_HS_MAX_BLOCK_SIZE == 0, "make sure to round up count to LS_HS_MAX_BLOCK_SIZE");
     halide_dimension_t dims[1] = {
         (halide_dimension_t){.min = 0, .extent = (int32_t)count, .stride = 1}};
     halide_buffer_t basis_states_buf = (halide_buffer_t){

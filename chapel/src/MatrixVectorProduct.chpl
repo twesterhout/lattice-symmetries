@@ -7,6 +7,7 @@ private use ConcurrentQueue;
 private use FFI;
 private use ForeignTypes;
 private use Timing;
+private use Utils;
 private use Vector;
 
 private import Reflection.getRoutineName;
@@ -105,6 +106,7 @@ inline proc decodeFromWord(w : uint(64), ref x : int) { x = w:int; }
 
 private proc localProcessExperimental(const ref basis : Basis,
                                       xs : c_ptrConst(?coeffType),
+                                      norms : c_ptrConst(uint(16)),
                                       size : int,
                                       basisStates : c_ptrConst(uint(64)),
                                       coeffs : c_ptrConst(complex(128)),
@@ -126,18 +128,26 @@ private proc localProcessExperimental(const ref basis : Basis,
     }
     else {
       indices = indicesBuffer;
-      basisStatesToIndices(basis, size, basisStates, indices);
+      const sizeWithPadding = roundUpToMaxBlockSize(size);
+      // logDebug("executing basisStatesToIndices...");
+      basisStatesToIndices(basis, sizeWithPadding, basisStates, indices);
+      // logDebug("basisStatesToIndices done");
     }
 
     var k = 0;
     while k < size {
-      var acc : coeffType = coeffs[k]:coeffType * xs[indices[k]];
+      // logDebug(try! "coeffs[%i] = %.20z, xs[%i] = %.20z, norms = %.20r".format(
+      //   k, coeffs[k], indices[k], xs[indices[k]]:complex(128), sqrt(norms[indices[k]])));
+      var acc : coeffType = coeffs[k]:coeffType * xs[indices[k]] * sqrt(norms[indices[k]]:real);
       var targetIndex = targetIndices[k];
       k += 1;
       while k < size && targetIndices[k] == targetIndex {
-        acc += coeffs[k]:coeffType * xs[indices[k]];
+        // logDebug(try! "coeffs[%i] = %r + %r im, xs[%i] = %z, norms = %.20r".format(
+        //   k, coeffs[k].re, coeffs[k].im, indices[k], xs[indices[k]]:complex(128), sqrt(norms[indices[k]])));
+        acc += coeffs[k]:coeffType * xs[indices[k]] * sqrt(norms[indices[k]]:real);
         k += 1;
       }
+      // logDebug(try! "targetCoeffs[%i] += %.20z".format(targetIndex - minTargetIndex, acc));
       targetCoeffs[targetIndex - minTargetIndex] += acc;
     }
   }
@@ -202,9 +212,11 @@ record LocaleState {
   var xPtr : c_ptrConst(coeffType);
   var yPtr : c_ptr(coeffType);
   var representativesPtr : c_ptrConst(uint(64));
+  var normsPtr : c_ptrConst(uint(16));
 
   proc init(const ref matrix : Operator,
             const ref representatives : [] uint(64),
+            const ref norms : [] uint(16),
             xs : c_ptrConst(?coeffType),
             ys : c_ptr(coeffType),
             numChunks : int,
@@ -236,25 +248,27 @@ record LocaleState {
     this.numberStates = representatives.size;
     this.xPtr = xs;
     this.yPtr = ys;
-    this.representativesPtr = c_ptrToConst(representatives);
+    this.representativesPtr = safe_c_ptrToConst(representatives);
+    this.normsPtr = safe_c_ptrToConst(norms);
     init this;
 
     chunkIndex.write(0);
     numberCompleted.write(0);
 
     // pre-compile Basis kernels
-    if !basis.info.is_state_index_identity || numLocales != 1 {
+    if numberStates > 0 && (!basis.info.is_state_index_identity || numLocales != 1) {
       const _stateToIndexKernel = ls_chpl_get_state_to_index_kernel(basis.payload);
     }
   }
   proc init(const ref matrix : Operator,
             const ref representatives : [] uint(64),
+            const ref norms : [] uint(16),
             const ref xs : [] ?coeffType,
             ref ys : [] coeffType,
             numChunks : int,
             numTasks : int,
             remoteBufferSize : int) {
-    this.init(matrix, representatives, c_ptrToConst(xs), c_ptrTo(ys), numChunks, numTasks, remoteBufferSize);
+    this.init(matrix, representatives, norms, safe_c_ptrToConst(xs), safe_c_ptrTo(ys), numChunks, numTasks, remoteBufferSize);
   }
 }
 
@@ -344,7 +358,8 @@ record Worker {
     this.batchedOperator = new BatchedOperator(localeState.matrix.payload, maxChunkSize);
     this.localeStatePtr = c_addrOf(localeState);
     this.taskIdx = taskIdx;
-    this.indices = allocate(int, maxChunkSize * (1 + max(1, localeState.matrix.max_number_off_diag)));
+    this.indices = allocate(int,
+      roundUpToMaxBlockSize(maxChunkSize * (1 + max(1, localeState.matrix.max_number_off_diag))));
     this.accumulators = allocate(localeState.coeffType, maxChunkSize);
   }
 
@@ -370,6 +385,7 @@ record Worker {
         batchedOperator.computeOffDiag(
           chunk,
           localeState.representativesPtr + chunk.low,
+          localeState.normsPtr + chunk.low,
           left=false);
 
       if numLocales > 1 {
@@ -384,8 +400,11 @@ record Worker {
       }
       else if n > 0 {
         // Process all the generated data locally
+        // logDebug("process all generated data locally");
+        // writeln(localeState.coeffType:string);
         localProcessExperimental(localeState.basis,
                                  localeState.xPtr,
+                                 localeState.normsPtr,
                                  n,
                                  basisStatesPtr,
                                  coeffsPtr:c_ptrConst(complex(128)),
@@ -423,7 +442,8 @@ record Worker {
 proc perLocaleOffDiagonal(matrix : Operator,
                           const ref xs : [] ?eltType,
                           ref ys : [] eltType,
-                          const ref representatives : [] uint(64)) {
+                          const ref representatives : [] uint(64),
+                          const ref norms : [] uint(16)) {
   const _timer = recordTime("perLocaleOffDiagonal");
   const numTasks = kNumTasks;
   const remoteBufferSize = max(kRemoteBufferSize, matrix.max_number_off_diag_estimate);
@@ -431,7 +451,7 @@ proc perLocaleOffDiagonal(matrix : Operator,
     min((representatives.size * matrix.max_number_off_diag_estimate + remoteBufferSize - 1) / remoteBufferSize,
         representatives.size);
 
-  var localeState = new LocaleState(matrix, representatives, xs, ys, numChunks, numTasks, remoteBufferSize);
+  var localeState = new LocaleState(matrix, representatives, norms, xs, ys, numChunks, numTasks, remoteBufferSize);
   if numLocales > 1 {
     globalLocaleStateStore[here.id] = localeState.getRemoteView();
     allLocalesBarrier.barrier();
@@ -488,21 +508,23 @@ proc convertOffDiagToCsr(matrix : Operator,
 
   const numTasks = kNumTasks;
   const numChunks = min(representatives.size, kToCsrNumChunks);
-  var localeState = new LocaleState(matrix, representatives, nil:c_ptrConst(complex(128)), nil:c_ptr(complex(128)),
+  var localeState = new LocaleState(matrix, representatives, norms,
+                                    nil:c_ptrConst(complex(128)), nil:c_ptr(complex(128)),
                                     numChunks, numTasks, remoteBufferSize=0);
   const maxChunkSize = max reduce [c in localeState._chunks] c.size;
-
   const estimatedNumberTerms = matrix.max_number_off_diag_estimate;
-  const safeNumberTerms = matrix.max_number_off_diag;
-  const capacity =
-    // for the diagonal part
-    representatives.size +
-    // for the off-diagonal part
-    representatives.size * estimatedNumberTerms;
+
+  const chunkDests : [localeState._chunks.domain] range(int);
+  var capacity = 0;
+  for (d, c) in zip(chunkDests, localeState._chunks) {
+    const n = roundUpToMaxBlockSize(c.size * estimatedNumberTerms);
+    d = capacity ..# n;
+    capacity += n;
+  }
+  assert(capacity >= representatives.size * estimatedNumberTerms);
 
   var matrixElementsPtr = allocate(eltType, capacity);
   POSIX.memset(matrixElementsPtr, 0, capacity:c_size_t * c_sizeof(eltType));
-  // NOTE: +numChunks is important here
   var rowOffsetsPtr = allocate(int(64), representatives.size + 1);
   POSIX.memset(rowOffsetsPtr, 0, (representatives.size + 1):c_size_t * c_sizeof(int(64)));
   var colIndicesPtr = allocate(int(64), capacity);
@@ -511,65 +533,58 @@ proc convertOffDiagToCsr(matrix : Operator,
 
   coforall taskIdx in 0 ..# numTasks with (ref localeState) {
 
-    var betasBuffer : c_ptr(uint(64));
-    if !basisInfo.is_state_index_identity then
-      betasBuffer = allocate(uint(64), maxChunkSize * estimatedNumberTerms);
-
+    var batchedOperator = new BatchedOperator(matrix.payload, maxChunkSize);
     while true {
       const chunkIdx = localeState.getNextChunkIndex();
       if chunkIdx == -1 { break; }
       const chunk : range(int) = localeState._chunks[chunkIdx];
+      const dest : range(int) = chunkDests[chunkIdx];
 
-      // This is our region
-      const chunkStart = chunk.low * (estimatedNumberTerms + 1);
-      const chunkStop = chunk.high * (estimatedNumberTerms + 1);
-      var batchedOperator = new BatchedOperator(new ls_chpl_batched_operator(
-        matrix=matrix.payload,
-        batch_size=chunk.size,
-        betas=if basisInfo.is_state_index_identity
-                then (colIndicesPtr + chunkStart):c_ptr(uint(64))
-                else betasBuffer,
-        coeffs=matrixElementsPtr + chunkStart,
-        target_states=nil,
-        offsets=(rowOffsetsPtr + 1) + chunk.low,
-        temp_spins=nil,
-        temp_coeffs=nil,
-        temp_norms=nil,
-        locale_indices=nil
-      ));
+      const copy = batchedOperator.raw;
+      if basisInfo.is_state_index_identity then
+        batchedOperator.raw.betas = (colIndicesPtr + dest.low):c_ptr(uint(64));
+      batchedOperator.raw.coeffs = matrixElementsPtr + dest.low;
+      batchedOperator.raw.offsets = (rowOffsetsPtr + 1) + chunk.low;
+
       const (totalCount, _, _, _) =
         batchedOperator.computeOffDiag(
           chunk,
           localeState.representativesPtr + chunk.low,
+          localeState.normsPtr + chunk.low,
           left=false);
-      // for k in 0 ..# totalCount {
-      //   assert(batchedOperator.raw.coeffs[k] != 0);
-      //   writeln("chunkIdx=", chunkIdx, ", coeff=", batchedOperator.raw.coeffs[k], ", index=", batchedOperator.raw.betas[k]);
-      // }
-      // writeln("chunkIdx=", chunkIdx, ", chunkSize=", totalCount);
 
-      if !basisInfo.is_state_index_identity && totalCount > 0 then
-        basisStatesToIndices(matrix.basis, totalCount, betasBuffer, colIndicesPtr + chunkStart);
+      if !basisInfo.is_state_index_identity && totalCount > 0 {
+        const countWithPadding = roundUpToMaxBlockSize(totalCount);
+        basisStatesToIndices(matrix.basis, countWithPadding, batchedOperator.raw.betas, colIndicesPtr + dest.low);
+      }
+
+      for k in 0 ..# totalCount {
+        const i = colIndicesPtr[dest.low + k];
+        batchedOperator.raw.coeffs[k] *= sqrt(localeState.normsPtr[i]:real);
+      }
 
       numberNonZero.add(totalCount);
+
+      // NOTE: important!
+      batchedOperator.raw = copy;
     } // end while true
 
-    if betasBuffer != nil then deallocate(betasBuffer);
   }
 
   var offset = 0;
   for chunkIdx in 0 ..# numChunks {
     const chunk = localeState._chunks[chunkIdx];
-    const chunkStart = chunk.low * (estimatedNumberTerms + 1);
+    const dest = chunkDests[chunkIdx];
     const chunkSize = rowOffsetsPtr[1 + chunk.high];
     // writeln(chunk, ", ", chunkSize, ", ", offset);
     foreach k in chunk {
       rowOffsetsPtr[1 + k] += offset;
     }
-    if offset < chunkStart {
-      POSIX.memmove(matrixElementsPtr + offset, matrixElementsPtr + chunkStart,
+    assert(offset <= dest.low);
+    if offset < dest.low {
+      POSIX.memmove(matrixElementsPtr + offset, matrixElementsPtr + dest.low,
                     chunkSize:c_size_t * c_sizeof(eltType));
-      POSIX.memmove(colIndicesPtr + offset, colIndicesPtr + chunkStart,
+      POSIX.memmove(colIndicesPtr + offset, colIndicesPtr + dest.low,
                     chunkSize:c_size_t * c_sizeof(int(64)));
     }
     offset += chunkSize;
@@ -582,7 +597,8 @@ proc convertOffDiagToCsr(matrix : Operator,
 proc perLocaleMatrixVector(matrix : Operator,
                            const ref x : [] ?eltType,
                            ref y : [] eltType,
-                           const ref representatives : [] uint(64)) {
+                           const ref representatives : [] uint(64),
+                           const ref norms : [] uint(16)) {
   const _timer = recordTime("perLocaleMatrixVector");
   assert(matrix.locale == here);
   assert(x.locale == here);
@@ -591,7 +607,7 @@ proc perLocaleMatrixVector(matrix : Operator,
   // logDebug("== START perLocaleMatrixVector");
   perLocaleDiagonal(matrix, x, y, representatives);
   if matrix.payload.deref().max_number_off_diag > 0 then
-    perLocaleOffDiagonal(matrix, x, y, representatives);
+    perLocaleOffDiagonal(matrix, x, y, representatives, norms);
   // logDebug("== FINISH perLocaleMatrixVector");
 }
 
@@ -613,11 +629,12 @@ proc ls_chpl_matrix_vector_product(matrixPtr : c_ptrConst(ls_hs_operator),
   // NOTE: the cast from c_ptrConst to c_ptr is fine since we save the array in
   // a const variable afterwards thus regaining const correctness
   const representatives = makeArrayFromPtr(basisStatesPtr:c_ptr(uint(64)), {0 ..# numberStates});
+  const norms = makeArrayFromPtr(normsPtr:c_ptr(uint(16)), {0 ..# numberStates});
   for k in 0 ..# (numVectors:int) {
     // NOTE: same thing applies to the cast here
     const x = makeArrayFromPtr(xPtr:c_ptr(eltType) + k * numberStates, {0 ..# numberStates});
     var y = makeArrayFromPtr(yPtr + k * numberStates, {0 ..# numberStates});
-    perLocaleMatrixVector(matrix, x, y, representatives);
+    perLocaleMatrixVector(matrix, x, y, representatives, norms);
   }
 }
 

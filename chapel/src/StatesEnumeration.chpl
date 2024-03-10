@@ -265,8 +265,9 @@ private proc _enumerateStatesProjected(r : range(uint(64)),
   const isHammingWeightFixed = basisInfo.hamming_weight != -1;
   assertBoundsHaveSameHammingWeight(r, isHammingWeightFixed);
 
-  var buffer: [0 ..# kIsRepresentativeBatchSize] uint(64);
-  var norms: [0 ..# kIsRepresentativeBatchSize] real(64);
+  const maxBatchSize = roundUpToMaxBlockSize(kIsRepresentativeBatchSize);
+  var buffer: [0 ..# maxBatchSize] uint(64);
+  var norms: [0 ..# maxBatchSize] uint(16);
   var lower = r.low;
   const upper = r.high;
 
@@ -278,7 +279,8 @@ private proc _enumerateStatesProjected(r : range(uint(64)),
            + last:string + " > " + upper:string);
 
     // TODO: get rid of array slices for better performance
-    isRepresentative(basis, buffer[0 ..# written], norms[0 ..# written]);
+    const sizeWithPadding = roundUpToMaxBlockSize(written);
+    isRepresentative(basis, buffer[0 ..# sizeWithPadding], norms[0 ..# sizeWithPadding]);
 
     for i in 0 ..# written do
       if norms[i] > 0 {
@@ -543,7 +545,7 @@ proc enumerateStates(ranges : [] range(uint(64)), const ref basis : Basis, out _
 
   // Allocate space for keys
   assert(numLocales <= max(uint(8)), "locale indices do not fit into an uint(8)");
-  var keys = blockDist.createArray(0 ..# totalCount, uint(8));
+  var keys = blockDist.createArray(0 ..# max(1, totalCount), uint(8));
 
   // Perform transfers to target locales
   if numLocales > 1 {
@@ -571,7 +573,10 @@ proc enumerateStates(const ref basis : Basis, out basisStates, out norms, out ke
   // so there's no need to use more chunks than there are cores
   if !basisInfo.requires_projection then
     numChunks = numLocales * here.maxTaskPar;
-  numChunks = min(r.size, numChunks);
+  // r.size can exceed max(int(64))
+  const rSize = min(r.high - r.low + 1, max(int(64)):uint):int;
+  numChunks = min(rSize, numChunks);
+
   const chunks = determineEnumerationRanges(r, numChunks, basisInfo);
   enumerateStates(chunks, basis, basisStates, norms, keys);
 }
@@ -587,9 +592,12 @@ export proc ls_chpl_local_enumerate_states(p : c_ptr(ls_hs_basis),
 
   const ref basisInfo = basis.info;
   const r = lower .. upper;
+  // r.size can exceed max(int(64))
+  const rSize = min(upper - lower + 1, max(int(64)):uint):int;
+
   // If we don't have to project, the enumeration ranges can be split equally,
   // so there's no need to use more chunks than there are cores
-  const numChunks = min(r.size,
+  const numChunks = min(rSize,
                         if !basisInfo.requires_projection
                           then numLocales * here.maxTaskPar
                           else kEnumerateStatesNumChunks);

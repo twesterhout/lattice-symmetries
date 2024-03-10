@@ -35,8 +35,8 @@ import Data.Vector qualified as B
 import Data.Vector.Generic qualified as G
 import Data.Vector.Generic.Mutable qualified as GM
 import Data.Vector.Storable qualified as S
-import Foreign (FunPtr, Storable, castPtr)
-import Foreign.C (CInt (..), CUInt (..))
+import Foreign (FunPtr, Storable, castPtr, fromBool)
+import Foreign.C (CBool (..), CInt (..), CUInt (..))
 import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
 import Language.C.Inline.Unsafe qualified as CU
 import Language.Halide hiding (dim)
@@ -163,7 +163,8 @@ compileGroupRepresentation :: HasCallStack => Representation Permutation -> Symm
 compileGroupRepresentation (unRepresentation -> symmetries)
   | G.null symmetries = emptySymmetries
   | (G.head symmetries).size <= 1 = emptySymmetries
-  | otherwise = Symmetries permGroup benesNetwork charactersReal charactersImag symmetries
+  | isIdentityPermutation (G.head symmetries).element = Symmetries permGroup benesNetwork charactersReal charactersImag symmetries
+  | otherwise = error "the first element of the permutation group should be the identity"
   where
     permutations = (.element) <$> symmetries
     permGroup = mkPermutationGroup permutations
@@ -172,24 +173,21 @@ compileGroupRepresentation (unRepresentation -> symmetries)
     charactersReal = G.map realPart characters
     charactersImag = G.map imagPart characters
 
-
-
-
-
-
 createIsRepresentativeKernel_v2 :: HasCallStack => Representation Permutation -> Maybe Int -> IO (FunPtr RawIsRepresentativeKernel)
-createIsRepresentativeKernel_v2 _ (Just _) = error "not yet implemented"
-createIsRepresentativeKernel_v2 group Nothing = do
+createIsRepresentativeKernel_v2 group i = do
   let !symms = compileGroupRepresentation group
   when (nullSymmetries symms) $ error "cannot compile for an empty or trivial group"
-  withHalideBuffer @2 @Word64 symms.symmNetwork.bbnMasks $ \(castPtr -> masksBuf) ->
+  let !numberBits = fromIntegral @Int @CUInt (G.head (unRepresentation group)).element.length
+      !spinInversion = maybe 0 fromIntegral i
+  withHalideBuffer @2 @Word64 (transposeDenseMatrix symms.symmNetwork.bbnMasks) $ \(castPtr -> masksBuf) ->
     withHalideBuffer @1 @Double symms.symmCharactersReal $ \(castPtr -> eigvalsReBuf) ->
       withHalideBuffer @1 @Word64 symms.symmNetwork.bbnShifts $ \(castPtr -> shiftsBuf) ->
         [CU.exp| ls_hs_is_representative_kernel_type_v2 {
           ls_hs_internal_mk_is_representative_kernel($(halide_buffer_t* masksBuf),
                                                      $(halide_buffer_t* eigvalsReBuf),
                                                      $(halide_buffer_t* shiftsBuf),
-                                                     0)
+                                                     $(unsigned numberBits),
+                                                     $(int spinInversion))
         } |]
 
 createStateInfoKernel_v2 :: HasCallStack => Representation Permutation -> Maybe Int -> IO (FunPtr RawStateInfoKernel)
@@ -206,16 +204,18 @@ createStateInfoKernel_v2 group Nothing = do
         } |]
 
 createStateInfoKernel_v3 :: HasCallStack => Representation Permutation -> Maybe Int -> IO (FunPtr RawStateInfoKernel)
-createStateInfoKernel_v3 _ (Just _) = error "not yet implemented"
-createStateInfoKernel_v3 group Nothing = do
+createStateInfoKernel_v3 group i = do
   let !symms = compileGroupRepresentation group
   when (nullSymmetries symms) $ error "cannot compile for an empty or trivial group"
+  let !numberBits = fromIntegral @Int @CUInt (G.head (unRepresentation group)).element.length
+      !spinInversion = fromBool (isJust i)
   withHalideBuffer @2 @Word64 (transposeDenseMatrix symms.symmNetwork.bbnMasks) $ \(castPtr -> masksBuf) ->
     withHalideBuffer @1 @Word64 symms.symmNetwork.bbnShifts $ \(castPtr -> shiftsBuf) ->
       [CU.exp| ls_hs_state_info_kernel_type_v2 {
           ls_hs_internal_mk_state_info_kernel_v3($(halide_buffer_t* masksBuf),
                                                  $(halide_buffer_t* shiftsBuf),
-                                                 0)
+                                                 $(unsigned numberBits),
+                                                 $(bool spinInversion))
         } |]
 
 destroyIsRepresentativeKernel_v2 :: FunPtr RawIsRepresentativeKernel -> IO ()
@@ -236,23 +236,31 @@ destroyStateInfoKernel_v3 kernel =
     ls_hs_internal_destroy_state_info_kernel_v3($(ls_hs_state_info_kernel_type_v2 kernel));
   } |]
 
-invokeIsRepresentativeKernel :: FunPtr RawIsRepresentativeKernel -> S.Vector Word64 -> IO (S.Vector Double)
-invokeIsRepresentativeKernel funPtr basisStates =
-  withHalideBuffer @1 @Word64 basisStates $ \basisStatesBuf ->
-    allocaCpuBuffer [S.length basisStates] $ \normsBuf -> do
+pad :: (Num a, Storable a) => S.Vector a -> S.Vector a
+pad v = S.concat [v, S.replicate (size - S.length v) 0]
+  where
+    maxBlockSize = fromIntegral [CU.pure| int { LS_HS_MAX_BLOCK_SIZE } |]
+    size = maxBlockSize * ((S.length v + maxBlockSize - 1) `Prelude.div` maxBlockSize)
+
+invokeIsRepresentativeKernel :: FunPtr RawIsRepresentativeKernel -> S.Vector Word64 -> IO (S.Vector Word16)
+invokeIsRepresentativeKernel funPtr basisStates = do
+  let paddedBasisStates = pad basisStates
+  withHalideBuffer @1 @Word64 paddedBasisStates $ \basisStatesBuf ->
+    allocaCpuBuffer [S.length paddedBasisStates] $ \normsBuf -> do
       toFun_is_representative_kernel funPtr (castPtr basisStatesBuf) (castPtr normsBuf)
-      S.fromList <$> peekToList normsBuf
+      S.take (S.length basisStates) . S.fromList <$> peekToList normsBuf
 
 invokeStateInfoKernel :: FunPtr RawStateInfoKernel -> S.Vector Word64 -> IO (S.Vector Word64, S.Vector Int32)
 invokeStateInfoKernel funPtr basisStates = do
-  let n = S.length basisStates
-      maxBlockSize = 64
-      size = maxBlockSize * ((n + maxBlockSize - 1) `Prelude.div` maxBlockSize)
-  withHalideBuffer @1 @Word64 (S.concat [basisStates, S.replicate (size - n) 0]) $ \basisStatesBuf ->
-     allocaCpuBuffer [size] $ \repsBuf ->
-          allocaCpuBuffer [size] $ \indicesBuf -> do
-            toFun_state_info_kernel funPtr (castPtr basisStatesBuf) (castPtr repsBuf) (castPtr indicesBuf)
-            (,) <$> (S.take n . S.fromList <$> peekToList repsBuf) <*> (S.take n . S.fromList <$> peekToList indicesBuf)
+  let paddedBasisStates = pad basisStates
+  withHalideBuffer @1 @Word64 paddedBasisStates $ \basisStatesBuf ->
+    allocaCpuBuffer [S.length paddedBasisStates] $ \repsBuf ->
+      allocaCpuBuffer [S.length paddedBasisStates] $ \indicesBuf -> do
+        toFun_state_info_kernel funPtr (castPtr basisStatesBuf) (castPtr repsBuf) (castPtr indicesBuf)
+        let n = S.length basisStates
+        (,)
+          <$> (S.take n . S.fromList <$> peekToList repsBuf)
+          <*> (S.take n . S.fromList <$> peekToList indicesBuf)
 
 createFixedHammingStateToIndexKernel :: Int -> Int -> IO (FunPtr RawStateToIndexKernel)
 createFixedHammingStateToIndexKernel (fromIntegral -> numberSites) (fromIntegral -> hammingWeight) = do
