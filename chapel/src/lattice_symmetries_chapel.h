@@ -44,4 +44,17 @@ void ls_chpl_extract_diag_c128(ls_hs_operator const* matrix, chpl_external_array
 void ls_chpl_experimental_axpy_c128(int64_t size, double alpha_re, double alpha_im,
                                     ls_hs_scalar const* xs, ls_hs_scalar const* ys,
                                     ls_hs_scalar* out);
+
+void ls_chpl_matrix_vector_product_csr_i32_f64(int64_t numberRows, int64_t numberCols, int64_t numberNonZero,
+                                               double const* matrixElements, int32_t const* rowOffsets, int32_t const* colIndices,
+                                               double const* x, double* y, int64_t numTasks);
+void ls_chpl_matrix_vector_product_csr_i32_c128(int64_t numberRows, int64_t numberCols, int64_t numberNonZero,
+                                                ls_hs_scalar const* matrixElements, int32_t const* rowOffsets, int32_t const* colIndices,
+                                                ls_hs_scalar const* x, ls_hs_scalar* y, int64_t numTasks);
+void ls_chpl_matrix_vector_product_csr_i64_f64(int64_t numberRows, int64_t numberCols, int64_t numberNonZero,
+                                               double const* matrixElements, int64_t const* rowOffsets, int64_t const* colIndices,
+                                               double const* x, double* y, int64_t numTasks);
+void ls_chpl_matrix_vector_product_csr_i64_c128(int64_t numberRows, int64_t numberCols, int64_t numberNonZero,
+                                                ls_hs_scalar const* matrixElements, int64_t const* rowOffsets, int64_t const* colIndices,
+                                                ls_hs_scalar const* x, ls_hs_scalar* y, int64_t numTasks);
 /* python-cffi: STOP */

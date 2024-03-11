@@ -9,6 +9,8 @@ import os
 import scipy
 from pytest import raises, approx
 
+rng = np.random.default_rng(seed=123)
+
 
 def test_readme():
     assert Expr("σˣ₀") == Expr("\\sigma^x_0")
@@ -103,7 +105,8 @@ def test_basis_construction():
 
     a = ls.Expr("2 I + S+3")
     for b in a.hilbert_space_sectors():
-        pass
+        print(b.symmetries)
+        print(b.permutation_group)
     #     print(b.hamming_weight, b.spin_inversion)
     # assert len(list(a.symmetric_basis())) == 1
     # b = ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁")
@@ -111,6 +114,31 @@ def test_basis_construction():
     # assert len(list(b.symmetric_basis(particle_conservation=False, spin_inversion=1))) == 1
     # assert len(list(b.symmetric_basis(particle_conservation=2, spin_inversion=False))) == 1
     # assert len(list(b.symmetric_basis(particle_conservation=False, spin_inversion=False))) == 1
+
+
+def test_csr_matvec():
+    for dtype in [np.dtype("float64"), np.dtype("complex128")]:
+        for _ in range(10):
+            [n, m] = rng.integers(low=1, high=1000, size=2).tolist()
+            matrix = scipy.sparse.random(
+                n, m, density=0.25, format="csr", dtype=dtype, random_state=rng
+            )
+            x = rng.random(matrix.shape[1])
+            if np.iscomplexobj(matrix.data):
+                x = x + 1j * rng.random(matrix.shape[1])
+            assert np.allclose(ls._csr_matvec(matrix, x), matrix @ x)
+
+
+def test_to_csr():
+    basis = ls.SpinBasis(2)
+    basis.build()
+    matrix = ls.Operator(ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁"), basis)
+    print(matrix.to_csr())
+
+    h = np.array([[1, 0, 0, 0], [0, -1, 2, 0], [0, 2, -1, 0], [0, 0, 0, 1]])
+    assert np.array_equal(matrix.diag_to_array(), h.diagonal())
+    assert np.array_equal(matrix.off_diag_to_csr().todense(), h - np.diag(h.diagonal()))
+    pass
 
 
 def test_basis_properties():

@@ -11,6 +11,7 @@ private use Utils;
 private use Vector;
 
 private import Reflection.getRoutineName;
+private import Sort;
 private use AllLocalesBarriers;
 private use CTypes;
 private use ChapelLocks;
@@ -534,6 +535,8 @@ proc convertOffDiagToCsr(matrix : Operator,
   coforall taskIdx in 0 ..# numTasks with (ref localeState) {
 
     var batchedOperator = new BatchedOperator(matrix.payload, maxChunkSize);
+    var buffer : [0 ..# estimatedNumberTerms] (complex(128), int);
+
     while true {
       const chunkIdx = localeState.getNextChunkIndex();
       if chunkIdx == -1 { break; }
@@ -561,6 +564,23 @@ proc convertOffDiagToCsr(matrix : Operator,
       for k in 0 ..# totalCount {
         const i = colIndicesPtr[dest.low + k];
         batchedOperator.raw.coeffs[k] *= sqrt(localeState.normsPtr[i]:real);
+      }
+
+      // Sort elements
+      for k in 0 ..# chunk.size {
+        const lo = if k == 0 then 0 else batchedOperator.raw.offsets[k - 1];
+        const hi = batchedOperator.raw.offsets[k];
+        const coeffsPtr = batchedOperator.raw.coeffs + lo;
+        const indicesPtr = colIndicesPtr + dest.low + lo;
+
+        for i in 0 ..# (hi - lo) do
+          buffer[i] = (coeffsPtr[i], indicesPtr[i]);
+        record Comparator { inline proc compare(a, b) { return (new Sort.DefaultComparator()).compare(a[1], b[1]); } }
+        Sort.QuickSort.quickSort(buffer[0 ..# (hi - lo)], comparator=new Comparator());
+        foreach i in 0 ..# (hi - lo) {
+          coeffsPtr[i] = buffer[i][0];
+          indicesPtr[i] = buffer[i][1];
+        }
       }
 
       numberNonZero.add(totalCount);

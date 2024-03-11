@@ -30,14 +30,16 @@ import json
 import weakref
 import typing
 from typing import Any, List, Dict, Optional, Tuple, Union, overload, Callable
+from functools import cached_property
 
 import numpy as np
 from numpy.typing import NDArray
 from loguru import logger
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, spdiags
 from scipy.sparse.linalg import LinearOperator
 from scipy.special import binom
 from sympy.combinatorics import Permutation, PermutationGroup
+from sympy.core import Rational
 
 from lattice_symmetries._ls_hs import ffi, lib
 
@@ -252,6 +254,15 @@ class Basis(HsWrapper):
     @property
     def is_built(self) -> bool:
         return self._payload.local_representatives.elts != ffi.NULL
+
+    @cached_property
+    def symmetries(self) -> list[tuple[Permutation, Rational]]:
+        elements = _from_json(lib.ls_hs_basis_permutation_group(self._payload))
+        return [(Permutation(p), Rational(n, m)) for p, n, m in elements]
+
+    @cached_property
+    def permutation_group(self) -> PermutationGroup:
+        return PermutationGroup([p for p, _ in self.symmetries])
 
     def check_is_built(self):
         if not self.is_built:
@@ -759,6 +770,15 @@ class Operator(HsWrapper, LinearOperator):
         indices = ExternalArrayWrapper(c_indices, "i8")
         return csr_matrix((coeffs, indices, offsets), shape=self.shape, dtype=np.complex128)
 
+    def to_csr(self) -> csr_matrix:
+        matrix = self.off_diag_to_csr()
+        # TODO: this might be terribly slow, because SciPy's operations are not parallelized
+        matrix = (matrix + spdiags([self.diag_to_array()], 0)).tocsr()
+        assert matrix.has_sorted_indices
+        assert matrix.has_canonical_format
+        assert matrix.indices.dtype == np.dtype("int64")
+        return matrix
+
     def to_dense(self) -> NDArray[Any]:
         m = self.off_diag_to_csr().todense()
         m += np.diag(self.diag_to_array())
@@ -786,6 +806,69 @@ def _axpy(alpha: complex, x: NDArray, y: NDArray):
     x_ptr = ffi.from_buffer("ls_hs_scalar[]", x, require_writable=False)
     y_ptr = ffi.from_buffer("ls_hs_scalar[]", y, require_writable=True)
     lib.ls_chpl_experimental_axpy_c128(size, alpha.real, alpha.imag, x_ptr, y_ptr, y_ptr)
+
+
+def _csr_matvec(
+    matrix: csr_matrix,
+    x: NDArray,
+    out: None | NDArray = None,
+    num_tasks: int = -1,
+) -> NDArray:
+    if np.iscomplexobj(matrix.data) or np.iscomplexobj(x):
+        elt_dtype = np.dtype("complex128")
+        elt_dtype_str = "ls_hs_scalar[]"
+        elt_suffix = "c128"
+    else:
+        elt_dtype = np.dtype("float64")
+        elt_dtype_str = "double[]"
+        elt_suffix = "f64"
+
+    if matrix.indices.dtype == np.dtype("int64"):
+        idx_dtype = np.dtype("int64")
+        idx_dtype_str = "int64_t[]"
+        idx_suffix = "i64"
+    else:
+        idx_dtype = np.dtype("int32")
+        idx_dtype_str = "int32_t[]"
+        idx_suffix = "i32"
+
+    data = np.require(matrix.data, dtype=elt_dtype, requirements=["C"])
+    indptr = np.require(matrix.indptr, dtype=idx_dtype, requirements=["C"])
+    indices = np.require(matrix.indices, dtype=idx_dtype, requirements=["C"])
+    matrix_elements = ffi.from_buffer(elt_dtype_str, data, require_writable=False)
+    row_offsets = ffi.from_buffer(idx_dtype_str, indptr, require_writable=False)
+    col_indices = ffi.from_buffer(idx_dtype_str, indices, require_writable=False)
+
+    x = np.asarray(x, order="C", dtype=elt_dtype)
+    if x.ndim > 1 or x.shape[0] != matrix.shape[1]:
+        raise ValueError(f"'x' has invalid shape: {x.shape}; expected ({matrix.shape[1]},)")
+    x_ptr = ffi.from_buffer(elt_dtype_str, x, require_writable=False)
+
+    if out is None:
+        out = np.empty(matrix.shape[0], dtype=elt_dtype)
+    else:
+        if out.shape != matrix.shape[0]:
+            raise ValueError(f"'out' has invalid shape: {out.shape}; expected ({matrix.shape[0]},)")
+        if not out.flags.c_contiguous:
+            raise ValueError("'out' must be contiguous")
+        out = np.require(out, dtype=elt_dtype, requirements=["C"])
+    y_ptr = ffi.from_buffer(elt_dtype_str, out, require_writable=True)
+
+    func_name = f"ls_chpl_matrix_vector_product_csr_{idx_suffix}_{elt_suffix}"
+    func = getattr(lib, func_name)
+
+    func(
+        matrix.shape[0],
+        matrix.shape[1],
+        matrix.nnz,
+        matrix_elements,
+        row_offsets,
+        col_indices,
+        x_ptr,
+        y_ptr,
+        num_tasks,
+    )
+    return out
 
 
 #
