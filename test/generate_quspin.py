@@ -211,7 +211,7 @@ def random_operator(
 
     additional = []
     if symmetry is not None:
-        _name, permutation, sector = symmetry
+        _, permutation, sector = symmetry
         for p, _, _ in build_cyclic_group(permutation, sector):
             if not np.array_equal(p, np.arange(p.size)):
                 additional += [t.permute(p) for t in terms]
@@ -234,7 +234,7 @@ def random_operator(
 
     ls_expr = {
         "basis": dict(
-            number_spins=number_sites,
+            number_sites=number_sites,
             hamming_weight=hamming_weight,
             spin_inversion=spin_inversion,
             symmetries=[dict(permutation=symmetry[1], sector=symmetry[2])]
