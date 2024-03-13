@@ -1,16 +1,19 @@
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module LatticeSymmetries.Parser
   ( parseExprEither
+  , parsePhaseEither
   , SExpr (..)
   , SOp (..)
   , SSpin (..)
   , SFermion (..)
   , Parser
-  , pRational
+  -- * Exports for testing
+  , pReal
   , pCoeff
   )
 where
@@ -55,6 +58,15 @@ data SExpr
 
 type Parser = Parsec Void Text
 
+-- | Parse the phase
+parsePhaseEither :: forall a. Integral a => Text -> Either Text (Ratio a)
+parsePhaseEither s = case parse p "" s of
+  Left e -> Left $ "Error parsing '" <> s <> "': " <> Text.pack (errorBundlePretty e)
+  Right x -> Right x
+  where
+    p :: Parser (Ratio a)
+    p = (%) <$> decimal <*> (char '/' *> decimal)
+
 parseExprEither :: Text -> Either Text SExpr
 parseExprEither s = case parse pSum "" s of
   Left e -> Left $ "Error parsing '" <> s <> "': " <> Text.pack (errorBundlePretty e)
@@ -69,6 +81,9 @@ pSum = fmap SSum . many $ do
     '+' -> pure $ SScaled c expr
     _ -> fail "can never happen"
 
+bracketted :: Parser a -> Parser a
+bracketted = between (char '(') (char ')')
+
 pScaled :: Parser SExpr
 pScaled = do
   c <- fromMaybe 1 <$> optional (lexeme space (try pCoeff))
@@ -78,47 +93,36 @@ pScaled = do
 pProduct :: Parser SExpr
 pProduct = fmap SProduct . NonEmpty.some $ do
   choice
-    [ try (lexeme space (between (char '(') (char ')') pSum))
+    [ try (lexeme space (bracketted pSum))
     , lexeme space pPrimitive
     ]
 
-pRational :: Parser Rational
-pRational =
-  choice
-    [ try $ between (char '(') (char ')') $ (%) <$> signed space decimal <*> (char '/' *> decimal)
-    , try (realToFrac @Double <$> float)
-    , decimal
-    ]
+
+-- <coeff> ::= <signed-imaginary> | <signed-real> | "(" <signed-real> <plus-or-minus> <imaginary> ")"
+-- <signed-imaginary> ::= "-" <imaginary> | <imaginary>
+-- <signed-real> ::= "-" <real> | <real>
+-- <imaginary> ::= <imaginary-unit> | <real> <imaginary-unit>
+-- <real> ::= <float> | <integer> "/" <integer> | <integer>
+-- <imaginary-unit> ::= "im" | "j" | "ⅈ"
+-- <plus-or-minus> ::= "+" | "-"
+
+pReal :: Parser Rational
+pReal = try (realToFrac @Double <$> float) <|> try ((%) <$> decimal <*> (char '/' *> decimal)) <|> decimal
 
 pCoeff :: Parser ℂ
-pCoeff =
-  choice
-    [ try
-        . between (lexeme space (char '(')) (char ')')
-        . choice
-        $ [ try bothP
-          , try ((0 `ComplexRational`) <$> imagP)
-          , (`ComplexRational` 0) <$> realP
-          ]
-    , try $ (0 `ComplexRational`) <$> imagP
-    , (`ComplexRational` 0) <$> realP
-    ]
+pCoeff = try ((0 `ComplexRational`) <$> signed space pImaginary) <|> try ((`ComplexRational` 0) <$> signed space pReal) <|> bothParts
   where
-    imaginaryUnit =
-      choice
-        [ string "j"
-        , string "ⅈ"
-        , string "im"
-        ]
-    realP = pRational
-    imagP = do
-      c <- fromMaybe 1 <$> optional (try realP)
-      _ <- imaginaryUnit
-      pure c
-    bothP = do
-      !r <- lexeme space (signed space realP)
-      !i <- lexeme space (signed space imagP)
-      pure (ComplexRational r i)
+    pImaginary = (pImaginaryUnit $> 1) <|> (pReal <* pImaginaryUnit)
+    pImaginaryUnit = char 'j' <|> char 'ⅈ' <|> (char 'i' *> char 'm')
+    pPlusOrMinus = (char '+' <|> char '-') >>= \case
+      '+' -> pure id
+      '-' -> pure negate
+      _ -> error "cannot happen"
+    bothParts = between (lexeme space (char '(')) (char ')') $ do
+      r <- lexeme space (signed space pReal)
+      f <- lexeme space pPlusOrMinus
+      i <- lexeme space pImaginary
+      pure $ ComplexRational r (f i)
 
 pPrimitive :: Parser SExpr
 pPrimitive = SPrimitive <$> (pPrimitiveIdentity <|> pPrimitiveSpin <|> pPrimitiveFermion)
@@ -170,8 +174,8 @@ pPrimitiveFermion = do
   pure $ SFermionOp op s i
   where
     pSpin =
-      optional
-        $ choice
+      optional $
+        choice
           [ char '↑' $> SpinUp
           , char '↓' $> SpinDown
           , try (optional (char '_') >> string "\\up" $> SpinUp)

@@ -4,7 +4,6 @@
 
 module LatticeSymmetries.Permutation
   ( Permutation (..)
-  , PermutationInfo (..)
   , mkPermutation
   , HasPeriodicity (..)
   , permuteVector
@@ -14,34 +13,24 @@ module LatticeSymmetries.Permutation
   , Mapping (..)
   , permutationFromMappings
   , minimalSupport
-
-    -- * FFI
-  , ls_hs_create_permutation
-  , ls_hs_destroy_permutation
-  , ls_hs_permutation_info
   )
 where
 
-import Control.Arrow qualified
 import Control.Monad.ST
 import Data.Aeson (FromJSON (..), ToJSON (..))
 import Data.Bits
 import Data.IntSet qualified as IntSet
 import Data.List qualified as L
 import Data.Set qualified as Set
-import Data.Validity (Validity (validate), check, prettyValidate)
+import Data.Validity (check)
 import Data.Vector.Generic ((!))
 import Data.Vector.Generic qualified as G
 import Data.Vector.Unboxed qualified as U
 import Data.Vector.Unboxed.Deriving (derivingUnbox)
 import Data.Vector.Unboxed.Mutable qualified as UM
-import Foreign.C (CString)
-import Foreign.Ptr (Ptr)
 import GHC.Exts (IsList (..))
 import GHC.Records (HasField (getField))
 import LatticeSymmetries.BitString
-import LatticeSymmetries.Context
-import LatticeSymmetries.FFI
 import LatticeSymmetries.Utils
 import Prelude hiding (cycle, identity)
 
@@ -49,10 +38,6 @@ import Prelude hiding (cycle, identity)
 newtype Permutation = Permutation {unPermutation :: U.Vector Int}
   deriving stock (Show, Eq, Ord, Generic)
   deriving anyclass (NFData)
-
-data PermutationInfo = PermutationInfo {permutation :: U.Vector Int, periodicity :: Int}
-  deriving stock (Show, Eq, Ord, Generic)
-  deriving anyclass (NFData, FromJSON, ToJSON)
 
 instance ToJSON Permutation where
   toJSON (Permutation p) = toJSON p
@@ -137,7 +122,7 @@ identityPermutation size
 
 -- | Create a permutation from vector.
 mkPermutation :: U.Vector Int -> Either Text Permutation
-mkPermutation p = Control.Arrow.left fromString $ prettyValidate (Permutation p)
+mkPermutation p = prettyValidate (Permutation p)
 
 instance Validity Permutation where
   validate (Permutation p) =
@@ -176,12 +161,3 @@ minimalSupport = G.findIndex (uncurry (/=)) . G.indexed . unPermutation
 
 isIdentityPermutation :: Permutation -> Bool
 isIdentityPermutation = G.all (uncurry (==)) . G.indexed . unPermutation
-
-ls_hs_create_permutation :: CString -> IO CString
-ls_hs_create_permutation = newCencoded <=< rightM (newCobject @Cpermutation) <=< decodeCString @Permutation
-
-ls_hs_destroy_permutation :: MutablePtr Cpermutation -> IO ()
-ls_hs_destroy_permutation = ls_hs_destroy_object $ const (pure ())
-
-ls_hs_permutation_info :: Ptr Cpermutation -> IO CString
-ls_hs_permutation_info = foldCobject $ \p -> newCencoded $ PermutationInfo (unPermutation p) (getPeriodicity p)

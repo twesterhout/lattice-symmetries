@@ -8,44 +8,11 @@ module LatticeSymmetries.Group
   , abelianSubgroup
   , abelianRepresentations
   , groupRepresentations
-
-    -- * Helpers
-  , Symmetry
-  , mkSymmetry
   , fromGenerators
   , isRepElementReal
   , isRepresentationReal
-
-    -- * Hm...
-
-  -- , Symmetries (..)
-  -- , areSymmetriesReal
-  -- , emptySymmetries
   , emptyRepresentation
   , nullRepresentation
-  -- , compileGroupRepresentation
-
-    -- ** Low-level interface for FFI
-
-  -- , newCpermutation_group
-  -- , destroyCpermutation_group
-
-    -- * Automorphisms
-
-  -- , mkMultiplicationTable
-  -- , abelianRepresentations
-  -- , GroupElement (..)
-  -- , shrinkMultiplicationTable
-  -- , getGroupElements
-  -- , selectPrimeElements
-  -- , groupGenerators
-  -- , groupElementCycle
-  -- , groupElementOrder
-  -- , Coset (..)
-  -- , abelianization
-  -- , commutatorSubgroup
-
-    -- * Reference implementation
   , isRepresentativeSlow
   , stateInfoSlow
   )
@@ -53,14 +20,14 @@ where
 
 import Control.Arrow (left)
 import Control.Monad.ST.Strict (runST)
-import Data.Aeson (FromJSON (..), ToJSON (..), object, withObject, (.:), (.=))
+import Data.Aeson (FromJSON (..), ToJSON (..))
 import Data.Complex
 import Data.IntSet qualified as IntSet
 import Data.List qualified
 import Data.List.NonEmpty qualified
 import Data.Map.Strict qualified as Map
 import Data.Ratio
-import Data.Validity
+import Data.Validity hiding (prettyValidate)
 import Data.Vector qualified as B
 import Data.Vector.Generic ((!))
 import Data.Vector.Generic qualified as G
@@ -71,17 +38,9 @@ import LatticeSymmetries.Automorphisms
 import LatticeSymmetries.Dense
 import LatticeSymmetries.Generator
 import LatticeSymmetries.Permutation
-import LatticeSymmetries.Utils (eitherToParser, sortVectorBy)
+import LatticeSymmetries.Utils (eitherToParser, prettyValidate, sortVectorBy)
 import Prelude hiding (group, identity, permutations, second, toList)
-
--- | Representation of a permutation
--- data Symmetry = Symmetry
---   { permutation :: !Permutation
---   , phase :: !(Ratio Int)
---   }
---   deriving stock (Show, Eq, Ord, Generic)
---   deriving anyclass (NFData)
-type Symmetry = RepElement Permutation
+import LatticeSymmetries.Parser (parsePhaseEither)
 
 instance HasPeriodicity a => HasField "sector" (RepElement a) Int where
   getField s
@@ -92,6 +51,9 @@ instance HasPeriodicity a => HasField "sector" (RepElement a) Int where
 
 instance HasField "length" a Int => HasField "size" (RepElement a) Int where
   getField = (.length) . (.element)
+
+instance HasField "character" (RepElement a) (Complex Double) where
+  getField ((.phase) -> φ) = phaseToCharacter φ
 
 phaseToCharacter :: Ratio Int -> Complex Double
 phaseToCharacter φ
@@ -105,19 +67,16 @@ phaseToCharacter φ
   | 3 % 4 <= φ && φ < 1 = cos (2 * pi * realToFrac (1 - φ)) :+ sin (2 * pi * realToFrac (1 - φ))
   | otherwise = error "should never happen"
 
-instance HasField "character" (RepElement a) (Complex Double) where
-  getField ((.phase) -> φ) = phaseToCharacter φ
+instance FromJSON (RepElement Permutation) where
+  parseJSON =
+    parseJSON >=> \(p :: Permutation, s :: Text) -> eitherToParser $
+      parsePhaseEither s >>= prettyValidate . RepElement p
 
-instance FromJSON Symmetry where
-  parseJSON = withObject "Symmetry" $ \v ->
-    eitherToParser =<< (mkSymmetry <$> v .: "permutation" <*> v .: "sector")
-
-instance ToJSON Symmetry where
-  toJSON s = object ["__type__" .= ("Symmetry" :: Text), "permutation" .= s.element, "sector" .= s.sector]
-
--- | Create a new 'Symmetry'.
-mkSymmetry :: Permutation -> Int -> Either Text (RepElement Permutation)
-mkSymmetry p k = Control.Arrow.left fromString . prettyValidate $ RepElement p (modOne (k % getPeriodicity p))
+instance ToJSON a => ToJSON (RepElement a) where
+  toJSON s = toJSON (s.element, rationalToString s.phase)
+    where
+      rationalToString :: Ratio Int -> Text
+      rationalToString q = show (numerator q) <> "/" <> show (denominator q)
 
 instance Validity (RepElement Permutation) where
   validate x =
@@ -131,20 +90,9 @@ modOne x
   | x < 0 = modOne (x + fromIntegral (denominator x))
   | otherwise = x
 
--- instance Semigroup Symmetry where
---   (<>) (Symmetry pa λa) (Symmetry pb λb) = undefined -- uncurry Symmetry (combine (pa, λa) (pb, λb))
-
 data RepElement a = RepElement {element :: !a, phase :: !(Ratio Int)}
   deriving stock (Show, Eq, Ord, Generic)
   deriving anyclass (NFData)
-
-newtype ComparingElement a = ComparingElement (RepElement a)
-
-instance Eq a => Eq (ComparingElement a) where
-  (ComparingElement a) == (ComparingElement b) = a.element == b.element
-
-instance Ord a => Ord (ComparingElement a) where
-  compare (ComparingElement a) (ComparingElement b) = compare a.element b.element
 
 instance Semigroup a => Semigroup (RepElement a) where
   (<>) (RepElement pa λa) (RepElement pb λb) = RepElement (pa <> pb) (modOne (λa + λb))

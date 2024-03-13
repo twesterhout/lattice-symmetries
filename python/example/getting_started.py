@@ -11,22 +11,17 @@ def main():
 
     # Constructing symmetries
     sites = np.arange(number_spins)
-    # Momentum in x direction with eigenvalue π
-    T = ls.Symmetry((sites + 1) % number_spins, sector=number_spins // 2)
-    # Parity with eigenvalue π
-    P = ls.Symmetry(sites[::-1], sector=1)
-
-    # Constructing the group
-    symmetries = ls.Symmetries([T, P])
-    print("Symmetry group contains {} elements".format(len(symmetries)))
+    # Momentum in x direction with phase φ=1/2 (i.e., with the eigenvalue λ=exp(-2πiφ)=-1)
+    T = (ls.Permutation((sites + 1) % number_spins), ls.Rational(1, 2))
+    # Parity with eigenvalue λ=-1
+    P = (ls.Permutation(sites[::-1]), ls.Rational(1, 2))
 
     # Constructing the basis
     basis = ls.SpinBasis(
         number_spins=number_spins,
-        # NOTE: we don't actually need to specify hamming_weight when spin_inversion
-        # is set. The library will guess that hamming_weight = number_spins / 2.
+        hamming_weight=hamming_weight,
         spin_inversion=-1,
-        symmetries=symmetries,
+        symmetries=[T, P],
     )
     basis.build()  # Build the list of representatives, we need it since we're doing ED
     print("Hilbert space dimension is {}".format(basis.number_states))
@@ -35,19 +30,17 @@ def main():
     expr = ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁", sites=edges)
     print("Expression:", expr)
 
-    # Alternatively, we can create expr in an algebraic way:
-    two_site_expr = ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁")
-    many_exprs = [two_site_expr.replace_indices({0: i, 1: j}) for (i, j) in edges]
-    expr2 = reduce(operator.add, many_exprs)
-    assert expr == expr2
-
     # Construct the Hamiltonian
-    hamiltonian = ls.Operator(basis, expr)
-
+    hamiltonian = ls.Operator(expr, basis)
 
     # Diagonalize the Hamiltonian using ARPACK
     eigenvalues, eigenstates = scipy.sparse.linalg.eigsh(hamiltonian, k=1, which="SA")
     print("Ground state energy is {}".format(eigenvalues[0]))
+    assert np.isclose(eigenvalues[0], -18.06178542)
+
+    # We can also explicitly build the Hamiltonian matrix first, before diagonalizing:
+    hamiltonian.build_matrix()
+    eigenvalues, _ = scipy.sparse.linalg.eigsh(hamiltonian, k=1, which="SA")
     assert np.isclose(eigenvalues[0], -18.06178542)
 
 

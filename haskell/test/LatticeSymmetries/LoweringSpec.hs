@@ -3,6 +3,7 @@ module LatticeSymmetries.LoweringSpec (spec) where
 import Control.Exception (bracket)
 import Data.Bits
 import Data.Maybe (fromJust)
+import Data.Ratio ((%))
 import Data.Vector qualified as B
 import Data.Vector.Storable qualified as S
 import Data.Vector.Storable.Mutable qualified as SM
@@ -11,6 +12,7 @@ import LatticeSymmetries.BitString
 import LatticeSymmetries.Group
 import LatticeSymmetries.Lowering
 import LatticeSymmetries.Permutation
+import LatticeSymmetries.Utils (prettyValidate)
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
@@ -27,7 +29,7 @@ data LinearChainTestData = LinearChainTestData !Int !(Representation Permutation
 mkLinearChainRepresentation :: Int -> Int -> Either Text LinearChainRepresentation
 mkLinearChainRepresentation n sector = do
   p <- mkPermutation . fromList $ ([1 .. n - 1] <> [0])
-  t <- mkSymmetry p sector
+  t <- prettyValidate $ RepElement p (sector % n)
   s <- fromGenerators [t]
   pure $ LinearChainRepresentation n s
 
@@ -91,13 +93,13 @@ spec = do
             bracket (createIsRepresentativeKernel_v2 group i) destroyIsRepresentativeKernel_v2 $ \kernelPtr ->
               invokeIsRepresentativeKernel kernelPtr basisStates
                 `shouldReturn` referenceIsRepresentative n i group basisStates
-    modifyMaxSuccess (const 20)
-      $ prop "small linear chains"
-      $ \(LinearChainTestData n group basisStates) -> do
-        forM_ [Nothing, Just 1, Just (-1)] $ \i ->
-          bracket (createIsRepresentativeKernel_v2 group i) destroyIsRepresentativeKernel_v2 $ \kernelPtr ->
-            invokeIsRepresentativeKernel kernelPtr basisStates
-              `shouldReturn` referenceIsRepresentative n i group basisStates
+    modifyMaxSuccess (const 20) $
+      prop "small linear chains" $
+        \(LinearChainTestData n group basisStates) -> do
+          forM_ [Nothing, Just 1, Just (-1)] $ \i ->
+            bracket (createIsRepresentativeKernel_v2 group i) destroyIsRepresentativeKernel_v2 $ \kernelPtr ->
+              invokeIsRepresentativeKernel kernelPtr basisStates
+                `shouldReturn` referenceIsRepresentative n i group basisStates
 
   describe "stateInfo_v3" $ do
     it "example 1" $ do

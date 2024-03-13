@@ -72,8 +72,17 @@ spec = do
     prop "SpinfulFermionTy" $ check SpinfulFermionTag
   describe "exprPermutationGroup" $ do
     it "computes permutation groups" $ do
-      let e = mkExpr SpinTag "2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁"
-      (.permutations) . exprPermutationGroup Nothing <$> e `shouldBe` Right [[0, 1], [1, 0]]
+      e1 <- extractRight $ mkExpr SpinTag "2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁"
+      (exprPermutationGroup Nothing e1).permutations `shouldBe` [[0, 1], [1, 0]]
+      e2 <- extractRight $ mkExpr SpinTag "2 I + S+3"
+      (exprPermutationGroup Nothing e2).permutations
+        `shouldBe` [[0, 1, 2, 3], [0, 2, 1, 3], [1, 0, 2, 3], [1, 2, 0, 3], [2, 0, 1, 3], [2, 1, 0, 3]]
+      e3 <- extractRight $ mkExpr SpinTag "S+0 S-1 + S+1 S-0"
+      (exprPermutationGroup Nothing e3).permutations
+        `shouldBe` [[0, 1], [1, 0]]
+      e4 <- extractRight $ mkExpr SpinTag "2 (σ⁺0 σ⁻1 + σ⁺1 σ⁻0) + σᶻ0 σᶻ1 + 2 (σ⁺1 σ⁻2 + σ⁺2 σ⁻1) + σᶻ1 σᶻ2 + 2 (σ⁺2 σ⁻0 + σ⁺0 σ⁻2) + σᶻ2 σᶻ0"
+      (exprPermutationGroup Nothing e4).permutations
+        `shouldBe` [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]
   describe "HasNonbranchingRepresentation" $ do
     prop "identities match" $ do
       nonbranchingRepresentation (Generator (1 :: Int) SpinIdentity)

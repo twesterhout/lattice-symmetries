@@ -23,8 +23,8 @@ spec = do
       testParse p s y = case Control.Arrow.left (toText . errorBundlePretty) (parse p "" s) of
         Left e -> error e
         Right x -> x `shouldBe` y
-  describe "pRational" $ do
-    prop "parses rational numbers" $ \x -> testParse (signed space pRational) (renderDoc (prettyRational x)) x
+  describe "pReal" $ do
+    prop "parses real numbers" $ \x -> testParse (signed space pReal) (renderDoc (prettyRational x)) x
   describe "pComplexRational" $ do
     prop "parses complex numbers" $ \x -> testParse (signed space pCoeff) (toPrettyText x) x
   describe "mkExpr" $ do
@@ -44,7 +44,7 @@ spec = do
       p (mkExpr SpinfulFermionTag "5 (c^\\dagger_10\\up - c\\dagger2\\down) n3\\up") `shouldReturn` "5.0 n₃↑ c†₁₀↑ - 5.0 n₃↑ c†₂↓"
       p (mkExpr SpinlessFermionTag "3.25 (c†23-5(c12-n2))") `shouldReturn` "16.25 n₂ - 16.25 c₁₂ + 3.25 c†₂₃"
       p (mkExpr SpinfulFermionTag "- (c†₁↑ c₀↑ + c†₀↑ c₁↑ + c†₁↓ c₀↓ + c†₀↓ c₁↓)") `shouldReturn` "-c†₀↑ c₁↑ + c₀↑ c†₁↑ - c†₀↓ c₁↓ + c₀↓ c†₁↓"
-      p (mkExpr SpinfulFermionTag "(3.0 + 3.0ⅈ) n₁↑ + (3.0 + 1.0ⅈ) n₁↑ n₂↓ c†₀↑ + ((-2/3) - (7/3)ⅈ) I + ((1/3) + 0.5ⅈ) I n₁↑ I") `shouldReturn` "((-2/3) - (7/3)ⅈ) I + (3.0 + 1.0ⅈ) c†₀↑ n₁↑ n₂↓ + ((10/3) + 3.5ⅈ) n₁↑"
+      p (mkExpr SpinfulFermionTag "(3.0 + 3.0ⅈ) n₁↑ + (3.0 + 1.0ⅈ) n₁↑ n₂↓ c†₀↑ + (-2/3 - 7/3ⅈ) I + (1/3 + 0.5ⅈ) I n₁↑ I") `shouldReturn` "(-2/3 - 7/3ⅈ) I + (3.0 + 1.0ⅈ) c†₀↑ n₁↑ n₂↓ + (10/3 + 3.5ⅈ) n₁↑"
     it "handles complex numbers" $ do
       p (mkExpr SpinTag "j σ⁺₅") `shouldReturn` "ⅈ σ⁺₅"
       p (mkExpr SpinTag "-2im σ⁺₅") `shouldReturn` "-2.0ⅈ σ⁺₅"

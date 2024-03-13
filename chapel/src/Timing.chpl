@@ -90,6 +90,7 @@ record Store {
   var perLocaleDiagonal : TimingRecord;
   var perLocaleMatrixVector : TimingRecord;
   var perLocaleOffDiagonal : TimingRecord;
+  var csrMatvec : TimingRecord;
 }
 
 

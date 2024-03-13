@@ -104,6 +104,10 @@ Under the hood, lattice-symmetries rewrites all the expressions into the canonic
 
 ### More sites
 
-At some point
+(Talk about how `Expr`s may be constructed on arbitrary sites with `replace_indices` and `on` functions)
 
+
+## Bases
+
+### Symmetry sectors
 

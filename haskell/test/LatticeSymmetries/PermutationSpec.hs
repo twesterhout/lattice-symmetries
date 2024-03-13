@@ -2,19 +2,19 @@
 
 module LatticeSymmetries.PermutationSpec (spec) where
 
+import Control.Exception (bracket)
 import Data.Aeson qualified as Aeson
 import Data.Bits (Bits (bit, setBit, testBit, zeroBits, (.&.)))
+import Data.ByteString (useAsCString)
 import Data.Vector qualified as B
 import Data.Vector.Generic qualified as G
+import LatticeSymmetries.Context
+import LatticeSymmetries.FFI (withCobject)
 import LatticeSymmetries.Permutation
+import LatticeSymmetries.Utils (decodeCString, ls_hs_destroy_string)
 import Test.Hspec
 import Test.Hspec.QuickCheck (modifyMaxSize, prop)
 import Utils (decodeResult)
-import Data.ByteString (useAsCString)
-import Control.Exception (bracket)
-import LatticeSymmetries.Utils (ls_hs_destroy_string, decodeCString)
-import LatticeSymmetries.FFI (withCobject)
-import LatticeSymmetries.Context
 
 spec :: Spec
 spec = do
@@ -47,10 +47,10 @@ spec = do
     permutationFromMappings (Just p.length) mappings `shouldBe` p
     permutationFromMappings Nothing mappingsAll `shouldBe` p
   describe "minimalSupport" $ do
-    it "computes something"
-      $ minimalSupport
-      <$> mkPermutation [0, 2, 1]
-      `shouldBe` Right (Just 1)
+    it "computes something" $
+      minimalSupport
+        <$> mkPermutation [0, 2, 1]
+        `shouldBe` Right (Just 1)
     prop "computes minimal support" $ \p -> do
       let mappings = G.toList . G.map (uncurry Mapping) . G.filter (uncurry (/=)) $ G.indexed (unPermutation p)
       case mappings of
@@ -59,12 +59,3 @@ spec = do
   describe "ToJSON/FromJSON Permutation" $ do
     prop "round trips" $ \(p :: Permutation) ->
       Aeson.decode (Aeson.encode p) `shouldBe` Just p
-  describe "FFI" $ do
-    prop "ls_hs_create_permutation / ls_hs_destroy_permutation / ls_hs_permutation_info" $ \(p :: Permutation) ->
-      useAsCString (toStrict (Aeson.encode p)) $ \pEncoded ->
-        decodeResult (ls_hs_create_permutation pEncoded) ls_hs_destroy_permutation $ \cPermutation -> do
-          -- testing round trip
-          withCobject @Cpermutation cPermutation (`shouldBe` p)
-          -- testing PermutationInfo
-          bracket (ls_hs_permutation_info cPermutation) ls_hs_destroy_string $ \cStr ->
-            decodeCString cStr `shouldReturn` Right (PermutationInfo (unPermutation p) (getPeriodicity p))

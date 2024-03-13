@@ -1,5 +1,7 @@
 module CSR {
 
+private use Timing;
+
 private use CTypes;
 
 private proc mergePathSearch(diagonal : int, a : c_ptrConst(?),
@@ -29,10 +31,15 @@ record CSR {
   var numberNonZero : int;
 }
 
+proc csrSortIndices(ref matrix : CSR(?eltType, ?idxType)) {
+
+}
+
 proc csrMatvec(const ref matrix : CSR(?matrixEltType, ?idxType),
                xPtr : c_ptrConst(?vectorEltType),
                yPtr : c_ptr(?outEltType),
                numTasks : int = here.maxTaskPar) {
+  const _timer = recordTime("csrMatvec");
   // Always use the widest available type for accumulation
   type accType = if isComplex(matrixEltType) || isComplex(vectorEltType) then complex(128) else real(64);
 

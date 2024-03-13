@@ -205,11 +205,11 @@ basisHeaderFromJSON = withObject "Basis" $ \v -> do
   case tp of
     SpinTy -> do
       g <- eitherToParser . fromGenerators =<< (v .:! "symmetries" .!= [])
+      n <- maybe (v .: "number_spins") pure =<< (v .:? "number_sites")
       fmap SomeBasis
         . join
-        $ mkSpinHeader
-          <$> (v .: "number_sites")
-          <*> (v .:? "hamming_weight")
+        $ mkSpinHeader n
+          <$> (v .:? "hamming_weight")
           <*> (v .:? "spin_inversion")
           <*> pure g
     SpinlessFermionTy ->

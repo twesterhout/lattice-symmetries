@@ -30,7 +30,7 @@ type ℂ = ComplexRational
 prettyRational :: Rational -> Doc ann
 prettyRational x
   | realToFrac (fromRational x :: Double) == x = pretty (fromRational x :: Double)
-  | otherwise = Pretty.parens $ pretty (numerator x) <> "/" <> pretty (denominator x)
+  | otherwise = pretty (numerator x) <> "/" <> pretty (denominator x)
 
 instance Pretty ComplexRational where
   pretty (ComplexRational r i)

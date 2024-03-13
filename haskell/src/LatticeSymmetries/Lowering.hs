@@ -149,7 +149,7 @@ data Symmetries = Symmetries
   , symmNetwork :: !BatchedBenesNetwork
   , symmCharactersReal :: !(S.Vector Double)
   , symmCharactersImag :: !(S.Vector Double)
-  , symmOriginal :: !(B.Vector Symmetry)
+  , symmOriginal :: !(Representation Permutation)
   }
   deriving stock (Show, Eq)
 
@@ -157,13 +157,13 @@ nullSymmetries :: Symmetries -> Bool
 nullSymmetries = nullPermutationGroup . symmGroup
 
 emptySymmetries :: Symmetries
-emptySymmetries = Symmetries emptyPermutationGroup emptyBatchedBenesNetwork G.empty G.empty G.empty
+emptySymmetries = Symmetries emptyPermutationGroup emptyBatchedBenesNetwork G.empty G.empty (Representation G.empty)
 
 compileGroupRepresentation :: HasCallStack => Representation Permutation -> Symmetries
-compileGroupRepresentation (unRepresentation -> symmetries)
+compileGroupRepresentation r@(unRepresentation -> symmetries)
   | G.null symmetries = emptySymmetries
   | (G.head symmetries).size <= 1 = emptySymmetries
-  | isIdentityPermutation (G.head symmetries).element = Symmetries permGroup benesNetwork charactersReal charactersImag symmetries
+  | isIdentityPermutation (G.head symmetries).element = Symmetries permGroup benesNetwork charactersReal charactersImag r
   | otherwise = error "the first element of the permutation group should be the identity"
   where
     permutations = (.element) <$> symmetries

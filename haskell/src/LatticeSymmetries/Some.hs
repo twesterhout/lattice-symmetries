@@ -183,6 +183,7 @@ exprFromJSON f expand = withObject "Expr" $ \v -> do
 
 expandExpr :: forall t m v. (IsBasis t, MonadFail m, G.Vector v Int) => B.Vector (v Int) -> Expr t -> m (Expr t)
 expandExpr indices expr =
+  fmap simplifyExpr $
     Data.Stream.Monadic.foldl1M' (\a b -> pure $ Expr (unExpr a + unExpr b)) $
       Data.Stream.Monadic.mapM replaceSiteIndicesList $
         (Bundle.elements . Bundle.trans (pure . unId)) $

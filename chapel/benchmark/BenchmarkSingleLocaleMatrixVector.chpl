@@ -1,4 +1,5 @@
 import Timing;
+use CSR;
 use ForeignTypes;
 use MatrixVectorProduct;
 use StatesEnumeration;
@@ -41,7 +42,30 @@ proc main() {
     timer.reset();
     timer.start();
 
-    perLocaleMatrixVector(matrix, x, y, states);
+    perLocaleMatrixVector(matrix, x, y, states, norms[here]);
+
+    timer.stop();
+    times[k] = timer.elapsed();
+  }
+
+  writeln(times);
+
+  y = 0;
+
+  timer.reset();
+  timer.start();
+  const csrMatrix = convertOffDiagToCsr(matrix, complex(128), states, norms[here]);
+  const diag = extractDiag(matrix, complex(128), states, norms[here]);
+  timer.stop();
+  writeln(timer.elapsed());
+
+  times = 0;
+  for k in 0 ..# kRepeat {
+    timer.reset();
+    timer.start();
+
+    csrMatvec(csrMatrix, safe_c_ptrToConst(x), safe_c_ptrTo(y));
+    y += diag * x;
 
     timer.stop();
     times[k] = timer.elapsed();

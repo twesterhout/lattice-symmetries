@@ -16,6 +16,7 @@ module LatticeSymmetries.Utils
   , unique
 
     -- ** Error handling
+
   -- , throwC
   -- , propagateErrorToC
 
@@ -27,6 +28,8 @@ module LatticeSymmetries.Utils
   , toPrettyText
   , renderDoc
   , eitherToParser
+  , Validity.Validity (..)
+  , prettyValidate
   , viaAeson
   , viaAesonIO
   , ls_hs_destroy_string
@@ -37,6 +40,7 @@ module LatticeSymmetries.Utils
   )
 where
 
+import Control.Arrow qualified
 import Control.Monad.ST (runST)
 import Data.Aeson
 import Data.Aeson qualified as Aeson
@@ -46,6 +50,7 @@ import Data.ByteString (packCString)
 import Data.ByteString.Internal (ByteString (..))
 import Data.Complex
 import Data.Containers.ListUtils (nubOrd)
+import Data.Validity qualified as Validity
 import Data.Vector.Algorithms.Intro qualified
 import Data.Vector.Generic qualified as G
 import Foreign.C.String (CString)
@@ -129,7 +134,7 @@ newCString (PS fp _ l) = do
   pure buf
 
 newCencoded :: (HasCallStack, Data.Aeson.ToJSON a) => a -> IO CString
-newCencoded = newCString . {-(\x -> trace (decodeUtf8 x) x) .-} toStrict . Data.Aeson.encode
+newCencoded = newCString . toStrict . Data.Aeson.encode
 
 -- | Read JSON from a 'CString'.
 decodeCString :: FromJSON a => CString -> IO (Either Text a)
@@ -139,8 +144,11 @@ decodeCString cStr = do
     Right x -> pure $ Right x
     Left msg -> pure $ Left (toText msg)
 
-eitherToParser :: Either Text a -> Parser a
+eitherToParser :: ToString s => Either s a -> Parser a
 eitherToParser = either (fail . toString) pure
+
+prettyValidate :: Validity.Validity a => a -> Either Text a
+prettyValidate = Control.Arrow.left fromString . Validity.prettyValidate
 
 renderDoc :: Pretty.Doc ann -> Text
 renderDoc = renderStrict . Pretty.layoutPretty (Pretty.LayoutOptions Pretty.Unbounded)

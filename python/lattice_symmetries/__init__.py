@@ -29,13 +29,13 @@
 import json
 import weakref
 import typing
-from typing import Any, List, Dict, Optional, Tuple, Union, overload, Callable
+from typing import Any, List, Dict, Optional, Tuple, Callable
 from functools import cached_property
 
 import numpy as np
 from numpy.typing import NDArray
 from loguru import logger
-from scipy.sparse import csr_matrix, spdiags
+from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import LinearOperator
 from scipy.special import binom
 from sympy.combinatorics import Permutation, PermutationGroup
@@ -68,12 +68,20 @@ class _RuntimeInitializer:
         lib.ls_chpl_finalize()
 
 
+# NOTE: even though _runtime_init is never accessed, we need the variable to
+# force initialization of Chapel and Haskell runtimes
 _runtime_init = _RuntimeInitializer()
 
 
 class LatticeSymmetriesEncoder(json.JSONEncoder):
+    """Extension of the json.JSONEncoder class to support encoding types required by the Haskell code."""
+
     def default(self, o):
-        name = type(o).__name__
+        if isinstance(o, Rational):
+            name = "Rational"
+        else:
+            name = type(o).__name__
+
         try:
             encoder = getattr(self, f"encode_{name}")
         except AttributeError:
@@ -84,11 +92,11 @@ class LatticeSymmetriesEncoder(json.JSONEncoder):
                 encoded["__type__"] = name
             return encoded
 
-    # def encode_Symmetry(self, obj: Symmetry):
-    #     return {"permutation": obj.permutation.tolist(), "sector": obj.sector}
+    def encode_Permutation(self, obj: Permutation):
+        return obj.list()
 
-    # def encode_Symmetries(self, obj: Symmetries):
-    #     return obj.elements
+    def encode_Rational(self, obj: Rational):
+        return f"{obj.numerator}/{obj.denominator}"
 
     def encode_complex(self, obj: complex):
         return {"real": obj.real, "imag": obj.imag}
@@ -378,7 +386,7 @@ class SpinBasis(Basis):
         number_spins: int,
         hamming_weight: int | None = None,
         spin_inversion: int | None = None,
-        symmetries: list[Tuple[Permutation, int]] = [],
+        symmetries: list[Tuple[Permutation, Rational]] = [],
     ):
         """Create a Hilbert space basis for `number_spins` spin-1/2 particles."""
         super().__init__(
@@ -389,7 +397,8 @@ class SpinBasis(Basis):
                     "hamming_weight": hamming_weight,
                     "spin_inversion": spin_inversion,
                     "symmetries": symmetries,
-                }
+                },
+                cls=LatticeSymmetriesEncoder,
             )
         )
 
@@ -424,7 +433,8 @@ class Expr(HsWrapper):
         super().__init__(payload=payload, finalizer=finalizer)
 
     def permutation_group(self) -> List[List[int]]:
-        return _from_json(lib.ls_hs_expr_permutation_group(self._payload))
+        obj = _from_json(lib.ls_hs_expr_permutation_group(self._payload))
+        return obj["permutations"]
 
     def to_json(self) -> str:
         c_str = lib.ls_hs_expr_to_json(self._payload)
@@ -599,6 +609,8 @@ class Expr(HsWrapper):
 class Operator(HsWrapper, LinearOperator):
     _basis: Basis
     _expression: Expr
+    _off_diag_csr: csr_matrix | None
+    _diag_arr: NDArray | None
 
     def __init__(
         self,
@@ -630,6 +642,8 @@ class Operator(HsWrapper, LinearOperator):
         lib.ls_hs_internal_object_inc_ref_count(ffi.addressof(payload.expr, "base"))  # type: ignore
         self._basis = Basis(payload=payload.basis)  # type: ignore
         self._expression = Expr(payload=payload.expr)  # type: ignore
+        self._off_diag_csr = None
+        self._diag_arr = None
 
         super().__init__(payload=payload, finalizer=finalizer)
 
@@ -690,10 +704,14 @@ class Operator(HsWrapper, LinearOperator):
             if not out.flags.f_contiguous:
                 raise ValueError("'out' must be Fortran contiguous")
 
-        x_ptr = ffi.from_buffer(c_type_str, vector, require_writable=False)
-        y_ptr = ffi.from_buffer(c_type_str, out, require_writable=True)
-        num_vectors = out.shape[1] if out.ndim > 1 else 1
-        fn(self._payload, num_vectors, x_ptr, y_ptr)
+        if self._diag_arr is not None and self._off_diag_csr is not None:
+            _csr_matvec(self._off_diag_csr, vector, out)
+            out += self._diag_arr * vector
+        else:
+            x_ptr = ffi.from_buffer(c_type_str, vector, require_writable=False)
+            y_ptr = ffi.from_buffer(c_type_str, out, require_writable=True)
+            num_vectors = out.shape[1] if out.ndim > 1 else 1
+            fn(self._payload, num_vectors, x_ptr, y_ptr)
         return out
 
     def _matvec(self, x):
@@ -751,12 +769,17 @@ class Operator(HsWrapper, LinearOperator):
     def __repr__(self):
         return "<Operator defined on {}>".format(self.basis.__class__.__name__)
 
-    def diag_to_array(self) -> NDArray[Any]:
+    def diag_to_array(self) -> NDArray:
         self.basis.check_is_built()
         diag = ffi.new("chpl_external_array *")
         lib.ls_chpl_extract_diag_c128(self._payload, diag)
-        arr = ExternalArrayWrapper(arr=diag, typestr="c16")
-        return np.array(arr, copy=False)
+        arr = np.array(ExternalArrayWrapper(arr=diag, typestr="c16"), copy=False)
+        # Our Chapel code builds everything using complex128 even when the
+        # operator is real, so we manually cast to float64 when it's safe
+        if self.dtype == np.dtype("float64"):
+            arr = np.ascontiguousarray(arr.real)
+        assert arr.dtype == self.dtype
+        return arr
 
     def off_diag_to_csr(self) -> csr_matrix:
         self.basis.check_is_built()
@@ -765,19 +788,24 @@ class Operator(HsWrapper, LinearOperator):
         c_indices = ffi.new("chpl_external_array *")
 
         lib.ls_chpl_off_diag_to_csr_c128(self._payload, c_coeffs, c_offsets, c_indices)
-        coeffs = ExternalArrayWrapper(c_coeffs, "c16")
-        offsets = ExternalArrayWrapper(c_offsets, "i8")
-        indices = ExternalArrayWrapper(c_indices, "i8")
-        return csr_matrix((coeffs, indices, offsets), shape=self.shape, dtype=np.complex128)
+        coeffs = np.array(ExternalArrayWrapper(c_coeffs, "c16"), copy=False)
+        offsets = np.array(ExternalArrayWrapper(c_offsets, "i8"), copy=False)
+        indices = np.array(ExternalArrayWrapper(c_indices, "i8"), copy=False)
+        # Our Chapel code builds everything using complex128 even when the
+        # operator is real, so we manually cast to float64 when it's safe
+        if self.dtype == np.dtype("float64"):
+            coeffs = np.ascontiguousarray(coeffs.real)
+        assert coeffs.dtype == self.dtype
 
-    def to_csr(self) -> csr_matrix:
-        matrix = self.off_diag_to_csr()
-        # TODO: this might be terribly slow, because SciPy's operations are not parallelized
-        matrix = (matrix + spdiags([self.diag_to_array()], 0)).tocsr()
+        matrix = csr_matrix((coeffs, indices, offsets), shape=self.shape, dtype=self.dtype)
         assert matrix.has_sorted_indices
-        assert matrix.has_canonical_format
-        assert matrix.indices.dtype == np.dtype("int64")
         return matrix
+
+    def build_matrix(self):
+        if self._off_diag_csr is None:
+            self._off_diag_csr = self.off_diag_to_csr()
+        if self._diag_arr is None:
+            self._diag_arr = self.diag_to_array()
 
     def to_dense(self) -> NDArray[Any]:
         m = self.off_diag_to_csr().todense()
@@ -840,14 +868,14 @@ def _csr_matvec(
     col_indices = ffi.from_buffer(idx_dtype_str, indices, require_writable=False)
 
     x = np.asarray(x, order="C", dtype=elt_dtype)
-    if x.ndim > 1 or x.shape[0] != matrix.shape[1]:
+    if x.shape != (matrix.shape[1],):
         raise ValueError(f"'x' has invalid shape: {x.shape}; expected ({matrix.shape[1]},)")
     x_ptr = ffi.from_buffer(elt_dtype_str, x, require_writable=False)
 
     if out is None:
         out = np.empty(matrix.shape[0], dtype=elt_dtype)
     else:
-        if out.shape != matrix.shape[0]:
+        if out.shape != (matrix.shape[0],):
             raise ValueError(f"'out' has invalid shape: {out.shape}; expected ({matrix.shape[0]},)")
         if not out.flags.c_contiguous:
             raise ValueError("'out' must be contiguous")

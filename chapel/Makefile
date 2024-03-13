@@ -115,16 +115,7 @@ bin/BenchmarkMatrixVectorProduct: benchmark/BenchmarkMatrixVectorProduct.chpl $(
 	@mkdir -p $(@D)
 	chpl $(CFLAGS) $(CHPL_CFLAGS) -o $@ --main-module $(@F) $^ $(CHPL_LDFLAGS) $(LDFLAGS)
 
-bin/BenchmarkSingleLocaleMatrixVector: benchmark/BenchmarkSingleLocaleMatrixVector.chpl \
-                                       src/FFI.chpl \
-                                       src/Utils.chpl \
-                                       src/ForeignTypes.c src/ForeignTypes.chpl \
-                                       src/Timing.c src/Timing.chpl \
-                                       src/CommonParameters.chpl \
-                                       src/BatchedOperator.chpl \
-                                       src/ConcurrentQueue.c src/ConcurrentQueue.chpl \
-                                       src/StatesEnumeration.chpl \
-                                       src/MatrixVectorProduct.chpl
+bin/BenchmarkSingleLocaleMatrixVector: benchmark/BenchmarkSingleLocaleMatrixVector.chpl $(LIB_MODULES)
 	@mkdir -p $(@D)
 	chpl $(CHPL_CFLAGS) $(HALIDE_CFLAGS) -I src/ -o $@ --main-module $(@F) $^ $(CHPL_LDFLAGS) $(LDFLAGS)
 

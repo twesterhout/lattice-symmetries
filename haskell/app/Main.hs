@@ -1,4 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
 
 import Control.Exception
 import Data.Maybe (fromJust)
@@ -8,11 +7,12 @@ import Foreign (Bits (bit), castPtr)
 import Gauge.Benchmark
 import Gauge.Main
 import Language.Halide hiding ((==))
-import LatticeSymmetries.Group (fromGenerators, mkSymmetry)
+import LatticeSymmetries.Group
 import LatticeSymmetries.Lowering
 import LatticeSymmetries.Permutation (mkPermutation)
 import System.Random
 import Prelude hiding (group)
+import LatticeSymmetries.Utils (prettyValidate)
 
 benchmarkFixedHammingStateToIndex :: IO ()
 benchmarkFixedHammingStateToIndex = do
@@ -56,7 +56,7 @@ benchmarkStateInfo = do
           $ pureGen
 
       Right p = mkPermutation . fromList $ ([1 .. numberSites - 1] <> [0])
-      Right t = mkSymmetry p 0
+      Right t = prettyValidate (RepElement p 0)
       Right group = fromGenerators [t]
 
   representatives <- SM.new @_ @Word64 (S.length basisStates)

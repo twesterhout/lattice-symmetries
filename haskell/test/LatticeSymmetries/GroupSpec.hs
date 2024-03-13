@@ -15,6 +15,7 @@ import LatticeSymmetries.Permutation
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Utils
+import qualified Data.Aeson as Aeson
 
 -- syms :: [Either Text Symmetry] -> IO Symmetries
 -- syms xs = fmap (compileGroupRepresentation . unRepresentation) . (extractRight . groupRepresentationFromGenerators) =<< sequence (extractRight <$> xs)
@@ -83,7 +84,10 @@ spec = do
       imagPart z `shouldBeApprox` sin (-2 * pi * realToFrac @_ @Double x)
 
   describe "FromJSON Symmetry" $ do
-    prop "round trips" $ shouldRoundTrip @Symmetry
+    it "works" $ do
+      print $ Aeson.eitherDecode @(RepElement Permutation) (Aeson.encode (RepElement ([0] :: Permutation) 0))
+      True `shouldBe` True
+    prop "round trips" $ shouldRoundTrip @(RepElement Permutation)
 
 -- Empty permutations are not supported
 -- Aeson.decode "{\"permutation\": [], \"sector\": 0}" `shouldBe` Just (mkSymmetry [] 0)

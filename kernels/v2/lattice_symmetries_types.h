@@ -95,24 +95,28 @@ typedef struct ls_hs_object {
 #define LS_HS_MAX_BLOCK_SIZE 16
 
 /* python-cffi: START */
-typedef struct ls_hs_permutation ls_hs_permutation;
-typedef struct ls_hs_permutation_group ls_hs_permutation_group;
-typedef struct ls_hs_rep_element ls_hs_rep_element;
-typedef struct ls_hs_representation ls_hs_representation;
+/* clang-format off */
+typedef void (*ls_hs_is_representative_kernel_type_v2)(halide_buffer_t const *basis_states, halide_buffer_t *norms);
+typedef void (*ls_hs_is_representative_destructor_type)(ls_hs_is_representative_kernel_type_v2 closure);
+ls_hs_is_representative_kernel_type_v2 ls_hs_internal_mk_is_representative_kernel(halide_buffer_t const *masks, halide_buffer_t const *eigvals_re, halide_buffer_t const *shifts, unsigned number_bits, int spin_inversion);
+void ls_hs_internal_destroy_is_representative_kernel(ls_hs_is_representative_kernel_type_v2 closure);
 
-typedef void (*ls_hs_is_representative_kernel_type_v2)(halide_buffer_t const *basis_states,
-                                                       halide_buffer_t *norms);
-typedef void (*ls_hs_is_representative_destructor_type)(
-    ls_hs_is_representative_kernel_type_v2 closure);
-
-typedef void (*ls_hs_state_info_kernel_type_v2)(halide_buffer_t const *basis_states,
-                                                halide_buffer_t *representatives,
-                                                halide_buffer_t *indices);
+typedef void (*ls_hs_state_info_kernel_type_v2)(halide_buffer_t const *basis_states, halide_buffer_t *representatives, halide_buffer_t *indices);
 typedef void (*ls_hs_state_info_destructor_type)(ls_hs_state_info_kernel_type_v2 closure);
+ls_hs_state_info_kernel_type_v2 ls_hs_internal_mk_state_info_kernel(halide_buffer_t const *masks, halide_buffer_t const *shifts, int spin_inversion);
+void ls_hs_internal_destroy_state_info_kernel(ls_hs_state_info_kernel_type_v2 closure);
+ls_hs_state_info_kernel_type_v2 ls_hs_internal_mk_state_info_kernel_v3(halide_buffer_t const *_masks, halide_buffer_t const *_shifts, unsigned number_bits, bool spin_inversion);
+void ls_hs_internal_destroy_state_info_kernel_v3(ls_hs_state_info_kernel_type_v2 closure);
 
-typedef void (*ls_hs_state_to_index_kernel_type)(halide_buffer_t const *basis_states,
-                                                 halide_buffer_t *indices);
+typedef void (*ls_hs_state_to_index_kernel_type)(halide_buffer_t const *basis_states, halide_buffer_t *indices);
 typedef void (*ls_hs_state_to_index_destructor_type)(ls_hs_state_to_index_kernel_type closure);
+ls_hs_state_to_index_kernel_type ls_hs_internal_mk_binary_search_state_to_index_kernel(int64_t number_representatives, uint64_t const *representatives, unsigned number_bits, unsigned prefix_bits);
+void ls_hs_internal_destroy_binary_search_state_to_index_kernel(ls_hs_state_to_index_kernel_type closure);
+ls_hs_state_to_index_kernel_type ls_hs_internal_mk_fixed_hamming_state_to_index_kernel(int number_sites, int hamming_weight, halide_buffer_t const *binomials);
+void ls_hs_internal_destroy_fixed_hamming_state_to_index_kernel(ls_hs_state_to_index_kernel_type closure);
+
+void ls_hs_internal_axpy(int64_t size, double alpha_re, double alpha_im, ls_hs_scalar const *x, ls_hs_scalar const *y, ls_hs_scalar *out);
+/* clang-format on */
 
 typedef enum ls_hs_particle_type {
     LS_HS_SPIN,
@@ -208,37 +212,6 @@ void ls_chpl_init(void);
 void ls_chpl_finalize(void);
 #endif
 
-// typedef ls_chpl_kernels ls_chpl_kernels;
-// typedef struct ls_chpl_kernels {
-//     void (*apply_diag_kernel_f64)(ls_hs_nonbranching_terms const *, int64_t, uint64_t const *,
-//                                   chpl_external_array *, chpl_external_array *);
-//     void (*apply_diag_kernel_c128)(ls_hs_nonbranching_terms const *, int64_t, uint64_t const *,
-//                                    chpl_external_array *, chpl_external_array *);
-//     void (*apply_off_diag_kernel)(ls_hs_nonbranching_terms const *, int64_t, uint64_t const *,
-//                                   chpl_external_array *, chpl_external_array *);
-//     void (*enumerate_states)(ls_hs_basis const *, uint64_t, uint64_t, chpl_external_array *);
-//     // void (*operator_apply_off_diag)(ls_hs_operator *, int64_t, uint64_t *, chpl_external_array
-//     *,
-//     //                                 chpl_external_array *, chpl_external_array *, int64_t);
-//     // void (*operator_apply_diag)(ls_hs_operator *, int64_t, uint64_t *, chpl_external_array *,
-//     //                             int64_t);
-//     // void (*matrix_vector_product_f64)(ls_hs_operator *, int, double const *, double *);
-//     // void (*matrix_vector_product_c128)(ls_hs_operator *, int, ls_hs_scalar const *,
-//     ls_hs_scalar
-//     // *); void (*operator_to_csr)(ls_hs_operator *, chpl_external_array *, chpl_external_array
-//     *,
-//     //                         chpl_external_array *, int64_t);
-//     void (*matrix_vector_product_csr_i32_c128)(int64_t, int64_t, int64_t, ls_hs_scalar const *,
-//                                                int32_t const *, int32_t const *,
-//                                                ls_hs_scalar const *, ls_hs_scalar *, int64_t);
-// } ls_chpl_kernels;
-
-// Implemented directly in C to avoid the overhead of going through Haskell's runtime.
-// ls_hs_basis_info const *ls_hs_get_basis_info(ls_hs_basis const *);
-
-// ls_chpl_kernels const *ls_hs_internal_get_chpl_kernels(void);
-// WARNING: ls_hs_internal_set_chpl_kernels is not thread-safe
-// void ls_hs_internal_set_chpl_kernels(ls_chpl_kernels const *kernels);
 /* python-cffi: START */
 void ls_hs_internal_destroy_external_array(chpl_external_array *arr);
 
@@ -246,39 +219,6 @@ void ls_hs_internal_object_init(ls_hs_object *, int refcount, void *haskell_payl
 int ls_hs_internal_object_inc_ref_count(ls_hs_object *);
 int ls_hs_internal_object_dec_ref_count(ls_hs_object *);
 /* python-cffi: STOP */
-
-ls_hs_is_representative_kernel_type_v2 ls_hs_internal_mk_is_representative_kernel(
-    halide_buffer_t const *masks, halide_buffer_t const *eigvals_re, halide_buffer_t const *shifts,
-    unsigned number_bits, int spin_inversion);
-void ls_hs_internal_destroy_is_representative_kernel(
-    ls_hs_is_representative_kernel_type_v2 closure);
-
-ls_hs_state_info_kernel_type_v2 ls_hs_internal_mk_state_info_kernel(halide_buffer_t const *masks,
-                                                                    halide_buffer_t const *shifts,
-                                                                    int spin_inversion);
-void ls_hs_internal_destroy_state_info_kernel(ls_hs_state_info_kernel_type_v2 closure);
-
-ls_hs_state_info_kernel_type_v2
-ls_hs_internal_mk_state_info_kernel_v3(halide_buffer_t const *_masks,
-                                       halide_buffer_t const *_shifts, unsigned number_bits,
-                                       bool spin_inversion);
-void ls_hs_internal_destroy_state_info_kernel_v3(ls_hs_state_info_kernel_type_v2 closure);
-
-ls_hs_state_to_index_kernel_type
-ls_hs_internal_mk_fixed_hamming_state_to_index_kernel(int number_sites, int hamming_weight,
-                                                      halide_buffer_t const *binomials);
-void ls_hs_internal_destroy_fixed_hamming_state_to_index_kernel(
-    ls_hs_state_to_index_kernel_type closure);
-
-ls_hs_state_to_index_kernel_type
-ls_hs_internal_mk_binary_search_state_to_index_kernel(int64_t number_representatives,
-                                                      uint64_t const *representatives,
-                                                      unsigned number_bits, unsigned prefix_bits);
-void ls_hs_internal_destroy_binary_search_state_to_index_kernel(
-    ls_hs_state_to_index_kernel_type closure);
-
-void ls_hs_internal_axpy(int64_t size, double alpha_re, double alpha_im, ls_hs_scalar const *x,
-                         ls_hs_scalar const *y, ls_hs_scalar *out);
 
 __attribute__((noreturn)) static inline void ls_hs_fatal_error(char const *func, int const line,
                                                                char const *message) {

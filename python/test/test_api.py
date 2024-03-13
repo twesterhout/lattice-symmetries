@@ -129,16 +129,29 @@ def test_csr_matvec():
             assert np.allclose(ls._csr_matvec(matrix, x), matrix @ x)
 
 
-def test_to_csr():
+def test_build_matrix():
     basis = ls.SpinBasis(2)
     basis.build()
     matrix = ls.Operator(ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁"), basis)
-    print(matrix.to_csr())
+    matrix.build_matrix()
 
     h = np.array([[1, 0, 0, 0], [0, -1, 2, 0], [0, 2, -1, 0], [0, 0, 0, 1]])
-    assert np.array_equal(matrix.diag_to_array(), h.diagonal())
-    assert np.array_equal(matrix.off_diag_to_csr().todense(), h - np.diag(h.diagonal()))
-    pass
+    x = np.random.rand(basis.number_states) + 1j * np.random.rand(basis.number_states)
+    assert np.allclose(matrix @ x, h @ x)
+
+
+def test_number_off_diag():
+    b = ls.SpinBasis(number_spins=10, hamming_weight=5)
+    b.build()
+    e = ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁", sites=ig.Graph.Ring(n=10, circular=True))
+    h = ls.Operator(e, b)
+
+    h.build_matrix()
+    real_max_number_off_diag = int(np.max(np.diff(h._off_diag_csr.indptr)))
+    # dynamite estimates the number of nonzero elements per row as 10
+    # we check that lattice-symmetries computes a similar estimate
+    assert real_max_number_off_diag <= h.estimate_max_number_off_diag() <= 10
+    assert real_max_number_off_diag <= h._payload.max_number_off_diag <= 10
 
 
 def test_basis_properties():
@@ -240,11 +253,16 @@ def test_randomized_matvec():
 #     expr = ls.Expr(
 #         "1.0 σᶻ₀ σᶻ₁ + 1.0 σᶻ₀ σᶻ₃ + 1.0 σᶻ₀ σᶻ₈ + 1.0 σᶻ₀ σᶻ₁₀ + 2.0 σ⁺₀ σ⁻₁ + 2.0 σ⁺₀ σ⁻₃ + 2.0 σ⁺₀ σ⁻₈ + 2.0 σ⁺₀ σ⁻₁₀ + 2.0 σ⁻₀ σ⁺₁ + 2.0 σ⁻₀ σ⁺₃ + 2.0 σ⁻₀ σ⁺₈ + 2.0 σ⁻₀ σ⁺₁₀ + 1.0 σᶻ₁ σᶻ₂ + 0.8 σᶻ₁ σᶻ₃ + 0.8 σᶻ₁ σᶻ₉ + 2.0 σ⁺₁ σ⁻₂ + 1.6 σ⁺₁ σ⁻₃ + 1.6 σ⁺₁ σ⁻₉ + 2.0 σ⁻₁ σ⁺₂ + 1.6 σ⁻₁ σ⁺₃ + 1.6 σ⁻₁ σ⁺₉ + 1.0 σᶻ₂ σᶻ₄ + 1.0 σᶻ₂ σᶻ₉ + 1.0 σᶻ₂ σᶻ₁₀ + 2.0 σ⁺₂ σ⁻₄ + 2.0 σ⁺₂ σ⁻₉ + 2.0 σ⁺₂ σ⁻₁₀ + 2.0 σ⁻₂ σ⁺₄ + 2.0 σ⁻₂ σ⁺₉ + 2.0 σ⁻₂ σ⁺₁₀ + 1.0 σᶻ₃ σᶻ₅ + 0.8 σᶻ₃ σᶻ₁₁ + 2.0 σ⁺₃ σ⁻₅ + 1.6 σ⁺₃ σ⁻₁₁ + 2.0 σ⁻₃ σ⁺₅ + 1.6 σ⁻₃ σ⁺₁₁ + 0.8 σᶻ₄ σᶻ₆ + 1.0 σᶻ₄ σᶻ₇ + 0.8 σᶻ₄ σᶻ₁₀ + 1.6 σ⁺₄ σ⁻₆ + 2.0 σ⁺₄ σ⁻₇ + 1.6 σ⁺₄ σ⁻₁₀ + 1.6 σ⁻₄ σ⁺₆ + 2.0 σ⁻₄ σ⁺₇ + 1.6 σ⁻₄ σ⁺₁₀ + 1.0 σᶻ₅ σᶻ₆ + 1.0 σᶻ₅ σᶻ₈ + 1.0 σᶻ₅ σᶻ₁₁ + 2.0 σ⁺₅ σ⁻₆ + 2.0 σ⁺₅ σ⁻₈ + 2.0 σ⁺₅ σ⁻₁₁ + 2.0 σ⁻₅ σ⁺₆ + 2.0 σ⁻₅ σ⁺₈ + 2.0 σ⁻₅ σ⁺₁₁ + 1.0 σᶻ₆ σᶻ₇ + 0.8 σᶻ₆ σᶻ₈ + 2.0 σ⁺₆ σ⁻₇ + 1.6 σ⁺₆ σ⁻₈ + 2.0 σ⁻₆ σ⁺₇ + 1.6 σ⁻₆ σ⁺₈ + 1.0 σᶻ₇ σᶻ₉ + 1.0 σᶻ₇ σᶻ₁₁ + 2.0 σ⁺₇ σ⁻₉ + 2.0 σ⁺₇ σ⁻₁₁ + 2.0 σ⁻₇ σ⁺₉ + 2.0 σ⁻₇ σ⁺₁₁ + 0.8 σᶻ₈ σᶻ₁₀ + 1.6 σ⁺₈ σ⁻₁₀ + 1.6 σ⁻₈ σ⁺₁₀ + 0.8 σᶻ₉ σᶻ₁₁ + 1.6 σ⁺₉ σ⁻₁₁ + 1.6 σ⁻₉ σ⁺₁₁"
 #     )
-#     basis = next(expr.symmetric_basis())
-#     basis.build()
-#     hamiltonian = ls.Operator(expr, basis)
-#     assert basis.is_real
 #     assert expr.is_real
+#     basis = ls.SpinBasis(12)
+#     basis.build()
+#     assert basis.is_real
+#
+#     hamiltonian = ls.Operator(expr, basis)
+#     # energy, _ = scipy.sparse.linalg.eigsh(hamiltonian, k=1, which="SA")
+#     # assert energy == approx(-19.95338528)
+#
+#     hamiltonian.build_matrix()
 #     energy, _ = scipy.sparse.linalg.eigsh(hamiltonian, k=1, which="SA")
 #     assert energy == approx(-19.95338528)
 
@@ -260,35 +278,32 @@ def test_axpy():
         assert np.allclose(z, y)
 
 
-# def test_expr_permutation_group():
-#     def heisenberg_on_graph(g):
-#         return ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁", sites=g)
-#
-#     def check(g):
-#         print(heisenberg_on_graph(g).permutation_group())
-#         assert (
-#             heisenberg_on_graph(g).permutation_group()["permutations"] == g.get_automorphisms_vf2()
-#         )
-#
-#     # Chains
-#     for n in [4, 6, 10, 25]:
-#         check(ig.Graph.Ring(n=n, circular=True))
-#         check(ig.Graph.Ring(n=n, circular=False))
-#
-#     # Square lattice
-#     check(ig.Graph.Lattice(dim=[3, 3], circular=True))
-#     check(ig.Graph.Lattice(dim=[3, 3], circular=False))
-#
-#     # Disconnected graph
-#     check(ig.Graph(n=4, edges=[[0, 1], [2, 3]]))
-#
-#     # Complete graphs
-#     for n in [3, 4, 5]:
-#         check(ig.Graph.Full(n=n, directed=False, loops=False))
-#
-#     # Trees
-#     check(ig.Graph.Tree(n=7, children=2))
-#     check(ig.Graph.Tree(n=5, children=3))
+def test_expr_permutation_group():
+    def heisenberg_on_graph(g):
+        return ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁", sites=g)
+
+    def check(g):
+        assert heisenberg_on_graph(g).permutation_group() == g.get_automorphisms_vf2()
+
+    # Chains
+    for n in [3, 4, 5, 6, 10, 25]:
+        check(ig.Graph.Ring(n=n, circular=True))
+        check(ig.Graph.Ring(n=n, circular=False))
+
+    # Square lattice
+    check(ig.Graph.Lattice(dim=[3, 3], circular=True))
+    check(ig.Graph.Lattice(dim=[3, 3], circular=False))
+
+    # Disconnected graph
+    check(ig.Graph(n=4, edges=[[0, 1], [2, 3]]))
+
+    # Complete graphs
+    for n in [3, 4, 5]:
+        check(ig.Graph.Full(n=n, directed=False, loops=False))
+
+    # Trees
+    check(ig.Graph.Tree(n=7, children=2))
+    check(ig.Graph.Tree(n=5, children=3))
 
 
 # def test_permutation_construction():
