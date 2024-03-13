@@ -1,0 +1,44 @@
+diff --git a/src/eps/tests/makefile b/src/eps/tests/makefile
+index 2b6371fca..c713b5eed 100644
+--- a/src/eps/tests/makefile
++++ b/src/eps/tests/makefile
+@@ -19,6 +19,7 @@ testtest5_blopex: test5.PETSc
+ 	@test=test5_2_blopex; check=test5_2; \
+ 	if [ "${PETSC_SCALAR}" = "complex" ]; then check=$${check}_complex; fi; \
+ 	${MPIEXEC} -n 1 ./test5 -symm -eps_type blopex -eps_nev 4 > $${test}.tmp 2>&1; \
++	sed -i '/hwloc\/linux/d ; /ERROR opendir(\/sys\/class\/net) failed/d' $${test}.tmp; \
+ 	if (${DIFF} output/$${check}.out $${test}.tmp > /dev/null 2>&1) then \
+ 	  echo "BLOPEX example src/eps/tests/test5 run successfully with 1 MPI process"; \
+ 	else \
+@@ -31,6 +32,7 @@ testtest5_blopex: test5.PETSc
+ testtest7f: test7f.PETSc
+ 	@test=test7f_1; check=test7f_1; \
+ 	GFORTRAN_UNBUFFERED_ALL=1 ${MPIEXEC} -n 1 ./test7f -eps_nev 4 -eps_ncv 22 | ${SED} -e 's/83791/83792/'> $${test}.tmp 2>&1; \
++	sed -i '/hwloc\/linux/d ; /ERROR opendir(\/sys\/class\/net) failed/d' $${test}.tmp; \
+ 	if (${DIFF} output/$${check}.out $${test}.tmp > /dev/null 2>&1) then \
+ 	  echo "Fortran example src/eps/tests/test7f run successfully with 1 MPI process"; \
+ 	else \
+@@ -44,6 +46,7 @@ testtest10: test10.PETSc
+ 	@test=test10_1; check=test10_1_ks; \
+ 	options="-eps_nev 4 -eps_ncv 14 -m 11 -eps_largest_magnitude"; \
+ 	${MPIEXEC} -n 1 ./test10 $${options} | ${SED} -e 's/82109/82110/' > $${test}.tmp 2>&1; \
++	sed -i '/hwloc\/linux/d ; /ERROR opendir(\/sys\/class\/net) failed/d' $${test}.tmp; \
+ 	if (${DIFF} output/$${check}.out $${test}.tmp > /dev/null 2>&1) then \
+ 	  echo "C/C++ example src/eps/tests/test10 run successfully with 1 MPI process"; \
+ 	else \
+@@ -57,6 +60,7 @@ testtest10_mpi: test10.PETSc
+ 	@test=test10_1; check=test10_1_ks; \
+ 	options="-eps_nev 4 -eps_ncv 14 -m 11 -eps_largest_magnitude"; \
+ 	${MPIEXEC} -n 2 ./test10 $${options} | ${SED} -e 's/82109/82110/' > $${test}.tmp 2>&1; \
++	sed -i '/hwloc\/linux/d ; /ERROR opendir(\/sys\/class\/net) failed/d' $${test}.tmp; \
+ 	if (${DIFF} output/$${check}.out $${test}.tmp > /dev/null 2>&1) then \
+ 	  echo "C/C++ example src/eps/tests/test10 run successfully with 2 MPI processes"; \
+ 	else \
+@@ -70,6 +74,7 @@ testtest10_cuda: test10.PETSc
+ 	@test=test10_1; check=test10_1_ks_cuda; \
+ 	options="-eps_nev 4 -eps_ncv 14 -m 12 -eps_largest_magnitude -mat_type aijcusparse"; \
+ 	${MPIEXEC} -n 1 ./test10 $${options} | ${SED} -e 's/30055/30054/' > $${test}.tmp 2>&1; \
++	sed -i '/hwloc\/linux/d ; /ERROR opendir(\/sys\/class\/net) failed/d' $${test}.tmp; \
+ 	if (${DIFF} output/$${check}.out $${test}.tmp > /dev/null 2>&1) then \
+ 	  echo "C/C++ example src/eps/tests/test10 run successfully with CUDA"; \
+ 	else \

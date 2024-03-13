@@ -52,6 +52,23 @@
                 })
               ];
             });
+
+          petsc = (prev.petsc.override {
+            mpiSupport = true;
+            petsc-optimized = true;
+            petsc-scalar-type = "complex";
+          }).overrideAttrs
+            (attrs: rec {
+              version = "3.20.5";
+              name = "${attrs.pname}-${version}";
+              # NOTE: We cannot use fetchFromGitLab because then PETSc tries to download SOWING...
+              src = final.fetchurl {
+                url = "https://web.cels.anl.gov/projects/petsc/download/release-snapshots/petsc-${version}.tar.gz";
+                hash = "sha256-+05jd1hzevkQsF8wp4UkVjORbNCpKbe2RHrRAo2k6lo=";
+              };
+            });
+
+          slepc = final.callPackage ./nix/slepc.nix { };
         })
         nix-chapel.overlays.default
         halide-haskell.overlays.default
@@ -88,7 +105,8 @@
             BenchmarkSingleLocaleMatrixVector;
           inherit atomic_queue;
           inherit haskellPackages;
-          inherit (python3Packages) quspin;
+          inherit (python3Packages) dynamite quspin petsc4py slepc4py;
+          inherit petsc slepc;
         });
 
       devShells = flake-utils.lib.eachDefaultSystemMap (system:
