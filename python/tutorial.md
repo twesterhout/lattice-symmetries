@@ -9,6 +9,8 @@
         - [Spinless Fermionic basis](#Spinless-fermionic-basis)
         - [Spinful Fermionic basis](#Spinful-fermionic-basis)
     - [Expressions](#Expressions)
+        - [Primitive operators](#Primitive-operators)
+        - [Operator algebra](#Operator-algebra)
     - [Operators](#Operators)
     - [Symmetries](#Symmetries)
 - [Examples](#Examples)
@@ -224,7 +226,7 @@ as expected.
 
 ### Expressions
 
-Expressions is an easy way to work with operators (for example, Hamiltonians) on symbolic level using second quantization formalism.
+Expressions are an easy way to work with operators (for example, Hamiltonians) on a symbolic level using second quantization formalism.
 This means that you can use primitive operators such as $\sigma^x$, $\sigma^y$, and $\sigma^z$ to build expressions for your Hamiltonian and observables.
 It is also possible to sum different expressions and multiply them to each other to compose more complicated expressions.
 Let's consider at first the simplest examples. 
@@ -274,13 +276,27 @@ Now we will consider primitives operators defined on site with number 0 as an ex
    ```
     We see that everything works as one would expect.
 
- - $\mathbb{1}$:
+ - Identity operator $\mathbb{1}$:
    ```pycon
    >>> Expr("I", particle="spin-1/2").to_dense()
    [[1, 0],
     [0, 1]]
    ```
    (*Note:* in this case, we need to explicitly specify the particle type because it cannot be deduced from the expression)
+
+It is also possible to check various properties of expressions:
+   ```pycon
+   >>> a=Expr("\\sigma^z_0")
+   >>> a.is_real #If the corresponding matrix real
+   True
+   >>> a.is_hermitian #If the corresponding matrix hermitian
+   True
+   >>> a.is_identity #If the corresponding matrix identity
+   False
+   >>> a.number_sites #Number of sites in the expression
+   1
+   ```
+
 
 #### Operator algebra
 
@@ -290,7 +306,7 @@ Furthermore, expressions can also be multiplied by scalars from the left using t
 For example, here are a few ways to write down the Heisenberg interaction between sites 0 and 1
 
 $$
-\mathbf{S}_i \cdot \mathbf{S}_j = S^x_i S^x_j + S^y_i S^y_j + S^z_i S^z_j
+\mathbf{S}_i \cdot \mathbf{S}_j = S^x_0 S^x_1 + S^y_0 S^y_1 + S^z_0 S^z_1
 $$
 
 ```pycon
@@ -303,6 +319,14 @@ True
 True
 >>> Expr("Sˣ₀ Sˣ₁ + Sʸ₀ Sʸ₁ + Sᶻ₀ Sᶻ₁") == Expr("0.5 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + 0.25 σᶻ₀ σᶻ₁")
 True
+
+#Above we checked that different definitions of this interaction agree. Let's take a look at the corresponding matrix:
+>>> Expr("Sx0 Sx1 + Sy0 Sy1 + Sz0 Sz1").to_dense()
+
+[[ 0.25  0.    0.    0.  ]
+ [ 0.   -0.25  0.5   0.  ]
+ [ 0.    0.5  -0.25  0.  ]
+ [ 0.    0.    0.    0.25]]
 ```
 
 Under the hood, lattice-symmetries rewrites all the expressions into the canonical form, simplifying stuff along the way:
