@@ -224,7 +224,97 @@ as expected.
 
 ### Expressions
 
-Let's take a look at a few examples.
+Expressions is an easy way to work with operators (for example, Hamiltonians) on symbolic level using second quantization formalism.
+This means that you can use primitive operators such as $\sigma^x$, $\sigma^y$, and $\sigma^z$ to build expressions for your Hamiltonian and observables.
+It is also possible to sum different expressions and multiply them to each other to compose more complicated expressions.
+Let's consider at first the simplest examples. 
+
+#### Primitive operators
+
+At first we need to import `Expr` from lattice-symmetries:
+```sh
+from lattice_symmetries import Expr
+```
+Now we will consider primitives operators defined on site with number 0 as an example, but you can also construct primitive operators residing on other lattice sites:
+
+ - $\sigma^x$ and $S^x$:
+   ```pycon
+   >>> Expr("σˣ₀") == Expr("\\sigma^x_0") #It is possible to use different notations for Expr for primitive operators.
+   #Here we check that they agree. Index 0 means the index of the corresponding site.
+   True
+   >>> Expr("Sˣ₀") == 0.5 * Expr("σˣ₀") #We check that Sˣ₀ is the same as 0.5*σˣ₀.
+   True
+   >>> Expr("σˣ₀").to_dense() #It is also possible to visualize the expressions as matrices.
+   [[0, 1],
+    [1, 0]]
+
+   ```
+   Now, we will take a look at other Pauli and spin matrices.
+
+ - $\sigma^y$ and $S^y$:
+   ```pycon
+   >>> Expr("σʸ₀") == Expr("\\sigma^y_0")
+   True
+   >>> Expr("Sʸ₀") == 0.5 * ls.Expr("σʸ₀")
+   True
+   >>> Expr("σʸ₀").to_dense()
+   [[0, -1j],
+    [1j, 0]]
+   ```
+
+ - $\sigma^z$ and $S^z$:
+   ```pycon
+   >>> Expr("σᶻ₀") == Expr("\\sigma^z_0")
+   True
+   >>> Expr("Sᶻ₀") == 0.5 * Expr("σᶻ₀")
+   True
+   >>> Expr("σᶻ₀").to_dense()
+   [[1, 0],
+    [0, -1]]
+   ```
+    We see that everything works as one would expect.
+
+ - $\mathbb{1}$:
+   ```pycon
+   >>> Expr("I", particle="spin-1/2").to_dense()
+   [[1, 0],
+    [0, 1]]
+   ```
+   (*Note:* in this case, we need to explicitly specify the particle type because it cannot be deduced from the expression)
+
+#### Operator algebra
+
+Primitives can be combined using the `+`, `-`, and `*` operations to build more complex operators.
+Furthermore, expressions can also be multiplied by scalars from the left using the `*` operator.
+
+For example, here are a few ways to write down the Heisenberg interaction between sites 0 and 1
+
+$$
+\mathbf{S}_i \cdot \mathbf{S}_j = S^x_i S^x_j + S^y_i S^y_j + S^z_i S^z_j
+$$
+
+```pycon
+>>> Expr("Sˣ₀ Sˣ₁ + Sʸ₀ Sʸ₁ + Sᶻ₀ Sᶻ₁") == Expr("Sx0 Sx1 + Sy0 Sy1 + Sz0 Sz1")
+True
+>>> Expr("Sˣ₀ Sˣ₁ + Sʸ₀ Sʸ₁ + Sᶻ₀ Sᶻ₁") == \
+             Expr("Sˣ₀") * Expr("Sˣ₁") + Expr("Sʸ₀") * Expr("Sʸ₁") + Expr("Sᶻ₀") * Expr("Sᶻ₁")
+True
+>>> Expr("Sˣ₀ Sˣ₁ + Sʸ₀ Sʸ₁ + Sᶻ₀ Sᶻ₁") == Expr("0.25 (σˣ₀ σˣ₁ + σʸ₀ σʸ₁ + σᶻ₀ σᶻ₁)")
+True
+>>> Expr("Sˣ₀ Sˣ₁ + Sʸ₀ Sʸ₁ + Sᶻ₀ Sᶻ₁") == Expr("0.5 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + 0.25 σᶻ₀ σᶻ₁")
+True
+```
+
+Under the hood, lattice-symmetries rewrites all the expressions into the canonical form, simplifying stuff along the way:
+
+```pycon
+>>> str(Expr("Sˣ₀ Sˣ₁ + Sʸ₀ Sʸ₁ + Sᶻ₀ Sᶻ₁"))
+"0.25 σᶻ₀ σᶻ₁ + 0.5 σ⁺₀ σ⁻₁ + 0.5 σ⁻₀ σ⁺₁"
+>>> str(Expr("0.5 (σˣ₁ + 1im σʸ₁) - σ⁺₁"))
+"0.0 I"
+>>> str(Expr("σ⁺₁ σ⁺₁"))
+"0.0 I"
+```
 
 
 ### Operators
