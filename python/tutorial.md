@@ -11,6 +11,8 @@
     - [Expressions](#Expressions)
         - [Primitive operators](#Primitive-operators)
         - [Operator algebra](#Operator-algebra)
+        - [Complex expressions](#Complex-expressions)
+        - [Properties](#Properties)
     - [Operators](#Operators)
     - [Symmetries](#Symmetries)
 - [Examples](#Examples)
@@ -158,7 +160,7 @@ which gives:
 0 |00⟩
 1 |01⟩
 2 |10⟩
-3 |11⟩111
+3 |11⟩
 ```
 as one would expect.
 
@@ -284,18 +286,6 @@ Now we will consider primitives operators defined on site with number 0 as an ex
    ```
    (*Note:* in this case, we need to explicitly specify the particle type because it cannot be deduced from the expression)
 
-It is also possible to check various properties of expressions:
-   ```pycon
-   >>> a=Expr("\\sigma^z_0")
-   >>> a.is_real #If the corresponding matrix real
-   True
-   >>> a.is_hermitian #If the corresponding matrix hermitian
-   True
-   >>> a.is_identity #If the corresponding matrix identity
-   False
-   >>> a.number_sites #Number of sites in the expression
-   1
-   ```
 
 
 #### Operator algebra
@@ -339,7 +329,24 @@ Under the hood, lattice-symmetries rewrites all the expressions into the canonic
 >>> str(Expr("σ⁺₁ σ⁺₁"))
 "0.0 I"
 ```
+#### Complex expressions
 
+So far, we defined expressions only on a few number of sites. Here we will consider more complicated expressions.
+
+#### Properties
+
+It is also possible to check various properties of expressions:
+   ```pycon
+   >>> a=Expr("\\sigma^z_0")
+   >>> a.is_real #If the corresponding matrix real
+   True
+   >>> a.is_hermitian #If the corresponding matrix hermitian
+   True
+   >>> a.is_identity #If the corresponding matrix identity
+   False
+   >>> a.number_sites #Number of sites in the expression
+   1
+   ```
 
 ### Operators
 
