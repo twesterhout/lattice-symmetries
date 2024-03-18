@@ -18,7 +18,7 @@ stdenv.mkDerivation {
     # echo "extern record halide_device_interface_impl_t {}" >> FFI.chpl
 
     c2chapel \
-      ${lattice-symmetries.haskell}/include/lattice_symmetries_functions.h \
+      ${lattice-symmetries.haskell.dev}/include/lattice_symmetries_functions.h \
       -DLS_C2CHAPEL \
       -I${chapel}/runtime/include \
       -I${lattice-symmetries.kernels_v2}/include \
@@ -36,6 +36,6 @@ stdenv.mkDerivation {
   '';
 
   installPhase = "install -m 644 FFI.chpl $out";
-  buildInputs = [ halide lattice-symmetries.haskell lattice-symmetries.kernels_v2 ];
+  buildInputs = [ halide lattice-symmetries.haskell.dev lattice-symmetries.kernels_v2 ];
   nativeBuildInputs = [ chapel ];
 }

@@ -92,7 +92,8 @@ final: prev: {
 
         buildInputs = with final; [
           lattice-symmetries.kernels_v2
-          lattice-symmetries.haskell
+          lattice-symmetries.haskell.dev
+          lattice-symmetries.haskell.lib
           lattice-symmetries.chapel
         ];
         propagatedBuildInputs = with python-final; [
@@ -117,7 +118,7 @@ final: prev: {
             | sed -E 's/LS_HS_ATOMIC\(([^)]+)\)/\1/' \
             >lattice_symmetries/extracted_declarations.h
           awk '/python-cffi: START/{flag=1;next}/python-cffi: STOP/{flag=0}flag' \
-            ${final.lattice-symmetries.haskell}/include/lattice_symmetries_functions.h \
+            ${final.lattice-symmetries.haskell.dev}/include/lattice_symmetries_functions.h \
             >>lattice_symmetries/extracted_declarations.h
           awk '/python-cffi: START/{flag=1;next}/python-cffi: STOP/{flag=0}flag' \
             ${final.lattice-symmetries.chapel}/include/lattice_symmetries_chapel.h \
@@ -146,13 +147,14 @@ final: prev: {
   lattice-symmetries = (prev.lattice-symmetries or { }) // {
     python = final.python3Packages.lattice-symmetries;
     apptainer-python-minimal = final.singularity-tools.buildImage {
-      name = "my-project";
+      name = "lattice-symmetries-apptainer";
       contents = with final; [
         (python3.withPackages (ps: with ps; [
           lattice-symmetries
           loguru
           scipy
           numpy
+          sympy
         ]))
         coreutils
         less # for displaying docs in the Python interpreter

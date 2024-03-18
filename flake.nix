@@ -106,6 +106,7 @@
           inherit atomic_queue;
           inherit haskellPackages;
           inherit (python3Packages) dynamite quspin petsc4py slepc4py;
+          inherit python3Packages;
           inherit petsc slepc;
         });
 
