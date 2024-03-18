@@ -99,13 +99,8 @@
             haskell
             chapel
             python
-            apptainer-python-minimal
-            distributed
-            test-data
-            BenchmarkSingleLocaleMatrixVector;
-          inherit atomic_queue;
+            apptainer-python-minimal;
           inherit haskellPackages;
-          inherit (python3Packages) dynamite quspin petsc4py slepc4py;
           inherit python3Packages;
           inherit petsc slepc;
         });

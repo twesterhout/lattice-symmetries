@@ -77,11 +77,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1710775730,
-        "narHash": "sha256-/aIPsvmdImqn2qSKqPjFwOcFMLHLAUZ6MeDEla9jOf8=",
+        "lastModified": 1710777918,
+        "narHash": "sha256-q/vauks9OIUIcihZCOy4L7ZxowG9UAKzdBbyutblMqA=",
         "owner": "twesterhout",
         "repo": "haskell-python-tools.nix",
-        "rev": "a45ff374553b7693bd1023ad0a40dc11d8202727",
+        "rev": "38f57a10cfdd7d675a205c694ecec42cedb2cce6",
         "type": "github"
       },
       "original": {

@@ -15,8 +15,8 @@ stdenv.mkDerivation {
   preBuild = ''
     makeFlagsArray+=(
       PREFIX="$out"
-      CHPL_CFLAGS="-I${lattice-symmetries.kernels_v2}/include -I${lattice-symmetries.haskell.dev}/include --no-ieee-float --local --no-debug --fast"
-      CHPL_LDFLAGS="-L${lattice-symmetries.haskell.lib}/lib"
+      CHPL_CFLAGS="-I${lattice-symmetries.kernels_v2}/include -I${lattice-symmetries.haskell}/include --no-ieee-float --local --no-debug --fast"
+      CHPL_LDFLAGS="-L${lattice-symmetries.haskell}/lib"
       HALIDE_PATH="${halide}"
     )
   '';
@@ -25,15 +25,13 @@ stdenv.mkDerivation {
       chapelFixupBinary lib/$f
       # These are only needed during compilation
       remove-references-to -t ${lattice-symmetries.kernels_v2} lib/$f
-      remove-references-to -t ${lattice-symmetries.haskell.dev} lib/$f
     done
   '';
 
   buildInputs = [
     halide
     lattice-symmetries.kernels_v2
-    lattice-symmetries.haskell.dev
-    lattice-symmetries.haskell.lib
+    lattice-symmetries.haskell
   ];
   nativeBuildInputs = [
     chapel

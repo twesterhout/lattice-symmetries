@@ -19,7 +19,7 @@ lib.composeManyExtensions [
         });
     };
     lattice-symmetries = (super.lattice-symmetries or { }) // {
-      haskell = haskell.packages.ghc96.lattice-symmetries-haskell;
+      haskell = haskell.packages.ghc96.lattice-symmetries-haskell.lib;
     };
   })
 ]
