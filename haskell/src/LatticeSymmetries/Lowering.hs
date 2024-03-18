@@ -31,7 +31,6 @@ import Control.Monad.ST (runST)
 import Data.Bits (bit, countTrailingZeros, (.&.), (.|.))
 import Data.Complex (imagPart, realPart)
 import Data.Maybe qualified
-import Data.Vector qualified as B
 import Data.Vector.Generic qualified as G
 import Data.Vector.Generic.Mutable qualified as GM
 import Data.Vector.Storable qualified as S

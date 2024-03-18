@@ -130,25 +130,19 @@ private proc localProcessExperimental(const ref basis : Basis,
     else {
       indices = indicesBuffer;
       const sizeWithPadding = roundUpToMaxBlockSize(size);
-      // logDebug("executing basisStatesToIndices...");
       basisStatesToIndices(basis, sizeWithPadding, basisStates, indices);
-      // logDebug("basisStatesToIndices done");
     }
 
     var k = 0;
     while k < size {
-      // logDebug(try! "coeffs[%i] = %.20z, xs[%i] = %.20z, norms = %.20r".format(
-      //   k, coeffs[k], indices[k], xs[indices[k]]:complex(128), sqrt(norms[indices[k]])));
       var acc : coeffType = coeffs[k]:coeffType * xs[indices[k]] * sqrt(norms[indices[k]]:real);
       var targetIndex = targetIndices[k];
       k += 1;
       while k < size && targetIndices[k] == targetIndex {
-        // logDebug(try! "coeffs[%i] = %r + %r im, xs[%i] = %z, norms = %.20r".format(
-        //   k, coeffs[k].re, coeffs[k].im, indices[k], xs[indices[k]]:complex(128), sqrt(norms[indices[k]])));
-        acc += coeffs[k]:coeffType * xs[indices[k]] * sqrt(norms[indices[k]]:real);
+        if indices[k] >= 0 then
+          acc += coeffs[k]:coeffType * xs[indices[k]] * sqrt(norms[indices[k]]:real);
         k += 1;
       }
-      // logDebug(try! "targetCoeffs[%i] += %.20z".format(targetIndex - minTargetIndex, acc));
       targetCoeffs[targetIndex - minTargetIndex] += acc;
     }
   }
@@ -415,8 +409,9 @@ record Worker {
                                  accumulators,
                                  indices);
 
-        foreach k in 0 ..# chunk.size do
+        foreach k in 0 ..# chunk.size {
           localeState.yPtr[chunk.low + k] += accumulators[k];
+        }
       }
     } // end while true
 
@@ -624,11 +619,9 @@ proc perLocaleMatrixVector(matrix : Operator,
   assert(x.locale == here);
   assert(y.locale == here);
   assert(representatives.locale == here);
-  // logDebug("== START perLocaleMatrixVector");
   perLocaleDiagonal(matrix, x, y, representatives);
   if matrix.payload.deref().max_number_off_diag > 0 then
     perLocaleOffDiagonal(matrix, x, y, representatives, norms);
-  // logDebug("== FINISH perLocaleMatrixVector");
 }
 
 proc ls_chpl_matrix_vector_product(matrixPtr : c_ptrConst(ls_hs_operator),
@@ -643,8 +636,7 @@ proc ls_chpl_matrix_vector_product(matrixPtr : c_ptrConst(ls_hs_operator),
   const numberStates = basis.payload.deref().local_representatives.num_elts;
   const basisStatesPtr = basis.payload.deref().local_representatives.elts:c_ptrConst(uint(64));
   const normsPtr = basis.payload.deref().local_norms.elts:c_ptrConst(uint(16));
-  if basisStatesPtr == nil || normsPtr == nil then
-    halt("basis states have not been built");
+  if !basis.payload.deref().is_built then halt("basis states have not been built");
 
   // NOTE: the cast from c_ptrConst to c_ptr is fine since we save the array in
   // a const variable afterwards thus regaining const correctness
@@ -682,8 +674,7 @@ export proc ls_chpl_off_diag_to_csr_c128(matrixPtr : c_ptrConst(ls_hs_operator),
   const numberStates = basis.payload.deref().local_representatives.num_elts;
   const basisStatesPtr = basis.payload.deref().local_representatives.elts:c_ptrConst(uint(64));
   const normsPtr = basis.payload.deref().local_norms.elts:c_ptrConst(uint(16));
-  if basisStatesPtr == nil || normsPtr == nil then
-    halt("basis states have not been built");
+  if !basis.payload.deref().is_built then halt("basis states have not been built");
 
   const basisStates = makeArrayFromPtr(basisStatesPtr:c_ptr(uint(64)), {0 ..# numberStates});
   const norms = makeArrayFromPtr(normsPtr:c_ptr(uint(16)), {0 ..# numberStates});
@@ -701,14 +692,15 @@ export proc ls_chpl_extract_diag_c128(matrixPtr : c_ptrConst(ls_hs_operator),
   const numberStates = basis.payload.deref().local_representatives.num_elts;
   const basisStatesPtr = basis.payload.deref().local_representatives.elts:c_ptrConst(uint(64));
   const normsPtr = basis.payload.deref().local_norms.elts:c_ptrConst(uint(16));
-  if basisStatesPtr == nil || normsPtr == nil then
-    halt("basis states have not been built");
+  if !basis.payload.deref().is_built then halt("basis states have not been built");
 
   const basisStates = makeArrayFromPtr(basisStatesPtr:c_ptr(uint(64)), {0 ..# numberStates});
   const norms = makeArrayFromPtr(normsPtr:c_ptr(uint(16)), {0 ..# numberStates});
 
   var arr = extractDiag(matrix, complex(128), basisStates, norms);
-  diag.deref() = convertToExternalArray(arr);
+  diag.deref() =
+    if arr.size > 0 then convertToExternalArray(arr)
+                    else chpl_make_external_array_ptr(nil:c_ptr(void), 0);
 }
 
 }

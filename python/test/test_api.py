@@ -104,9 +104,9 @@ def test_basis_construction():
         ls.SpinBasis(number_spins=2, hamming_weight=3)
 
     a = ls.Expr("2 I + S+3")
-    for b in a.hilbert_space_sectors():
-        print(b.symmetries)
-        print(b.permutation_group)
+    # for b in a.hilbert_space_sectors():
+    #     print(b.symmetries)
+    #     print(b.permutation_group)
     #     print(b.hamming_weight, b.spin_inversion)
     # assert len(list(a.symmetric_basis())) == 1
     # b = ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁")
@@ -235,14 +235,33 @@ def test_randomized_matvec():
                 x = np.asarray(o["x_real"]) + np.asarray(o["x_imag"]) * 1j
                 y = np.asarray(o["y_real"]) + np.asarray(o["y_imag"]) * 1j
 
+            if not matrix.basis.permutation_group.is_trivial:
+                for p in matrix.basis.permutation_group.elements:
+                    assert (
+                        matrix.expression.replace_indices(
+                            dict((i, p(i)) for i in range(matrix.basis.number_sites))
+                        )
+                        == matrix.expression
+                    )
+
             matrix.basis.build()
             assert np.array_equal(matrix.basis.states, r)
-            z = matrix @ x
-            if not np.allclose(z, y):
-                for i in range(len(r)):
-                    if not np.isclose(z[i], y[i]):
-                        print(i, z[i], y[i])
-            assert np.allclose(matrix @ x, y)
+            print(
+                matrix.basis.states,
+                matrix.basis.requires_projection,
+                matrix.basis.has_permutation_symmetries,
+            )
+            # print(matrix.basis.states.shape)
+            for k in range(10):
+                # z = np.zeros_like(x)
+                z = matrix @ x
+                # matrix.apply_to_state_vector(x, out=z)
+                if not np.allclose(z, y):
+                    print(k)
+                    for i in range(len(r)):
+                        if not np.isclose(z[i], y[i]):
+                            print(i, z[i], y[i])
+                assert np.allclose(matrix @ x, y)
 
             diag = matrix.diag_to_array()
             off_diag = matrix.off_diag_to_csr()
@@ -283,7 +302,8 @@ def test_expr_permutation_group():
         return ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁", sites=g)
 
     def check(g):
-        assert heisenberg_on_graph(g).permutation_group() == g.get_automorphisms_vf2()
+        p = ls.PermutationGroup(list(map(ls.Permutation, g.get_automorphisms_vf2())))
+        assert heisenberg_on_graph(g).permutation_group() == p
 
     # Chains
     for n in [3, 4, 5, 6, 10, 25]:
@@ -723,3 +743,4 @@ def test_expr_permutation_group():
 
 # test_kagome_symmetries()
 # test_weird_segfault_1()
+# test_randomized_matvec()

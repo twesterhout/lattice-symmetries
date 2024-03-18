@@ -37,10 +37,10 @@ import GHC.Records (HasField (..))
 import LatticeSymmetries.Automorphisms
 import LatticeSymmetries.Dense
 import LatticeSymmetries.Generator
+import LatticeSymmetries.Parser (parsePhaseEither)
 import LatticeSymmetries.Permutation
 import LatticeSymmetries.Utils (eitherToParser, prettyValidate, sortVectorBy)
 import Prelude hiding (group, identity, permutations, second, toList)
-import LatticeSymmetries.Parser (parsePhaseEither)
 
 instance HasPeriodicity a => HasField "sector" (RepElement a) Int where
   getField s
@@ -69,8 +69,9 @@ phaseToCharacter φ
 
 instance FromJSON (RepElement Permutation) where
   parseJSON =
-    parseJSON >=> \(p :: Permutation, s :: Text) -> eitherToParser $
-      parsePhaseEither s >>= prettyValidate . RepElement p
+    parseJSON >=> \(p :: Permutation, s :: Text) ->
+      eitherToParser $
+        parsePhaseEither s >>= prettyValidate . RepElement p
 
 instance ToJSON a => ToJSON (RepElement a) where
   toJSON s = toJSON (s.element, rationalToString s.phase)
@@ -298,6 +299,7 @@ stateInfoSlow (unRepresentation -> group) spinInversion basisState0 = go Nothing
 newtype AbelianPermutationGroup = AbelianPermutationGroup {unAbelianPermutationGroup :: PermutationGroup}
   deriving stock (Show, Eq, Generic)
   deriving anyclass (NFData)
+  deriving newtype (ToJSON)
 
 -- destroyCpermutation_group :: Ptr Cpermutation_group -> IO ()
 -- destroyCpermutation_group p = when (p /= nullPtr) $ free p

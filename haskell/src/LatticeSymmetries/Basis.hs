@@ -792,7 +792,10 @@ newCbasis x = do
   payload <- castStablePtrToPtr <$> newStablePtr (SomeBasis x)
   -- NOTE: important to initialize memory to 0 such that we don't have to manually initialize fields
   p <- callocBytes $ fromIntegral [CU.pure| size_t { sizeof(ls_hs_basis) } |]
-  [CU.block| void { ls_hs_internal_object_init(&$(ls_hs_basis* p)->base, 1, $(void* payload)); } |]
+  [CU.block| void {
+    ls_hs_basis* p = $(ls_hs_basis* p);
+    ls_hs_internal_object_init(&p->base, 1, $(void* payload));
+  } |]
   pure p
 
 ls_hs_init_basis_info :: Ptr Cbasis -> IO ()

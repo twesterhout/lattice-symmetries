@@ -285,7 +285,7 @@ private proc _enumerateStatesProjected(r : range(uint(64)),
     for i in 0 ..# written do
       if norms[i] > 0 {
         outStates.pushBack(buffer[i]);
-        outNorms.pushBack(norms[i]:uint(16));
+        outNorms.pushBack(norms[i]);
       }
 
     if last == upper then break;
@@ -604,9 +604,15 @@ export proc ls_chpl_local_enumerate_states(p : c_ptr(ls_hs_basis),
   const chunks = determineEnumerationRanges(r, numChunks, basisInfo);
   enumerateStates(chunks, basis, basisStates, norms, keys);
 
-
-  p.deref().local_representatives = convertToExternalArray(basisStates[here]);
-  p.deref().local_norms = convertToExternalArray(norms[here]);
+  if basisStates[here].size > 0 {
+    p.deref().local_representatives = convertToExternalArray(basisStates[here]);
+    p.deref().local_norms = convertToExternalArray(norms[here]);
+  }
+  else {
+    p.deref().local_representatives = chpl_make_external_array_ptr(nil:c_ptr(void), 0);
+    p.deref().local_norms = chpl_make_external_array_ptr(nil:c_ptr(void), 0);
+  }
+  p.deref().is_built = true;
 }
 
 /*

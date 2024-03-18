@@ -174,7 +174,8 @@ class ExternalArrayWrapper:
         self.__array_interface__ = {
             "version": 3,
             "typestr": typestr,
-            "data": (p, True),
+            # TODO: NumPy is buggy and doesn't work if p == 0
+            "data": (p if p != 0 else -1, True),
             "shape": (n,),
         }
 
@@ -236,6 +237,10 @@ class Basis(HsWrapper):
         return int(self._get_info().max_state_estimate)
 
     @property
+    def number_sites(self) -> int:
+        return int(self._get_info().number_sites)
+
+    @property
     def number_bits(self) -> int:
         return int(self._get_info().number_bits)
 
@@ -261,7 +266,7 @@ class Basis(HsWrapper):
 
     @property
     def is_built(self) -> bool:
-        return self._payload.local_representatives.elts != ffi.NULL
+        return bool(self._payload.is_built)
 
     @cached_property
     def symmetries(self) -> list[tuple[Permutation, Rational]]:
@@ -432,9 +437,15 @@ class Expr(HsWrapper):
             payload = ffi.cast("ls_hs_expr *", payload)
         super().__init__(payload=payload, finalizer=finalizer)
 
-    def permutation_group(self) -> List[List[int]]:
+    def permutation_group(self) -> PermutationGroup:
         obj = _from_json(lib.ls_hs_expr_permutation_group(self._payload))
-        return obj["permutations"]
+        return PermutationGroup([Permutation(p) for p in obj["permutations"]])
+
+    def abelian_permutation_group(self) -> PermutationGroup:
+        obj = _from_json(lib.ls_hs_expr_abelian_permutation_group(self._payload))
+        g = PermutationGroup([Permutation(p) for p in obj["permutations"]])
+        assert g.is_abelian
+        return g
 
     def to_json(self) -> str:
         c_str = lib.ls_hs_expr_to_json(self._payload)
@@ -509,47 +520,28 @@ class Expr(HsWrapper):
     def particle_type(self) -> str:
         return _from_haskell_string(lib.ls_hs_expr_particle_type(self._payload))
 
-    @property
+    @cached_property
     def conserves_number_particles(self) -> bool:
         return bool(lib.ls_hs_expr_conserves_number_particles(self._payload))
 
-    @property
+    @cached_property
     def spin_inversion_invariant(self) -> bool:
         return bool(lib.ls_hs_expr_spin_inversion_invariant(self._payload))
+
+    @cached_property
+    def conserves_total_spin(self) -> bool:
+        if self.particle_type == "spin-1/2":
+            s = Expr(
+                "σˣ₀ σˣ₁ + σʸ₀ σʸ₁ + σᶻ₀ σᶻ₁",
+                sites=[(i, j) for i in range(self.number_sites) for j in range(self.number_sites)],
+            )
+            return self * s == s * self
+        else:
+            return NotImplemented
 
     @property
     def number_sites(self) -> int:
         return int(lib.ls_hs_expr_number_sites(self._payload))
-
-    def get_possible_spin_inversion(self, desired: bool | int) -> List[Optional[int]]:
-        if self.spin_inversion_invariant:
-            if isinstance(desired, bool):
-                return [-1, 1] if bool(desired) else [None]
-            else:
-                return [desired]
-        else:
-            if isinstance(desired, bool):
-                return [None]
-            else:
-                raise ValueError(
-                    f"specified spin_inversion={desired}, but the expression "
-                    "is not spin inversion-invariant"
-                )
-
-    def get_possible_hamming_weights(self, desired: bool | int) -> List[Optional[int]]:
-        if self.conserves_number_particles:
-            if isinstance(desired, bool):
-                return list(range(0, self.number_sites + 1)) if desired else [None]
-            else:
-                return [int(desired)]
-        else:
-            if isinstance(desired, bool):
-                return [None]
-            else:
-                raise ValueError(
-                    f"specified particle_conservation={desired}, but the expression "
-                    "does not conserve the number of particles"
-                )
 
     def full_basis(self) -> Basis:
         return Basis(
@@ -562,43 +554,9 @@ class Expr(HsWrapper):
         r = _from_json(lib.ls_hs_expr_hilbert_space_sectors(self._payload))
         return [Basis(payload=p) for p in r]
 
-    def symmetric_bases(
-        self,
-        particle_conservation: bool | int = True,
-        spin_inversion: bool | int = True,
-        symmetries: bool = False,
-    ):
-        if symmetries:
-            return NotImplemented
-
-        tp = self.particle_type
-        if tp == "spin-1/2":
-            n = self.number_sites
-            configs = []
-            for h in self.get_possible_hamming_weights(desired=particle_conservation):
-                if h is None or 2 * h == n:
-                    for i in self.get_possible_spin_inversion(desired=spin_inversion):
-                        configs.append((h, i))
-                else:
-                    configs.append((h, None))
-
-            def estimate(args):
-                h, i = args
-                if h is not None:
-                    d = binom(n, h)
-                    h = -h
-                else:
-                    d = 1 << n
-                if i is not None:
-                    d /= 2
-                return (d, h, i)
-
-            configs = sorted(configs, key=estimate, reverse=True)
-            for h, i in configs:
-                yield SpinBasis(number_spins=n, hamming_weight=h, spin_inversion=i)
-
-        else:
-            return NotImplemented
+    def ground_state_sectors(self):
+        r = _from_json(lib.ls_hs_expr_ground_state_sectors(self._payload))
+        return [Basis(payload=p) for p in r]
 
     def to_dense(self) -> NDArray:
         m = Operator(self)
@@ -770,6 +728,9 @@ class Operator(HsWrapper, LinearOperator):
         return "<Operator defined on {}>".format(self.basis.__class__.__name__)
 
     def diag_to_array(self) -> NDArray:
+        if self._diag_arr is not None:
+            return self._diag_arr
+
         self.basis.check_is_built()
         diag = ffi.new("chpl_external_array *")
         lib.ls_chpl_extract_diag_c128(self._payload, diag)
@@ -782,6 +743,9 @@ class Operator(HsWrapper, LinearOperator):
         return arr
 
     def off_diag_to_csr(self) -> csr_matrix:
+        if self._off_diag_csr is not None:
+            return self._off_diag_csr
+
         self.basis.check_is_built()
         c_coeffs = ffi.new("chpl_external_array *")
         c_offsets = ffi.new("chpl_external_array *")

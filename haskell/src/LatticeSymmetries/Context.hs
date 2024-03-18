@@ -9,10 +9,6 @@ module LatticeSymmetries.Context
   , RawStateToIndexKernel
   , Cnonbranching_terms
   , Cobject
-  , Cpermutation
-  , Cpermutation_group
-  , Crep_element
-  , Crepresentation
   , Cbasis
   , Cexpr
   , Coperator
@@ -62,14 +58,6 @@ data Cbasis
 
 data Cexpr
 
-data Cpermutation
-
-data Cpermutation_group
-
-data Crep_element
-
-data Crepresentation
-
 data Coperator
 
 class Typeable a => IsCobject a
@@ -80,14 +68,6 @@ instance IsCobject Cbasis
 
 instance IsCobject Cexpr
 
-instance IsCobject Cpermutation
-
-instance IsCobject Cpermutation_group
-
-instance IsCobject Crep_element
-
-instance IsCobject Crepresentation
-
 instance IsCobject Coperator
 
 lsCxt :: Q C.Context
@@ -97,21 +77,7 @@ lsCxt = do
   pure $ C.fptrCtx <> C.bsCtx <> C.baseCtx <> mempty {ctxTypesTable = typePairs}
 
 lsTypePairs :: Q [(TypeSpecifier, TypeQ)]
-lsTypePairs =
-  (<> mandatory)
-    <$> optionals
-      [ ("ls_hs_nonbranching_terms", "Cnonbranching_terms")
-      , ("ls_hs_basis", "Cbasis")
-      , ("ls_hs_expr", "Cexpr")
-      , ("ls_hs_operator", "Coperator")
-      , ("ls_hs_object", "Cobject")
-      , ("ls_hs_permutation", "Cpermutation")
-      , ("ls_hs_permutation_group", "Cpermutation_group")
-      , ("ls_hs_rep_element", "Crep_element")
-      , ("ls_hs_representation", "Crepresentation")
-      , ("ls_hs_scalar", "Cscalar")
-      , ("halide_buffer_t", "RawHalideBuffer")
-      ]
+lsTypePairs = (mandatory <>) <$> optionals [("halide_buffer_t", "RawHalideBuffer")]
   where
     optional :: (CIdentifier, String) -> Q [(TypeSpecifier, TypeQ)]
     optional (cName, hsName) = do
@@ -123,6 +89,12 @@ lsTypePairs =
       [ (TypeName "ls_hs_is_representative_kernel_type_v2", [t|FunPtr RawIsRepresentativeKernel|])
       , (TypeName "ls_hs_state_info_kernel_type_v2", [t|FunPtr RawStateInfoKernel|])
       , (TypeName "ls_hs_state_to_index_kernel_type", [t|FunPtr RawStateToIndexKernel|])
+      , (TypeName "ls_hs_basis", [t|Cbasis|])
+      , (TypeName "ls_hs_expr", [t|Cexpr|])
+      , (TypeName "ls_hs_nonbranching_terms", [t|Cnonbranching_terms|])
+      , (TypeName "ls_hs_object", [t|Cobject|])
+      , (TypeName "ls_hs_operator", [t|Coperator|])
+      , (TypeName "ls_hs_scalar", [t|Cscalar|])
       ]
 
 instance IsCobject a => ToJSON (Ptr a) where

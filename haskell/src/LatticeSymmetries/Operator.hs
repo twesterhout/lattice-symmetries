@@ -34,6 +34,7 @@ module LatticeSymmetries.Operator
   , ls_hs_operator_to_json
   , ls_hs_operator_from_json
   , ls_hs_expr_hilbert_space_sectors
+  , ls_hs_expr_ground_state_sectors
   )
 where
 
@@ -56,9 +57,8 @@ import LatticeSymmetries.Context
 import LatticeSymmetries.Expr
 import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
-import LatticeSymmetries.Group (Representation (Representation), abelianRepresentations, abelianSubgroup, emptyRepresentation)
+import LatticeSymmetries.Group (abelianRepresentations, abelianSubgroup, emptyRepresentation, groupRepresentations)
 import LatticeSymmetries.NonbranchingTerm
-import LatticeSymmetries.Permutation (Permutation (Permutation))
 import LatticeSymmetries.Some
 import LatticeSymmetries.Utils
 import Prelude hiding (Product, Sum, group)
@@ -216,9 +216,16 @@ getNonbranchingTerms operator =
     flattenGenerator (Generator i g) = Generator (flattenIndex @t numberSites i) g
     opTermsFlat = fmap (fmap flattenGenerator) <$> unExpr operator.opTerms
 
-getHilbertSpaceSectors :: forall t. (HasCallStack, IsBasis t) => Expr t -> Vector (Basis t)
-getHilbertSpaceSectors expr = sortOnDim $ case particleDispatch @t of
+sortOnDim :: IsBasis t => Vector (Basis t) -> Vector (Basis t)
+sortOnDim = fmap snd . G.reverse . sortVectorBy (comparing fst) . fmap (\x -> (estimateHilbertSpaceDimension x, x))
+
+getHilbertSpaceSectors :: forall t. (HasCallStack, IsBasis t) => Bool -> Expr t -> Vector (Basis t)
+getHilbertSpaceSectors groundStateOnly expr = sortOnDim $ case particleDispatch @t of
   SpinTag -> G.fromList $ do
+    let g0 =
+          G.toList $
+            (if groundStateOnly then groupRepresentations else abelianRepresentations . abelianSubgroup) $
+              exprPermutationGroup (Just n) expr
     h <- if hasU1 then Just <$> [0 .. n] else [Nothing]
     i <-
       -- Only apply spin inversion when exactly half the spins are up
@@ -227,8 +234,8 @@ getHilbertSpaceSectors expr = sortOnDim $ case particleDispatch @t of
         else [Nothing]
     g <-
       -- Only apply symmetries when n > 1 and h /= 0 and h /= n
-      if n > 1 && maybe True (\h' -> h' /= 0 || h' /= n) h
-        then G.toList . abelianRepresentations . abelianSubgroup . exprPermutationGroup (Just n) $ expr
+      if n > 1 && maybe True (\h' -> h' /= 0 && h' /= n) h
+        then g0
         else [emptyRepresentation]
     pure $ SpinBasis n h i g
   SpinlessFermionTag -> G.fromList $ do
@@ -238,7 +245,6 @@ getHilbertSpaceSectors expr = sortOnDim $ case particleDispatch @t of
     n = estimateNumberSites expr
     hasU1 = conservesNumberParticles expr
     hasZ2 = isInvariantUponSpinInversion expr
-    sortOnDim = fmap snd . G.reverse . sortVectorBy (comparing fst) . fmap (\x -> (estimateHilbertSpaceDimension x, x))
 
 -- newCoperator :: (IsBasis t, HasCallStack) => Maybe (Ptr Cbasis) -> Operator t -> IO (Ptr Coperator)
 -- newCoperator maybeBasisPtr x = do
@@ -338,7 +344,11 @@ ls_hs_operator_to_json = foldCoperator newCencoded
 
 ls_hs_expr_hilbert_space_sectors :: Ptr Cexpr -> IO CString
 ls_hs_expr_hilbert_space_sectors = foldCexpr $ foldSomeExpr $ \expr ->
-  newCencoded =<< G.mapM newCbasis (getHilbertSpaceSectors expr)
+  newCencoded =<< G.mapM newCbasis (getHilbertSpaceSectors False expr)
+
+ls_hs_expr_ground_state_sectors :: Ptr Cexpr -> IO CString
+ls_hs_expr_ground_state_sectors = foldCexpr $ foldSomeExpr $ \expr ->
+  newCencoded =<< G.mapM newCbasis (getHilbertSpaceSectors True expr)
 
 -- cloneCoperator :: (HasCallStack) => Ptr Coperator -> IO (Ptr Coperator)
 -- cloneCoperator p = do

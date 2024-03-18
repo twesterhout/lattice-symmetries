@@ -158,6 +158,7 @@ typedef struct ls_hs_basis {
     ls_hs_state_to_index_destructor_type state_to_index_destructor;
 
     // Pre-computed representatives & norms
+    bool is_built;
     chpl_external_array local_representatives; // uint64_t [N]
     chpl_external_array local_norms;           // uint16_t [N]
 

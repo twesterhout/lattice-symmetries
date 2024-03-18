@@ -30,14 +30,10 @@ import Data.Vector.Generic qualified as G
 import Data.Vector.Generic.Mutable qualified as GM
 import Data.Vector.Unboxed qualified as U
 import Data.Vector.Unboxed.Mutable qualified as UM
-import Foreign (Ptr, castPtr)
-import Foreign.C (CInt, CString)
 import GHC.Records (HasField (..))
-import LatticeSymmetries.Context
 import LatticeSymmetries.Dense
-import LatticeSymmetries.FFI (ls_hs_destroy_object, newCobject)
 import LatticeSymmetries.Permutation
-import LatticeSymmetries.Utils (MutablePtr, sortVectorBy)
+import LatticeSymmetries.Utils (sortVectorBy)
 import Prelude hiding (group, identity, permutations, second, toList)
 
 data Hypergraph a = Hypergraph {vertices :: !(Set a), hyperedges :: !(Set (Set a))}

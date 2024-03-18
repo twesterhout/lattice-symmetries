@@ -27,7 +27,6 @@ module LatticeSymmetries.Expr
   )
 where
 
-import Data.Foldable (Foldable (maximum))
 import Data.Set qualified as Set
 import Data.Vector.Generic qualified as G
 import LatticeSymmetries.Algebra

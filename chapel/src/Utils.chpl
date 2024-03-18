@@ -361,4 +361,7 @@ proc roundUpToMaxBlockSize(n: ?eltType) where isIntegral(eltType) {
   return roundUpToMultipleOf(n, LS_HS_MAX_BLOCK_SIZE);
 }
 
+proc isNan(z) where isComplex(z) { return isNan(z.re) || isNan(z.im); }
+proc isInf(z) where isComplex(z) { return isInf(z.re) || isInf(z.im); }
+
 } // module Utils

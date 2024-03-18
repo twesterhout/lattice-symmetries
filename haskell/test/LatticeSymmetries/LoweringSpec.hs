@@ -111,23 +111,36 @@ spec = do
           invokeStateInfoKernel kernelPtr basisStates
             `shouldReturn` referenceStateInfo n i group basisStates
 
-  -- modifyMaxSuccess (const 20) $
-  --   prop "small linear chains" $
-  --     \(LinearChainTestData n group basisStates) -> do
-  --       forM_ [Nothing, Just 1, Just (-1)] $ \i ->
-  --         bracket (createStateInfoKernel_v3 group i) destroyStateInfoKernel_v3 $ \kernelPtr ->
-  --           invokeStateInfoKernel kernelPtr basisStates
-  --             `shouldReturn` referenceStateInfo n i group basisStates
+    it "example 2" $ do
+      let n = 10
+      g <- extractRight $ do
+        p <- mkPermutation . fromList $ [9, 7, 1, 6, 5, 0, 8, 4, 3, 2]
+        t <- prettyValidate $ RepElement p (9 % getPeriodicity p)
+        fromGenerators [t]
+      let basisStates :: S.Vector Word64
+          basisStates = fromList [72]
+      bracket (createStateInfoKernel_v3 g Nothing) destroyStateInfoKernel_v3 $ \kernelPtr -> do
+        invokeStateInfoKernel kernelPtr basisStates
+          `shouldReturn` referenceStateInfo n Nothing g basisStates
+        referenceIsRepresentative n Nothing g basisStates `shouldBe` fromList [0]
 
-  -- describe "fixedHammingStateToIndex" $ do
-  --   modifyMaxSuccess (const 10) $
-  --     prop "computes indices correctly" $
-  --       \(FixedHammingBitStrings numberSites hammingWeight indices states) -> do
-  --         bracket
-  --           (createFixedHammingStateToIndexKernel numberSites hammingWeight)
-  --           destroyFixedHammingStateToIndexKernel
-  --           $ \kernelPtr ->
-  --             invokeFixedHammingStateToIndexKernel kernelPtr states `shouldReturn` indices
+    modifyMaxSuccess (const 20) $
+      prop "small linear chains" $
+        \(LinearChainTestData n group basisStates) -> do
+          forM_ [Nothing, Just 1, Just (-1)] $ \i ->
+            bracket (createStateInfoKernel_v3 group i) destroyStateInfoKernel_v3 $ \kernelPtr ->
+              invokeStateInfoKernel kernelPtr basisStates
+                `shouldReturn` referenceStateInfo n i group basisStates
+
+  describe "fixedHammingStateToIndex" $ do
+    modifyMaxSuccess (const 10) $
+      prop "computes indices correctly" $
+        \(FixedHammingBitStrings numberSites hammingWeight indices states) -> do
+          bracket
+            (createFixedHammingStateToIndexKernel numberSites hammingWeight)
+            destroyFixedHammingStateToIndexKernel
+            $ \kernelPtr ->
+              invokeFixedHammingStateToIndexKernel kernelPtr states `shouldReturn` indices
 
   describe "ls_hs_fixed_hamming_state_to_index" $ do
     prop "computes indices correctly" $

@@ -30,6 +30,7 @@ module LatticeSymmetries.Some
   , ls_hs_expr_is_identity
   , ls_hs_replace_indices
   , ls_hs_expr_permutation_group
+  , ls_hs_expr_abelian_permutation_group
   , ls_hs_expr_spin_inversion_invariant
   , ls_hs_expr_conserves_number_particles
   , ls_hs_expr_particle_type
@@ -49,7 +50,7 @@ import Data.Vector.Fusion.Bundle.Monadic qualified as Bundle
 import Data.Vector.Fusion.Util (Id (unId))
 import Data.Vector.Generic qualified as G
 import Foreign (fromBool)
-import Foreign.C (CBool, CString, CInt)
+import Foreign.C (CBool, CInt, CString)
 import Foreign.Ptr (Ptr, castPtr)
 import GHC.Show (Show (showsPrec))
 import LatticeSymmetries.Algebra
@@ -58,6 +59,7 @@ import LatticeSymmetries.Context
 import LatticeSymmetries.Expr
 import LatticeSymmetries.FFI
 import LatticeSymmetries.Generator
+import LatticeSymmetries.Group (abelianSubgroup)
 import LatticeSymmetries.Parser hiding (Parser)
 import LatticeSymmetries.Utils
 import Prettyprinter (Pretty (..))
@@ -299,6 +301,10 @@ ls_hs_replace_indices expr jsonString = do
 
 ls_hs_expr_permutation_group :: Ptr Cexpr -> IO CString
 ls_hs_expr_permutation_group = foldCexpr $ foldSomeExpr $ newCencoded . exprPermutationGroup Nothing
+
+ls_hs_expr_abelian_permutation_group :: Ptr Cexpr -> IO CString
+ls_hs_expr_abelian_permutation_group =
+  foldCexpr $ foldSomeExpr $ newCencoded . abelianSubgroup . exprPermutationGroup Nothing
 
 ls_hs_expr_spin_inversion_invariant :: Ptr Cexpr -> IO CBool
 ls_hs_expr_spin_inversion_invariant = foldCexpr $ foldSomeExpr $ pure . fromBool . isInvariantUponSpinInversion

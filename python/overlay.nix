@@ -107,7 +107,6 @@ final: prev: {
           pip
           pytestCheckHook
           igraph
-          dynamite
         ];
 
         postPatch = ''
