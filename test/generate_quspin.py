@@ -232,14 +232,18 @@ def random_operator(
     #         ls_str += " " if s.startswith("-") else " + "
     #     ls_str += s
 
+    if symmetry is not None:
+        _, p, sector = symmetry
+        periodicity = len(list(build_cyclic_group(p)))
+        symmetries = [(p, f"{sector}/{periodicity}")]
+    else:
+        symmetries = []
     ls_expr = {
         "basis": dict(
             number_sites=number_sites,
             hamming_weight=hamming_weight,
             spin_inversion=spin_inversion,
-            symmetries=[dict(permutation=symmetry[1], sector=symmetry[2])]
-            if symmetry is not None
-            else [],
+            symmetries=symmetries,
         ),
         "expression": {"expression": ls_str, "particle": "spin-1/2"},
     }
