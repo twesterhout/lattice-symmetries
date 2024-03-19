@@ -3,6 +3,7 @@ module ForeignTypes {
   // use CommonParameters;
   import Communication;
   use Timing;
+  use Utils;
 
   import Reflection.getRoutineName;
   use CTypes;
@@ -449,6 +450,9 @@ module ForeignTypes {
     if kernel == nil then
       halt("is_representative_kernel was not initialized");
 
+    if count != roundUpToMaxBlockSize(count) then
+      halt(try! "is_representative_kernel expects 'alphas.size' to be a multiple of %n".format(
+                LS_HS_MAX_BLOCK_SIZE));
     ls_chpl_invoke_is_representative_kernel(kernel, count, c_ptrToConst(alphas), c_ptrTo(norms));
   }
   proc isRepresentative(const ref basis : Basis, const ref alphas : [?D] uint(64)) where D.rank == 1 {

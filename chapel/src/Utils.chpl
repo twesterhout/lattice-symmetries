@@ -123,7 +123,7 @@ proc prefixSum(arr : [] ?eltType, param dim : int, param inclusive : bool = fals
 
 proc sum(count : int, arr : c_ptrConst(?eltType)) {
   var total : eltType = 0;
-  foreach i in 0 ..# count do
+  foreach i in 0 ..# count with (ref total) do
     total += arr[i];
   return total;
 }
@@ -131,7 +131,7 @@ proc sum(arr : [] ?eltType)
     // ensure that arr is local
     where chpl_domainDistIsLayout(arr.domain) {
   var total : eltType = 0;
-  foreach x in arr do
+  foreach x in arr with (ref total) do
     total += x;
   return total;
 }

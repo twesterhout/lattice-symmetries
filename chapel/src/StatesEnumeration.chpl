@@ -10,6 +10,7 @@ private use Utils;
 private import Communication;
 private import IO.FormattedIO.format;
 private import OS.POSIX;
+private import Reflection.getRoutineName;
 private use BitOps;
 private use BlockDist;
 private use CTypes;
@@ -86,6 +87,7 @@ private proc manyNextState(v: uint(64), bound: uint(64), ref buffer: [] uint(64)
     if offset == buffer.size then break;
   }
 
+  assert(offset <= buffer.size);
   return offset;
 }
 
@@ -133,7 +135,7 @@ private proc assertBoundsHaveSameHammingWeight(r : range(?t), isHammingWeightFix
  */
 proc determineEnumerationRanges(r : range(uint(64)), in numChunks : int,
                                 numberSites : int, hammingWeight : int) {
-  var _timer = recordTime("determineEnumerationRanges");
+  const _timer = recordTime(getRoutineName());
   assertBoundsHaveSameHammingWeight(r, hammingWeight != -1);
 
   // Convert basisState bounds to index bounds
@@ -259,7 +261,7 @@ private proc _enumerateStatesProjected(r : range(uint(64)),
                                        const ref basis : Basis,
                                        ref outStates : Vector(uint(64)),
                                        ref outNorms : Vector(uint(16))) {
-  var _timer = recordTime("_enumerateStatesProjected");
+  const _timer = recordTime(getRoutineName());
   if r.size == 0 then return;
   const ref basisInfo = basis.info;
   const isHammingWeightFixed = basisInfo.hamming_weight != -1;
@@ -274,9 +276,8 @@ private proc _enumerateStatesProjected(r : range(uint(64)),
   while true {
     const written = manyNextState(lower, upper, buffer, isHammingWeightFixed);
     const last = buffer[written - 1];
-    assert(last <= upper,
-           "manyNextState went beyond the upper bound: "
-           + last:string + " > " + upper:string);
+    if last > upper then
+      halt(try! "manyNextState went beyond the upper bound: %n > %n".format(last, upper));
 
     // TODO: get rid of array slices for better performance
     const sizeWithPadding = roundUpToMaxBlockSize(written);
@@ -298,7 +299,7 @@ private proc _enumerateStatesUnprojected(r : range(uint(64)),
                                          const ref basis : Basis,
                                          ref outStates : Vector(uint(64)),
                                          ref outNorms : Vector(uint(16))) {
-  var _timer = recordTime("_enumerateStatesUnprojected");
+  const _timer = recordTime(getRoutineName());
   const ref basisInfo = basis.info;
   const isHammingWeightFixed = basisInfo.hamming_weight != -1;
   const hasSpinInversionSymmetry = basisInfo.spin_inversion != 0;
@@ -436,10 +437,12 @@ private proc enumStatesMakeBuckets(numChunks : int) {
 proc enumStatesFillBuckets(ref buckets : [] owned Bucket,
                            const ref ranges : [] range(uint(64)),
                            const ref basis : Basis) {
-  assert(buckets.size == ranges.size,
-         "the number of buckets (" + buckets.size:string
+  const _timer = recordTime(getRoutineName());
+  if buckets.size != ranges.size then
+    halt("the number of buckets (" + buckets.size:string
          + ") does not match the number of ranges (" + ranges.size:string + ")");
-  assert(here.id == 0, "enumStatesFillBuckets expects to be called from Locale 0");
+  if here.id != 0 then
+    halt("enumStatesFillBuckets expects to be called from Locale 0");
 
   const numChunks = ranges.size;
   coforall loc in Locales do on loc {
@@ -474,6 +477,7 @@ proc enumStatesFillBuckets(ref buckets : [] owned Bucket,
 }
 
 proc enumStatesPerBucketCounts(const ref buckets : [] owned Bucket) {
+  const _timer = recordTime(getRoutineName());
   var perBucketLocaleCounts : [0 ..# buckets.size, 0 ..# numLocales] int;
   const perBucketLocaleCountsPtr = c_ptrTo(perBucketLocaleCounts[0, 0]);
   const localeIdx = here.id;
@@ -492,6 +496,7 @@ proc enumStatesPerBucketCounts(const ref buckets : [] owned Bucket) {
 }
 
 proc enumerateStates(ranges : [] range(uint(64)), const ref basis : Basis, out _basisStates, out _norms, out _keys) {
+  const _timer = recordTime(getRoutineName());
   // We distribute ranges among locales using Cyclic distribution to ensure
   // an even workload. For each range, a vector of basis states and a vector of
   // masks is computed. Masks indicate on which locale a basis state should live.
@@ -511,10 +516,8 @@ proc enumerateStates(ranges : [] range(uint(64)), const ref basis : Basis, out _
   const basisStatesPtrs : [0 ..# numLocales] c_ptr(uint(64)) = basisStates._dataPtrs;
   const normsPtrs : [0 ..# numLocales] c_ptr(uint(16)) = norms._dataPtrs;
   const perLocaleOffsets = prefixSum(perBucketLocaleCounts, dim=0); // [0 ..# buckets.size, 0 ..# numLocales]
+
   forall (bucket, _i) in zip(buckets, 0..) {
-    // logDebug(_i, "|", bucket);
-
-
     assert(here == bucket.locale);
     // TODO: check that these are bulk transferred
     const myBasisStatesPtrs = basisStatesPtrs;

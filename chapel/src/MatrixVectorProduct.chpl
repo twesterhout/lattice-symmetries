@@ -27,7 +27,7 @@ proc perLocaleDiagonal(const ref matrix : Operator,
                        const ref representatives : [] uint(64),
                        numChunks : int = min(kMatrixVectorDiagonalNumChunks, representatives.size)) {
   assert(matrix.locale == here);
-  var _timer = recordTime("perLocaleDiagonal");
+  const _timer = recordTime(getRoutineName());
 
   const totalSize = representatives.size;
   const ranges : [0 ..# numChunks] range(int, boundKind.both, strideKind.one) = chunks(0 ..# totalSize, numChunks);
@@ -135,7 +135,10 @@ private proc localProcessExperimental(const ref basis : Basis,
 
     var k = 0;
     while k < size {
-      var acc : coeffType = coeffs[k]:coeffType * xs[indices[k]] * sqrt(norms[indices[k]]:real);
+      var acc : coeffType =
+        if indices[k] >=0
+          then coeffs[k]:coeffType * xs[indices[k]] * sqrt(norms[indices[k]]:real)
+          else 0;
       var targetIndex = targetIndices[k];
       k += 1;
       while k < size && targetIndices[k] == targetIndex {
@@ -217,6 +220,7 @@ record LocaleState {
             numChunks : int,
             numTasks : int,
             remoteBufferSize : int) {
+    const _timer = recordTime("LocaleState_init");
     this.coeffType = coeffType;
 
     this._chunksDom = {0 ..# numChunks};
@@ -275,6 +279,7 @@ proc ref LocaleState.getRemoteView() {
 }
 
 proc ref LocaleState.completeInitialization(const ref globalStore) {
+  const _timer = recordTime(getRoutineName());
   if numLocales > 1 {
     const numTasks = remoteBuffers.dim(0).size;
     for localeIdx in 0 ..# numLocales {
@@ -350,6 +355,7 @@ record Worker {
   var accumulators;
 
   proc init(taskIdx : int, ref localeState, maxChunkSize : int) {
+    const _timer = recordTime("Worker_init");
     this.batchedOperator = new BatchedOperator(localeState.matrix.payload, maxChunkSize);
     this.localeStatePtr = c_addrOf(localeState);
     this.taskIdx = taskIdx;
@@ -365,17 +371,16 @@ record Worker {
   }
 
   proc ref run() {
+    const _timer = recordTime(getRoutineName());
     ref localeState = localeStatePtr.deref();
     const ref basis = localeState.basis;
     const ref localeIdxFn = localeState.localeIdxFn;
 
     while true {
-      // logDebug("getNextChunkIndex");
       const chunkIdx = localeState.getNextChunkIndex();
       if chunkIdx == -1 { break; }
 
       const chunk : range(int) = localeState._chunks[chunkIdx];
-      // logDebug("chunk=", chunk);
       const (n, basisStatesPtr, coeffsPtr, targetIndicesPtr) =
         batchedOperator.computeOffDiag(
           chunk,
@@ -395,8 +400,6 @@ record Worker {
       }
       else if n > 0 {
         // Process all the generated data locally
-        // logDebug("process all generated data locally");
-        // writeln(localeState.coeffType:string);
         localProcessExperimental(localeState.basis,
                                  localeState.xPtr,
                                  localeState.normsPtr,
@@ -440,7 +443,7 @@ proc perLocaleOffDiagonal(matrix : Operator,
                           ref ys : [] eltType,
                           const ref representatives : [] uint(64),
                           const ref norms : [] uint(16)) {
-  const _timer = recordTime("perLocaleOffDiagonal");
+  const _timer = recordTime(getRoutineName());
   const numTasks = kNumTasks;
   const remoteBufferSize = max(kRemoteBufferSize, matrix.max_number_off_diag_estimate);
   const numChunks =
@@ -470,7 +473,7 @@ proc extractDiag(matrix : Operator,
                  type eltType,
                  const ref representatives : [] uint(64),
                  const ref norms : [] uint(16)) {
-  const _timer = recordTime("extractDiag");
+  const _timer = recordTime(getRoutineName());
   assert(matrix.locale == here);
   assert(representatives.locale == here);
   assert(norms.locale == here);
@@ -495,7 +498,7 @@ proc convertOffDiagToCsr(matrix : Operator,
                          type eltType,
                          const ref representatives : [] uint(64),
                          const ref norms : [] uint(16)) {
-  const _timer = recordTime("convertOffDiagToCsr");
+  const _timer = recordTime(getRoutineName());
   assert(matrix.locale == here);
   assert(representatives.locale == here);
   assert(norms.locale == here);
@@ -614,14 +617,15 @@ proc perLocaleMatrixVector(matrix : Operator,
                            ref y : [] eltType,
                            const ref representatives : [] uint(64),
                            const ref norms : [] uint(16)) {
-  const _timer = recordTime("perLocaleMatrixVector");
+  const _timer = recordTime(getRoutineName());
   assert(matrix.locale == here);
   assert(x.locale == here);
   assert(y.locale == here);
   assert(representatives.locale == here);
   perLocaleDiagonal(matrix, x, y, representatives);
-  if matrix.payload.deref().max_number_off_diag > 0 then
+  if matrix.payload.deref().max_number_off_diag > 0 {
     perLocaleOffDiagonal(matrix, x, y, representatives, norms);
+  }
 }
 
 proc ls_chpl_matrix_vector_product(matrixPtr : c_ptrConst(ls_hs_operator),

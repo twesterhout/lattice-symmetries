@@ -7,6 +7,9 @@ private use Map;
 private use Time;
 private use Sort;
 
+config param kRecordTiming = true;
+config param kTraceTimedFuncs = false;
+
 require "Timing.h";
 
 extern proc chpl_task_getId(): chpl_taskID_t;
@@ -78,19 +81,26 @@ proc TimingCombined.serialize(writer : fileWriter(?), ref serializer) throws {
 // This part is pretty ugly, but at least the runtime overhead of accessing a
 // field is much lower than doing a hash table lookup 😄
 record Store {
+  var LocaleState_init : TimingRecord;
+  var Worker_init : TimingRecord;
+  var _computeOffDiag : TimingRecord;
   var _enumerateStatesProjected : TimingRecord;
   var _enumerateStatesUnprojected : TimingRecord;
   var basisStatesToIndices : TimingRecord;
-  var _computeOffDiag : TimingRecord;
+  var completeInitialization : TimingRecord;
   var convertOffDiagToCsr : TimingRecord;
+  var csrMatvec : TimingRecord;
   var determineEnumerationRanges : TimingRecord;
+  var enumStatesFillBuckets : TimingRecord;
+  var enumStatesPerBucketCounts : TimingRecord;
+  var enumerateStates : TimingRecord;
   var extractDiag : TimingRecord;
   var isRepresentative : TimingRecord;
   var localProcessExperimental : TimingRecord;
   var perLocaleDiagonal : TimingRecord;
   var perLocaleMatrixVector : TimingRecord;
   var perLocaleOffDiagonal : TimingRecord;
-  var csrMatvec : TimingRecord;
+  var run : TimingRecord;
 }
 
 
@@ -135,16 +145,17 @@ record Recorder {
   inline proc init(param func) {
     this.func = func;
     init this;
+    if kTraceTimedFuncs then logDebug("<" + func + ">");
     timer.start();
   }
 
   inline proc ref deinit() {
     timer.stop();
     getLocaleLocalStore().add(func, timer.elapsed());
+    if kTraceTimedFuncs then logDebug("</" + func + ">");
   }
 }
 
-config param kRecordTiming = true;
 
 inline proc recordTime(param func) where kRecordTiming { return new Recorder(func); }
 inline proc recordTime(param func) where !kRecordTiming { return nil; }
