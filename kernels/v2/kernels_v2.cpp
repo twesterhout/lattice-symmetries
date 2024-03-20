@@ -72,7 +72,7 @@ auto mk_axpby_kernel()
     // out.print_loop_nest();
 
     auto target = get_jit_target_from_environment();
-    target.set_features({Target::Feature::NoAsserts, Target::Feature::NoBoundsQuery});
+    // target.set_features({Target::Feature::NoAsserts, Target::Feature::NoBoundsQuery});
     if (static_cast<bool>(from_env("LS_HS_DEBUG_KERNELS", false))) {
         out.compile_to_lowered_stmt("axpy.html", {_alpha_re, _alpha_im, _x, _y}, Halide::HTML,
                                     target);
@@ -171,7 +171,7 @@ auto mk_fixed_hamming_state_to_index_kernel(int const number_sites, int const ha
 
     // out.print_loop_nest();
     auto target = get_jit_target_from_environment();
-    target.set_features({Target::Feature::NoAsserts, Target::Feature::NoBoundsQuery});
+    // target.set_features({Target::Feature::NoAsserts, Target::Feature::NoBoundsQuery});
     // out.compile_to_lowered_stmt("state_to_index.html", {_x}, Halide::HTML, target);
     // out.compile_to_assembly("state_to_index.S", {_x}, "fixed_hamming_state_to_index", target);
     auto callable = out.compile_to_callable({_x}, target);
@@ -402,7 +402,7 @@ auto mk_state_info_kernel_v3(halide_buffer_t const *_masks, halide_buffer_t cons
 
     // out.print_loop_nest();
     auto target = get_jit_target_from_environment();
-    target.set_features({Target::Feature::NoAsserts, Target::Feature::NoBoundsQuery});
+    // target.set_features({Target::Feature::NoAsserts, Target::Feature::NoBoundsQuery});
     if (static_cast<bool>(from_env("LS_HS_DEBUG_KERNELS", false))) {
         out.print_loop_nest();
         out.compile_to_lowered_stmt("state_info.html", {_x}, Halide::HTML, target);

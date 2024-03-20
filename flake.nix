@@ -101,6 +101,7 @@
             python
             apptainer-python-minimal;
           inherit haskellPackages;
+          inherit (haskell.packages) ghc964;
           inherit python3Packages;
           inherit petsc slepc;
         });

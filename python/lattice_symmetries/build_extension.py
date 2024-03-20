@@ -3,7 +3,7 @@ from cffi import FFI
 
 def get_generated_declarations():
     with open("lattice_symmetries/extracted_declarations.h", "r") as f:
-        return f.read()
+        return f.read().replace("LS_CONST", "const")
 
 
 ffibuilder = FFI()
@@ -18,7 +18,8 @@ ffibuilder.set_source(
 #include "lattice_symmetries_functions.h"
 #include "lattice_symmetries_chapel.h"
 """,
-    extra_compile_args=["-Wall", "-Wextra", "-DPYTHON_CFFI=1"],
+    extra_compile_args=["-Wall", "-Wextra", "-DPYTHON_CFFI=1"],  # , "-fsanitize=address"],
+    # extra_link_args=["-fsanitize=address"],
     libraries=["lattice_symmetries_chapel", "lattice_symmetries_haskell"],
 )
 

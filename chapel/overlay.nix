@@ -9,23 +9,25 @@ final: prev: {
     chapel = final.callPackage ./. {
       inherit version;
       chapel = final.chapel.override {
+        # compiler = "gnu";
+        # settings = { CHPL_TARGET_MEM = "cstdlib"; CHPL_HOST_MEM = "cstdlib"; CHPL_UNWIND = "none"; CHPL_TASKS = "fifo"; CHPL_SANITIZE_EXE = "address"; CHPL_LIB_PIC = "pic"; CHPL_GMP = "none"; CHPL_RE2 = "none"; };
         settings = {
           "CHPL_GMP" = "none";
           "CHPL_RE2" = "none";
           "CHPL_UNWIND" = "none";
           "CHPL_LIB_PIC" = "pic";
-          "CHPL_TARGET_CPU" = "haswell"; # TODO: do smth better??
+          "CHPL_TARGET_CPU" = "none"; # TODO: do smth better??
         };
       };
     };
 
-    BenchmarkSingleLocaleMatrixVector = final.callPackage ./matrix-vector-product.nix {
-      inherit version;
-      target = "BenchmarkSingleLocaleMatrixVector";
-      chapel = final.chapel.override {
-        settings = { "CHPL_TARGET_CPU" = "znver3"; };
-      };
-    };
+    # BenchmarkSingleLocaleMatrixVector = final.callPackage ./matrix-vector-product.nix {
+    #   inherit version;
+    #   target = "BenchmarkSingleLocaleMatrixVector";
+    #   chapel = final.chapel.override {
+    #     settings = { "CHPL_TARGET_CPU" = "znver3"; };
+    #   };
+    # };
 
     # test-data = final.stdenv.mkDerivation {
     #   pname = "lattice-symmetries-test-data";

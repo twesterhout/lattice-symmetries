@@ -7,7 +7,7 @@ import json
 import numpy as np
 import os
 import scipy
-from pytest import raises, approx
+from pytest import raises
 
 rng = np.random.default_rng(seed=123)
 
@@ -325,6 +325,46 @@ def test_expr_permutation_group():
     check(ig.Graph.Tree(n=7, children=2))
     check(ig.Graph.Tree(n=5, children=3))
 
+
+# def test_issue_pim_1():
+#     n = 16
+#     expr = ls.Expr("Sx0 Sx1 + Sy0 Sy1 + Sz0 Sz1", sites=ig.Graph.Ring(n=n, circular=True))
+#     translation = ls.Permutation([(1 + i) % n for i in range(n)])
+#     for k in range(8):
+#         b = ls.SpinBasis(number_spins=n, symmetries=[(translation, ls.Rational(k, n))])
+#         b.build()
+#         h = ls.Operator(expr, b)
+#         energies, _ = scipy.sparse.linalg.eigsh(h, k=4)
+#         print(energies)
+#     print("done")
+
+
+def test_issue_pim_2():
+    n = 4
+    tx = ls.Permutation([n * ((i + 1) % n) + j for i in range(n) for j in range(n)])
+    print(tx)
+    ty = ls.Permutation([n * i + ((j + 1) % n) for i in range(n) for j in range(n)])
+    print(ty)
+
+    sites = list(range(n * n))
+    edges = []
+    for i in range(n * n):
+        edges.append((sites[i], sites[tx(i)]))
+        edges.append((sites[i], sites[ty(i)]))
+
+    expr = ls.Expr("Sx0 Sx1 + Sy0 Sy1 + Sz0 Sz1", sites=edges)
+    for kx in range(n):
+        for ky in range(1, n):
+            g = [(tx, ls.Rational(kx, n)), (ty, ls.Rational(ky, n))]
+            b = ls.SpinBasis(number_spins=n * n, symmetries=g)
+            b.build()
+            h = ls.Operator(expr, b)
+            energies, _ = scipy.sparse.linalg.eigsh(h, k=4)
+            # print(energies)
+    print("done")
+
+
+# test_issue_pim_2()
 
 # def test_permutation_construction():
 #     p = ls.Permutation([0, 1, 2])

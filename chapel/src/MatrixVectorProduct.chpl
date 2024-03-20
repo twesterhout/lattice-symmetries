@@ -560,8 +560,14 @@ proc convertOffDiagToCsr(matrix : Operator,
       }
 
       for k in 0 ..# totalCount {
-        const i = colIndicesPtr[dest.low + k];
-        batchedOperator.raw.coeffs[k] *= sqrt(localeState.normsPtr[i]:real);
+        ref i = colIndicesPtr[dest.low + k];
+        if i >= 0 {
+          batchedOperator.raw.coeffs[k] *= sqrt(localeState.normsPtr[i]:real);
+        }
+        else {
+          i = 0; // a random valid index
+          batchedOperator.raw.coeffs[k] = 0;
+        }
       }
 
       // Sort elements
