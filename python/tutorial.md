@@ -296,7 +296,7 @@ Furthermore, expressions can also be multiplied by scalars from the left using t
 For example, here are a few ways to write down the Heisenberg interaction between sites 0 and 1
 
 $$
-\mathbf{S}_i \cdot \mathbf{S}_j = S^x_0 S^x_1 + S^y_0 S^y_1 + S^z_0 S^z_1
+\mathbf{S}_0 \cdot \mathbf{S}_1 = S^x_0 S^x_1 + S^y_0 S^y_1 + S^z_0 S^z_1
 $$
 
 ```pycon
@@ -331,33 +331,101 @@ Under the hood, lattice-symmetries rewrites all the expressions into the canonic
 ```
 #### Complex expressions
 
-So far, we defined expressions only on a few number of sites. Here we will consider more complicated expressions.
+So far, we defined expressions only on a few number of sites, which can be indeed easily written explicitly. Here we will consider more complicated expressions, which require other techniques.
+One of the ways is to use the function `replace_indices`. For example, we can construct the sum of $\sigma^z$ operators.
+
+```pycon
+import operator #import relevant methods
+from functools import reduce
+
+expr1 = ls.Expr("σᶻ₁") #define an elementary expression
+many_exprs = [expr1.replace_indices({1: i}) for i in range(4)] #we apply the permutation of vertices and make the corresponding array
+expr2 = reduce(operator.add, many_exprs) #sum all elementary operations
+print(expr2)
+>>>
+σᶻ₀ + σᶻ₁ + σᶻ₂ + σᶻ₃
+```
+
+Another way is to define an expression on a graph defined by edges:
+
+```pycon
+edges = [(i,) for i in range(4)] #define graph of 4 vertices 
+expr = ls.Expr("σᶻ₁", sites=edges) #the elementary expression is applied for all vertices
+>>>
+σᶻ₀ + σᶻ₁ + σᶻ₂ + σᶻ₃
+```
+One can see that the results are the same.
 
 #### Properties
 
+One can make standart operations on expressions, such make an adjoint, as well
+
+```pycon
+a = ls.Expr("c†₀ c₁")
+b=a.adjoint() #Makes an adjoint expression
+```
+
 It is also possible to check various properties of expressions:
-   ```pycon
-   >>> a=Expr("\\sigma^z_0")
-   >>> a.is_real #If the corresponding matrix real
-   True
-   >>> a.is_hermitian #If the corresponding matrix hermitian
-   True
-   >>> a.is_identity #If the corresponding matrix identity
-   False
-   >>> a.number_sites #Number of sites in the expression
-   1
-   ```
+```pycon
+>>> a=Expr("\\sigma^z_0")
+>>> a.is_real #If the corresponding matrix real
+True
+>>> a.is_hermitian #If the corresponding matrix hermitian
+True
+>>> a.is_identity #If the corresponding matrix identity
+False
+>>> a.number_sites #Number of sites in the expression
+1
+```
 
 ### Operators
 
-Based on an expression and a basis, we can build the corresponding operator acting on the chosen basis. Let's consider an example.
+Based on an expression and a basis, we can build the corresponding operator acting on the chosen basis. Let's at first consider the Hubbard model on two sites without spins.
+One of the ways to contruct an operator is to create an expression and then create the operator:
 
+```pycon
+op_expr = ls.Expr("-c†₀ c₁-c†₁ c₀+2.0 n₀ n₀+2.0 n₁ n₁")
+basis=ls.SpinlessFermionBasis(2)
+basis.build() #It is nessecary to build the basis before creating an operator
+opr=ls.Operator(basis, op_expr) #Here we create the operator
+```
+Another way is to create the expression for each small expression and then add them to each other:
+```pycon
+op_expr = ls.Expr("-c†₀ c₁")
+op_expr -= ls.Expr("c†₁ c₀")
+op_expr += 2*ls.Expr("n₀ n₀")
+op_expr += 2*ls.Expr("n₁ n₁")
+opr=ls.Operator(basis, op_expr)
+opr.shape() #We can check the shape of the operator
+>>>
+(4,4)
+```
 
+We can make a multiplication of the operator on a vector using standart python notation.
+
+```pycon
+vec1=np.array([1.0,0,0,0]) #One should work with floats
+opr@vec1
+>>>
+[0. 0. 0. 0.]
+
+vec2=np.array([0,1.0,0,0])
+opr@vec2
+>>>
+[ 0.  2. -1.  0.]
+
+vec3=np.array([1.0,2.0,0,0])
+opr@vec3
+>>>
+[ 0.  4. -2.  0.]
+```
+From this operations one can build the matrix form of an operator.
 
 ### Symmetries
 
 The full power of `lattice_symmetries` manifests if one use symmetries when constructing 
-symmetry adapted basis and linear operators acting on teh corresponding Hilbert space.
+symmetry adapted basis and linear operators acting on teh corresponding Hilbert space. 
+The symmetries can be constructed with the help of expressions as well. 
 
 ## Examples
 
@@ -365,7 +433,41 @@ Here we will take a look at different examples of `lattice_symmetries` applicati
 
 ### Simple ED
 
-Now we will consider the simplest example of exact diagonalization.
+We will strat with the simplest example of exact diagonalization. We will consider Heisenberg chain on 10 sites and diagonalization with the help of symmetries.
+For that, we combine all the considerd methods.
+At first we create the expression for Heisenberg chain on 10 sites using the methods from the section [Complex expressions](#Complex-expressions).
+
+```pycon
+# Constructing the basis
+    basis = ls.SpinBasis(
+        number_spins=number_spins,
+        # NOTE: we don't actually need to specify hamming_weight when spin_inversion
+        # is set. The library will guess that hamming_weight = number_spins / 2.
+        spin_inversion=-1,
+        symmetries=symmetries,
+    )
+    basis.build()  # Build the list of representatives, we need it since we're doing ED
+
+# Constructinf the expression
+edges = [(i, (i + 1) % number_spins) for i in range(number_spins)]
+expr = ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁", sites=edges)
+print("Expression:", expr)
+
+# Alternatively, we can create expr in an algebraic way:
+two_site_expr = ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁")
+many_exprs = [two_site_expr.replace_indices({0: i, 1: j}) for (i, j) in edges]
+expr2 = reduce(operator.add, many_exprs)
+assert expr == expr2 #we check that the expressions are equal
+
+# Construct the Hamiltonian
+hamiltonian = ls.Operator(basis, expr)
+
+
+# Diagonalize the Hamiltonian using ARPACK
+eigenvalues, eigenstates = scipy.sparse.linalg.eigsh(hamiltonian, k=1, which="SA")
+print("Ground state energy is {}".format(eigenvalues[0]))
+assert np.isclose(eigenvalues[0], -18.06178542)
+```
 
 ### More complicated ED
 
