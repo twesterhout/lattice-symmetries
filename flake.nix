@@ -7,7 +7,7 @@
   };
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     nix-chapel = {
       url = "github:twesterhout/nix-chapel";
@@ -37,7 +37,7 @@
       haskell-overlay = import ./haskell/overlay.nix {
         inherit lib doInstallForeignLibs doEnableRelocatedStaticLibs;
       };
-      chapel-overlay = import ./chapel/overlay.nix { inherit version; };
+      chapel-overlay = import ./chapel/overlay.nix { inherit version; enableDebugging = false; };
       python-overlay = import ./python/overlay.nix { inherit version; };
 
       composed-overlay = lib.composeManyExtensions [
@@ -191,10 +191,10 @@
           };
           python = with pkgs; lattice-symmetries.python.overrideAttrs (attrs: {
             nativeBuildInputs = (attrs.nativeBuildInputs or [ ]) ++ [
-              python3Packages.black
-              nodePackages.pyright
-              gdb
-              valgrind
+              # python3Packages.black
+              # nodePackages.pyright
+              # gdb
+              # valgrind
             ];
           });
         });

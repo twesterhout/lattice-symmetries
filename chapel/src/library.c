@@ -25,7 +25,7 @@ extern void chpl_library_finalize(void);
 
 void ls_chpl_init(void) {
   int const argc = 2;
-  char const *argv[2] = {"lattice_symmetries", "--kDisplayTimings=true", NULL};
+  char const *argv[3] = {"lattice_symmetries", "--kDisplayTimings=true", NULL};
   chpl_library_init(argc, (char**)argv);
   chpl__init_CommonParameters(1, 2);
   chpl__init_FFI(1, 2);

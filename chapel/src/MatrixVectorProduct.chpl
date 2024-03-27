@@ -255,7 +255,7 @@ record LocaleState {
     numberCompleted.write(0);
 
     // pre-compile Basis kernels
-    if numberStates > 0 && (!basis.info.is_state_index_identity || numLocales != 1) {
+    if numberStates > 0 && (!basis.info.is_state_index_identity || numLocales != 1) && normsPtr != nil {
       const _stateToIndexKernel = ls_chpl_get_state_to_index_kernel(basis.payload);
     }
   }
@@ -497,29 +497,32 @@ proc extractDiag(matrix : Operator,
 proc convertOffDiagToCsr(matrix : Operator,
                          type eltType,
                          const ref representatives : [] uint(64),
-                         const ref norms : [] uint(16)) {
+                         const ref norms : [] uint(16),
+                         param convertToIndices : bool = true) {
   const _timer = recordTime(getRoutineName());
   assert(matrix.locale == here);
   assert(representatives.locale == here);
-  assert(norms.locale == here);
+  // logDebug(representatives);
+  // logDebug(norms);
+  if convertToIndices && !matrix.basis.payload.deref().is_built then
+    halt("convertToIndices requires that the basis has been built");
 
   const ref basisInfo = matrix.basis.info;
 
   const numTasks = kNumTasks;
   const numChunks = min(representatives.size, kToCsrNumChunks);
-  var localeState = new LocaleState(matrix, representatives, norms,
-                                    nil:c_ptrConst(complex(128)), nil:c_ptr(complex(128)),
-                                    numChunks, numTasks, remoteBufferSize=0);
-  const maxChunkSize = max reduce [c in localeState._chunks] c.size;
+  var localeState = new LocaleState(matrix,
+                                    representatives,
+                                    norms,
+                                    nil:c_ptrConst(complex(128)),
+                                    nil:c_ptr(complex(128)),
+                                    numChunks,
+                                    numTasks,
+                                    remoteBufferSize=0);
   const estimatedNumberTerms = matrix.max_number_off_diag_estimate;
-
-  const chunkDests : [localeState._chunks.domain] range(int);
-  var capacity = 0;
-  for (d, c) in zip(chunkDests, localeState._chunks) {
-    const n = roundUpToMaxBlockSize(c.size * estimatedNumberTerms);
-    d = capacity ..# n;
-    capacity += n;
-  }
+  const maxChunkSize = max reduce for c in localeState._chunks do c.size;
+  const capacity = + reduce for c in localeState._chunks do roundUpToMaxBlockSize(c.size * estimatedNumberTerms);
+  const chunkDests = cumSum(for c in localeState._chunks do roundUpToMaxBlockSize(c.size * estimatedNumberTerms));
   assert(capacity >= representatives.size * estimatedNumberTerms);
 
   var matrixElementsPtr = allocate(eltType, capacity);
@@ -534,39 +537,59 @@ proc convertOffDiagToCsr(matrix : Operator,
 
     var batchedOperator = new BatchedOperator(matrix.payload, maxChunkSize);
     var buffer : [0 ..# estimatedNumberTerms] (complex(128), int);
+    var normsBufferPtr =
+      if !convertToIndices && basisInfo.requires_projection
+        then allocate(uint(16), roundUpToMaxBlockSize(maxChunkSize * estimatedNumberTerms))
+        else nil;
 
     while true {
       const chunkIdx = localeState.getNextChunkIndex();
       if chunkIdx == -1 { break; }
       const chunk : range(int) = localeState._chunks[chunkIdx];
-      const dest : range(int) = chunkDests[chunkIdx];
+      const dest = chunkDests[chunkIdx];
 
       const copy = batchedOperator.raw;
-      if basisInfo.is_state_index_identity then
-        batchedOperator.raw.betas = (colIndicesPtr + dest.low):c_ptr(uint(64));
-      batchedOperator.raw.coeffs = matrixElementsPtr + dest.low;
+      defer batchedOperator.raw = copy;
+      if !convertToIndices || basisInfo.is_state_index_identity then
+        batchedOperator.raw.betas = (colIndicesPtr + dest):c_ptr(uint(64));
+      batchedOperator.raw.coeffs = matrixElementsPtr + dest;
       batchedOperator.raw.offsets = (rowOffsetsPtr + 1) + chunk.low;
-
       const (totalCount, _, _, _) =
         batchedOperator.computeOffDiag(
           chunk,
-          localeState.representativesPtr + chunk.low,
-          localeState.normsPtr + chunk.low,
+          c_ptrToConst(representatives[chunk.low]),
+          c_ptrToConst(norms[chunk.low]),
           left=false);
 
-      if !basisInfo.is_state_index_identity && totalCount > 0 {
+      if totalCount > 0 {
         const countWithPadding = roundUpToMaxBlockSize(totalCount);
-        basisStatesToIndices(matrix.basis, countWithPadding, batchedOperator.raw.betas, colIndicesPtr + dest.low);
+        if convertToIndices && !basisInfo.is_state_index_identity {
+          basisStatesToIndices(matrix.basis, countWithPadding, batchedOperator.raw.betas, colIndicesPtr + dest);
+        }
+        if !convertToIndices && basisInfo.requires_projection {
+          assert(countWithPadding <= roundUpToMaxBlockSize(maxChunkSize * estimatedNumberTerms));
+          isRepresentative(matrix.basis, countWithPadding, batchedOperator.raw.betas, normsBufferPtr);
+        }
       }
 
-      for k in 0 ..# totalCount {
-        ref i = colIndicesPtr[dest.low + k];
-        if i >= 0 {
-          batchedOperator.raw.coeffs[k] *= sqrt(localeState.normsPtr[i]:real);
+      if basisInfo.requires_projection {
+        if convertToIndices {
+          const normsPtr = matrix.basis.payload.deref().local_norms.elts:c_ptrConst(uint(16));
+          for k in 0 ..# totalCount {
+            ref i = colIndicesPtr[dest + k];
+            if i >= 0 {
+              batchedOperator.raw.coeffs[k] *= sqrt(normsPtr[i]:real);
+            }
+            else {
+              i = 0; // a random valid index
+              batchedOperator.raw.coeffs[k] = 0;
+            }
+          }
         }
         else {
-          i = 0; // a random valid index
-          batchedOperator.raw.coeffs[k] = 0;
+          foreach k in 0 ..# totalCount {
+            batchedOperator.raw.coeffs[k] *= sqrt(normsBufferPtr[k]:real);
+          }
         }
       }
 
@@ -575,7 +598,7 @@ proc convertOffDiagToCsr(matrix : Operator,
         const lo = if k == 0 then 0 else batchedOperator.raw.offsets[k - 1];
         const hi = batchedOperator.raw.offsets[k];
         const coeffsPtr = batchedOperator.raw.coeffs + lo;
-        const indicesPtr = colIndicesPtr + dest.low + lo;
+        const indicesPtr = colIndicesPtr + dest + lo;
 
         for i in 0 ..# (hi - lo) do
           buffer[i] = (coeffsPtr[i], indicesPtr[i]);
@@ -588,9 +611,6 @@ proc convertOffDiagToCsr(matrix : Operator,
       }
 
       numberNonZero.add(totalCount);
-
-      // NOTE: important!
-      batchedOperator.raw = copy;
     } // end while true
 
   }
@@ -604,17 +624,17 @@ proc convertOffDiagToCsr(matrix : Operator,
     foreach k in chunk {
       rowOffsetsPtr[1 + k] += offset;
     }
-    assert(offset <= dest.low);
-    if offset < dest.low {
-      POSIX.memmove(matrixElementsPtr + offset, matrixElementsPtr + dest.low,
+    assert(offset <= dest);
+    if offset < dest {
+      POSIX.memmove(matrixElementsPtr + offset, matrixElementsPtr + dest,
                     chunkSize:c_size_t * c_sizeof(eltType));
-      POSIX.memmove(colIndicesPtr + offset, colIndicesPtr + dest.low,
+      POSIX.memmove(colIndicesPtr + offset, colIndicesPtr + dest,
                     chunkSize:c_size_t * c_sizeof(int(64)));
     }
     offset += chunkSize;
   }
 
-  return new CSR(complex(128), int(64), matrixElementsPtr, rowOffsetsPtr, colIndicesPtr,
+  return new CSR(eltType, int(64), matrixElementsPtr, rowOffsetsPtr, colIndicesPtr,
                  representatives.size, representatives.size, numberNonZero.read());
 }
 
@@ -675,20 +695,27 @@ export proc ls_chpl_matrix_vector_product_c128(matrixPtr : c_ptrConst(ls_hs_oper
 }
 
 export proc ls_chpl_off_diag_to_csr_c128(matrixPtr : c_ptrConst(ls_hs_operator),
+                                         basisStates : c_ptrConst(chpl_external_array),
+                                         norms : c_ptrConst(chpl_external_array),
                                          matrixElements : c_ptr(chpl_external_array),
                                          rowOffsets : c_ptr(chpl_external_array),
-                                         colIndices : c_ptr(chpl_external_array)) {
+                                         colIndices : c_ptr(chpl_external_array),
+                                         indices : bool) {
 
   const matrix = new Operator(matrixPtr, owning=false);
   const ref basis = matrix.basis;
-  const numberStates = basis.payload.deref().local_representatives.num_elts;
-  const basisStatesPtr = basis.payload.deref().local_representatives.elts:c_ptrConst(uint(64));
-  const normsPtr = basis.payload.deref().local_norms.elts:c_ptrConst(uint(16));
-  if !basis.payload.deref().is_built then halt("basis states have not been built");
-
-  const basisStates = makeArrayFromPtr(basisStatesPtr:c_ptr(uint(64)), {0 ..# numberStates});
-  const norms = makeArrayFromPtr(normsPtr:c_ptr(uint(16)), {0 ..# numberStates});
-  var csr = convertOffDiagToCsr(matrix, complex(128), basisStates, norms);
+  // const numberStates = basis.payload.deref().local_representatives.num_elts;
+  // const basisStatesPtr = basis.payload.deref().local_representatives.elts:c_ptrConst(uint(64));
+  // const normsPtr = basis.payload.deref().local_norms.elts:c_ptrConst(uint(16));
+  if indices && !basis.payload.deref().is_built then halt("basis states have not been built");
+  const numberStates = basisStates.deref().num_elts:int;
+  assert(numberStates == norms.deref().num_elts:int);
+  const basisStatesArr = makeArrayFromPtr(basisStates.deref().elts:c_ptr(uint(64)), {0 ..# numberStates});
+  const normsArr = makeArrayFromPtr(norms.deref().elts:c_ptr(uint(16)), {0 ..# numberStates});
+  var csr =
+    if indices
+      then convertOffDiagToCsr(matrix, complex(128), basisStatesArr, normsArr, convertToIndices=true)
+      else convertOffDiagToCsr(matrix, complex(128), basisStatesArr, normsArr, convertToIndices=false);
 
   matrixElements.deref() = chpl_make_external_array_ptr_free(csr.matrixElements:c_ptr(void), csr.numberNonZero);
   rowOffsets.deref() = chpl_make_external_array_ptr_free(csr.rowOffsets:c_ptr(void), csr.numberRows + 1);

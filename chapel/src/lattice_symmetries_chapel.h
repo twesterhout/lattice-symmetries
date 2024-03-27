@@ -15,6 +15,9 @@ void ls_chpl_init(void);
 void ls_chpl_finalize(void);
 void ls_chpl_display_timings(void);
 
+void ls_chpl_is_representative(ls_hs_basis const* basisPtr, int64_t count, uint64_t const* alphas, uint16_t* norms);
+void ls_chpl_basis_state_to_index(ls_hs_basis const* basisPtr, int64_t count, uint64_t const* alphas, int64_t* indices);
+
 ls_hs_basis_info const *ls_chpl_get_basis_info(ls_hs_basis const *basis);
 
 ls_hs_is_representative_kernel_type_v2 ls_chpl_get_is_representative_kernel(ls_hs_basis const *basis);
@@ -41,9 +44,16 @@ void ls_chpl_matrix_vector_product_c128(ls_hs_operator LS_CONST* matrix, int32_t
                                         ls_hs_scalar LS_CONST* xPtr, ls_hs_scalar* yPtr);
 
 void ls_chpl_off_diag_to_csr_c128(ls_hs_operator LS_CONST* matrix,
+                                  chpl_external_array LS_CONST* basisStates,
+                                  chpl_external_array LS_CONST* norms,
                                   chpl_external_array* matrixElements,
                                   chpl_external_array* rowOffsets,
-                                  chpl_external_array* colIndices);
+                                  chpl_external_array* colIndices,
+                                  bool indices);
+// void ls_chpl_off_diag_to_csr_c128(ls_hs_operator LS_CONST* matrix,
+//                                   chpl_external_array* matrixElements,
+//                                   chpl_external_array* rowOffsets,
+//                                   chpl_external_array* colIndices);
 
 void ls_chpl_extract_diag_c128(ls_hs_operator LS_CONST* matrix, chpl_external_array* diag);
 

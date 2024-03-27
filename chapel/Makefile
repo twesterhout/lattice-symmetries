@@ -74,7 +74,7 @@ bin/TestConcurrentQueue: test/TestConcurrentQueue.chpl src/ConcurrentQueue.chpl 
 	@mkdir -p $(@D)
 	chpl $(CHPL_CFLAGS) -o $@ --main-module $(@F) $^ $(CHPL_LDFLAGS) $(LDFLAGS)
 
-bin/TestUtils: test/TestUtils.chpl src/CommonParameters.chpl src/FFI.chpl src/Utils.chpl src/Timing.c src/Timing.chpl src/ForeignTypes.c src/ForeignTypes.chpl src/Vector.chpl
+bin/TestUtils: test/TestUtils.chpl src/CommonParameters.chpl src/FFI.chpl src/Utils.chpl src/Timing.c src/Timing.chpl src/ForeignTypes.chpl src/Vector.chpl
 	@mkdir -p $(@D)
 	chpl $(CHPL_CFLAGS) $(HALIDE_CFLAGS) -o $@ --main-module $(@F) $^ $(CHPL_LDFLAGS) $(LDFLAGS)
 

@@ -1,4 +1,6 @@
 { version
+, enableDebugging ? false
+, enableSanitizers ? false
 }:
 
 final: prev: {
@@ -7,16 +9,20 @@ final: prev: {
     ffi = final.callPackage ./ffi.nix { inherit version; };
 
     chapel = final.callPackage ./. {
-      inherit version;
+      inherit version enableDebugging enableSanitizers;
       chapel = final.chapel.override {
-        # compiler = "gnu";
-        # settings = { CHPL_TARGET_MEM = "cstdlib"; CHPL_HOST_MEM = "cstdlib"; CHPL_UNWIND = "none"; CHPL_TASKS = "fifo"; CHPL_SANITIZE_EXE = "address"; CHPL_LIB_PIC = "pic"; CHPL_GMP = "none"; CHPL_RE2 = "none"; };
+        compiler = if enableSanitizers then "gnu" else "llvm";
         settings = {
-          "CHPL_GMP" = "none";
-          "CHPL_RE2" = "none";
-          "CHPL_UNWIND" = "none";
-          "CHPL_LIB_PIC" = "pic";
-          "CHPL_TARGET_CPU" = "none"; # TODO: do smth better??
+          CHPL_GMP = "none";
+          CHPL_RE2 = "none";
+          CHPL_UNWIND = "none";
+          CHPL_LIB_PIC = "pic";
+          CHPL_TARGET_CPU = "none";
+        } // final.lib.optionalAttrs enableSanitizers {
+          CHPL_TARGET_MEM = "cstdlib";
+          CHPL_HOST_MEM = "cstdlib";
+          CHPL_TASKS = "fifo";
+          CHPL_SANITIZE_EXE = "address";
         };
       };
     };

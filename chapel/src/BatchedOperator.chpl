@@ -69,6 +69,7 @@ proc applyOffDiagKernel(const ref matrix : ls_chpl_batched_operator,
   const spinInversionCharacter = basisInfo.spin_inversion;
 
   // matrix.offsets[0] = 0;
+  if batch_size > 0 && alphas == nil then halt("applyOffDiagKernel received null alphas");
   var offset = 0;
   for batch_idx in 0 ..# batch_size {
     const oldOffset = offset;
@@ -183,13 +184,15 @@ proc _computeOffDiag(const ref basisInfo : ls_hs_basis_info,
     if kernel == nil then
       halt("ls_chpl_get_state_info_kernel returned NULL");
     const countWithPadding = roundUpToMaxBlockSize(totalCount);
-    ls_chpl_invoke_state_info_kernel(kernel, countWithPadding, matrix.temp_spins,
-                                     matrix.betas, matrix.temp_group_indices);
+    if countWithPadding > 0 then
+      ls_chpl_invoke_state_info_kernel(kernel, countWithPadding, matrix.temp_spins,
+                                      matrix.betas, matrix.temp_group_indices);
     // logDebug("state info worked");
 
     const numCharacters = basisInfo.number_characters;
     const characters : c_ptrConst(complex(128)) = basisInfo.characters;
     if chunk.size > 0 {
+      if norms == nil then halt("_computeOffDiag expects pre-computed norms");
       // logDebug("start norms...");
       foreach k in 0 ..< matrix.offsets[0] {
         const c = matrix.coeffs[k];

@@ -29,7 +29,7 @@
 import json
 import weakref
 import typing
-from typing import Any, List, Dict, Optional, Tuple, Callable
+from typing import Any, Dict, Optional, Tuple, Callable
 from functools import cached_property
 
 import numpy as np
@@ -37,7 +37,6 @@ from numpy.typing import NDArray
 from loguru import logger
 from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import LinearOperator
-from scipy.special import binom
 from sympy.combinatorics import Permutation, PermutationGroup
 from sympy.core import Rational
 
@@ -146,7 +145,9 @@ def _from_json(obj) -> Any:
 
 def _assert_subtype(variable, required_type):
     if not isinstance(variable, required_type):
-        raise TypeError("expected a '{}', but got '{}'".format(required_type, type(variable)))
+        raise TypeError(
+            "expected a '{}', but got '{}'".format(required_type, type(variable))
+        )
 
 
 class ExternalArrayWrapper:
@@ -184,12 +185,16 @@ class HsWrapper(object):
     _payload: ffi.CData
     _finalizer: Optional[weakref.finalize]
 
-    def __init__(self, payload: ffi.CData, finalizer: Optional[Callable[[ffi.CData], None]]):
+    def __init__(
+        self, payload: ffi.CData, finalizer: Optional[Callable[[ffi.CData], None]]
+    ):
         assert isinstance(payload, ffi.CData)
         assert payload != 0
         self._payload = payload
         self._finalizer = (
-            weakref.finalize(self, finalizer, self._payload) if finalizer is not None else None
+            weakref.finalize(self, finalizer, self._payload)
+            if finalizer is not None
+            else None
         )
 
 
@@ -311,8 +316,46 @@ class Basis(HsWrapper):
         )
         return np.array(arr, copy=False)
 
+    @property
+    def norms(self) -> NDArray[np.uint16]:
+        self.check_is_built()
+        arr = ExternalArrayWrapper(
+            arr=self._payload.local_norms,
+            typestr="u2",
+            keep_alive=self,
+            finalizer=None,
+        )
+        return np.array(arr, copy=False)
+
+    def is_representative(
+        self, x: int | NDArray[np.uint64]
+    ) -> int | NDArray[np.uint16]:
+        is_scalar = False
+        x = np.asarray(x, dtype=np.uint64, order="C")
+        if x.ndim == 0:
+            is_scalar = True
+            x = np.expand_dims(x, axis=0)
+        if x.ndim != 1:
+            raise ValueError(
+                f"'x' has invalid shape: {x.shape}; expected a one-dimensional array"
+            )
+
+        count = x.size
+        norms = np.empty(x.size, dtype=np.uint16)
+        lib.ls_chpl_is_representative(
+            self._payload,
+            count,
+            ffi.from_buffer("uint64_t const*", x, require_writable=False),
+            ffi.from_buffer("uint16_t *", norms, require_writable=True),
+        )
+
+        if is_scalar:
+            return int(norms[0])
+        else:
+            return norms
+
     def index(self, x: int | NDArray[np.uint64]) -> int | NDArray[np.int64]:
-        """Return the index of a basis state."""
+        """Return the index of a basis state or a batch of basis states."""
         if self.number_bits > 64:
             raise ValueError(
                 "it is impractical to compute indices of states with more than 64 bits"
@@ -323,26 +366,22 @@ class Basis(HsWrapper):
         if x.ndim == 0:
             is_scalar = True
             x = np.expand_dims(x, axis=0)
+        if x.ndim != 1:
+            raise ValueError(
+                f"'x' has invalid shape: {x.shape}; expected a one-dimensional array"
+            )
 
         if self.is_state_index_identity:
             indices = x.astype(np.int64)
-        elif not self.has_permutation_symmetries:
-            if self._get_info().state_to_index_kernel == ffi.NULL:
-                lib.ls_hs_init_state_to_index_kernel(self._payload)
+        else:
+            if self.has_permutation_symmetries:
+                self.check_is_built()
 
             count = x.shape[0]
             indices = np.zeros(count, dtype=np.int64)
-
-            pass
-        else:
-            raise NotImplementedError()
-
-        # count = x.shape[0]
-        # indices = np.zeros(count, dtype=np.int64)
-
-        # x_ptr = ffi.from_buffer("uint64_t const*", x, require_writable=False)
-        # indices_ptr = ffi.from_buffer("ptrdiff_t *", indices, require_writable=True)
-        # lib.ls_hs_state_index(self._payload, count, x_ptr, 1, indices_ptr, 1)
+            x_ptr = ffi.from_buffer("uint64_t const*", x, require_writable=False)
+            indices_ptr = ffi.from_buffer("int64_t *", indices, require_writable=True)
+            lib.ls_chpl_basis_state_to_index(self._payload, count, x_ptr, indices_ptr)
 
         if is_scalar:
             return int(indices[0])
@@ -426,7 +465,9 @@ class Expr(HsWrapper):
                     json_object["sites"] = sites
             if particle is not None:
                 json_object["particle"] = particle
-            payload = _from_json(lib.ls_hs_expr_from_json(json.dumps(json_object).encode("utf-8")))
+            payload = _from_json(
+                lib.ls_hs_expr_from_json(json.dumps(json_object).encode("utf-8"))
+            )
         else:
             if not (len(expression) == 0 and sites is None and particle is None):
                 raise ValueError(
@@ -473,7 +514,8 @@ class Expr(HsWrapper):
         return Expr(
             payload=_from_json(
                 lib.ls_hs_replace_indices(
-                    self._payload, _to_json([(int(k), int(v)) for k, v in mapping.items()])
+                    self._payload,
+                    _to_json([(int(k), int(v)) for k, v in mapping.items()]),
                 )
             )
         )
@@ -497,15 +539,21 @@ class Expr(HsWrapper):
 
     def __add__(self, other: "Expr") -> "Expr":
         _assert_subtype(other, Expr)
-        return Expr(payload=_from_json(lib.ls_hs_expr_plus(self._payload, other._payload)))
+        return Expr(
+            payload=_from_json(lib.ls_hs_expr_plus(self._payload, other._payload))
+        )
 
     def __sub__(self, other: "Expr") -> "Expr":
         _assert_subtype(other, Expr)
-        return Expr(payload=_from_json(lib.ls_hs_expr_minus(self._payload, other._payload)))
+        return Expr(
+            payload=_from_json(lib.ls_hs_expr_minus(self._payload, other._payload))
+        )
 
     def __mul__(self, other: "Expr") -> "Expr":
         _assert_subtype(other, Expr)
-        return Expr(payload=_from_json(lib.ls_hs_expr_times(self._payload, other._payload)))
+        return Expr(
+            payload=_from_json(lib.ls_hs_expr_times(self._payload, other._payload))
+        )
 
     def __neg__(self) -> "Expr":
         return Expr(payload=lib.ls_hs_expr_negate(self._payload))
@@ -533,7 +581,11 @@ class Expr(HsWrapper):
         if self.particle_type == "spin-1/2":
             s = Expr(
                 "σˣ₀ σˣ₁ + σʸ₀ σʸ₁ + σᶻ₀ σᶻ₁",
-                sites=[(i, j) for i in range(self.number_sites) for j in range(self.number_sites)],
+                sites=[
+                    (i, j)
+                    for i in range(self.number_sites)
+                    for j in range(self.number_sites)
+                ],
             )
             return self * s == s * self
         else:
@@ -583,7 +635,9 @@ class Operator(HsWrapper, LinearOperator):
                 basis = expression.full_basis()
             _assert_subtype(basis, Basis)
 
-            payload = _from_json(lib.ls_hs_create_operator(basis._payload, expression._payload))
+            payload = _from_json(
+                lib.ls_hs_create_operator(basis._payload, expression._payload)
+            )
         else:
             if basis is not None or payload == 0:
                 raise ValueError(
@@ -608,7 +662,9 @@ class Operator(HsWrapper, LinearOperator):
     @staticmethod
     def from_json(json_string: str) -> "Operator":
         return Operator(
-            payload=_from_json(lib.ls_hs_operator_from_json(json_string.encode("utf-8")))
+            payload=_from_json(
+                lib.ls_hs_operator_from_json(json_string.encode("utf-8"))
+            )
         )
 
     @property
@@ -631,13 +687,16 @@ class Operator(HsWrapper, LinearOperator):
     def expression(self):
         return self._expression
 
-    def apply_to_state_vector(self, vector: NDArray, out: Optional[NDArray] = None) -> NDArray:
+    def apply_to_state_vector(
+        self, vector: NDArray, out: Optional[NDArray] = None
+    ) -> NDArray:
         self.basis.check_is_built()
 
         if vector.ndim > 2 or vector.shape[0] != self.basis.number_states:
             raise ValueError(
-                "'vector' has invalid shape: {}; expected {}"
-                "".format(vector.shape, (self.basis.number_states,))
+                "'vector' has invalid shape: {}; expected {}" "".format(
+                    vector.shape, (self.basis.number_states,)
+                )
             )
 
         operator_is_real = self.basis.is_real and self.expression.is_real
@@ -657,7 +716,9 @@ class Operator(HsWrapper, LinearOperator):
         else:
             if out.shape != vector.shape:
                 raise ValueError(
-                    "'out' has invalid shape: {}; expected {}" "".format(out.shape, vector.shape)
+                    "'out' has invalid shape: {}; expected {}" "".format(
+                        out.shape, vector.shape
+                    )
                 )
             if not out.flags.f_contiguous:
                 raise ValueError("'out' must be Fortran contiguous")
@@ -742,28 +803,111 @@ class Operator(HsWrapper, LinearOperator):
         assert arr.dtype == self.dtype
         return arr
 
-    def off_diag_to_csr(self) -> csr_matrix:
-        if self._off_diag_csr is not None:
-            return self._off_diag_csr
+    def off_diag_to_triple(
+        self,
+        states: NDArray[np.uint64] | None = None,
+        norms: NDArray[np.uint16] | None = None,
+        convert_to_index: bool = True,
+    ) -> tuple[NDArray, NDArray[np.uint64] | NDArray[np.int64], NDArray[np.int64]]:
+        if states is None and norms is None:
+            states = self.basis.states
+            norms = self.basis.norms
+        elif states is not None:
+            if states.ndim != 1:
+                raise ValueError(f"'states' has wrong shape: {states.shape}")
+            states = np.require(states, dtype=np.uint64, requirements=["C"])
+        else:
+            raise ValueError("'states' must not be None when 'norms' is not None")
 
-        self.basis.check_is_built()
+        if norms is None:
+            norms = self.basis.is_representative(states)
+        else:
+            if norms.shape != states.shape:
+                raise ValueError(
+                    f"'norms' has wrong shape: {norms.shape}; expected {states.shape}"
+                )
+            norms = np.require(norms, dtype=np.uint16, requirements=["C"])
+
+        c_basis_states = ffi.new("chpl_external_array *")
+        c_basis_states.num_elts = states.size
+        c_basis_states.elts = ffi.from_buffer("uint64_t[]", states)
+        c_norms = ffi.new("chpl_external_array *")
+        c_norms.num_elts = norms.size
+        c_norms.elts = ffi.from_buffer("uint16_t[]", norms)
+
         c_coeffs = ffi.new("chpl_external_array *")
         c_offsets = ffi.new("chpl_external_array *")
         c_indices = ffi.new("chpl_external_array *")
+        lib.ls_chpl_off_diag_to_csr_c128(
+            self._payload,
+            c_basis_states,
+            c_norms,
+            c_coeffs,
+            c_offsets,
+            c_indices,
+            convert_to_index,
+        )
 
-        lib.ls_chpl_off_diag_to_csr_c128(self._payload, c_coeffs, c_offsets, c_indices)
-        coeffs = np.array(ExternalArrayWrapper(c_coeffs, "c16"), copy=False)
-        offsets = np.array(ExternalArrayWrapper(c_offsets, "i8"), copy=False)
-        indices = np.array(ExternalArrayWrapper(c_indices, "i8"), copy=False)
+        coeffs_arr = np.array(ExternalArrayWrapper(c_coeffs, "c16"), copy=False)
         # Our Chapel code builds everything using complex128 even when the
         # operator is real, so we manually cast to float64 when it's safe
         if self.dtype == np.dtype("float64"):
-            coeffs = np.ascontiguousarray(coeffs.real)
-        assert coeffs.dtype == self.dtype
+            coeffs_arr = np.ascontiguousarray(coeffs_arr.real)
+        assert coeffs_arr.dtype == self.dtype
 
-        matrix = csr_matrix((coeffs, indices, offsets), shape=self.shape, dtype=self.dtype)
-        assert matrix.has_sorted_indices
-        return matrix
+        offsets_arr = np.array(ExternalArrayWrapper(c_offsets, "i8"), copy=False)
+        if convert_to_index:
+            indices_arr = np.array(ExternalArrayWrapper(c_indices, "i8"), copy=False)
+        else:
+            indices_arr = np.array(ExternalArrayWrapper(c_indices, "u8"), copy=False)
+
+        return (coeffs_arr, indices_arr, offsets_arr)
+
+    def off_diag_to_csr(self) -> csr_matrix:
+        if self._off_diag_csr is not None:
+            return self._off_diag_csr
+        n = self.basis.number_states
+        return csr_matrix(self.off_diag_to_triple(), shape=(n, n), dtype=self.dtype)
+
+    def to_partial_csr(
+        self,
+        states: NDArray[np.uint64],
+        norms: NDArray[np.uint16] | None = None,
+    ) -> csr_matrix:
+        if states.ndim != 1:
+            raise ValueError(f"'states' has wrong shape: {states.shape}")
+        states = np.require(states, dtype=np.uint64, requirements=["C"])
+
+        if norms is None:
+            norms = self.basis.is_representative(states)
+        else:
+            if norms.shape != states.shape:
+                raise ValueError(
+                    f"'norms' has wrong shape: {norms.shape}; expected {states.shape}"
+                )
+            norms = np.require(norms, dtype=np.uint16, requirements=["C"])
+
+        coeffs, other_states, offsets = self.off_diag_to_triple(
+            states=states, norms=norms, convert_to_index=False
+        )
+        all_states = np.unique(np.concatenate([other_states, states]))
+        other_indices = np.searchsorted(all_states, other_states)
+
+        matrix_without_diag = csr_matrix(
+            (coeffs, other_indices, offsets),
+            shape=(states.size, all_states.size),
+        )
+        # TODO: fix me
+        diag_coeffs = self.diag_to_array()[self.basis.index(states)]
+        diag_indices = np.searchsorted(all_states, states)
+        diag_matrix = csr_matrix(
+            (diag_coeffs, diag_indices, np.arange(states.size + 1)),
+            shape=matrix_without_diag.shape,
+        )
+
+        matrix = matrix_without_diag + diag_matrix
+        matrix.sum_duplicates()
+        return matrix, all_states
 
     def build_matrix(self):
         if self._off_diag_csr is None:
@@ -797,7 +941,9 @@ def _axpy(alpha: complex, x: NDArray, y: NDArray):
     alpha = complex(alpha)
     x_ptr = ffi.from_buffer("ls_hs_scalar[]", x, require_writable=False)
     y_ptr = ffi.from_buffer("ls_hs_scalar[]", y, require_writable=True)
-    lib.ls_chpl_experimental_axpy_c128(size, alpha.real, alpha.imag, x_ptr, y_ptr, y_ptr)
+    lib.ls_chpl_experimental_axpy_c128(
+        size, alpha.real, alpha.imag, x_ptr, y_ptr, y_ptr
+    )
 
 
 def _csr_matvec(
@@ -833,14 +979,18 @@ def _csr_matvec(
 
     x = np.asarray(x, order="C", dtype=elt_dtype)
     if x.shape != (matrix.shape[1],):
-        raise ValueError(f"'x' has invalid shape: {x.shape}; expected ({matrix.shape[1]},)")
+        raise ValueError(
+            f"'x' has invalid shape: {x.shape}; expected ({matrix.shape[1]},)"
+        )
     x_ptr = ffi.from_buffer(elt_dtype_str, x, require_writable=False)
 
     if out is None:
         out = np.empty(matrix.shape[0], dtype=elt_dtype)
     else:
         if out.shape != (matrix.shape[0],):
-            raise ValueError(f"'out' has invalid shape: {out.shape}; expected ({matrix.shape[0]},)")
+            raise ValueError(
+                f"'out' has invalid shape: {out.shape}; expected ({matrix.shape[0]},)"
+            )
         if not out.flags.c_contiguous:
             raise ValueError("'out' must be contiguous")
         out = np.require(out, dtype=elt_dtype, requirements=["C"])

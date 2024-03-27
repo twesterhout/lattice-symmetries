@@ -1,9 +1,12 @@
 { chapel
 , halide
 , lattice-symmetries
+, lib
 , removeReferencesTo
 , stdenv
 , version
+, enableDebugging ? false
+, enableSanitizers ? false
 }:
 
 stdenv.mkDerivation {
@@ -15,7 +18,7 @@ stdenv.mkDerivation {
   preBuild = ''
     makeFlagsArray+=(
       PREFIX="$out"
-      CHPL_CFLAGS="-I${lattice-symmetries.kernels_v2}/include -I${lattice-symmetries.haskell}/include --no-ieee-float --local --no-debug --fast"
+      CHPL_CFLAGS="-I${lattice-symmetries.kernels_v2}/include -I${lattice-symmetries.haskell}/include --no-ieee-float --local ${lib.optionalString (!enableDebugging) "--no-debug --fast"} ${lib.optionalString enableSanitizers "--ccflags -DCHPL_C_BACKEND=1"}"
       CHPL_LDFLAGS="-L${lattice-symmetries.haskell}/lib"
       HALIDE_PATH="${halide}"
     )

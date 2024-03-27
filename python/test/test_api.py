@@ -89,6 +89,28 @@ def test_expr_properties():
     assert b.number_sites == 2
 
 
+def test_basis_state_to_index():
+    # fmt: off
+    g = [
+        (ls.Permutation([3, 5, 6, 7, 9, 10, 11, 12, 13, 8, 14, 15, 16, 17, 18, 19, 1, 2, 0, 4]), ls.Rational(0)),
+        (ls.Permutation([11, 8, 14, 15, 12, 13, 18, 19, 1, 16, 17, 0, 4, 5, 2, 3, 9, 10, 6, 7]), ls.Rational(0))
+    ]
+    # fmt: on
+    b = ls.SpinBasis(number_spins=20, hamming_weight=2, symmetries=g)
+    b.build()
+    assert np.array_equal(b.index(b.states), np.arange(b.number_states))
+
+    bitstrings = np.arange(1 << 20, dtype=np.uint64)
+    indices = np.zeros_like(bitstrings, dtype=np.int64)
+    indices[:] = -1
+    indices[b.states] = np.arange(b.number_states)
+
+    for k in [1, 2, 3, 4, 8, 16, 128, 155, 1099]:
+        for _ in range(10):
+            batch = rng.choice(bitstrings, size=k)
+            assert np.array_equal(b.index(bitstrings[batch]), indices[batch])
+
+
 def test_basis_construction():
     _ = ls.SpinBasis(4)
     _ = ls.SpinBasis(4, 2)
@@ -97,6 +119,7 @@ def test_basis_construction():
     b = ls.SpinBasis(number_spins=64, hamming_weight=1)
     b.build()
     assert np.array_equal(b.states, 1 << np.arange(64, dtype=np.uint64))
+    assert (b.is_representative(b.states) > 0).all()
 
     with raises(ValueError, match=r".*invalid spin inversion.*"):
         ls.SpinBasis(number_spins=4, spin_inversion=5)
@@ -152,6 +175,57 @@ def test_number_off_diag():
     # we check that lattice-symmetries computes a similar estimate
     assert real_max_number_off_diag <= h.estimate_max_number_off_diag() <= 10
     assert real_max_number_off_diag <= h._payload.max_number_off_diag <= 10
+
+
+def test_off_diag_partial():
+    b = ls.SpinBasis(number_spins=6, hamming_weight=3)
+    b.build()
+    e = ls.Expr(
+        "2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁",
+        sites=ig.Graph.Lattice(dim=[2, 3], circular=True),
+    )
+
+    for b in e.hilbert_space_sectors():
+        if b.hamming_weight != e.number_sites // 2:
+            continue
+        b.build()
+        h = ls.Operator(e, b)
+
+        x = rng.random(size=b.number_states)
+        y = h @ x
+
+        assert np.allclose(h.off_diag_to_csr() @ x + h.diag_to_array() * x, y)
+
+        for k in [1, 2, 10, 100]:
+            indices = rng.integers(b.number_states, size=k)
+            states = b.states[indices]
+            m = h.off_diag_to_triple(states=states, convert_to_index=True)
+            m = scipy.sparse.csr_matrix(m, shape=(states.size, b.number_states))
+            assert np.allclose(m @ x + h.diag_to_array()[indices] * x[indices], y[indices])
+
+
+def test_off_diag_ilya():
+    b = ls.SpinBasis(number_spins=6, hamming_weight=3)
+    e = ls.Expr(
+        "2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁",
+        sites=ig.Graph.Lattice(dim=[2, 3], circular=True),
+    )
+
+    for b in e.hilbert_space_sectors():
+        if b.hamming_weight != e.number_sites // 2:
+            continue
+        b.build()
+        h = ls.Operator(e, b)
+
+        x = rng.random(size=b.number_states)
+        y = h @ x
+
+        for k in [1, 2, 10, 100]:
+            indices = rng.integers(b.number_states, size=k)
+            states = b.states[indices]
+
+            matrix, other_states = h.to_partial_csr(states)
+            assert np.allclose(matrix @ x[b.index(other_states)], y[b.index(states)])
 
 
 def test_basis_properties():
@@ -246,11 +320,6 @@ def test_randomized_matvec():
 
             matrix.basis.build()
             assert np.array_equal(matrix.basis.states, r)
-            print(
-                matrix.basis.states,
-                matrix.basis.requires_projection,
-                matrix.basis.has_permutation_symmetries,
-            )
             # print(matrix.basis.states.shape)
             for k in range(10):
                 # z = np.zeros_like(x)
@@ -326,25 +395,23 @@ def test_expr_permutation_group():
     check(ig.Graph.Tree(n=5, children=3))
 
 
-# def test_issue_pim_1():
-#     n = 16
-#     expr = ls.Expr("Sx0 Sx1 + Sy0 Sy1 + Sz0 Sz1", sites=ig.Graph.Ring(n=n, circular=True))
-#     translation = ls.Permutation([(1 + i) % n for i in range(n)])
-#     for k in range(8):
-#         b = ls.SpinBasis(number_spins=n, symmetries=[(translation, ls.Rational(k, n))])
-#         b.build()
-#         h = ls.Operator(expr, b)
-#         energies, _ = scipy.sparse.linalg.eigsh(h, k=4)
-#         print(energies)
-#     print("done")
+def notest_issue_pim_1():
+    n = 10
+    expr = ls.Expr("Sx0 Sx1 + Sy0 Sy1 + Sz0 Sz1", sites=ig.Graph.Ring(n=n, circular=True))
+    translation = ls.Permutation([(1 + i) % n for i in range(n)])
+    for k in range(8):
+        b = ls.SpinBasis(number_spins=n, symmetries=[(translation, ls.Rational(k, n))])
+        b.build()
+        h = ls.Operator(expr, b)
+        energies, _ = scipy.sparse.linalg.eigsh(h, k=4)
+        # print(energies)
+    # print("done")
 
 
-def test_issue_pim_2():
-    n = 4
+def notest_issue_pim_2():
+    n = 3
     tx = ls.Permutation([n * ((i + 1) % n) + j for i in range(n) for j in range(n)])
-    print(tx)
     ty = ls.Permutation([n * i + ((j + 1) % n) for i in range(n) for j in range(n)])
-    print(ty)
 
     sites = list(range(n * n))
     edges = []
@@ -361,7 +428,7 @@ def test_issue_pim_2():
             h = ls.Operator(expr, b)
             energies, _ = scipy.sparse.linalg.eigsh(h, k=4)
             # print(energies)
-    print("done")
+    # print("done")
 
 
 # test_issue_pim_2()

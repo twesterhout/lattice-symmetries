@@ -45,6 +45,37 @@ proc safe_c_ptrTo(ref x : [] ?t) : c_ptr(t) {
   return if x.size == 0 then nil else c_ptrTo(x);
 }
 
+record Span {
+  type eltType;
+  var data;
+  var shape;
+
+  proc init(ptr : c_ptr(?eltType), shape) where isRange(shape) {
+    this.eltType = eltType;
+    this.data = ptr;
+    this.shape = shape;
+    if ptr == nil && shape.size > 0 then
+      halt("trying to construct a non-empty Span with ptr=nil");
+  }
+  proc init(ref arr : [] ?eltType) where arr.domain.isRectangular() && arr.domain.rank == 1 {
+    this.eltType = eltType;
+    this.data = if arr.size > 0 then c_ptrTo(arr) else nil;
+    this.shape = arr.domain.dim(0);
+  }
+  proc init(const ref arr : [] ?eltType) where arr.domain.isRectangular() && arr.domain.rank == 1 {
+    this.eltType = eltType;
+    this.data = if arr.size > 0 then c_ptrToConst(arr) else nil;
+    this.shape = arr.domain.dim(0);
+  }
+
+  pragma "fn returns iterator"
+  proc these() where shape.rank == 1 {
+    pragma "no copy" var it = for i in shape do data[i];
+    return it;
+  }
+}
+
+
 /*
 record Ref {
   type eltType;
@@ -74,6 +105,53 @@ inline proc sizeToDomain(dim0, dim1) { return {0 ..# dim0, 0 ..# dim1}; }
 inline proc sizeToDomain(dim0, dim1, dim2) { return {0 ..# dim0, 0 ..# dim1, 0 ..# dim2}; }
 inline proc sizeToDomain(dim0, dim1, dim2, dim3) { return {0 ..# dim0, 0 ..# dim1, 0 ..# dim2, 0 ..# dim3}; }
 
+// The actual implementation
+iter cumSumImpl(xs, param inclusive) {
+  var total : iteratorIndexType(xs) = 0;
+  for x in xs {
+    yield total;
+    total += x;
+  }
+  if inclusive then
+    yield total;
+}
+
+private proc totalSize(shape) : int {
+  if isRange(shape) || isDomain(shape) then return shape.size;
+  if isArray(shape) then return shape.domain.size;
+  if isSubtype(shape.type, BaseDom) {
+    proc product(xs) {
+      var acc : int = 1;
+      for x in xs do
+        acc *= x;
+      return acc;
+    }
+
+    return product(for x in shape.ranges do x.size);
+  }
+  compilerError("cannot compute the total size of " + shape.type:string);
+}
+
+pragma "fn returns iterator"
+proc cumSum(xs, param inclusive : bool = false) where isIterator(xs) {
+  pragma "no copy" var it = cumSumImpl(xs, inclusive);
+  if chpl_iteratorHasShape(xs) {
+    // Force set the shape of the iterator, because the compiler can't yet
+    // figure it out automatically. The last argument to the __primitive is the
+    // loop type, where 0 stands for a normal for loop (we can't use a foreach
+    // of forall loop, because elements must be processed in order)
+    const count = totalSize(xs._shape_);
+    const shape = if inclusive then 0 ..# (1 + count) else 0 ..# count;
+    __primitive("iterator record set shape", it, shape, 0);
+  }
+  return it;
+}
+
+pragma "fn returns iterator"
+proc cumSum(xs, param inclusive : bool = false) where isArray(xs) && xs.domain.rank == 1 {
+  return cumSum(for x in xs do x, inclusive);
+}
+
 proc prefixSum(count : int, arr : c_ptrConst(?eltType), sums : c_ptr(eltType),
                param inclusive : bool = false) {
   var total : eltType = 0;
@@ -84,13 +162,13 @@ proc prefixSum(count : int, arr : c_ptrConst(?eltType), sums : c_ptr(eltType),
   if inclusive then
     sums[count] = total;
 }
-proc prefixSum(arr : [] ?eltType, param inclusive : bool = false) where arr.domain.rank == 1 {
+proc prefixSum(const ref arr : [] ?eltType, param inclusive : bool = false) where arr.domain.rank == 1 {
   var sums : [0 ..# (if inclusive then arr.size + 1 else arr.size)] eltType;
   if arr.size == 0 then return sums;
   prefixSum(arr.size, c_ptrToConst(arr), c_ptrTo(sums), inclusive);
   return sums;
 }
-proc prefixSum(arr : [] ?eltType, param dim : int, param inclusive : bool = false)
+proc prefixSum(const ref arr : [] ?eltType, param dim : int, param inclusive : bool = false)
     where arr.domain.rank == 2 && 0 <= dim && dim < 2 {
   const dim0 = arr.dim(0).size;
   const dim1 = arr.dim(1).size;

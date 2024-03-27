@@ -9,6 +9,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define MAX(a,b) ((a) > (b) ? (a) : (b))
+#define MIN(a,b) ((a) < (b) ? (a) : (b))
+
 struct state_to_index_binary_search_data {
     ptrdiff_t number_states;
     uint64_t const *representatives;
@@ -29,6 +32,7 @@ static ptrdiff_t normalize_offset_ranges(ptrdiff_t const number_offsets, ptrdiff
     }
 
     ptrdiff_t number_states = offsets[number_offsets - 1];
+    LS_CHECK(max_range_size <= number_states, "invalid max_range_size");
     for (ptrdiff_t i = 0; i < number_offsets - 1; ++i) {
         if (offsets[i] > number_states - max_range_size) {
             offsets[i] = number_states - max_range_size;
@@ -39,7 +43,7 @@ static ptrdiff_t normalize_offset_ranges(ptrdiff_t const number_offsets, ptrdiff
 }
 
 static void generate_offset_ranges(struct state_to_index_binary_search_data *cache) {
-    LS_CHECK(0 < cache->number_bits && cache->number_bits < 64, "invalid number_bits");
+    LS_CHECK(0 <= cache->number_bits && cache->number_bits < 64, "invalid number_bits");
     LS_CHECK(cache->shift < 64, "invalid shift");
     uint64_t const *first = cache->representatives;
     uint64_t const *const last = cache->representatives + cache->number_states;
@@ -49,14 +53,20 @@ static void generate_offset_ranges(struct state_to_index_binary_search_data *cac
     cache->number_offsets = size + 1;
     cache->offsets = malloc((size_t)cache->number_offsets * sizeof(ptrdiff_t));
     LS_CHECK(cache->offsets, "malloc failed");
-    for (ptrdiff_t i = 0; i < size; ++i) {
-        cache->offsets[i] = first - begin;
-        while (first != last && ((*first) >> cache->shift) == (uint64_t)i) {
-            ++first;
+    if (cache->number_bits > 0) {
+        for (ptrdiff_t i = 0; i < size; ++i) {
+            cache->offsets[i] = first - begin;
+            while (first != last && ((*first) >> cache->shift) == (uint64_t)i) {
+                ++first;
+            }
         }
+        cache->offsets[size] = first - begin;
+        LS_CHECK(first == last, "not all states checked");
     }
-    cache->offsets[size] = first - begin;
-    LS_CHECK(first == last, "not all states checked");
+    else {
+        cache->offsets[0] = 0;
+        cache->offsets[1] = last - begin;
+    }
 
     cache->range_size = normalize_offset_ranges(cache->number_offsets, cache->offsets);
 }
@@ -65,14 +75,17 @@ static int64_t binary_search_x1(int64_t const haystack_size, uint64_t const hays
                                 uint64_t const needle, ptrdiff_t guess) {
     uint64_t const *base = haystack + guess;
     ptrdiff_t size = haystack_size;
+    // fprintf(stderr, "needle=%zu, guess=%zi, haystack_size=%zi\n", needle, guess, haystack_size);
 
     while (size > 1) {
         ptrdiff_t const half = size / 2;
         size -= half;
+        // fprintf(stderr, "base[half]=%zu, guess=%zi, half=%zi\n", base[half], base - haystack, half);
         base = (base[half] < needle) ? base + half : base;
     }
 
     base += *base < needle;
+    // fprintf(stderr, "*base=%zu, guess=%zi\n", *base, base - haystack);
     return (*base == needle) ? base - haystack : -1;
 }
 
@@ -97,11 +110,12 @@ ls_hs_state_to_index_binary_search_kernel(halide_buffer_t const *basis_states,
 
     for (ptrdiff_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
         uint64_t const needle = spins[batch_idx];
-        if (needle >= ((uint64_t)1 << ctx->number_bits)) {
+        uint64_t const key = needle >> ctx->shift;
+        if (key >= ctx->number_offsets - 1) {
             out[batch_idx] = -1;
         }
         else {
-            int64_t const guess = ctx->offsets[needle >> ctx->shift];
+            int64_t const guess = ctx->offsets[key];
             out[batch_idx] = binary_search_x1(ctx->range_size, ctx->representatives, needle, guess);
         }
     }
@@ -127,17 +141,12 @@ ls_hs_state_to_index_kernel_type ls_hs_internal_mk_binary_search_state_to_index_
 
     cxt->number_states = number_representatives;
     cxt->representatives = representatives;
-    cxt->number_bits = prefix_bits;
-    if (cxt->number_bits > number_bits) {
-        cxt->number_bits = number_bits;
-    }
+    cxt->number_bits = MAX(0, MIN(number_bits, prefix_bits));
     cxt->shift = number_bits - cxt->number_bits;
     cxt->range_size = 0;
     cxt->number_offsets = 0;
     cxt->offsets = NULL;
-    if (cxt->number_bits > 0) {
-        generate_offset_ranges(cxt);
-    }
+    generate_offset_ranges(cxt);
 
     callback_t closure = alloc_callback(&invoke_binary_search_state_to_index_kernel, cxt);
     return (ls_hs_state_to_index_kernel_type)closure;
