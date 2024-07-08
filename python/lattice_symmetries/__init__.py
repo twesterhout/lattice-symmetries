@@ -27,20 +27,19 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import json
-import weakref
 import typing
-from typing import Any, Dict, Optional, Tuple, Callable
+import weakref
 from functools import cached_property
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import numpy as np
-from numpy.typing import NDArray
+from lattice_symmetries._ls_hs import ffi, lib
 from loguru import logger
+from numpy.typing import NDArray
 from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import LinearOperator
 from sympy.combinatorics import Permutation, PermutationGroup
 from sympy.core import Rational
-
-from lattice_symmetries._ls_hs import ffi, lib
 
 try:
     import igraph as ig
@@ -145,9 +144,7 @@ def _from_json(obj) -> Any:
 
 def _assert_subtype(variable, required_type):
     if not isinstance(variable, required_type):
-        raise TypeError(
-            "expected a '{}', but got '{}'".format(required_type, type(variable))
-        )
+        raise TypeError("expected a '{}', but got '{}'".format(required_type, type(variable)))
 
 
 class ExternalArrayWrapper:
@@ -185,16 +182,12 @@ class HsWrapper(object):
     _payload: ffi.CData
     _finalizer: Optional[weakref.finalize]
 
-    def __init__(
-        self, payload: ffi.CData, finalizer: Optional[Callable[[ffi.CData], None]]
-    ):
+    def __init__(self, payload: ffi.CData, finalizer: Optional[Callable[[ffi.CData], None]]):
         assert isinstance(payload, ffi.CData)
         assert payload != 0
         self._payload = payload
         self._finalizer = (
-            weakref.finalize(self, finalizer, self._payload)
-            if finalizer is not None
-            else None
+            weakref.finalize(self, finalizer, self._payload) if finalizer is not None else None
         )
 
 
@@ -327,18 +320,14 @@ class Basis(HsWrapper):
         )
         return np.array(arr, copy=False)
 
-    def is_representative(
-        self, x: int | NDArray[np.uint64]
-    ) -> int | NDArray[np.uint16]:
+    def is_representative(self, x: int | NDArray[np.uint64]) -> int | NDArray[np.uint16]:
         is_scalar = False
         x = np.asarray(x, dtype=np.uint64, order="C")
         if x.ndim == 0:
             is_scalar = True
             x = np.expand_dims(x, axis=0)
         if x.ndim != 1:
-            raise ValueError(
-                f"'x' has invalid shape: {x.shape}; expected a one-dimensional array"
-            )
+            raise ValueError(f"'x' has invalid shape: {x.shape}; expected a one-dimensional array")
 
         count = x.size
         norms = np.empty(x.size, dtype=np.uint16)
@@ -367,9 +356,7 @@ class Basis(HsWrapper):
             is_scalar = True
             x = np.expand_dims(x, axis=0)
         if x.ndim != 1:
-            raise ValueError(
-                f"'x' has invalid shape: {x.shape}; expected a one-dimensional array"
-            )
+            raise ValueError(f"'x' has invalid shape: {x.shape}; expected a one-dimensional array")
 
         if self.is_state_index_identity:
             indices = x.astype(np.int64)
@@ -465,9 +452,7 @@ class Expr(HsWrapper):
                     json_object["sites"] = sites
             if particle is not None:
                 json_object["particle"] = particle
-            payload = _from_json(
-                lib.ls_hs_expr_from_json(json.dumps(json_object).encode("utf-8"))
-            )
+            payload = _from_json(lib.ls_hs_expr_from_json(json.dumps(json_object).encode("utf-8")))
         else:
             if not (len(expression) == 0 and sites is None and particle is None):
                 raise ValueError(
@@ -539,21 +524,15 @@ class Expr(HsWrapper):
 
     def __add__(self, other: "Expr") -> "Expr":
         _assert_subtype(other, Expr)
-        return Expr(
-            payload=_from_json(lib.ls_hs_expr_plus(self._payload, other._payload))
-        )
+        return Expr(payload=_from_json(lib.ls_hs_expr_plus(self._payload, other._payload)))
 
     def __sub__(self, other: "Expr") -> "Expr":
         _assert_subtype(other, Expr)
-        return Expr(
-            payload=_from_json(lib.ls_hs_expr_minus(self._payload, other._payload))
-        )
+        return Expr(payload=_from_json(lib.ls_hs_expr_minus(self._payload, other._payload)))
 
     def __mul__(self, other: "Expr") -> "Expr":
         _assert_subtype(other, Expr)
-        return Expr(
-            payload=_from_json(lib.ls_hs_expr_times(self._payload, other._payload))
-        )
+        return Expr(payload=_from_json(lib.ls_hs_expr_times(self._payload, other._payload)))
 
     def __neg__(self) -> "Expr":
         return Expr(payload=lib.ls_hs_expr_negate(self._payload))
@@ -581,11 +560,7 @@ class Expr(HsWrapper):
         if self.particle_type == "spin-1/2":
             s = Expr(
                 "σˣ₀ σˣ₁ + σʸ₀ σʸ₁ + σᶻ₀ σᶻ₁",
-                sites=[
-                    (i, j)
-                    for i in range(self.number_sites)
-                    for j in range(self.number_sites)
-                ],
+                sites=[(i, j) for i in range(self.number_sites) for j in range(self.number_sites)],
             )
             return self * s == s * self
         else:
@@ -635,9 +610,7 @@ class Operator(HsWrapper, LinearOperator):
                 basis = expression.full_basis()
             _assert_subtype(basis, Basis)
 
-            payload = _from_json(
-                lib.ls_hs_create_operator(basis._payload, expression._payload)
-            )
+            payload = _from_json(lib.ls_hs_create_operator(basis._payload, expression._payload))
         else:
             if basis is not None or payload == 0:
                 raise ValueError(
@@ -662,9 +635,7 @@ class Operator(HsWrapper, LinearOperator):
     @staticmethod
     def from_json(json_string: str) -> "Operator":
         return Operator(
-            payload=_from_json(
-                lib.ls_hs_operator_from_json(json_string.encode("utf-8"))
-            )
+            payload=_from_json(lib.ls_hs_operator_from_json(json_string.encode("utf-8")))
         )
 
     @property
@@ -687,16 +658,13 @@ class Operator(HsWrapper, LinearOperator):
     def expression(self):
         return self._expression
 
-    def apply_to_state_vector(
-        self, vector: NDArray, out: Optional[NDArray] = None
-    ) -> NDArray:
+    def apply_to_state_vector(self, vector: NDArray, out: Optional[NDArray] = None) -> NDArray:
         self.basis.check_is_built()
 
         if vector.ndim > 2 or vector.shape[0] != self.basis.number_states:
             raise ValueError(
-                "'vector' has invalid shape: {}; expected {}" "".format(
-                    vector.shape, (self.basis.number_states,)
-                )
+                "'vector' has invalid shape: {}; expected {}"
+                "".format(vector.shape, (self.basis.number_states,))
             )
 
         operator_is_real = self.basis.is_real and self.expression.is_real
@@ -716,9 +684,7 @@ class Operator(HsWrapper, LinearOperator):
         else:
             if out.shape != vector.shape:
                 raise ValueError(
-                    "'out' has invalid shape: {}; expected {}" "".format(
-                        out.shape, vector.shape
-                    )
+                    "'out' has invalid shape: {}; expected {}" "".format(out.shape, vector.shape)
                 )
             if not out.flags.f_contiguous:
                 raise ValueError("'out' must be Fortran contiguous")
@@ -823,9 +789,7 @@ class Operator(HsWrapper, LinearOperator):
             norms = self.basis.is_representative(states)
         else:
             if norms.shape != states.shape:
-                raise ValueError(
-                    f"'norms' has wrong shape: {norms.shape}; expected {states.shape}"
-                )
+                raise ValueError(f"'norms' has wrong shape: {norms.shape}; expected {states.shape}")
             norms = np.require(norms, dtype=np.uint16, requirements=["C"])
 
         c_basis_states = ffi.new("chpl_external_array *")
@@ -873,7 +837,42 @@ class Operator(HsWrapper, LinearOperator):
         self,
         states: NDArray[np.uint64],
         norms: NDArray[np.uint16] | None = None,
+        add_diagonal=True,
     ) -> csr_matrix:
+        """
+        Constructs a sparse matrix that is a slice of the Hamiltonian matrix.
+        Included rows are determined by ``states``, included columns are ``states``
+        and their first neighbors.
+
+        Parameters
+        ----------
+        states : NDArray[np.uint64]
+            The states whose neighbors to include in the matrix.
+
+        norms : NDArray[np.uint16]
+            The corresponding norms, as returned by `self.basis.is_representative(states)`
+            If None, calculated automatically
+
+        add_diagonal: bool (default: True)
+            Whether to add a diagonal
+
+        Returns
+        -------
+        matrix : csr_matrix
+            The sparse matrix.
+
+        all_states : npt.NDArray[np.uint64]
+            The sorted array of states and their first neighbors.
+
+        For each ``i`` and ``j``, the following holds
+        (provided ``add_diagonal=True``):
+
+        ``matrix[i, j] = <states[i] | H | all_states[j]>``
+
+        or, equivalently,
+
+        ``(H |psi>)[states] = matrix @ (psi[all_states])``
+        """
         if states.ndim != 1:
             raise ValueError(f"'states' has wrong shape: {states.shape}")
         states = np.require(states, dtype=np.uint64, requirements=["C"])
@@ -882,9 +881,7 @@ class Operator(HsWrapper, LinearOperator):
             norms = self.basis.is_representative(states)
         else:
             if norms.shape != states.shape:
-                raise ValueError(
-                    f"'norms' has wrong shape: {norms.shape}; expected {states.shape}"
-                )
+                raise ValueError(f"'norms' has wrong shape: {norms.shape}; expected {states.shape}")
             norms = np.require(norms, dtype=np.uint16, requirements=["C"])
 
         coeffs, other_states, offsets = self.off_diag_to_triple(
@@ -897,15 +894,16 @@ class Operator(HsWrapper, LinearOperator):
             (coeffs, other_indices, offsets),
             shape=(states.size, all_states.size),
         )
-        # TODO: fix me
-        diag_coeffs = self.diag_to_array()[self.basis.index(states)]
-        diag_indices = np.searchsorted(all_states, states)
-        diag_matrix = csr_matrix(
-            (diag_coeffs, diag_indices, np.arange(states.size + 1)),
-            shape=matrix_without_diag.shape,
-        )
+        if add_diagonal:
+            # TODO: fix me
+            diag_coeffs = self.diag_to_array()[self.basis.index(states)]
+            diag_indices = np.searchsorted(all_states, states)
+            diag_matrix = csr_matrix(
+                (diag_coeffs, diag_indices, np.arange(states.size + 1)),
+                shape=matrix_without_diag.shape,
+            )
+            matrix = matrix_without_diag + diag_matrix
 
-        matrix = matrix_without_diag + diag_matrix
         matrix.sum_duplicates()
         return matrix, all_states
 
@@ -941,9 +939,7 @@ def _axpy(alpha: complex, x: NDArray, y: NDArray):
     alpha = complex(alpha)
     x_ptr = ffi.from_buffer("ls_hs_scalar[]", x, require_writable=False)
     y_ptr = ffi.from_buffer("ls_hs_scalar[]", y, require_writable=True)
-    lib.ls_chpl_experimental_axpy_c128(
-        size, alpha.real, alpha.imag, x_ptr, y_ptr, y_ptr
-    )
+    lib.ls_chpl_experimental_axpy_c128(size, alpha.real, alpha.imag, x_ptr, y_ptr, y_ptr)
 
 
 def _csr_matvec(
@@ -979,18 +975,14 @@ def _csr_matvec(
 
     x = np.asarray(x, order="C", dtype=elt_dtype)
     if x.shape != (matrix.shape[1],):
-        raise ValueError(
-            f"'x' has invalid shape: {x.shape}; expected ({matrix.shape[1]},)"
-        )
+        raise ValueError(f"'x' has invalid shape: {x.shape}; expected ({matrix.shape[1]},)")
     x_ptr = ffi.from_buffer(elt_dtype_str, x, require_writable=False)
 
     if out is None:
         out = np.empty(matrix.shape[0], dtype=elt_dtype)
     else:
         if out.shape != (matrix.shape[0],):
-            raise ValueError(
-                f"'out' has invalid shape: {out.shape}; expected ({matrix.shape[0]},)"
-            )
+            raise ValueError(f"'out' has invalid shape: {out.shape}; expected ({matrix.shape[0]},)")
         if not out.flags.c_contiguous:
             raise ValueError("'out' must be contiguous")
         out = np.require(out, dtype=elt_dtype, requirements=["C"])
