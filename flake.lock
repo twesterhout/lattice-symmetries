@@ -1,32 +1,5 @@
 {
   "nodes": {
-    "arrayfire-haskell": {
-      "inputs": {
-        "flake-utils": [
-          "halide-haskell",
-          "flake-utils"
-        ],
-        "nix-filter": "nix-filter",
-        "nixpkgs": [
-          "halide-haskell",
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1704284732,
-        "narHash": "sha256-editEH1WQNsOqmGL1Vxbn6I62ZFjPpRcGTNTwdTLKvk=",
-        "owner": "twesterhout",
-        "repo": "arrayfire-haskell",
-        "rev": "79b2519486f409dc14e60b44dc360b430756d9c5",
-        "type": "github"
-      },
-      "original": {
-        "owner": "twesterhout",
-        "ref": "withDevicePtr",
-        "repo": "arrayfire-haskell",
-        "type": "github"
-      }
-    },
     "flake-utils": {
       "inputs": {
         "systems": "systems"
@@ -45,51 +18,6 @@
         "type": "github"
       }
     },
-    "halide-haskell": {
-      "inputs": {
-        "arrayfire-haskell": "arrayfire-haskell",
-        "flake-utils": [
-          "flake-utils"
-        ],
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1710761519,
-        "narHash": "sha256-URrtlqKO8VG2GicCQj66VL1VCKZnEvbQH/O/GeOW3qQ=",
-        "owner": "twesterhout",
-        "repo": "halide-haskell",
-        "rev": "ffd725d51349122034577a4e69dc6ee28a5c7ef2",
-        "type": "github"
-      },
-      "original": {
-        "owner": "twesterhout",
-        "ref": "dynamic-dimensions",
-        "repo": "halide-haskell",
-        "type": "github"
-      }
-    },
-    "haskell-python-tools": {
-      "inputs": {
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1710777918,
-        "narHash": "sha256-q/vauks9OIUIcihZCOy4L7ZxowG9UAKzdBbyutblMqA=",
-        "owner": "twesterhout",
-        "repo": "haskell-python-tools.nix",
-        "rev": "38f57a10cfdd7d675a205c694ecec42cedb2cce6",
-        "type": "github"
-      },
-      "original": {
-        "owner": "twesterhout",
-        "repo": "haskell-python-tools.nix",
-        "type": "github"
-      }
-    },
     "nix-chapel": {
       "inputs": {
         "flake-utils": [
@@ -100,46 +28,31 @@
         ]
       },
       "locked": {
-        "lastModified": 1710859535,
-        "narHash": "sha256-W2b1V7sDS1x8RJQFRYVBkPW6xrtM0iaXANto1+FeG0g=",
+        "lastModified": 1720472485,
+        "narHash": "sha256-e026TVeBoishKGoK2cdYBPuVQH8cYq338D+PoHiftdE=",
         "owner": "twesterhout",
         "repo": "nix-chapel",
-        "rev": "3b9a31f13c594bb3bf7c1053cdd2547d07f7399a",
+        "rev": "4a428a106c2e5ef65e0b298df7783322a4bb81e6",
         "type": "github"
       },
       "original": {
         "owner": "twesterhout",
         "repo": "nix-chapel",
-        "type": "github"
-      }
-    },
-    "nix-filter": {
-      "locked": {
-        "lastModified": 1701697642,
-        "narHash": "sha256-L217WytWZHSY8GW9Gx1A64OnNctbuDbfslaTEofXXRw=",
-        "owner": "numtide",
-        "repo": "nix-filter",
-        "rev": "c843418ecfd0344ecb85844b082ff5675e02c443",
-        "type": "github"
-      },
-      "original": {
-        "owner": "numtide",
-        "repo": "nix-filter",
         "type": "github"
       }
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1713687659,
-        "narHash": "sha256-Yd8KuOBpZ0Slau/NxFhMPJI0gBxeax0vq/FD0rqKwuQ=",
-        "owner": "nixos",
+        "lastModified": 1725637864,
+        "narHash": "sha256-RuvlH2VOxp7S+6oLMiclBbKcEJnf8LlCKrPgv5bdoAc=",
+        "owner": "twesterhout",
         "repo": "nixpkgs",
-        "rev": "f2d7a289c5a5ece8521dd082b81ac7e4a57c2c5c",
+        "rev": "6129b4a6896e19c476c3a89e34ba72d49d5b592e",
         "type": "github"
       },
       "original": {
-        "owner": "nixos",
-        "ref": "nixpkgs-unstable",
+        "owner": "twesterhout",
+        "ref": "halide-v18",
         "repo": "nixpkgs",
         "type": "github"
       }
@@ -147,8 +60,6 @@
     "root": {
       "inputs": {
         "flake-utils": "flake-utils",
-        "halide-haskell": "halide-haskell",
-        "haskell-python-tools": "haskell-python-tools",
         "nix-chapel": "nix-chapel",
         "nixpkgs": "nixpkgs"
       }

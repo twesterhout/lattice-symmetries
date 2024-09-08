@@ -1,0 +1,35 @@
+[build-system]
+# requires = [
+#     "scikit-build-core",
+#     "pybind11",
+# ]
+# build-backend = "scikit_build_core.build"
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lattice-symmetries"
+version = "3.0.0"
+authors = [{ name = "Tom Westerhout", email = "14264576+twesterhout@users.noreply.github.com" }]
+description = "A package to simplify working with symmetry-adapted quantum many-body bases."
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.10"
+dependencies = [
+    # "halide",
+    "loguru",
+    "numpy",
+    "scipy",
+]
+
+[project.urls]
+Homepage = "https://github.com/twesterhout/lattice-symmetries"
+Issues = "https://github.com/twesterhout/lattice-symmetries/issues"
+Documentation = "https://github.com/twesterhout/lattice-symmetries/README.md"
+Repository = "https://github.com/twesterhout/lattice-symmetries.git"
+
+[tool.black]
+line-length = 100
+
+[tool.ruff]
+line-length = 100
