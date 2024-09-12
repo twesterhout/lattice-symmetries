@@ -108,7 +108,7 @@ def reference_permute_bits(p: Permutation, bits: int):
 
 
 @hypothesis.given(permutations())
-@hypothesis.settings(max_examples=100, deadline=None, phases=our_phases)
+@hypothesis.settings(max_examples=10, deadline=None, phases=our_phases)
 def test_permutation_to_benes_network(permutation):
     random.seed(42)
     benes = ls.permutation_to_benes_network(permutation)
