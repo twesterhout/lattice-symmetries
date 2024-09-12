@@ -132,6 +132,7 @@ def _build_fixed_hamming_state_to_index_kernel(
     out = hl.Func("out")
     i_inner = hl.Var("i_inner")
     i_outer = hl.Var("i_outer")
+    keep_alive = dict()
 
     if hamming_weight == 0 or hamming_weight == number_sites:
         batch_idx = hl.Var("batch_idx")
@@ -161,11 +162,13 @@ def _build_fixed_hamming_state_to_index_kernel(
         if unroll:
             temp.update(0).unroll(k)
 
+        # NOTE: it's important to keep binomials alive until we construct a callable from out.
+        keep_alive["binomials"] = binomials
+
     x.dim(0).set_min(0).set_stride(1)
     out.output_buffer().dim(0).set_min(0).set_stride(1).set_extent(x.dim(0).extent())
 
-    # NOTE: it's important to keep binomials alive until we construct a callable from out.
-    return out, [x], dict(binomials=binomials)
+    return out, [x], keep_alive
 
 
 def fixed_hamming_state_to_index_kernel(number_sites: int, hamming_weight: int) -> CompiledKernel:

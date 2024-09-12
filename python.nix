@@ -101,8 +101,9 @@ final: prev: {
           loguru
           numpy
           scipy
-          # sympy
+          sympy
           halide
+          more-itertools
         ];
 
         nativeBuildInputs = with python-final; [

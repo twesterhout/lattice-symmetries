@@ -1,5 +1,7 @@
 import lattice_symmetries as ls
 import lattice_symmetries._kernels
+from sympy.combinatorics import Permutation
+import random
 
 # from lattice_symmetries import Expr
 # import math
@@ -45,10 +47,74 @@ def test_fixed_hamming_state_to_index_examples():
     np.testing.assert_equal(states[np.asarray(out)], x)
 
 
-def reference_fixed_hamming_state_to_index(
-    state: int, number_sites: int, hamming_weight: int
-) -> int:
-    pass
+@hypothesis.given(
+    st.builds(
+        lambda a, b: (max(a, b), min(a, b)),
+        st.integers(min_value=1, max_value=20),
+        st.integers(min_value=1, max_value=20),
+    ),
+    st.integers(min_value=1, max_value=1000),
+)
+@hypothesis.settings(max_examples=10, deadline=None, phases=our_phases)
+def test_fixed_hamming_state_to_index(args, batch_size):
+    number_sites, hamming_weight = args
+    kernel = lattice_symmetries._kernels.fixed_hamming_state_to_index_kernel(
+        number_sites, hamming_weight
+    )
+    states = np.arange(2**number_sites, dtype=np.uint64)
+    states = states[[x.bit_count() == hamming_weight for x in states]]
+    # Invoking using Halide::Callable
+    np.random.seed(42)
+    x = np.random.choice(states, size=batch_size).astype(np.int64)
+    out = np.zeros(len(x), dtype=np.int64)
+    kernel.callable(x, out)
+    np.testing.assert_equal(states[out], x)
+    # Invoking using raw function pointers
+    out = np.zeros(len(x), dtype=np.int64)
+    x_buf, x_buf_keep_alive = lattice_symmetries._kernels.create_halide_buffer_view(x)
+    out_buf, out_buf_keep_alive = lattice_symmetries._kernels.create_halide_buffer_view(out)
+    kernel.ffi_fun_ptr(x_buf, out_buf)
+    np.testing.assert_equal(states[np.asarray(out)], x)
+
+
+def test_permutation_to_benes_network_examples():
+    benes = ls.permutation_to_benes_network(Permutation([0, 1, 2, 3]))
+    assert benes(0b0100) == 0b0100
+    benes = ls.permutation_to_benes_network(Permutation([1, 2, 0, 3]))
+    assert benes(0b0100) == 0b0010
+    assert benes(0b0101) == 0b0110
+    benes = ls.permutation_to_benes_network(Permutation([1, 2, 3, 0, 5, 6, 7, 4, 9, 10, 11, 8]))
+    assert benes(0b100111010010) == 0b110011100001
+    benes = ls.permutation_to_benes_network(Permutation([0]))
+    assert benes(0b0) == 0b0
+    assert benes(0b1) == 0b1
+    benes = ls.permutation_to_benes_network(Permutation([]))
+    assert benes(0b0) == 0b0
+    assert benes(0b10100110) == 0b10100110
+
+
+@st.composite
+def permutations(draw, min_size=1, max_size=1000):
+    size = draw(st.integers(min_value=min_size, max_value=max_size))
+    arr = draw(st.permutations(list(range(size))))
+    return Permutation(arr)
+
+
+def reference_permute_bits(p: Permutation, bits: int):
+    assert bits < 2**p.size
+    s = ("{:0" + str(p.size) + "b}").format(bits)[::-1]
+    s = "".join(s[int(i)] for i in p.array_form)[::-1]
+    return int(s, base=2)
+
+
+@hypothesis.given(permutations())
+@hypothesis.settings(max_examples=100, deadline=None, phases=our_phases)
+def test_permutation_to_benes_network(permutation):
+    random.seed(42)
+    benes = ls.permutation_to_benes_network(permutation)
+    for i in range(10):
+        bits = random.randint(0, 2**permutation.size - 1)
+        assert benes(bits) == reference_permute_bits(permutation, bits)
 
 
 normal_complex = st.complex_numbers(

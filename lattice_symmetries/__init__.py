@@ -28,6 +28,7 @@
 
 __version__ = "3.0.0"
 
-from . import _axpy, _kernels
+from . import _axpy, _benes, _kernels
 
 from ._axpy import axpy
+from ._benes import BenesNetwork, permutation_to_benes_network
