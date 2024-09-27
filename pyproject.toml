@@ -4,7 +4,7 @@
 #     "pybind11",
 # ]
 # build-backend = "scikit_build_core.build"
-requires = ["setuptools"]
+requires = ["setuptools", "cffi"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -16,10 +16,15 @@ readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
 dependencies = [
-    # "halide",
+    "cffi",
     "loguru",
+    "more-itertools",
     "numpy",
     "scipy",
+    "sympy"
+    # NOTE: Adding Halide here generates a bunch of problems which I don't know how
+    # to solve at the moment, so for now one has to do a separate pip install
+    # of Halide
 ]
 
 [project.urls]
@@ -27,6 +32,9 @@ Homepage = "https://github.com/twesterhout/lattice-symmetries"
 Issues = "https://github.com/twesterhout/lattice-symmetries/issues"
 Documentation = "https://github.com/twesterhout/lattice-symmetries/README.md"
 Repository = "https://github.com/twesterhout/lattice-symmetries.git"
+
+[tool.setuptools.package-data]
+lattice_symmetries = ["liblattice_symmetries_chapel.*"]
 
 [tool.black]
 line-length = 100

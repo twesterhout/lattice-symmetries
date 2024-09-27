@@ -10,7 +10,7 @@
     nixpkgs.url = "github:twesterhout/nixpkgs/halide-v18";
     flake-utils.url = "github:numtide/flake-utils";
     nix-chapel = {
-      url = "github:twesterhout/nix-chapel";
+      url = "path:/home/tom/Projects/nix-chapel"; # github:twesterhout/nix-chapel";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.flake-utils.follows = "flake-utils";
     };
@@ -71,6 +71,7 @@
           # slepc = final.callPackage ./nix/slepc.nix { };
         })
         inputs.nix-chapel.overlays.default
+        (import ./chapel.nix { inherit version; })
         (import ./python.nix { inherit version; })
         # halide-haskell.overlays.default
         # kernels-overlay
@@ -102,6 +103,8 @@
           # inherit haskellPackages;
           # inherit (haskell.packages) ghc964;
           inherit python3Packages;
+          inherit python310Packages;
+          inherit lattice-symmetries-chapel;
           # inherit petsc slepc;
         });
 
@@ -190,6 +193,12 @@
           # };
 
           python = with pkgs; python3Packages.lattice-symmetries;
+
+          testing = with pkgs; mkShell {
+            nativeBuildInputs = [
+              (python310.withPackages (ps: with ps; [ lattice-symmetries ]))
+            ];
+          };
 
         });
     };

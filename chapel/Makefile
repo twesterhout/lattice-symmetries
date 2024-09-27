@@ -4,8 +4,10 @@
 PREFIX ?= /usr/local
 TEST_DATA ?= $(PWD)
 CHPL_ARGS ?=
-CHPL_CFLAGS ?= --fast
-CHPL_LDFLAGS = -llattice_symmetries_haskell
+CHPL_CFLAGS ?=
+# CHPL_CFLAGS ?= --fast
+CHPL_LDFLAGS ?=
+# CHPL_LDFLAGS = -llattice_symmetries_haskell
 
 PRIMME_CFLAGS = -I$(PRIMME_PATH)/include
 PRIMME_LDFLAGS = -L$(PRIMME_PATH)/lib -lprimme -llapacke -lopenblas -lm -lgomp -lpthread
@@ -41,22 +43,29 @@ all: lib
 
 lib: lib/liblattice_symmetries_chapel.$(SHARED_EXT)
 
-lib/liblattice_symmetries_chapel.$(SHARED_EXT): $(LIB_MODULES)
+lib/liblattice_symmetries_chapel.$(SHARED_EXT): src/FFI.chpl src/Library.chpl src/glibc_hacks.c
 	@mkdir -p $(@D)
 	@rm -rf $(@D)/*
 	CHPL_LIB_PIC=pic chpl \
 		$(CHPL_CFLAGS) \
 		$(HALIDE_CFLAGS) \
+		--print-commands \
 		--library --dynamic -o lattice_symmetries_chapel \
 		--ccflags -DLS_CHPL_LIBRARY=1 \
+		--ccflags '-include force_link_glibc_2.27.h' \
+		--ccflags '-Wno-visibility -Wno-missing-prototypes' \
 		$^ \
-		$(CHPL_LDFLAGS) -llattice_symmetries_haskell
+		$(CHPL_LDFLAGS)
+	# Remove Chapel-specific headers
+	sed -E -i '/#include\s+("stdchpl.h"|"wctype.h"|"ctype.h")/d' lib/lattice_symmetries_chapel.h
+	# Add #pragma once
+	tmpfile=$$(mktemp); (echo '#pragma once'; cat lib/lattice_symmetries_chapel.h) > $$tmpfile && mv $$tmpfile lib/lattice_symmetries_chapel.h
 
 install: lib
 	@mkdir -p $(PREFIX)/lib
 	@mkdir -p $(PREFIX)/include
 	install -m 755 lib/liblattice_symmetries_chapel.$(SHARED_EXT) $(PREFIX)/lib/
-	install -m 644 src/lattice_symmetries_chapel.h $(PREFIX)/include/
+	install -m 644 lib/lattice_symmetries_chapel.h $(PREFIX)/include/
 
 # .PHONY: benchmark-states-enumeration
 # benchmark-states-enumeration: bin/TestStatesEnumeration

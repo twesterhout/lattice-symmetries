@@ -48,7 +48,6 @@ def build_axpy_kernel(dtype=hl.Float(64)):
 
 
 _AXPY_KERNEL = None
-logger.debug("Initializing ...")
 
 
 def axpy(alpha: complex, x: NDArray[np.complex128], y: NDArray[np.complex128]):
@@ -87,7 +86,6 @@ def axpy(alpha: complex, x: NDArray[np.complex128], y: NDArray[np.complex128]):
     max_allowed_size = np.iinfo(np.dtype("int32")).max
     while size > 0:
         n = min(size, max_allowed_size)
-        print(x[offset : offset + n], y[offset : offset + n])
         _AXPY_KERNEL(
             alpha.real,
             alpha.imag,

@@ -106,18 +106,46 @@ final: prev: {
           more-itertools
         ];
 
+        buildInputs = [
+          final.lattice-symmetries-chapel
+        ];
+
         nativeBuildInputs = with python-final; [
           setuptools
+          final.tree
         ];
 
         nativeCheckInputs = with python-final; [
           pip
           pytestCheckHook
+          pythonOutputDistHook
           hypothesis
           # igraph
         ];
 
-        # postPatch = ''
+        postPatch = ''
+          cp -v ${final.lattice-symmetries-chapel}/lib/liblattice_symmetries_chapel.* lattice_symmetries/
+        '';
+
+        preInstall = ''
+          pushd dist/
+          WHEEL_FILE=$(ls *.whl)
+          wheel unpack $WHEEL_FILE
+          rm -v $WHEEL_FILE
+
+          pushd lattice_symmetries-${version}
+          tree
+          patchelf --debug --remove-rpath lattice_symmetries/liblattice_symmetries_chapel.*
+          patchelf --debug --set-rpath '$ORIGIN' lattice_symmetries/_ls.*
+          popd
+
+          wheel pack lattice_symmetries-${version}
+          rm -r lattice_symmetries-${version}
+          popd
+        '';
+
+        # NEW_RPATH=$(patchelf --print-rpath $out/${python-final.python.sitePackages}/lattice_symmetries/_ls.* | sed -E 's;${final.lattice-symmetries-chapel}/lib;$ORIGIN;')
+        # patchelf --debug --set-rpath "$NEW_RPATH" $out/${python-final.python.sitePackages}/lattice_symmetries/_ls.*
         #   # - Let CFFI see chunks between `python-cffi: START` and `python-cffi: STOP`
         #   # - Hide `LS_HS_ATOMIC` from CFFI
         #   awk '/python-cffi: START/{flag=1;next}/python-cffi: STOP/{flag=0}flag' \
@@ -134,12 +162,12 @@ final: prev: {
 
         preCheck = "rm -rf lattice_symmetries";
 
-        # checkPhase = ''
-        #   runHook preCheck
-        #   python3 -m pytest --color=yes --capture=no test/test_api.py | tee output.txt
-        #   grep -q -E '(FAILURES|failed)' output.txt && exit 1
-        #   runHook postCheck
-        # '';
+        checkPhase = ''
+          runHook preCheck
+          python3 -m pytest --color=yes --capture=no test/test_api.py | tee output.txt
+          grep -q -E '(FAILURES|failed)' output.txt && exit 1
+          runHook postCheck
+        '';
 
         # preShellHook = ''
         #   if test -e setup.py; then
@@ -149,7 +177,21 @@ final: prev: {
         # '';
       };
 
-    })
+    } // (
+      let
+        disableTests = drv: drv.overrideAttrs (attrs: { checkPhase = "true"; installCheckPhase = "true"; });
+      in
+      final.lib.optionalAttrs (python-prev.python.pythonOlder "3.11") {
+        django = disableTests python-prev.django;
+        pytest-django = disableTests python-prev.pytest-django;
+        zarr = disableTests python-prev.zarr;
+        geoip2 = disableTests python-prev.geoip2;
+        aiohttp = disableTests python-prev.aiohttp;
+        pillow-heif = disableTests python-prev.pillow-heif;
+        astropy = disableTests python-prev.astropy;
+        imageio = disableTests python-prev.imageio;
+      }
+    ))
   ];
   # lattice-symmetries = (prev.lattice-symmetries or { }) // {
   #   python = final.python3Packages.lattice-symmetries;
