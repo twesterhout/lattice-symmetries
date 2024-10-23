@@ -40,16 +40,16 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1725637864,
-        "narHash": "sha256-RuvlH2VOxp7S+6oLMiclBbKcEJnf8LlCKrPgv5bdoAc=",
+        "lastModified": 1728990533,
+        "narHash": "sha256-J9uqHCF+rkeoR/k/f8QWi5XtB1dAAuQqxkz6iaIAMhM=",
         "owner": "twesterhout",
         "repo": "nixpkgs",
-        "rev": "6129b4a6896e19c476c3a89e34ba72d49d5b592e",
+        "rev": "a90f538e38bcb322b9a2b90ff0c43156d61b97ab",
         "type": "github"
       },
       "original": {
         "owner": "twesterhout",
-        "ref": "halide-v18",
+        "ref": "halide-v18_2",
         "repo": "nixpkgs",
         "type": "github"
       }

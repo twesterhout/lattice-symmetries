@@ -35,6 +35,7 @@ final: prev: {
 
     configurePhase = ''
       ln --symbolic ${final.lattice-symmetries-chapel-ffi} chapel/src/FFI.chpl;
+      cat chapel/src/FFI.chpl
     '';
 
     preBuild = ''
@@ -57,7 +58,7 @@ final: prev: {
     '';
 
     buildInputs = [
-
+      final.halide
     ];
 
     nativeBuildInputs = [

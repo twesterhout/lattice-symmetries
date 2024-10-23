@@ -3,12 +3,22 @@
 #ifndef LATTICE_SYMMETRIES_H
 #define LATTICE_SYMMETRIES_H
 
-// #include <stdbool.h>
-// #include <stddef.h>
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <assert.h>
-// #include <stdio.h>
-// #include <stdlib.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+__attribute__((noreturn)) static inline void ls_fatal_error(char const *func, int const line,
+                                                               char const *message) {
+    fprintf(stderr, "[Error]   [%s#%i] %s\n[Error]   Aborting ...", func, line, message);
+    abort();
+}
+
+#define LS_FATAL_ERROR(msg) ls_fatal_error(__func__, __LINE__, msg)
+#define LS_CHECK(cond, msg) ((cond) ? ((void)0) : ls_fatal_error(__func__, __LINE__, msg))
+
 
 typedef struct ls_numpy_array_1d { uint8_t* data; void* handle; } ls_numpy_array_1d;
 typedef void (*ls_alloc_numpy_array_1d_callback)(uint64_t size, ls_numpy_array_1d* out);
@@ -22,6 +32,74 @@ static inline void ls_invoke_alloc_numpy_array_1d_callback(ls_alloc_numpy_array_
 
 extern void chpl_library_init(int argc, char *argv[]);
 extern void chpl_library_finalize(void);
+
+struct halide_buffer_t;
+typedef int (*ls_diag_matrix_complex_kernel)(struct halide_buffer_t *, struct halide_buffer_t *, struct halide_buffer_t *, struct halide_buffer_t *, struct halide_buffer_t *);
+typedef int (*ls_diag_matrix_real_kernel)(struct halide_buffer_t *, struct halide_buffer_t *, struct halide_buffer_t *);
+typedef int (*ls_off_diag_matrix_complex_kernel)(struct halide_buffer_t *, struct halide_buffer_t *, struct halide_buffer_t *, struct halide_buffer_t *, struct halide_buffer_t *);
+typedef int (*ls_off_diag_matrix_real_kernel)(struct halide_buffer_t *, struct halide_buffer_t *, struct halide_buffer_t *);
+typedef int (*ls_xored_state_to_index_kernel)(struct halide_buffer_t *alphas, struct halide_buffer_t *mask, struct halide_buffer_t *basis_states, struct halide_buffer_t *indices);
+
+typedef struct ls_diag_terms {
+    void           *kernel;
+    int32_t         number_terms;
+    double const   *v_re;
+    double const   *v_im;
+} ls_diag_terms;
+
+void ls_invoke_diag_matrix_kernel(ls_diag_terms const* terms, int32_t const count, uint64_t const* alphas, double *coeffs_re, double *coeffs_im);
+
+typedef struct ls_off_diag_terms {
+    void           *kernel;
+    int32_t         number_terms;
+    int32_t         number_reduced;
+    double const   *v_re;
+    double const   *v_im;
+    uint64_t const *x;
+} ls_off_diag_terms;
+
+void ls_invoke_off_diag_matrix_kernel(ls_off_diag_terms const* terms, int32_t const count, uint64_t const* alphas, double *coeffs_re, double *coeffs_im);
+
+typedef struct ls_xored_state_to_index {
+    void           *kernel;
+    uint64_t        number_states;
+    uint64_t const *basis_states;
+} ls_xored_state_to_index;
+
+void ls_invoke_xored_state_to_index(ls_xored_state_to_index const* ctx, int32_t const count, uint64_t const* alphas, int32_t const number_terms, uint64_t const* masks, int64_t* indices);
+
+// typedef struct ls_nonbranching_terms {
+//     int number_terms;
+//     int number_bits;
+//     // number_words = ceil(number_bits / 64)
+//     void const     *v;     // array of shape [number_terms, 2] of either float32, float64, complex64, or complex128
+//     uint64_t const *m;     // array of shape [number_terms, number_words]
+//     uint64_t const *l;     // array of shape [number_terms, number_words]
+//     uint64_t const *r;     // array of shape [number_terms, number_words]
+//     uint64_t const *x;     // array of shape [number_terms, number_words]
+//     uint64_t const *s;     // array of shape [number_terms, number_words]
+//                            // all arrays are contiguous in row-major order
+// } ls_nonbranching_terms;
+// 
+// typedef struct ls_chpl_batched_operator {
+//     int number_bits;
+//     int hamming_weight;
+// 
+//     int      spin_inversion;
+//     uint64_t spin_inversion_mask;
+// 
+//     ls_nonbranching_terms *diag_terms;
+//     ls_nonbranching_terms *off_diag_terms;
+// 
+//     int max_number_off_diag;
+//     int batch_size;
+//     // capacity >= ceil(batch_size * max_number_off_diag, LS_BLOCK_SIZE)
+//     uint64_t *betas;            // array of shape [capacity, number_words]
+//     void     *coeffs;           // array of shape [capacity] of either float32, float64, complex64, or complex128
+//     uint64_t *target_indices;   // array of shape [capacity]
+//     int64_t  *offsets;          // array of shape [capacity]
+//     uint64_t *temp_spins;       // array of shape [capacity]
+// } ls_chpl_batched_operator;
 
 #endif // LATTICE_SYMMETRIES_H
 
@@ -83,18 +161,6 @@ typedef struct ls_basis_info {
     // ... pointers to kernels ...
 } ls_basis_info;
 
-typedef struct ls_nonbranching_terms {
-    int number_terms;
-    int number_bits;
-    // number_words = ceil(number_bits / 64)
-    ls_scalar const *v;    // array of shape [number_terms]
-    uint64_t const *m;     // array of shape [number_terms, number_words]
-    uint64_t const *l;     // array of shape [number_terms, number_words]
-    uint64_t const *r;     // array of shape [number_terms, number_words]
-    uint64_t const *x;     // array of shape [number_terms, number_words]
-    uint64_t const *s;     // array of shape [number_terms, number_words]
-                           // all arrays are contiguous in row-major order
-} ls_nonbranching_terms;
 /* python-cffi: STOP */
 
 typedef struct ls_operator ls_operator;

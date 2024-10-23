@@ -7,7 +7,7 @@
   };
 
   inputs = {
-    nixpkgs.url = "github:twesterhout/nixpkgs/halide-v18";
+    nixpkgs.url = "github:twesterhout/nixpkgs/halide-v18_2";
     flake-utils.url = "github:numtide/flake-utils";
     nix-chapel = {
       url = "path:/home/tom/Projects/nix-chapel"; # github:twesterhout/nix-chapel";
@@ -104,6 +104,7 @@
           # inherit (haskell.packages) ghc964;
           inherit python3Packages;
           inherit python310Packages;
+          inherit lattice-symmetries-chapel-ffi;
           inherit lattice-symmetries-chapel;
           # inherit petsc slepc;
         });

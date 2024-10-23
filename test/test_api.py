@@ -1,7 +1,12 @@
 import lattice_symmetries as ls
 import lattice_symmetries._kernels
+import sympy
 from sympy.combinatorics import Permutation
+from sympy.physics.quantum import pauli, represent
+from sympy.core.singleton import S
+from functools import reduce
 import random
+import operator
 
 # from lattice_symmetries import Expr
 # import math
@@ -9,6 +14,7 @@ import random
 # import glob
 # import json
 import numpy as np
+from numpy.testing import assert_equal
 
 # import os
 # import scipy
@@ -22,8 +28,80 @@ our_phases = (hypothesis.Phase.explicit, hypothesis.Phase.reuse, hypothesis.Phas
 rng = np.random.default_rng(seed=123)
 
 
+def test_SpinBasis():
+    basis = ls.SpinBasis(3)
+    basis.build()
+    np.testing.assert_equal(basis.index(basis.states), np.arange(2**3))
+    assert basis.number_states == 2**3
+    assert [basis.state_to_string(basis.states[i]) for i in range(basis.number_states)] == [
+        "|000⟩",
+        "|001⟩",
+        "|010⟩",
+        "|011⟩",
+        "|100⟩",
+        "|101⟩",
+        "|110⟩",
+        "|111⟩",
+    ]
+
+    basis = ls.SpinBasis(3, hamming_weight=2)  # We want the subspace with only 2 spins up
+    basis.build()
+    assert [basis.state_to_string(basis.states[i]) for i in range(basis.number_states)] == [
+        "|011⟩",
+        "|101⟩",
+        "|110⟩",
+    ]
+
+    basis = ls.SpinBasis(4, hamming_weight=2, spin_inversion=-1)
+    basis.build()
+    assert [basis.state_to_string(basis.states[i]) for i in range(basis.number_states)] == [
+        "|0011⟩",
+        "|0101⟩",
+        "|0110⟩",
+    ]
+
+
+@st.composite
+def random_pauli_term(draw, number_sites, max_order=3):
+    operators = [pauli.SigmaX, pauli.SigmaY, pauli.SigmaZ, pauli.SigmaPlus, pauli.SigmaMinus]
+    p = draw(st.sampled_from(operators))
+    c = draw(st.complex_numbers(min_magnitude=1e-3, max_magnitude=10, allow_subnormal=False))
+    i = st.integers(min_value=0, max_value=number_sites - 1)
+    indices = st.lists(i, min_size=0, max_size=max_order).map(sorted)
+    return c * reduce(operator.mul, map(p, draw(indices)), S.One)
+
+
+@st.composite
+def random_pauli_expression(draw, max_number_sites=8, max_terms=10, max_order=3):
+    number_sites = draw(st.integers(min_value=1, max_value=max_number_sites - 1))
+    elements = st.lists(
+        random_pauli_term(number_sites=number_sites, max_order=max_order),
+        min_size=1,
+        max_size=max_terms,
+    )
+    return reduce(operator.add, draw(elements))
+
+
+@hypothesis.given(random_pauli_term(number_sites=4, max_order=3))
+@hypothesis.settings(max_examples=10, deadline=None, phases=our_phases)
+def test_foo(term):
+    print(term)
+
+
+def test_fixed_hamming_compilation():
+    import halide as hl
+
+    target = hl.get_jit_target_from_environment()
+    target = target.with_feature(hl.TargetFeature.NoAsserts)
+    target = target.with_feature(hl.TargetFeature.NoBoundsQuery)
+    target = target.with_feature(hl.TargetFeature.AVX512_Zen4)
+    _ = lattice_symmetries._kernels.xored_state_to_index_kernel(
+        ls.BasisInfo(10, hamming_weight=3), target=target
+    )
+
+
 def test_fixed_hamming_state_to_index_examples():
-    kernel = lattice_symmetries._kernels.fixed_hamming_state_to_index_kernel(10, 2)
+    kernel = lattice_symmetries._kernels.xored_state_to_index_kernel(ls.BasisInfo(10, 2))
 
     # NOTE: uncomment the following line to dlclose the shared library early.
     # If all goes well, the program should crash (likely, with a segmentation fault)
@@ -35,16 +113,21 @@ def test_fixed_hamming_state_to_index_examples():
     # Invoking using Halide::Callable
     np.random.seed(42)
     x = np.random.choice(states, size=10).astype(np.int64)
-    out = np.zeros(len(x), dtype=np.int64)
-    kernel.callable(x, out)
-    np.testing.assert_equal(states[out], x)
+    mask = np.zeros(1, dtype=np.int64)
+    out = np.zeros((1, len(x)), dtype=np.int64)
+    kernel.callable(x, mask, states.view(np.int64), out)
+    np.testing.assert_equal(states[out[0]], x)
 
     # Invoking using raw function pointers
     x_buf, x_buf_keep_alive = lattice_symmetries._kernels.create_halide_buffer_view(x)
-    out = np.zeros(len(x), dtype=np.int64)
+    mask_buf, mask_buf_keep_alive = lattice_symmetries._kernels.create_halide_buffer_view(mask)
+    states_buf, states_buf_keep_alive = lattice_symmetries._kernels.create_halide_buffer_view(
+        states.view(np.int64)
+    )
+    out = np.zeros((1, len(x)), dtype=np.int64)
     out_buf, out_buf_keep_alive = lattice_symmetries._kernels.create_halide_buffer_view(out)
-    kernel.ffi_fun_ptr(x_buf, out_buf)
-    np.testing.assert_equal(states[np.asarray(out)], x)
+    kernel.ffi_fun_ptr(x_buf, mask_buf, states_buf, out_buf)
+    np.testing.assert_equal(states[out[0]], x)
 
 
 @hypothesis.given(
@@ -58,23 +141,100 @@ def test_fixed_hamming_state_to_index_examples():
 @hypothesis.settings(max_examples=10, deadline=None, phases=our_phases)
 def test_fixed_hamming_state_to_index(args, batch_size):
     number_sites, hamming_weight = args
-    kernel = lattice_symmetries._kernels.fixed_hamming_state_to_index_kernel(
-        number_sites, hamming_weight
-    )
+    info = ls.BasisInfo(number_sites, hamming_weight)
+    kernel = lattice_symmetries._kernels.xored_state_to_index_kernel(info)
     states = np.arange(2**number_sites, dtype=np.uint64)
     states = states[[x.bit_count() == hamming_weight for x in states]]
     # Invoking using Halide::Callable
     np.random.seed(42)
     x = np.random.choice(states, size=batch_size).astype(np.int64)
-    out = np.zeros(len(x), dtype=np.int64)
-    kernel.callable(x, out)
-    np.testing.assert_equal(states[out], x)
+    mask = np.full((7,), fill_value=0, dtype=np.int64)
+    out = np.zeros((mask.size, x.size), dtype=np.int64)
+    kernel.callable(x, mask, states.view(np.int64), out)
+    np.testing.assert_equal(states[out], x.reshape(1, -1) ^ mask.reshape(-1, 1))
     # Invoking using raw function pointers
-    out = np.zeros(len(x), dtype=np.int64)
+    out = np.zeros((mask.size, x.size), dtype=np.int64)
     x_buf, x_buf_keep_alive = lattice_symmetries._kernels.create_halide_buffer_view(x)
+    mask_buf, mask_buf_keep_alive = lattice_symmetries._kernels.create_halide_buffer_view(mask)
+    states_buf, states_buf_keep_alive = lattice_symmetries._kernels.create_halide_buffer_view(
+        states.view(np.int64)
+    )
     out_buf, out_buf_keep_alive = lattice_symmetries._kernels.create_halide_buffer_view(out)
-    kernel.ffi_fun_ptr(x_buf, out_buf)
-    np.testing.assert_equal(states[np.asarray(out)], x)
+    kernel.ffi_fun_ptr(x_buf, mask_buf, states_buf, out_buf)
+    np.testing.assert_equal(states[out], x.reshape(1, -1) ^ mask.reshape(-1, 1))
+
+
+def test_is_representative_examples():
+    info = ls.BasisInfo(number_bits=10)
+    kernel = ls._kernels.is_representative_kernel(info)
+
+    # Invoking using Halide::Callable
+    x = np.random.choice(2**info.number_bits, size=10).astype(np.int64)
+    out = np.zeros(len(x), dtype=np.uint16)
+    kernel.callable(x, out)
+    np.testing.assert_equal(out, np.ones(len(x), dtype=np.uint16))
+
+    # Invoking using raw function pointers
+    # x_buf, x_buf_keep_alive = lattice_symmetries._kernels.create_halide_buffer_view(x)
+    # out = np.zeros(len(x), dtype=np.int64)
+    # out_buf, out_buf_keep_alive = lattice_symmetries._kernels.create_halide_buffer_view(out)
+    # kernel.ffi_fun_ptr(x_buf, out_buf)
+    # np.testing.assert_equal(states[np.asarray(out)], x)
+
+
+def test_enumerate_basis_states():
+    states, norms = ls.enumerate_basis_states(ls.BasisInfo(number_bits=5))
+    assert_equal(states, np.arange(2**5, dtype=np.uint64))
+    assert_equal(norms, np.ones(2**5, dtype=np.uint16))
+
+    states, norms = ls.enumerate_basis_states(ls.BasisInfo(number_bits=4, hamming_weight=2))
+    assert_equal(states, np.array([0b0011, 0b0101, 0b0110, 0b1001, 0b1010, 0b1100]))
+    assert_equal(norms, np.ones(6, dtype=np.uint16))
+
+
+@hypothesis.given(
+    st.builds(
+        lambda a, b: (max(a, b), min(a, b)),
+        st.integers(min_value=1, max_value=20),
+        st.integers(min_value=1, max_value=20),
+    ),
+)
+@hypothesis.settings(max_examples=10, deadline=None, phases=our_phases)
+def test_fixed_hamming_state_to_index_scalar(args):
+    number_sites, hamming_weight = args
+    batch_size = 16
+    states = np.arange(2**number_sites, dtype=np.uint64)
+    states = states[[x.bit_count() == hamming_weight for x in states]]
+
+    np.random.seed(42)
+    xs = np.random.choice(states, size=batch_size)
+
+    for i, x in enumerate(xs):
+        assert states[ls.fixed_hamming_state_to_index(int(x))] == x
+
+
+@hypothesis.given(
+    st.builds(
+        lambda a, b: (max(a, b), min(a, b)),
+        st.integers(min_value=1, max_value=20),
+        st.integers(min_value=1, max_value=20),
+    ),
+)
+@hypothesis.settings(max_examples=10, deadline=None, phases=our_phases)
+def test_fixed_hamming_index_to_state_scalar(args):
+    number_sites, hamming_weight = args
+    batch_size = 16
+    states = np.arange(2**number_sites, dtype=np.uint64)
+    states = states[[x.bit_count() == hamming_weight for x in states]]
+
+    np.random.seed(42)
+    indices = np.random.choice(len(states), size=batch_size)
+
+    for i in indices:
+        x = ls.fixed_hamming_index_to_state(
+            i, number_sites=number_sites, hamming_weight=hamming_weight
+        )
+        assert x == states[i]
 
 
 def test_permutation_to_benes_network_examples():
@@ -139,6 +299,136 @@ def test_axpy(alpha, arrays):
     ref = alpha * x + y
     ls.axpy(alpha, x, y)  # NOTE: modifies y inplace
     np.testing.assert_allclose(y, ref)
+
+
+# def test_diag_matrix_kernel():
+#     from lattice_symmetries.expression import (
+#         pauli_expression_to_nonbranching_terms,
+#         lower_nonbranching_terms,
+#         pauli_expression_to_matrix,
+#     )
+#
+#     info = ls.BasisInfo(2)
+#     e = sum(rng.uniform(0, 1) * pauli.SigmaZ(i) for i in range(info.number_bits))
+#     print(e)
+#
+#     op = ls._kernels.LoweredOperator(pauli_expression_to_nonbranching_terms(e))
+#
+#     states = np.arange(2**info.number_bits)
+#     out_re = np.zeros(states.size, dtype=np.float64)
+#     out_im = np.zeros(states.size, dtype=np.float64)
+#     op.diag_kernel.callable(states, op.terms.v_re_diag, op.terms.v_im_diag, out_re, out_im)
+#     ref = np.diag(np.asarray(pauli_expression_to_matrix(e), dtype=np.complex128))
+#     np.testing.assert_allclose(out_re + 1j * out_im, ref)
+#
+#     out = np.zeros(states.size, dtype=np.complex128)
+#     x = rng.uniform(0, 1, size=states.size) + rng.uniform(0, 1, size=states.size) * 1j
+#     op.apply_diag(states, x.reshape(-1, 1), out.reshape(-1, 1))
+#     np.testing.assert_allclose(out, ref * x)
+
+# def random_operator(max_order: int=3):
+#     for order
+#     pass
+
+
+@hypothesis.given(random_pauli_expression(max_number_sites=5))
+@hypothesis.example(sympy.Float(0.001))
+@hypothesis.example(-9.999 - 2.2250738585072e-309 * sympy.I - 10.0 * sympy.I * pauli.SigmaX(1))
+@hypothesis.example(pauli.SigmaPlus(0))
+@hypothesis.example(
+    (0.5 + 5.96046447753906e-8 * sympy.I) * pauli.SigmaPlus(1)
+    + (-1.40129846432482e-45 - 5.80934524614774 * sympy.I) * pauli.SigmaZ(2)
+)
+@hypothesis.example(
+    (-0.32052911031739 + 9.99486173438328 * sympy.I) * pauli.SigmaPlus(0) * pauli.SigmaPlus(1)
+    + 10.0 * pauli.SigmaX(0)
+)
+@hypothesis.settings(max_examples=10, deadline=None, phases=our_phases)
+def test_matrix_apply(e):
+    from lattice_symmetries.expression import (
+        pauli_expression_to_nonbranching_terms,
+        pauli_expression_to_matrix,
+        _collect_indices,
+    )
+
+    number_bits = 1 + max(_collect_indices(e), default=0)
+    info = ls.BasisInfo(number_bits)
+    terms = pauli_expression_to_nonbranching_terms(e)
+    states = np.arange(2**info.number_bits).astype(np.int64)
+    op = ls._kernels.LoweredOperator(terms)
+    ref = np.asarray(pauli_expression_to_matrix(e), dtype=np.complex128)
+
+    # x = np.zeros(states.size, dtype=np.complex128)
+    # x[0] = 1
+    x = rng.uniform(0, 1, size=states.size).astype(
+        np.float32
+    )  # + rng.uniform(0, 1, size=states.size) * 1j
+    out = np.zeros(states.size, dtype=np.float32)
+
+    op.apply(states, x, out)
+    np.testing.assert_allclose(out, (ref @ x).real, rtol=1e-6, atol=1e-7)
+
+
+def test_matrix_apply_example():
+    mk = lambda n: sum(
+        pauli.SigmaX(i) * pauli.SigmaX((i + 1) % n)
+        + pauli.SigmaY(i) * pauli.SigmaY((i + 1) % n)
+        + pauli.SigmaZ(i) * pauli.SigmaZ((i + 1) % n)
+        for i in range(n)
+    )
+
+    from lattice_symmetries.expression import (
+        pauli_expression_to_nonbranching_terms,
+        pauli_expression_to_matrix,
+        _collect_indices,
+    )
+
+    e = mk(5)
+    number_bits = 1 + max(_collect_indices(e), default=0)
+    info = ls.BasisInfo(number_bits)
+    terms = pauli_expression_to_nonbranching_terms(e)
+    states = np.arange(2**info.number_bits).astype(np.int64)
+    op = ls._kernels.LoweredOperator(terms)
+    ref = np.asarray(pauli_expression_to_matrix(e), dtype=np.complex128)
+
+    x = rng.uniform(0, 1, size=states.size).astype(
+        np.float32
+    )  # + rng.uniform(0, 1, size=states.size) * 1j
+    out = np.zeros(states.size, dtype=np.float32)
+
+    # op.off_diag_kernel.callable(states, op.terms.v_re_2d, op.terms.v_im_2d, x, out)
+    op.apply(states, x, out)
+
+    # op.apply(states, x.reshape(-1, 1), out.reshape(-1, 1))
+
+    np.testing.assert_allclose(out, (ref @ x).real, rtol=1e-6, atol=1e-7)
+
+    # info = ls.BasisInfo(2)
+    # e = mk(info.number_bits)
+    # terms = pauli_expression_to_nonbranching_terms(e)
+
+    # states = np.arange(2**info.number_bits)
+    # # for alpha in states:
+    # #     print([t.act_on_ket(alpha) for t in terms])
+
+    # op = ls._kernels.LoweredOperator(terms)
+
+    # ref = np.asarray(pauli_expression_to_matrix(e), dtype=np.complex128)
+    # # ref -= np.diag(np.diag(ref))
+
+    # out = np.zeros(states.size, dtype=np.complex128)
+    # # x = np.zeros(states.size, dtype=np.complex128)
+    # # x[0] = 1
+    # x = rng.uniform(0, 1, size=states.size) + rng.uniform(0, 1, size=states.size) * 1j
+    # op.apply(states, x.reshape(-1, 1), out.reshape(-1, 1))
+    # # print(ref)
+
+    # np.testing.assert_allclose(out, ref @ x)
+
+    # target = hl.get_jit_target_from_environment()
+    # target = target.with_feature(hl.TargetFeature.NoAsserts)
+    # target = target.with_feature(hl.TargetFeature.NoBoundsQuery)
+    # target = target.with_feature(hl.TargetFeature.AVX512_Zen4)
 
 
 # def test_readme():

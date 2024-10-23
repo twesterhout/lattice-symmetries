@@ -16,6 +16,36 @@ final: prev: {
       #   installCheckPhase = "true";
       # });
 
+      parallel-sparse-tools = python-final.buildPythonPackage {
+        pname = "parallel-sparse-tools";
+        version = "0.2.3";
+        src = final.fetchFromGitHub {
+          owner = "QuSpin";
+          repo = "parallel-sparse-tools";
+          rev = "ef72b076a0f50bab56afdec709f284ed63aa4dbf";
+          hash = "sha256-/Lf6vVrXB80tLOKFdMxGMdsNj3w3HScW4tmgGLIBoQk=";
+        };
+        pyproject = true;
+
+        propagatedBuildInputs = with python-final; [
+          numpy_2
+          (scipy.override { numpy = numpy_2; })
+        ];
+
+        buildInputs = [
+        ];
+
+        nativeBuildInputs = with python-final; [
+          setuptools
+          cython
+        ];
+
+        nativeCheckInputs = with python-final; [
+          pip
+          pytestCheckHook
+        ];
+      };
+
       # petsc4py = python-final.buildPythonPackage rec {
       #   pname = "petsc4py";
       #   version = final.petsc.version;
@@ -85,7 +115,7 @@ final: prev: {
       #       ++ lib.optional (petsc.mpiSupport && mpi.pname == "openmpi") openssh;
       # };
 
-      lattice-symmetries = python-final.buildPythonPackage {
+      lattice-symmetries = python-final.buildPythonPackage rec {
         pname = "lattice-symmetries";
         inherit version;
         src = ./.;
@@ -113,6 +143,7 @@ final: prev: {
         nativeBuildInputs = with python-final; [
           setuptools
           final.tree
+          final.ocl-icd
         ];
 
         nativeCheckInputs = with python-final; [
@@ -169,12 +200,19 @@ final: prev: {
           runHook postCheck
         '';
 
-        # preShellHook = ''
-        #   if test -e setup.py; then
-        #     rm -rf build/ lattice_symmetries/*.so
-        #     ${postPatch}
-        #   fi
-        # '';
+        shellHook = ''
+          if test -e setup.py; then
+            rm -rf build/ lattice_symmetries/*.so
+            ${postPatch}
+
+            tmp_path="$PWD/.pip-install"
+            mkdir -p "$tmp_path"
+            export PYTHONPATH="$tmp_path/${python-final.python.sitePackages}:$PYTHONPATH"
+            python -m pip install -e . --prefix $tmp_path --no-deps # --no-build-isolation --config-settings editable_mode=compat
+            export NIX_PYTHONPATH="$tmp_path/${python-final.python.sitePackages}:$${NIX_PYTHONPATH-}"
+          fi
+          export OCL_ICD_PATH=${final.ocl-icd}
+        '';
       };
 
     } // (

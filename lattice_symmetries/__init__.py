@@ -28,10 +28,22 @@
 
 __version__ = "3.0.0"
 
-from . import _ls, _axpy, _benes, _kernels
+from . import _ls, _numpy_helper, _axpy, _benes, _kernels, basis, expression
 
 from ._axpy import axpy
+from ._kernels import BasisInfo
 from ._benes import BenesNetwork, permutation_to_benes_network
+from .basis import (
+    SpinBasis,
+    fixed_hamming_state_to_index,
+    fixed_hamming_index_to_state,
+    enumerate_basis_states,
+)
 
 _ls.lib.ls_chpl_init()
-_ls.lib.hello()
+
+
+# result = _ls.ffi.new("ls_numpy_array_1d *")
+# _ls.lib.the_ultimate_solution(_ls.lib.ls_alloc_numpy_array_1d, result)
+# print(_ls.ffi.from_handle(result.handle))
+# _numpy_helper.ls_alloc_numpy_array_1d_handle = None

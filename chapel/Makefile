@@ -43,7 +43,7 @@ all: lib
 
 lib: lib/liblattice_symmetries_chapel.$(SHARED_EXT)
 
-lib/liblattice_symmetries_chapel.$(SHARED_EXT): src/FFI.chpl src/Library.chpl src/glibc_hacks.c
+lib/liblattice_symmetries_chapel.$(SHARED_EXT): src/FFI.chpl src/Library.chpl src/halide_helpers.c src/glibc_hacks.c
 	@mkdir -p $(@D)
 	@rm -rf $(@D)/*
 	CHPL_LIB_PIC=pic chpl \
@@ -58,8 +58,14 @@ lib/liblattice_symmetries_chapel.$(SHARED_EXT): src/FFI.chpl src/Library.chpl sr
 		$(CHPL_LDFLAGS)
 	# Remove Chapel-specific headers
 	sed -E -i '/#include\s+("stdchpl.h"|"wctype.h"|"ctype.h")/d' lib/lattice_symmetries_chapel.h
+	sed -i 's/c_fn_ptr_rehook/void*/g;s/_real32/float/g;s/_real64/double/g' lib/lattice_symmetries_chapel.h
 	# Add #pragma once
-	tmpfile=$$(mktemp); (echo '#pragma once'; cat lib/lattice_symmetries_chapel.h) > $$tmpfile && mv $$tmpfile lib/lattice_symmetries_chapel.h
+	tmpfile=$$(mktemp); \
+		(echo '#pragma once'; \
+		echo 'typedef struct _complex64 { float real; float imag; } _complex64;'; \
+		echo 'typedef struct _complex128 { double real; double imag; } _complex128;'; \
+		cat lib/lattice_symmetries_chapel.h) > $$tmpfile && mv $$tmpfile lib/lattice_symmetries_chapel.h
+	cat lib/lattice_symmetries_chapel.h
 
 install: lib
 	@mkdir -p $(PREFIX)/lib
