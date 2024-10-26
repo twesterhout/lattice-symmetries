@@ -423,6 +423,106 @@ def xored_state_to_index_kernel(info: BasisInfo, *args, **kwargs) -> CompiledKer
     return COMPILER.link_and_load(builder, "xored_state_to_index_kernel")
 
 
+class LoweredSymmetries:
+    masks: NDArray[np.uint64]
+    shifts: NDArray[np.uint64]
+    characters_re: NDArray[np.float64]
+    characters_im: NDArray[np.float64]
+
+
+def _bit_permute_step_64(x, m, d):
+    y = ((x >> d) ^ x) & m
+    return (x ^ y) ^ (y << d)
+
+
+def _make_permuted(alphas, masks, shifts):
+    batch_idx = hl.Var("batch_idx")
+    group_idx = hl.Var("group_idx")
+    y = hl.Func("y")
+
+    p = alphas[batch_idx]
+    for i in range(len(shifts)):
+        p = _bit_permute_step_64(p, masks[group_idx, i], shifts[i])
+
+    y[batch_idx, group_idx] = p
+    return y
+
+
+def _build_symmetric_is_representative_kernel(info: BasisInfo, symm: LoweredSymmetries):
+    masks = hl.Buffer(hl.Int(64), 2, symm.masks.view(np.int64), name="masks")
+    # shifts = hl.Buffer(hl.Int(64), 1, symm.shifts.view(np.int64), name="shifts")
+    characters_re = hl.Buffer(hl.Float(64), 1, symm.characters_re, name="characters")
+    alphas = hl.ImageParam(hl.Int(64), 1, name="alphas")
+
+    number_masks = symm.masks.shape[0]
+    depth = symm.masks.shape[1]
+    # count = alpha.dim(0).extent()
+
+    y = _make_permuted(alphas, masks, symm.shifts)
+    (batch_idx, group_idx) = y.args()
+
+    temp = hl.Func("temp")
+    r_group = hl.RDom([1, number_masks - 1], "k")
+
+    init_n = hl.cast(hl.UInt(16), 1)
+    if info.spin_inversion is not None:
+        inverted = alphas[batch_idx] ^ inversion_mask
+        is_greater = inverted > alphas[batch_idx]
+        init_n = hl.cast(hl.UInt(16), is_greater)
+
+    temp[batch_idx] = init_n
+    current_n = temp[batch_idx]
+    is_greater = y[batch_idx, r_group] > alphas[batch_idx]
+    is_equal = y[batch_idx, r_group] == alphas[batch_idx]
+    is_trivial = characters_re[r_group] == hl.cast(hl.Float(64), 1)
+    next_n = hl.cast(hl.UInt(16), is_greater | (is_equal & is_trivial)) * (
+        current_n + hl.cast(hl.UInt(16), is_equal)
+    )
+    if info.spin_inversion is not None:
+        inverted = y[batch_idx, r_group] ^ inversion_mask
+        is_greater = inverted > alphas[batch_idx]
+        is_equal = inverted == alphas[batch_idx]
+        is_trivial = characters_re[r_group] == hl.cast(hl.Float(64), info.spin_inversion)
+        next_n = hl.cast(hl.UInt(16), is_greater | (is_equal & is_trivial)) * (
+            next_n + hl.cast(hl.UInt(16), is_equal)
+        )
+    #
+    #     rgroup_idx.where(current_n > 0);
+    #     temp(batch_idx) = next_n;
+    #
+    #     Func norm{"norm"};
+    #     norm(batch_idx) = temp(batch_idx);
+    #
+    #     auto const block_size = from_env("LS_HS_IS_REPRESENTATIVE_BLOCK_SIZE", 1);
+    #     LS_CHECK(block_size <= LS_HS_MAX_BLOCK_SIZE, "block_size too big");
+    #     // Shapes & strides
+    #     _x.dim(0).set_min(0).set_stride(1).set_extent(block_size * (_x.dim(0).extent() / block_size));
+    #     norm.output_buffer().dim(0).set_min(0).set_stride(1).set_extent(_x.dim(0).extent());
+    #
+    #     if (block_size > 1) {
+    #         Var outer{"outer"};
+    #         Var inner{"inner"};
+    #         norm.split(batch_idx, outer, inner, block_size).vectorize(inner);
+    #
+    #         temp.split(batch_idx, outer, inner, block_size).vectorize(inner);
+    #         temp.update(0).split(batch_idx, outer, inner, block_size).reorder(inner, rgroup_idx, outer).vectorize(inner);
+    #         temp.compute_at(norm, outer).store_in(MemoryType::Register);
+    #     }
+    #     else {
+    #         temp.compute_at(norm, batch_idx).store_in(MemoryType::Register);
+    #     }
+    #
+    #     auto target = get_jit_target_from_environment();
+    #     // target.set_features({Target::Feature::NoAsserts, Target::Feature::NoBoundsQuery});
+    #     if (static_cast<bool>(from_env("LS_HS_DEBUG_KERNELS", false))) {
+    #         norm.print_loop_nest();
+    #         norm.compile_to_lowered_stmt("is_representative.html", {_x}, Halide::HTML, target);
+    #     }
+    #     auto callable = norm.compile_to_callable({_x}, target);
+    #     return callable;
+    # }
+
+
 def _build_is_representative_kernel(info: BasisInfo):
     if info.number_bits > 64:
         raise NotImplementedError("is_representative not yet implemented for large systems")
@@ -431,6 +531,9 @@ def _build_is_representative_kernel(info: BasisInfo):
     norm = hl.Func("norm")
     i = hl.Var("i_inner")
     keep_alive = dict()
+
+    if len(info.symmetries) > 0:
+        pass
 
     if info.hamming_weight is None and info.spin_inversion is None and len(info.symmetries) == 0:
         # Identity function

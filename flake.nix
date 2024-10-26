@@ -7,7 +7,7 @@
   };
 
   inputs = {
-    nixpkgs.url = "github:twesterhout/nixpkgs/halide-v18_2";
+    nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     nix-chapel = {
       url = "path:/home/tom/Projects/nix-chapel"; # github:twesterhout/nix-chapel";
@@ -42,17 +42,6 @@
 
       composed-overlay = lib.composeManyExtensions [
         (final: prev: {
-          # halide = prev.halide.overrideAttrs
-          #   (attrs: {
-          #     patches = (prev.patches or [ ]) ++ [
-          #       (final.fetchpatch {
-          #         name = "strict-prototypes-fix.patch";
-          #         url = "https://github.com/twesterhout/Halide/commit/24831b77f51f8def7fe850ba4a921e746b7a3725.patch";
-          #         hash = "sha256-uR3jn88UzfqpMrLFVZBrVhw4orTAXXqwNiV6qlXdjdA=";
-          #       })
-          #     ];
-          #   });
-
           # petsc = (prev.petsc.override {
           #   mpiSupport = true;
           #   petsc-optimized = true;
@@ -68,16 +57,29 @@
           #     };
           #   });
 
-          # slepc = final.callPackage ./nix/slepc.nix { };
+          slepc = final.callPackage ./nix/slepc.nix { };
         })
         inputs.nix-chapel.overlays.default
+        (final: prev: {
+          # Configure the Chapel runtime
+          chapel = prev.chapel.override {
+            compiler = "llvm"; # if enableSanitizers then "gnu" else "llvm";
+            settings = {
+              CHPL_GMP = "none";
+              CHPL_RE2 = "none";
+              CHPL_UNWIND = "none";
+              CHPL_LIB_PIC = "pic";
+              CHPL_TARGET_CPU = "none";
+            } // final.lib.optionalAttrs (false) {
+              CHPL_TARGET_MEM = "cstdlib";
+              CHPL_HOST_MEM = "cstdlib";
+              CHPL_TASKS = "fifo";
+              CHPL_SANITIZE_EXE = "address";
+            };
+          };
+        })
         (import ./chapel.nix { inherit version; })
         (import ./python.nix { inherit version; })
-        # halide-haskell.overlays.default
-        # kernels-overlay
-        # (haskell-overlay withRelocated)
-        # chapel-overlay
-        # python-overlay
       ];
 
       pkgs-for = system: import inputs.nixpkgs { inherit system; overlays = [ composed-overlay ]; };
@@ -104,6 +106,7 @@
           # inherit (haskell.packages) ghc964;
           inherit python3Packages;
           inherit python310Packages;
+          inherit chapel;
           inherit lattice-symmetries-chapel-ffi;
           inherit lattice-symmetries-chapel;
           # inherit petsc slepc;

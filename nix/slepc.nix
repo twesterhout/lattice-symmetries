@@ -13,14 +13,12 @@
 
 stdenv.mkDerivation rec {
   pname = "slepc";
-  version = "3.20.1";
+  version = "3.21.2";
 
   src = fetchurl {
     url = "https://slepc.upv.es/download/distrib/slepc-${version}.tar.gz";
-    sha256 = "sha256-Wja2ZIlYgdOFjQZE9Wv3u5Ir2rcNcy+hHL9kQv7BGAY=";
+    sha256 = "sha256-MG+mSXUFCbOVe5+TEb/13B0gvlxdSU3WRyWExDm5MfY=";
   };
-
-  patches = [ ./filter_mpi_warnings.patch ];
 
   strictDeps = true;
   nativeBuildInputs = [ python3 gnumake gfortran ]

@@ -63,22 +63,8 @@ final: prev: {
 
     nativeBuildInputs = [
       final.patchelf
+      final.chapel
 
-      (final.chapel.override {
-        compiler = "llvm"; # if enableSanitizers then "gnu" else "llvm";
-        settings = {
-          CHPL_GMP = "none";
-          CHPL_RE2 = "none";
-          CHPL_UNWIND = "none";
-          CHPL_LIB_PIC = "pic";
-          CHPL_TARGET_CPU = "none";
-        } // final.lib.optionalAttrs (false) {
-          CHPL_TARGET_MEM = "cstdlib";
-          CHPL_HOST_MEM = "cstdlib";
-          CHPL_TASKS = "fifo";
-          CHPL_SANITIZE_EXE = "address";
-        };
-      })
       # removeReferencesTo
     ];
   };

@@ -223,6 +223,7 @@ class SpinBasis(Basis):
         number_spins: int,
         hamming_weight: int | None = None,
         spin_inversion: int | None = None,
+        symmetries: list[tuple[Permutation, Rational]] = [],
     ):
         if number_spins < 0:
             raise ValueError(f"invalid number_spins={number_spins}")
@@ -235,7 +236,10 @@ class SpinBasis(Basis):
                 msg = f"incompatible spin_inversion={spin_inversion} and hamming_weight={hamming_weight}"
                 raise ValueError(msg)
         info = BasisInfo(
-            number_bits=number_spins, hamming_weight=hamming_weight, spin_inversion=spin_inversion
+            number_bits=number_spins,
+            hamming_weight=hamming_weight,
+            spin_inversion=spin_inversion,
+            symmetries=symmetries,
         )
         super().__init__(info)
 
