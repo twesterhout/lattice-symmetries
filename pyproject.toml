@@ -17,11 +17,12 @@ license = {file = "LICENSE"}
 requires-python = ">=3.10"
 dependencies = [
     "cffi",
+    "lark",
     "loguru",
     "more-itertools",
     "numpy",
     "scipy",
-    "sympy"
+    "sympy",
     # NOTE: Adding Halide here generates a bunch of problems which I don't know how
     # to solve at the moment, so for now one has to do a separate pip install
     # of Halide

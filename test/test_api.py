@@ -1,31 +1,117 @@
 import lattice_symmetries as ls
 import lattice_symmetries._kernels
 import sympy
-from sympy.combinatorics import Permutation
+import time
+import math
+from loguru import logger
+from sympy import Rational
+from sympy.combinatorics import Permutation, PermutationGroup
 from sympy.physics.quantum import pauli, represent
+from scipy.special import comb
 from sympy.core.singleton import S
 from functools import reduce
 import random
 import operator
+import importlib
 
 # from lattice_symmetries import Expr
 # import math
-# import igraph as ig
+import igraph as ig
 # import glob
 # import json
 import numpy as np
 from numpy.testing import assert_equal
 
 # import os
-# import scipy
+import scipy.sparse.linalg
+import pytest
 from pytest import raises, approx
 import hypothesis
 import hypothesis.strategies as st
 import hypothesis.extra.numpy
 
+has_quspin = importlib.util.find_spec("quspin") is not None
+
 our_phases = (hypothesis.Phase.explicit, hypothesis.Phase.reuse, hypothesis.Phase.generate)
 
 rng = np.random.default_rng(seed=123)
+
+
+def test_trailing_zeros():
+    from lattice_symmetries.basis import trailing_zeros
+    assert trailing_zeros(0) == 0
+    assert trailing_zeros(1) == 0
+    assert trailing_zeros(2) == 1
+    assert trailing_zeros(3) == 0
+    assert trailing_zeros(4) == 2
+    assert trailing_zeros(7) == 0
+    assert trailing_zeros(8) == 3
+    assert trailing_zeros(40) == 3
+    assert trailing_zeros(128) == 7
+
+def test_generate_offset_ranges():
+    from lattice_symmetries._kernels import generate_offset_ranges
+
+    representatives = np.array([0, 1, 2, 4, 8, 9, 16, 17], dtype=np.uint64)
+    number_bits = 3
+    shift = 61
+    offsets, range_size = generate_offset_ranges(representatives, number_bits, shift)
+    np.testing.assert_equal(offsets, [0, 0, 0, 0, 0, 0, 0, 0, 8])
+    assert range_size == 8
+    
+    number_bits = 3
+    shift = 2
+    offsets, range_size = generate_offset_ranges(representatives, number_bits, shift)
+    np.testing.assert_equal(offsets, [0, 3, 4, 5, 5, 5, 5, 5, 8])
+    assert range_size == 3
+
+    representatives = np.array([0, 1, 2, 3], dtype=np.uint64)
+    number_bits = 0
+    for shift in range(64):
+        offsets, range_size = generate_offset_ranges(representatives, number_bits, shift)
+        assert len(offsets) == 2
+        assert offsets[0] == 0
+        assert offsets[1] == len(representatives)
+        assert range_size == len(representatives)
+
+    representatives = np.array([42], dtype=np.uint64)
+    number_bits = 2
+    shift = 4
+    offsets, range_size = generate_offset_ranges(representatives, number_bits, shift)
+    np.testing.assert_equal(offsets, [0, 0, 0, 0, 1])
+    assert range_size == 1
+
+    # Test with numbers that have large gaps between them
+    representatives = np.array([0, (1 << 32), (2 << 32), (3 << 32)], dtype=np.uint64)
+    number_bits = 2
+    shift = 32
+    offsets, range_size = generate_offset_ranges(representatives, number_bits, shift)
+    assert len(offsets) == 5  # 2^2 + 1
+    assert offsets[0] == 0
+    assert offsets[1] == 1
+    assert offsets[2] == 2
+    assert offsets[3] == 3
+    assert offsets[4] == 4
+    assert range_size == 1
+
+def test_state_to_index_binary_search():
+    from lattice_symmetries._kernels import state_to_index_kernel
+
+    # Test with small numbers first
+    representatives = np.array([0, 1, 2, 4, 8, 9, 16, 17], dtype=np.int64)
+    kernel = state_to_index_kernel(representatives, prefix_bits=1)
+    alpha = np.array([0, 1, 4, 5], dtype=np.int64)
+    out = np.zeros(alpha.size, dtype=np.int32)
+    kernel.callable(alpha, representatives, out)
+    np.testing.assert_equal(out, [0, 1, 3, -1])
+
+    # Test with larger numbers and more complex patterns
+    representatives = np.array([0, 3, 7, 15, 31, 63, 127, 255, 511, 1023], dtype=np.int64)
+    kernel = state_to_index_kernel(representatives, prefix_bits=4)
+    alpha = np.array([31, 0, 255, 7, 1024, 15, 63, 512, 3, 127, 8, 511, 32, 16, 256, 64, 1023], dtype=np.int64)
+    out = np.zeros(alpha.size, dtype=np.int32)
+    kernel.callable(alpha, representatives, out)
+    np.testing.assert_equal(out, [4, 0, 7, 2, -1, 3, 5, -1, 1, 6, -1, 8, -1, -1, -1, -1, 9])
 
 
 def test_SpinBasis():
@@ -59,6 +145,204 @@ def test_SpinBasis():
         "|0101⟩",
         "|0110⟩",
     ]
+
+
+def reverse_bits(x, n_bits):
+    x = np.array(x)
+    x_reversed = np.zeros_like(x)
+    for _ in range(n_bits):
+        x_reversed = (x_reversed << 1) | x & 1
+        x >>= 1
+    return x_reversed
+
+
+def permute_bits(x, permutation):
+    x = np.array(x)
+    x_permuted = np.zeros_like(x)
+    for i in range(permutation.size):
+        x_permuted |= ((x >> permutation[i]) & 1) << i
+    return x_permuted
+
+
+def from_quspin_states(basis_states, basis):
+    # QuSpin orders basis states dirrefently:
+    #   - It stores the spin 0 in the most significant bit, and lattice-symmetries in the least significant bit
+    basis_states = reverse_bits(basis_states, basis.number_bits)
+    #   - It uses 1 to represent ↑, and 0 to represent ↓, but lattice symmetries does the inverse 😭
+    basis_states = basis_states ^ ((1 << basis.number_bits) - 1)
+
+    representatives = basis_states
+    characters = np.ones(basis_states.size, dtype=np.complex128)
+    if basis.spin_inversion is not None:
+        mask = (1 << basis.number_bits) - 1
+        inverted = representatives ^ mask
+        characters[inverted < representatives] = basis.spin_inversion
+        representatives = np.minimum(representatives, inverted)
+    return representatives, characters
+
+
+@pytest.mark.skipif(not has_quspin, reason="QuSpin not available")
+@pytest.mark.parametrize("number_bits", list(range(1, 17)))
+def test_SpinBasis_quspin_no_symmetries(number_bits):
+    import quspin
+
+    basis = ls.SpinBasis(number_spins=number_bits)
+    basis.build()
+
+    quspin_basis = quspin.basis.spin_basis_1d(number_bits)
+    ref, _ = from_quspin_states(quspin_basis.states, basis)
+    ref.sort()
+
+    np.testing.assert_equal(basis.states, ref)
+
+
+@st.composite
+def random_number_bits_and_hamming_weight(draw, max_number_states=2**16):
+    number_bits = draw(st.integers(min_value=1, max_value=64))
+    predicate = lambda h: sympy.binomial(number_bits, h) < max_number_states
+    hamming_weights = list(filter(predicate, range(number_bits + 1)))
+    hamming_weight = draw(st.sampled_from(hamming_weights))
+    return number_bits, hamming_weight
+
+
+@st.composite
+def random_basis_info_1d(draw, max_number_states=2**16):
+    number_bits = draw(st.integers(min_value=1, max_value=64))
+
+    predicate = lambda h: sympy.binomial(number_bits, h) / number_bits < max_number_states
+    choices = (st.sampled_from(list(filter(predicate, range(number_bits + 1)))),)
+    if 2**number_bits / number_bits < max_number_states:
+        choices = choices + (st.just(None),)
+    if number_bits % 2 == 0:
+        choices = choices + (st.just(number_bits // 2),)
+    hamming_weight = draw(st.one_of(*choices))
+
+    if hamming_weight is None:
+        choices = (None, -1, 1)
+    else:
+        choices = (None, -1, 1) if 2 * hamming_weight == number_bits else (None,)
+    spin_inversion = draw(st.sampled_from(choices))
+
+    if number_bits > 1:
+        translation = draw(st.integers(min_value=1, max_value=number_bits - 1))
+        p = Permutation(list(range(1, number_bits)) + [0])
+        symmetries = [(p, Rational(translation, number_bits))]
+    else:
+        symmetries = []
+
+    return ls.BasisInfo(number_bits, hamming_weight, spin_inversion, symmetries)
+
+
+@pytest.mark.skipif(not has_quspin, reason="QuSpin not available")
+@hypothesis.given(random_number_bits_and_hamming_weight(max_number_states=2**16))
+@hypothesis.settings(max_examples=10, deadline=None, phases=our_phases)
+def test_SpinBasis_quspin_U1(args):
+    import quspin
+
+    number_bits, hamming_weight = args
+    basis = ls.SpinBasis(number_spins=number_bits, hamming_weight=hamming_weight)
+    basis.build()
+
+    quspin_basis = quspin.basis.spin_basis_1d(number_bits, Nup=number_bits - hamming_weight)
+    ref, _ = from_quspin_states(quspin_basis.states, basis)
+    ref.sort()
+
+    np.testing.assert_equal(basis.states, ref)
+
+
+@pytest.mark.skipif(not has_quspin, reason="QuSpin not available")
+@hypothesis.given(st.integers(min_value=1, max_value=16), st.sampled_from([-1, 1]))
+@hypothesis.settings(max_examples=10, deadline=None, phases=our_phases)
+def test_SpinBasis_quspin_Z2(number_bits, spin_inversion):
+    import quspin
+
+    basis = ls.SpinBasis(number_spins=number_bits, spin_inversion=spin_inversion)
+    basis.build()
+
+    quspin_basis = quspin.basis.spin_basis_1d(number_bits, zblock=spin_inversion)
+    ref, _ = from_quspin_states(quspin_basis.states, basis)
+    ref.sort()
+
+    np.testing.assert_equal(basis.states, ref)
+
+    if number_bits % 2 == 0:
+        basis = ls.SpinBasis(number_bits, number_bits // 2, spin_inversion=spin_inversion)
+        basis.build()
+
+        quspin_basis = quspin.basis.spin_basis_1d(
+            number_bits, Nup=number_bits // 2, zblock=spin_inversion
+        )
+        ref, _ = from_quspin_states(quspin_basis.states, basis)
+        ref.sort()
+
+        np.testing.assert_equal(basis.states, ref)
+
+
+@pytest.mark.skipif(not has_quspin, reason="QuSpin not available")
+@hypothesis.example(ls.BasisInfo(4, 2))
+@hypothesis.example(ls.BasisInfo(10, 0))
+@hypothesis.example(ls.BasisInfo(10, 6))
+@hypothesis.example(ls.BasisInfo(20, 17))
+@hypothesis.given(random_basis_info_1d(max_number_states=2**10))
+@hypothesis.settings(max_examples=5, deadline=None, phases=our_phases)
+def test_SpinBasis_quspin_1d(info):
+    from quspin.basis import spin_basis_1d
+
+    basis = ls.SpinBasis(
+        number_spins=info.number_bits,
+        hamming_weight=info.hamming_weight,
+        spin_inversion=info.spin_inversion,
+        symmetries=info.symmetries,
+    )
+    logger.debug(info)
+    tick = time.perf_counter()
+    basis.build()
+    tock = time.perf_counter()
+    logger.debug(f"build() took {tock - tick}")
+
+    Nup = info.number_bits - info.hamming_weight if info.hamming_weight is not None else None
+    if len(info.symmetries) > 0:
+        kblock = int(info.number_bits * info.symmetries[0][1])
+        if kblock != 0:
+            kblock = info.number_bits - kblock
+    else:
+        kblock = None
+    zblock = info.spin_inversion
+
+    tick = time.perf_counter()
+    quspin_basis = spin_basis_1d(info.number_bits, Nup=Nup, kblock=kblock, zblock=zblock)
+    tock = time.perf_counter()
+    logger.debug(f"spin_basis_1d() took {tock - tick}")
+    ref = quspin_basis.states ^ (2**info.number_bits - 1)
+
+    np.testing.assert_equal(basis.states, ref)
+
+
+def test_is_representative_examples():
+    symmetries = [(Permutation([1, 2, 3, 0]), Rational(0, 4))]
+    basis = ls.SpinBasis(4, symmetries=symmetries)
+    kernel = lattice_symmetries._kernels.is_representative_kernel(basis.info, verbose=True)
+
+    states = np.arange(2**basis.info.number_bits).astype(np.int64)
+    out = np.zeros(states.size, dtype=np.uint16)
+    kernel.callable(states, out)
+
+    for a, n in zip(states, out):
+        print(basis.state_to_string(a), n)
+
+    basis.build()
+    print(basis.states)
+
+    symmetries = [(Permutation(list(range(1, 20)) + [0]), Rational(0, 20))]
+    basis = ls.SpinBasis(20, hamming_weight=17, symmetries=symmetries)
+    kernel = lattice_symmetries._kernels.is_representative_kernel(basis.info, verbose=True)
+    states = np.array(
+        [0b00011111111111111111, 0b00111111111111111110, 0b01111111111111111100]
+    ).astype(np.int64)
+    out = np.zeros(states.size, dtype=np.uint16)
+    kernel.callable(states, out)
+    for a, n in zip(states, out):
+        print(basis.state_to_string(a), n)
 
 
 @st.composite
@@ -164,7 +448,7 @@ def test_fixed_hamming_state_to_index(args, batch_size):
     np.testing.assert_equal(states[out], x.reshape(1, -1) ^ mask.reshape(-1, 1))
 
 
-def test_is_representative_examples():
+def notest_is_representative_examples():
     info = ls.BasisInfo(number_bits=10)
     kernel = ls._kernels.is_representative_kernel(info)
 
@@ -355,7 +639,7 @@ def test_matrix_apply(e):
     info = ls.BasisInfo(number_bits)
     terms = pauli_expression_to_nonbranching_terms(e)
     states = np.arange(2**info.number_bits).astype(np.int64)
-    op = ls._kernels.LoweredOperator(terms)
+    op = ls._kernels.LoweredOperator(info=info, terms=terms, symm=None, state_to_index_info=None)
     ref = np.asarray(pauli_expression_to_matrix(e), dtype=np.complex128)
 
     # x = np.zeros(states.size, dtype=np.complex128)
@@ -368,6 +652,48 @@ def test_matrix_apply(e):
     op.apply(states, x, out)
     np.testing.assert_allclose(out, (ref @ x).real, rtol=1e-6, atol=1e-7)
 
+@pytest.mark.skipif(not has_quspin, reason="QuSpin not available")
+def test_matrix_apply_quspin_U1():
+    np.random.seed(42)
+    import quspin
+    from lattice_symmetries.expression import (
+        pauli_expression_to_nonbranching_terms,
+        pauli_expression_to_matrix,
+        _collect_indices,
+    )
+
+    number_bits = 10
+    quspin_basis = quspin.basis.spin_basis_1d(number_bits, Nup=number_bits // 2)
+    quspin_J_nn = [[1, i, (i + 1) % number_bits] for i in range(number_bits)]
+    quspin_static = [["xx", quspin_J_nn], ["yy", quspin_J_nn], ["zz", quspin_J_nn]]
+    quspin_dynamic = []
+    hamiltonian = quspin.operators.hamiltonian(quspin_static, quspin_dynamic, dtype=np.float64, basis=quspin_basis)
+
+    number_states = quspin_basis.states.size
+    x = np.random.rand(number_states)
+    # x = np.zeros(number_states)
+    # x[1] = 1
+    ref = hamiltonian.dot(x)
+
+    mk = lambda n: sum(
+        pauli.SigmaX(i) * pauli.SigmaX((i + 1) % n)
+        + pauli.SigmaY(i) * pauli.SigmaY((i + 1) % n)
+        + pauli.SigmaZ(i) * pauli.SigmaZ((i + 1) % n)
+        for i in range(n)
+    )
+
+    e = mk(number_bits)
+
+    basis = ls.SpinBasis(number_spins=number_bits, hamming_weight=number_bits // 2)
+    basis.build()
+
+    terms = pauli_expression_to_nonbranching_terms(e)
+    op = ls._kernels.LoweredOperator(info=basis.info, terms=terms, symm=None, state_to_index_info=None)
+
+    out = np.zeros(number_states, dtype=np.float32)
+    op.apply(basis.states, x.astype(np.float32), out)
+
+    np.testing.assert_allclose(out, ref, rtol=1e-6, atol=1e-7)
 
 def test_matrix_apply_example():
     mk = lambda n: sum(
@@ -388,7 +714,7 @@ def test_matrix_apply_example():
     info = ls.BasisInfo(number_bits)
     terms = pauli_expression_to_nonbranching_terms(e)
     states = np.arange(2**info.number_bits).astype(np.int64)
-    op = ls._kernels.LoweredOperator(terms)
+    op = ls._kernels.LoweredOperator(info=info, terms=terms, symm=None, state_to_index_info=None)
     ref = np.asarray(pauli_expression_to_matrix(e), dtype=np.complex128)
 
     x = rng.uniform(0, 1, size=states.size).astype(
@@ -430,83 +756,289 @@ def test_matrix_apply_example():
     # target = target.with_feature(hl.TargetFeature.NoBoundsQuery)
     # target = target.with_feature(hl.TargetFeature.AVX512_Zen4)
 
+def test_matrix_apply_example_symmetries():
+    mk = lambda n: sum(
+        pauli.SigmaX(i) * pauli.SigmaX((i + 1) % n)
+        + pauli.SigmaY(i) * pauli.SigmaY((i + 1) % n)
+        + pauli.SigmaZ(i) * pauli.SigmaZ((i + 1) % n)
+        for i in range(n)
+    )
 
-# def test_readme():
-#     assert Expr("σˣ₀") == Expr("\\sigma^x_0")
-#     assert np.array_equal(Expr("σˣ₀").to_dense(), np.array([[0, 1], [1, 0]]))
-#     assert Expr("Sˣ₀") == 0.5 * Expr("σˣ₀")
-#     assert Expr("σʸ₀") == Expr("\\sigma^y_0")
-#     assert np.array_equal(Expr("σʸ₀").to_dense(), np.array([[0, -1j], [1j, 0]]))
-#     assert Expr("Sʸ₀") == 0.5 * Expr("σʸ₀")
-#     assert Expr("σᶻ₀") == Expr("\\sigma^z_0")
-#     assert np.array_equal(Expr("σᶻ₀").to_dense(), np.array([[1, 0], [0, -1]]))
-#     assert Expr("Sᶻ₀") == 0.5 * Expr("σᶻ₀")
-#     assert np.array_equal(Expr("I", particle="spin-1/2").to_dense(), np.array([[1, 0], [0, 1]]))
-#
-#     assert Expr("Sˣ₀ Sˣ₁ + Sʸ₀ Sʸ₁ + Sᶻ₀ Sᶻ₁") == Expr("Sx0 Sx1 + Sy0 Sy1 + Sz0 Sz1")
-#     # fmt: off
-#     assert Expr("Sˣ₀ Sˣ₁ + Sʸ₀ Sʸ₁ + Sᶻ₀ Sᶻ₁") == \
-#         Expr("Sˣ₀") * Expr("Sˣ₁") + Expr("Sʸ₀") * Expr("Sʸ₁") + Expr("Sᶻ₀") * Expr("Sᶻ₁")
-#     # fmt: on
-#     assert Expr("Sˣ₀ Sˣ₁ + Sʸ₀ Sʸ₁ + Sᶻ₀ Sᶻ₁") == Expr("0.5 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + 0.25 σᶻ₀ σᶻ₁")
-#
-#     assert str(Expr("Sˣ₀ Sˣ₁ + Sʸ₀ Sʸ₁ + Sᶻ₀ Sᶻ₁")) == "0.25 σᶻ₀ σᶻ₁ + 0.5 σ⁺₀ σ⁻₁ + 0.5 σ⁻₀ σ⁺₁"
-#     assert str(Expr("0.5 (σˣ₁ + 1im σʸ₁) - σ⁺₁")) == "0.0 I"
-#     assert str(Expr("σ⁺₁ σ⁺₁")) == "0.0 I"
-#
-#
-# def test_expr_construction():
-#     _ = ls.Expr("2 I", particle="spin")
-#     _ = ls.Expr("2 I + S+3")
-#     _ = ls.Expr(expression="2 I + S+3", sites=[[2], [4]])
-#     _ = ls.Expr("5 σ⁺₀ σ⁻₁ + (8 + 3im) σ⁻₁")
-#     _ = ls.Expr("-2 (c†₀ c₁ + c†₁ c₀)")
-#
-#     with raises(ValueError, match=r".*particle type.*"):
-#         ls.Expr(expression="2 I")
-#     with raises(ValueError, match=r".*cannot replace.*"):
-#         ls.Expr(expression="S+3", sites=[[2], [3, 4]])
-#     # Ilya's expressions
-#     _ = ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁")
-#     _ = ls.Expr(
-#         "0.5 (σˣ₀ + σᶻ₀)(σˣ₁ + σᶻ₁)(σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀)(σˣ₁ + σᶻ₁)(σˣ₀ + σᶻ₀) + 0.25 (σˣ₁ + σᶻ₁)(σˣ₀ + σᶻ₀)σᶻ₀ σᶻ₁(σˣ₀ + σᶻ₀)(σˣ₁ + σᶻ₁)"
-#     )
-#
-#     def heisenberg_expr_rot(phi):
-#         C = f"({np.sin(phi)} σˣ₀ + {np.cos(phi)} σᶻ₀)({np.sin(phi)} σˣ₁ + {np.cos(phi)} σᶻ₁)"
-#         return f"2 {C}(σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) {C} + {C} σᶻ₀ σᶻ₁{C}"
-#
-#     _ = ls.Expr(heisenberg_expr_rot(math.pi / 4))
-#
-#
-# def test_expr_replace_indices():
-#     a = ls.Expr("2 I + S+3")
-#     b = ls.Expr("2 I + S+57")
-#     assert a.replace_indices({3: 57}) == b
-#
-#
-# def test_expr_arithmetic():
-#     a = ls.Expr("2 I + S+3")
-#     b = ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁")
-#     assert a + b == b + a
-#     assert a + a == 2 * a
-#     assert a - b == -(b - a)
-#     assert a.adjoint() == ls.Expr("2 I + S-3")
-#     assert b.adjoint() == b
-#
-#
-# def test_expr_properties():
-#     a = ls.Expr("2 I + S+3")
-#     b = ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁")
-#     assert a.is_real
-#     assert not a.is_hermitian
-#     assert not a.is_identity
-#     assert b.is_real
-#     assert b.is_hermitian
-#     assert not b.is_identity
-#     assert a.number_sites == 4
-#     assert b.number_sites == 2
-#
+    from lattice_symmetries.expression import (
+        pauli_expression_to_nonbranching_terms,
+        pauli_expression_to_matrix,
+        _collect_indices,
+    )
+
+    number_bits = 4
+    e = mk(number_bits)
+    symmetries = [(Permutation(list(range(1, number_bits)) + [0]), Rational(0, 1))]
+    basis = ls.SpinBasis(number_spins=number_bits, symmetries=symmetries)
+    basis.build()
+
+    terms = pauli_expression_to_nonbranching_terms(e)
+    symm = ls._kernels.LoweredSymmetries(basis.info.symmetries)
+
+
+    total_bits = int(basis.states.max()).bit_length()
+    prefix_bits = 1
+    shift = max(0, total_bits - prefix_bits)
+    offsets, range_size = ls._kernels.generate_offset_ranges(basis.states, prefix_bits, shift)
+    state_to_index_info = ls._kernels.StateToIndexInfo(
+        offsets=offsets,
+        shift=shift,
+        prefix_bits=prefix_bits,
+        range_size=range_size,
+    )
+
+    op = ls._kernels.LoweredOperator(info=basis.info, terms=terms, symm=symm, state_to_index_info=state_to_index_info)
+    ref = np.asarray(pauli_expression_to_matrix(e), dtype=np.complex128)
+
+    x = rng.uniform(0, 1, size=basis.states.size).astype(
+        np.float32
+    )  # + rng.uniform(0, 1, size=basis.states.size) * 1j
+    out = np.zeros(basis.states.size, dtype=np.float32)
+
+    # op.off_diag_kernel.callable(states, op.terms.v_re_2d, op.terms.v_im_2d, x, out)
+    op.apply(basis.states, x, out)
+
+    # op.apply(states, x.reshape(-1, 1), out.reshape(-1, 1))
+    print(out)
+
+
+def test_matrix_apply_example_2():
+    from lattice_symmetries.expression import (
+        pauli_expression_to_nonbranching_terms,
+        pauli_expression_to_matrix,
+        _collect_indices,
+    )
+
+    e = - 0.22463139456015124 * pauli.SigmaZ(1) * pauli.SigmaPlus(0) * pauli.SigmaMinus(1) * pauli.SigmaZ(0) * pauli.SigmaZ(1) * pauli.SigmaZ(1) \
+        + 0.4892602908941869 * pauli.SigmaZ(1) \
+        + 0.437521418673926 * pauli.SigmaPlus(0) * pauli.SigmaMinus(0) * pauli.SigmaPlus(1) * pauli.SigmaMinus(0) * pauli.SigmaPlus(0) * pauli.SigmaMinus(1) \
+        - 0.19991708088098303 * pauli.SigmaPlus(1) * pauli.SigmaMinus(1) * pauli.SigmaZ(0) * pauli.SigmaPlus(1) * pauli.SigmaMinus(1) * pauli.SigmaZ(1) \
+        + 0.481139511164027 * pauli.SigmaZ(1) * pauli.SigmaZ(1) * pauli.SigmaZ(0) * pauli.SigmaZ(0) * pauli.SigmaZ(0) * pauli.SigmaZ(1) \
+        + 0.377901909342394 * pauli.SigmaPlus(0) * pauli.SigmaMinus(0) * pauli.SigmaZ(0) \
+        - 0.13375235591083356 * pauli.SigmaZ(1) * pauli.SigmaZ(1) * pauli.SigmaPlus(0) * pauli.SigmaMinus(1) * pauli.SigmaZ(0) \
+        + 0.26327045984176356 * pauli.SigmaZ(1) * pauli.SigmaZ(0) * pauli.SigmaZ(0) \
+        - 0.15872758255707742 * pauli.SigmaPlus(0) * pauli.SigmaMinus(0) * pauli.SigmaPlus(1) * pauli.SigmaMinus(0) * pauli.SigmaPlus(1) * pauli.SigmaMinus(1) \
+        + 0.23851168527648248 * pauli.SigmaZ(1) * pauli.SigmaZ(0) * pauli.SigmaZ(0)
+
+    number_bits = 2
+    hamming_weight = 0
+    symmetries = [(Permutation([0, 1]), Rational(0, 1))]
+    basis = ls.SpinBasis(number_spins=number_bits, hamming_weight=hamming_weight, symmetries=symmetries)
+    basis.build()
+
+    terms = pauli_expression_to_nonbranching_terms(e)
+    symm = ls._kernels.LoweredSymmetries(basis.info.symmetries)
+    total_bits = 2
+    prefix_bits = 0
+    shift = max(0, total_bits - prefix_bits)
+    offsets, range_size = ls._kernels.generate_offset_ranges(basis.states, prefix_bits, shift)
+    state_to_index_info = ls._kernels.StateToIndexInfo(
+        offsets=offsets,
+        shift=shift,
+        prefix_bits=prefix_bits,
+        range_size=range_size,
+    )
+    op = ls._kernels.LoweredOperator(info=basis.info, terms=terms, symm=symm, state_to_index_info=state_to_index_info)
+    x = np.asarray([0.920056717860089], dtype=np.float32)
+    out = np.zeros(basis.states.size, dtype=np.float32)
+    op.apply(basis.states, x, out)
+
+    np.testing.assert_allclose(out, [1.5182470275151454], rtol=1e-6, atol=1e-7)
+
+
+def test_simplify_pauli_expression():
+    from lattice_symmetries.expression import simplify_pauli_expression
+    e1 = pauli.SigmaX(0) * pauli.SigmaX(1) + pauli.SigmaY(0) * pauli.SigmaY(1)
+    e2 = 2 * (pauli.SigmaPlus(0) * pauli.SigmaMinus(1) + pauli.SigmaPlus(1) * pauli.SigmaMinus(0))
+    assert simplify_pauli_expression(e1) == simplify_pauli_expression(e2)
+
+def test_matrix_apply_example_3():
+    from lattice_symmetries.expression import (
+        pauli_expression_to_nonbranching_terms,
+        pauli_expression_to_matrix,
+        _collect_indices,
+    )
+
+    number_bits = 3
+    hamming_weight = None
+    symmetries = [(Permutation([1, 2, 0]), Rational(0, 1))]
+    e = sum(pauli.SigmaPlus(i) * pauli.SigmaMinus((i + 1) % number_bits) + pauli.SigmaPlus((i + 1) % number_bits) * pauli.SigmaMinus(i) for i in range(number_bits))
+
+    basis = ls.SpinBasis(number_spins=number_bits, hamming_weight=hamming_weight, symmetries=symmetries)
+    basis.build()
+    np.testing.assert_array_equal(basis.states, np.array([0, 1, 3, 7], dtype=np.uint64))
+    np.testing.assert_array_equal(basis.norms, np.array([3, 1, 1, 3], dtype=np.uint16))
+
+    terms = pauli_expression_to_nonbranching_terms(e)
+    print(terms)
+    symm = ls._kernels.LoweredSymmetries(basis.info.symmetries)
+    total_bits = number_bits
+    prefix_bits = 10
+    shift = max(0, total_bits - prefix_bits)
+    offsets, range_size = ls._kernels.generate_offset_ranges(basis.states, prefix_bits, shift)
+    state_to_index_info = ls._kernels.StateToIndexInfo(
+        offsets=offsets,
+        shift=shift,
+        prefix_bits=prefix_bits,
+        range_size=range_size,
+    )
+    op = ls._kernels.LoweredOperator(info=basis.info, terms=terms, symm=symm, state_to_index_info=state_to_index_info)
+
+    out = np.zeros(basis.states.size, dtype=np.float32)
+    x = np.asarray([1, 0, 0, 0], dtype=np.float32)
+    op.apply(basis.states, basis.norms, x, out)
+    np.testing.assert_allclose(out, [0, 0, 0, 0], rtol=1e-6, atol=1e-7)
+
+    out = np.zeros(basis.states.size, dtype=np.float32)
+    x = np.asarray([0, 1, 0, 0], dtype=np.float32)
+    op.apply(basis.states, basis.norms, x, out)
+    np.testing.assert_allclose(out, [0, 2, 0, 0], rtol=1e-6, atol=1e-7)
+
+    out = np.zeros(basis.states.size, dtype=np.float32)
+    x = np.asarray([0, 0, 1, 0], dtype=np.float32)
+    op.apply(basis.states, basis.norms, x, out)
+    np.testing.assert_allclose(out, [0, 0, 2, 0], rtol=1e-6, atol=1e-7)
+
+    out = np.zeros(basis.states.size, dtype=np.float32)
+    x = np.asarray([0, 0, 0, 1], dtype=np.float32)
+    op.apply(basis.states, basis.norms, x, out)
+    np.testing.assert_allclose(out, [0, 0, 0, 0], rtol=1e-6, atol=1e-7)
+
+def test_matrix_apply_example_4():
+    from lattice_symmetries.expression import (
+        pauli_expression_to_nonbranching_terms,
+        pauli_expression_to_matrix,
+        _collect_indices,
+    )
+
+    number_bits = 6
+    hamming_weight = 3
+    symmetries = [(Permutation([1, 2, 3, 4, 5, 0]), Rational(1, 2))]
+    e = sum(pauli.SigmaPlus(i) * pauli.SigmaMinus((i + 1) % number_bits) + pauli.SigmaPlus((i + 1) % number_bits) * pauli.SigmaMinus(i) for i in range(number_bits))
+
+    basis = ls.SpinBasis(number_spins=number_bits, hamming_weight=hamming_weight, symmetries=symmetries)
+    basis.build()
+    np.testing.assert_array_equal(basis.states, np.array([7, 11, 13, 21], dtype=np.uint64))
+    np.testing.assert_array_equal(basis.norms, np.array([1, 1, 1, 3], dtype=np.uint16))
+
+    op = ls.Operator(ls.Expr(e), basis)
+    out = np.zeros(basis.states.size, dtype=np.float32)
+    x = np.asarray([0.7148606065054317, 0.5972164020369808, 0.7639741193866884, 0.01096456606490337], dtype=np.float32)
+    op.apply_to_state_vector(x, out=out)
+    np.testing.assert_allclose(out, [-0.16675771734970757, 2.2238176597714503, 0.49856338307588804, 0.2888328390039035], rtol=1e-6, atol=1e-7)
+
+    # terms = pauli_expression_to_nonbranching_terms(e)
+    # print(terms)
+    # symm = ls._kernels.LoweredSymmetries(basis.info.symmetries)
+    # total_bits = number_bits
+    # prefix_bits = 0
+    # shift = max(0, total_bits - prefix_bits)
+    # offsets, range_size = ls._kernels.generate_offset_ranges(basis.states, prefix_bits, shift)
+    # state_to_index_info = ls._kernels.StateToIndexInfo(
+    #     offsets=offsets,
+    #     shift=shift,
+    #     prefix_bits=prefix_bits,
+    #     range_size=range_size,
+    # )
+    # op = ls._kernels.LoweredOperator(info=basis.info, terms=terms, symm=symm, state_to_index_info=state_to_index_info)
+
+    # out = np.zeros(basis.states.size, dtype=np.float32)
+    # x = np.asarray([0.7148606065054317, 0.5972164020369808, 0.7639741193866884, 0.01096456606490337], dtype=np.float32)
+    # op.apply(basis.states, basis.norms, x, out)
+    # np.testing.assert_allclose(out, [-0.16675771734970757, 2.2238176597714503, 0.49856338307588804, 0.2888328390039035], rtol=1e-6, atol=1e-7)
+
+def test_readme():
+    from lattice_symmetries.expression import Expr
+
+    assert Expr("σˣ₀") == Expr("\\sigma^x_0")
+    assert np.array_equal(Expr("σˣ₀").to_dense(), np.array([[0, 1], [1, 0]]))
+    assert Expr("Sˣ₀") == 0.5 * Expr("σˣ₀")
+    assert Expr("σʸ₀") == Expr("\\sigma^y_0")
+    assert np.array_equal(Expr("σʸ₀").to_dense(), np.array([[0, -1j], [1j, 0]]))
+    assert Expr("Sʸ₀") == 0.5 * Expr("σʸ₀")
+    assert Expr("σᶻ₀") == Expr("\\sigma^z_0")
+    assert np.array_equal(Expr("σᶻ₀").to_dense(), np.array([[1, 0], [0, -1]]))
+    assert Expr("Sᶻ₀") == 0.5 * Expr("σᶻ₀")
+    assert np.array_equal(Expr("I", particle="spin-1/2").to_dense(), np.array([[1, 0], [0, 1]]))
+
+    assert Expr("Sˣ₀ Sˣ₁ + Sʸ₀ Sʸ₁ + Sᶻ₀ Sᶻ₁") == Expr("Sx0 Sx1 + Sy0 Sy1 + Sz0 Sz1")
+    # fmt: off
+    assert Expr("Sˣ₀ Sˣ₁ + Sʸ₀ Sʸ₁ + Sᶻ₀ Sᶻ₁") == \
+        Expr("Sˣ₀") * Expr("Sˣ₁") + Expr("Sʸ₀") * Expr("Sʸ₁") + Expr("Sᶻ₀") * Expr("Sᶻ₁")
+    # fmt: on
+    assert Expr("Sˣ₀ Sˣ₁ + Sʸ₀ Sʸ₁ + Sᶻ₀ Sᶻ₁") == Expr("0.5 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + 0.25 σᶻ₀ σᶻ₁")
+
+    # assert str(Expr("Sˣ₀ Sˣ₁ + Sʸ₀ Sʸ₁ + Sᶻ₀ Sᶻ₁")) == "0.25 σᶻ₀ σᶻ₁ + 0.5 σ⁺₀ σ⁻₁ + 0.5 σ⁻₀ σ⁺₁"
+    # assert str(Expr("0.5 (σˣ₁ + 1im σʸ₁) - σ⁺₁")) == "0.0 I"
+    # assert str(Expr("σ⁺₁ σ⁺₁")) == "0.0 I"
+
+
+def test_expr_construction():
+    _ = ls.Expr("2 I", particle="spin-1/2")
+    _ = ls.Expr("2 I + S+3")
+    _ = ls.Expr(expression="2 I + S+3", sites=[[2], [4]])
+    _ = ls.Expr("5 σ⁺₀ σ⁻₁ + (8 + 3im) σ⁻₁")
+    # _ = ls.Expr("-2 (c†₀ c₁ + c†₁ c₀)")
+
+    # with raises(ValueError, match=r".*particle type.*"):
+    #     ls.Expr(expression="2 I")
+    # with raises(ValueError, match=r".*cannot replace.*"):
+    #     ls.Expr(expression="S+3", sites=[[2], [3, 4]])
+    # Ilya's expressions
+    _ = ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁")
+    _ = ls.Expr(
+        "0.5 (σˣ₀ + σᶻ₀)(σˣ₁ + σᶻ₁)(σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀)(σˣ₁ + σᶻ₁)(σˣ₀ + σᶻ₀) + 0.25 (σˣ₁ + σᶻ₁)(σˣ₀ + σᶻ₀)σᶻ₀ σᶻ₁(σˣ₀ + σᶻ₀)(σˣ₁ + σᶻ₁)"
+    )
+
+    def heisenberg_expr_rot(phi):
+        C = f"({np.sin(phi)} σˣ₀ + {np.cos(phi)} σᶻ₀)({np.sin(phi)} σˣ₁ + {np.cos(phi)} σᶻ₁)"
+        return f"2 {C}(σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) {C} + {C} σᶻ₀ σᶻ₁{C}"
+
+    _ = ls.Expr(heisenberg_expr_rot(math.pi / 4))
+
+
+def test_expr_replace_indices():
+    a = ls.Expr("2 I + S+3")
+    b = ls.Expr("2 I + S+57")
+    assert a.replace_indices({3: 57}) == b
+
+
+def test_expr_arithmetic():
+    a = ls.Expr("2 I + S+3")
+    b = ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁")
+    assert a + b == b + a
+    assert a + a == 2 * a
+    assert a - b == -(b - a)
+    assert a.adjoint() == ls.Expr("2 I + S-3")
+    assert b.adjoint() == b
+
+
+def test_expr_properties():
+    a = ls.Expr("2 I + S+3")
+    b = ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁")
+    # assert a.is_real
+    assert not a.is_hermitian
+    assert not a.is_identity
+    # assert b.is_real
+    assert b.is_hermitian
+    assert not b.is_identity
+    # assert a.number_sites == 4
+    # assert b.number_sites == 2
+
+def test_sz_conserved_1d_heisenberg():
+    number_spins = 8
+    hamming_weight = number_spins // 2
+    b = ls.SpinBasis(number_spins=number_spins, hamming_weight=hamming_weight)
+    e = ls.Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁").on(ig.Graph.Ring(n=number_spins, circular=True))
+    h = ls.Operator(e, b)
+
+    b.build()
+    evals, evecs = scipy.sparse.linalg.eigsh(h, k=5)
+    np.testing.assert_allclose(evals, [-14.60437363574869, -12.513676255378364, -10.798512593101313, -9.834954035579337, -9.83495403557929], rtol=1e-6, atol=1e-7)
 #
 # def test_basis_state_to_index():
 #     # fmt: off

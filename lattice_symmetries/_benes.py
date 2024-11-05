@@ -2,7 +2,10 @@ import dataclasses
 import math
 import itertools
 from copy import deepcopy
-from functools import reduce
+from functools import reduce, lru_cache
+import numbers
+import numpy as np
+from numpy.typing import NDArray
 
 import more_itertools
 from sympy.combinatorics import Permutation
@@ -47,8 +50,11 @@ class BenesNetwork:
     masks: list[int]
     shifts: list[int]
 
-    def __call__(self, bits: int):
-        assert isinstance(bits, int)
+    def __call__(self, bits: int | NDArray) -> int | NDArray:
+        if isinstance(bits, numbers.Integral):
+            bits = int(bits)
+        else:
+            bits = np.asarray(bits)
         for m, d in zip(self.masks, self.shifts):
             bits = _bit_permute_step(bits, m, d)
         return bits
@@ -162,6 +168,7 @@ def _solve(src, tgt):
         return src_masks[:-1] + tgt_masks[::-1], shifts[:-1] + shifts[::-1]
 
 
+@lru_cache(maxsize=1000)
 def permutation_to_benes_network(p: Permutation) -> BenesNetwork:
     if p.size == 0:
         return BenesNetwork(masks=[], shifts=[])

@@ -40,6 +40,17 @@ typedef int (*ls_off_diag_matrix_complex_kernel)(struct halide_buffer_t *, struc
 typedef int (*ls_off_diag_matrix_real_kernel)(struct halide_buffer_t *, struct halide_buffer_t *, struct halide_buffer_t *);
 typedef int (*ls_xored_state_to_index_kernel)(struct halide_buffer_t *alphas, struct halide_buffer_t *mask, struct halide_buffer_t *basis_states, struct halide_buffer_t *indices);
 
+typedef int (*ls_is_representative_kernel)(struct halide_buffer_t *alphas, struct halide_buffer_t *norms);
+
+void ls_invoke_is_representative_kernel(void const* kernel, int32_t const count, uint64_t const* alphas, uint16_t *norms);
+
+typedef struct ls_enumerate_states_result {
+    int64_t count;
+    ls_numpy_array_1d states;
+    ls_numpy_array_1d norms;
+} ls_enumerate_states_result;
+
+
 typedef struct ls_diag_terms {
     void           *kernel;
     int32_t         number_terms;

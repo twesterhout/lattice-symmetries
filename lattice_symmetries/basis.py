@@ -5,21 +5,59 @@ from numpy.typing import NDArray
 from scipy.special import comb
 from sympy import Rational
 from sympy.combinatorics import Permutation, PermutationGroup
+import time
+from loguru import logger
 
 from lattice_symmetries._kernels import (
     BasisInfo,
     CompiledKernel,
+    LoweredSymmetries,
+    StateToIndexInfo,
     is_representative_kernel,
-    xored_state_to_index_kernel,
+    generate_offset_ranges,
 )
+from lattice_symmetries._representation import generate_representation
 from lattice_symmetries import _ls
 
 
-def trailing_zeros(x):
+def trailing_zeros(x: int) -> int:
+    """Counts the number of trailing zeros in the binary representation of an integer.
+
+    Args:
+        x: A non-negative integer.
+
+    Returns:
+        The number of trailing zeros in the binary representation of x.
+        For example, trailing_zeros(40) = 3 since 40 = 0b101000.
+        For x = 0, returns 0.
+
+    Examples:
+        >>> trailing_zeros(40)  # 40 = 0b101000
+        3
+        >>> trailing_zeros(7)   # 7 = 0b111
+        0
+        >>> trailing_zeros(0)
+        0
+        >>> trailing_zeros(8)   # 8 = 0b1000
+        3
+    """
+    if x == 0:
+        return 0
     return (x & -x).bit_length() - 1
 
 
 def fixed_hamming_state_to_index(state: int) -> int:
+    """Converts a binary state to its lexicographic index in fixed Hamming weight space.
+
+    Args:
+        state: Non-negative integer representing a binary state.
+
+    Returns:
+        The lexicographic index of the state.
+
+    Raises:
+        ValueError: If state is negative.
+    """
     state = int(state)
     if state < 0:
         raise ValueError(f"invalid 'state': {state}; expected a non-negative number")
@@ -35,6 +73,16 @@ def fixed_hamming_state_to_index(state: int) -> int:
 
 
 def fixed_hamming_index_to_state(index: int, *, number_sites: int, hamming_weight: int) -> int:
+    """Converts a lexicographic index to a binary state with fixed Hamming weight.
+
+    Args:
+        index: Non-negative integer representing the lexicographic index.
+        number_sites: Total number of bits in the binary state.
+        hamming_weight: Number of 1s in the binary state.
+
+    Returns:
+        The binary state as an integer.
+    """
     state = 0
     k = hamming_weight
     for n in range(number_sites, 0, -1):
@@ -46,7 +94,6 @@ def fixed_hamming_index_to_state(index: int, *, number_sites: int, hamming_weigh
             state |= 1
     return state
 
-
 @dataclasses.dataclass
 class BasisKernels:
     is_representative: Optional[CompiledKernel] = None
@@ -57,12 +104,8 @@ class BasisKernels:
 def enumerate_basis_states(
     info: BasisInfo, kernels: BasisKernels | None = None
 ) -> tuple[NDArray[np.uint64], NDArray[np.uint16]]:
+    (min_state, max_state) = info.min_and_max_state_estimate
     if info.is_state_index_identity:
-        if info.spin_inversion is None:
-            max_state = 2**info.number_bits
-        else:
-            # If spin_inversion is not None, leave the most significant bit as 0
-            max_state = 2 ** (info.number_bits - 1)
         basis_states = np.arange(max_state, dtype=np.uint64)
         norms = np.ones(basis_states.size, dtype=np.uint16)
     elif not info.has_permutation_symmetries:
@@ -70,16 +113,8 @@ def enumerate_basis_states(
         if info.hamming_weight > info.number_bits:
             msg = f"Hamming weight {info.hamming_weight} exceeds the number of bits {info.number_bits}"
             raise ValueError(msg)
-
-        min_state = 2**info.hamming_weight - 1
-        if info.spin_inversion is None:
-            max_state = min_state << (info.number_bits - info.hamming_weight)
-        else:
-            max_state = min_state << (info.number_bits - 1 - info.hamming_weight)
-
         assert fixed_hamming_state_to_index(min_state) == 0
         number_states = fixed_hamming_state_to_index(max_state) + 1
-
         basis_states = np.empty(number_states, dtype=np.uint64)
         offsets = np.array([0, number_states], dtype=np.int64)
         values = np.array([min_state], dtype=np.uint64)
@@ -89,13 +124,42 @@ def enumerate_basis_states(
             _ls.ffi.from_buffer("const uint64_t*", values, require_writable=False),
             _ls.ffi.from_buffer("uint64_t*", basis_states, require_writable=True),
         )
-
         # All norms are 1, because
         # - either no projection takes place (i.e., info.spin_inversion is None)
         # - or we apply spin inversion, but x is always not equal to invert(x)
         norms = np.ones(number_states, dtype=np.uint16)
     else:
-        raise NotImplementedError("😭")
+        if info.hamming_weight is not None:
+            assert fixed_hamming_state_to_index(min_state) == 0
+            number_states = fixed_hamming_state_to_index(max_state) + 1
+        else:
+            number_states = max_state
+        offsets = np.array([0, number_states], dtype=np.int64)
+        values = np.array([min_state], dtype=np.uint64)
+        result = _ls.ffi.new("ls_enumerate_states_result *")
+        if kernels.is_representative is None:
+            kernels.is_representative = is_representative_kernel(info)
+        tick = time.perf_counter()
+        _ls.lib.ls_enumerate_states_symmetries(
+            1,
+            _ls.ffi.from_buffer("const int64_t*", offsets, require_writable=False),
+            _ls.ffi.from_buffer("const uint64_t*", values, require_writable=False),
+            kernels.is_representative.ffi_fun_ptr,
+            _ls.lib.ls_alloc_numpy_array_1d,
+            info.hamming_weight is not None,
+            result,
+        )
+        tock = time.perf_counter()
+        logger.debug(f"kernel took {tock - tick}")
+        if result.count == 0:
+            basis_states = np.zeros(0, dtype=np.uint64)
+            norms = np.ones(0, dtype=np.uint16)
+        else:
+            basis_states = _ls.ffi.from_handle(result.states.handle).view(np.uint64)
+            norms = _ls.ffi.from_handle(result.norms.handle).view(np.uint16)
+            assert basis_states.size == result.count and norms.size == result.count
+            _ls.lib.ls_PyObject_decref(result.states.handle)
+            _ls.lib.ls_PyObject_decref(result.norms.handle)
 
     basis_states.flags.writeable = False
     norms.flags.writeable = False
@@ -109,33 +173,61 @@ class Basis:
 
     states: NDArray[np.uint64] | None = None
     norms: NDArray[np.uint8] | None = None
+    state_to_index_info: StateToIndexInfo | None = None
+    lowered_symmetries: LoweredSymmetries | None = None
 
     @property
     def hamming_weight(self) -> Optional[int]:
+        """Gets the fixed Hamming weight constraint if any.
+
+        Returns:
+            Optional[int]: Fixed Hamming weight value, or None if unconstrained.
+        """
         return self.info.hamming_weight
 
     @property
     def spin_inversion(self) -> Optional[int]:
+        """Gets the spin inversion symmetry sector if any.
+
+        Returns:
+            Optional[int]: Spin inversion sector (+1/-1), or None if not using spin inversion.
+        """
         return self.info.spin_inversion
 
     @property
     def number_bits(self) -> int:
+        """Gets the number of bits in the basis states.
+
+        Returns:
+            int: Number of bits used to represent states.
+        """
         return self.info.number_bits
 
     @property
-    def number_words(self) -> int:
-        return (self.number_bits + 7) // 8
-
-    @property
     def symmetries(self) -> list[tuple[Permutation, Rational]]:
+        """Gets the list of symmetry operations.
+
+        Returns:
+            list[tuple[Permutation, Rational]]: List of (permutation, phase) pairs.
+        """
         return self.info.symmetries
 
     @property
     def has_permutation_symmetries(self) -> bool:
+        """Checks if basis uses permutation symmetries.
+
+        Returns:
+            bool: True if permutation symmetries are used.
+        """
         return self.info.has_permutation_symmetries
 
     @property
     def is_built(self) -> bool:
+        """Checks if basis states have been built. Use the states and norms attributes to access them.
+
+        Returns:
+            bool: True if states have been built.
+        """
         return self.states is not None
 
     def check_is_built(self):
@@ -143,7 +235,7 @@ class Basis:
             msg = "basis states have not been built yet; if you wish to do so, use the basis.build() function"
             raise ValueError(msg)
 
-    def build(self) -> None:
+    def build(self, build_state_to_index_info: bool | None = None, prefix_bits: int = 17):
         """Generate a list of representatives.
 
         These can later be accessed using the `number_states` and `states` attributes.
@@ -152,10 +244,27 @@ class Basis:
             states, norms = enumerate_basis_states(self.info, self.kernels)
             object.__setattr__(self, "states", states)
             object.__setattr__(self, "norms", norms)
+        # StateToIndexInfo is only needed when binary searching in self.states. That happens only if we are using permutation symmetries.
+        if build_state_to_index_info is None:
+            build_state_to_index_info = self.has_permutation_symmetries
+        if build_state_to_index_info:
+            total_bits = int(self.states[-1]).bit_length()
+            shift = max(0, total_bits - prefix_bits)
+            offsets, range_size = generate_offset_ranges(self.states, prefix_bits, shift)
+            state_to_index_info = StateToIndexInfo(offsets=offsets, shift=shift, prefix_bits=prefix_bits, range_size=range_size)
+            object.__setattr__(self, "state_to_index_info", state_to_index_info)
         assert self.is_built
-
+    
     @property
     def number_states(self) -> int:
+        """Returns the total number of states in the Hilbert space.
+
+        Returns:
+            int: Number of states in the Hilbert space.
+
+        Raises:
+            ValueError: If basis has not been built yet.
+        """
         self.check_is_built()
         return int(self.states.size)
 
@@ -235,6 +344,7 @@ class SpinBasis(Basis):
             if 2 * hamming_weight != number_spins:
                 msg = f"incompatible spin_inversion={spin_inversion} and hamming_weight={hamming_weight}"
                 raise ValueError(msg)
+        symmetries = generate_representation(symmetries)
         info = BasisInfo(
             number_bits=number_spins,
             hamming_weight=hamming_weight,

@@ -5,9 +5,15 @@ ffibuilder = FFI()
 
 ffibuilder.cdef(
     """
-typedef struct ls_numpy_array_1d { ...; } ls_numpy_array_1d;
+typedef struct ls_numpy_array_1d { uint8_t* data; void* handle; } ls_numpy_array_1d;
 typedef struct _complex64 { ...; } _complex64;
 typedef struct _complex128 { ...; } _complex128;
+
+typedef struct ls_enumerate_states_result {
+    int64_t count;
+    ls_numpy_array_1d states;
+    ls_numpy_array_1d norms;
+} ls_enumerate_states_result;
 
 typedef struct ls_diag_terms {
     void           *kernel;
@@ -29,6 +35,9 @@ typedef void (*ls_alloc_numpy_array_1d_callback)(uint64_t, ls_numpy_array_1d*);
 
 extern "Python" void ls_alloc_numpy_array_1d(uint64_t size, ls_numpy_array_1d* out);
 
+void ls_PyObject_incref(void* obj);
+void ls_PyObject_decref(void* obj);
+
 void hello(void);
 void the_ultimate_solution(void* alloc_numpy_array_1d,
                            ls_numpy_array_1d * result);
@@ -37,6 +46,13 @@ void ls_enumerate_states_fixed_hamming(int64_t numChunks,
                                        const int64_t * offsets,
                                        const uint64_t * values,
                                        uint64_t * dest);
+void ls_enumerate_states_symmetries(int64_t numChunks,
+                                    const int64_t * offsets,
+                                    const uint64_t * values,
+                                    const void * is_representative_kernel,
+                                    void* alloc_numpy_array_1d,
+                                    bool is_hamming_weight_fixed,
+                                    ls_enumerate_states_result * result);
 
 void ls_matrix_apply_f32(ls_diag_terms * diag,
                          ls_off_diag_terms * off_diag,
@@ -75,6 +91,7 @@ void chpl_library_finalize(void);
 ffibuilder.set_source(
     "lattice_symmetries._ls",
     """
+#include <Python.h>
 #include <force_link_glibc_2.27.h>
 #include <lattice_symmetries.h>
 #include <lattice_symmetries_chapel.h>
@@ -85,6 +102,24 @@ void ls_chpl_init(void) {
   chpl_library_init(argc, (char**)argv);
   chpl__init_FFI(1, 2);
   chpl__init_Library(1, 2);
+}
+
+void ls_PyObject_incref(void* obj) {
+  PyGILState_STATE gstate = PyGILState_Ensure();
+
+  PyObject* x = obj;
+  Py_INCREF(x);
+
+  PyGILState_Release(gstate);
+}
+
+void ls_PyObject_decref(void* obj) {
+  PyGILState_STATE gstate = PyGILState_Ensure();
+
+  PyObject* x = obj;
+  Py_DECREF(x);
+
+  PyGILState_Release(gstate);
 }
 """,
     extra_compile_args=["-Wall", "-Wextra"],

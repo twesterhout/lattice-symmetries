@@ -58,7 +58,7 @@ lib/liblattice_symmetries_chapel.$(SHARED_EXT): src/FFI.chpl src/Library.chpl sr
 		$(CHPL_LDFLAGS)
 	# Remove Chapel-specific headers
 	sed -E -i '/#include\s+("stdchpl.h"|"wctype.h"|"ctype.h")/d' lib/lattice_symmetries_chapel.h
-	sed -i 's/c_fn_ptr_rehook/void*/g;s/_real32/float/g;s/_real64/double/g' lib/lattice_symmetries_chapel.h
+	sed -i 's/c_fn_ptr_rehook/void*/g;s/_real32/float/g;s/_real64/double/g;s/chpl_bool/bool/g' lib/lattice_symmetries_chapel.h
 	# Add #pragma once
 	tmpfile=$$(mktemp); \
 		(echo '#pragma once'; \

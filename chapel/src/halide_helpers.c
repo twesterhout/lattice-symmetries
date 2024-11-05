@@ -7,6 +7,18 @@
 #define BUFFER_I64(_rank, _dims, _data) BUFFER(_rank, _dims, ((struct halide_type_t){.code = halide_type_int, .bits = 64, .lanes = 1}), _data)
 #define BUFFER_U64(_rank, _dims, _data) BUFFER(_rank, _dims, ((struct halide_type_t){.code = halide_type_uint, .bits = 64, .lanes = 1}), _data)
 #define BUFFER_F64(_rank, _dims, _data) BUFFER(_rank, _dims, ((struct halide_type_t){.code = halide_type_float, .bits = 64, .lanes = 1}), _data)
+#define BUFFER_U16(_rank, _dims, _data) BUFFER(_rank, _dims, ((struct halide_type_t){.code = halide_type_uint, .bits = 16, .lanes = 1}), _data)
+
+void ls_invoke_is_representative_kernel(void const* kernel, int32_t const count, uint64_t const* alphas, uint16_t *norms)
+{
+    halide_dimension_t batch_dims[1] = {(halide_dimension_t){.min = 0, .extent = count, .stride = 1}};
+    halide_buffer_t alphas_buf = BUFFER_I64(1, batch_dims, alphas);
+    halide_buffer_t norms_buf = BUFFER_U16(1, batch_dims, norms);
+
+    LS_CHECK(kernel != NULL, "kernel is NULL");
+    ls_is_representative_kernel const fn = kernel;
+    fn(&alphas_buf, &norms_buf);
+}
 
 void ls_invoke_diag_matrix_kernel(ls_diag_terms const* terms, int32_t const count, uint64_t const* alphas, double *coeffs_re, double *coeffs_im)
 {

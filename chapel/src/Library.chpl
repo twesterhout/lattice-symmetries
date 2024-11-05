@@ -5,9 +5,11 @@ import IO.FormattedIO.format;
 import BitOps.ctz, BitOps.parity;
 import RangeChunk.chunks;
 import Math;
+use ArrayViewSlice;
 
 config const kMatrixVectorNumChunks : int = 1; // here.maxTaskPar;
 config const kMatrixVectorInnerChunkSize : int = 1024;
+config const kIsRepresentativeInnerChunkSize : int = 1024;
 
 export proc hello() {
   writeln("Hello world!");
@@ -47,6 +49,158 @@ export proc ls_enumerate_states_fixed_hamming(numChunks : int(64),
     }
   }
 }
+
+record Vector {
+  type eltType;
+  // _dom specifies the capacity, and _size is the current size
+  var _dom : domain(1, idxType=int, strides=strideKind.one);
+  var _arr : [_dom] eltType;
+  var _size : int;
+
+  proc init(type eltType) {
+    this.eltType = eltType;
+    this._size = 0;
+  }
+  proc init(arr : [] ?t) {
+    this.eltType = t;
+    this._dom = {0 ..# arr.size};
+    this._arr = arr;
+    this._size = arr.size;
+  }
+
+  forwarding _arr only this;
+
+  proc ref reserve(capacity : int) {
+    if capacity > _dom.size then
+      _dom = {0 ..# capacity};
+  }
+
+  // proc ref resize(newSize : int) {
+  //   if newSize > _size then
+  //     reserve(newSize);
+  //   _size = newSize;
+  // }
+
+  inline proc size { return _size; }
+
+  proc ref defaultGrow(factor : real = 1.5) {
+    const currentCapacity = _dom.size;
+    const newCapacity =
+      max(currentCapacity + 1, round(factor * currentCapacity):int);
+    reserve(newCapacity);
+  }
+
+  inline proc ref pushBack(x : eltType) {
+    if _size == _dom.size then
+      defaultGrow();
+    _arr[_size] = x;
+    _size += 1;
+  }
+
+  // proc ref append(xs : [] eltType) {
+  //   if _size + xs.size > _dom.size then
+  //     reserve(_size + xs.size);
+  //   _arr[_size ..# xs.size] = xs;
+  //   _size += xs.size;
+  // }
+  // proc ref append(const ref xs : Vector(eltType)) {
+  //   append(xs._arr[0 ..# xs._size]);
+  // }
+
+  // proc ref shrink() {
+  //   if _size < _dom.size then
+  //     _dom = {0 ..# _size};
+  // }
+
+  // proc ref clear() {
+  //   resize(0);
+  //   shrink();
+  // }
+
+  // pragma "reference to const when const this"
+  // pragma "fn returns aliasing array"
+  // proc toArray() {
+  //   pragma "no auto destroy" var d = {0 ..# _size};
+  //   d._value._free_when_no_arrs = true;
+  //   d._value.definedConst = true;
+  //   var a = new unmanaged ArrayViewSliceArr(
+  //       eltType=_arr.eltType,
+  //       _DomPid=d._pid, dom=d._instance,
+  //       _ArrPid=_arr._pid, _ArrInstance=_arr._value);
+  //   d._value.add_arr(a, locking=false, addToList=false);
+  //   return _newArray(a);
+  // }
+}
+
+// proc isVector(type x : Vector(?)) param { return true; }
+// proc isVector(type x) param { return false; }
+
+private proc enumerateStatesTaskLoop(in totalCount : int, in lower : uint(64), kernel,
+                                     ref outStates, ref outNorms, isHammingWeightFixed : bool) {
+  const innerChunkSize = kIsRepresentativeInnerChunkSize;
+  var buffer: [0 ..# innerChunkSize] uint(64);
+  var norms: [0 ..# innerChunkSize] uint(16);
+
+  while totalCount > 0 {
+    // Fill the buffer with the next batch
+    const size = min(innerChunkSize, totalCount);
+    if isHammingWeightFixed {
+      for k in 0 ..# size {
+        const next = nextStateFixedHamming(lower);
+        buffer[k] = lower;
+        lower = next;
+      }
+    }
+    else {
+      foreach k in 0 ..# size do
+        buffer[k] = lower + k;
+      lower += size;
+    }
+    // Filter representatives
+    ls_invoke_is_representative_kernel(kernel, size.safeCast(int(32)), c_ptrToConst(buffer), c_ptrTo(norms));
+    for k in 0 ..# size do
+      if norms[k] != 0 {
+        outStates.pushBack(buffer[k]);
+        outNorms.pushBack(norms[k]);
+      }
+    totalCount -= size;
+  }
+}
+
+export proc ls_enumerate_states_symmetries(numChunks : int(64),
+                                           offsets : c_ptrConst(int(64)),
+                                           values : c_ptrConst(uint(64)),
+                                           is_representative_kernel : c_ptrConst(void),
+                                           alloc_numpy_array_1d : ls_alloc_numpy_array_1d_callback,
+                                           is_hamming_weight_fixed : bool,
+                                           ref result : ls_enumerate_states_result) {
+  var chunks : [0 ..# numChunks] (Vector(uint(64)), Vector(uint(16)));
+  forall chunkIdx in 0 ..# numChunks {
+    ref (states, norms) = chunks[chunkIdx];
+    enumerateStatesTaskLoop(offsets[chunkIdx + 1] - offsets[chunkIdx], values[chunkIdx], is_representative_kernel,
+                            states, norms, is_hamming_weight_fixed);
+  }
+
+  result.count = + reduce [c in chunks] c[0].size;
+  if result.count > 0 {
+    ls_invoke_alloc_numpy_array_1d_callback(alloc_numpy_array_1d, result.count:c_size_t * c_sizeof(uint(64)), result.states);
+    ls_invoke_alloc_numpy_array_1d_callback(alloc_numpy_array_1d, result.count:c_size_t * c_sizeof(uint(16)), result.norms);
+
+    const statesPtr = result.states.data:c_ptr(void):c_ptr(uint(64));
+    const normsPtr = result.norms.data:c_ptr(void):c_ptr(uint(16));
+    var offset = 0;
+    for chunkIdx in 0 ..# numChunks {
+      const ref (states, norms) = chunks[chunkIdx];
+      const count = states.size;
+      if count > 0 {
+        POSIX.memcpy(statesPtr + offset, c_ptrToConst(states._arr), count:c_size_t * c_sizeof(uint(64)));
+        POSIX.memcpy(normsPtr + offset, c_ptrToConst(norms._arr), count:c_size_t * c_sizeof(uint(16)));
+      }
+      offset += count;
+    }
+  }
+}
+
 
 
 // proc _applyDiagKernel(diag_terms : c_ptrConst(ls_nonbranching_terms),

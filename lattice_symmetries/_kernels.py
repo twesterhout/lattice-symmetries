@@ -1,5 +1,6 @@
 import dataclasses
 import functools
+import contextlib
 import itertools
 import os
 import tempfile
@@ -7,6 +8,8 @@ import subprocess
 import time
 from typing import Callable
 from lattice_symmetries import _ls
+from lattice_symmetries._benes import BenesNetwork, permutation_to_benes_network
+from lattice_symmetries._representation import generate_representation
 
 import cffi
 import halide as hl
@@ -55,12 +58,20 @@ _KERNEL_DEFINITIONS = """
   int is_representative_kernel(struct halide_buffer_t *, struct halide_buffer_t *);
 
   int xored_state_to_index_kernel(struct halide_buffer_t *alphas, struct halide_buffer_t *mask, struct halide_buffer_t *basis_states, struct halide_buffer_t *indices);
+  int state_to_index_kernel(struct halide_buffer_t *alphas, struct halide_buffer_t *basis_states, struct halide_buffer_t *indices);
 
   int diag_matrix_complex_kernel(struct halide_buffer_t *, struct halide_buffer_t *, struct halide_buffer_t *);
   int diag_matrix_real_kernel(struct halide_buffer_t *, struct halide_buffer_t *);
 
   int off_diag_matrix_kernel(struct halide_buffer_t *, struct halide_buffer_t *, struct halide_buffer_t *, struct halide_buffer_t *, struct halide_buffer_t *);
 """
+
+
+@contextlib.contextmanager
+def measure_time():
+    tick = tock = time.perf_counter() 
+    yield lambda: tock - tick
+    tock = time.perf_counter() 
 
 
 @dataclasses.dataclass(frozen=True)
@@ -83,6 +94,31 @@ class BasisInfo:
     @property
     def is_state_index_identity(self) -> bool:
         return self.hamming_weight is None and not self.has_permutation_symmetries
+
+    @property
+    def min_and_max_state_estimate(self) -> int:
+        if self.hamming_weight is None:
+            min_state = 0
+            if self.spin_inversion is None:
+                max_state = 2**self.number_bits
+            else:
+                # If spin_inversion is not None, leave the most significant bit as 0
+                max_state = 2 ** (self.number_bits - 1)
+        else:
+            min_state = 2**self.hamming_weight - 1
+            if self.spin_inversion is None:
+                max_state = min_state << (self.number_bits - self.hamming_weight)
+            else:
+                max_state = min_state << (self.number_bits - 1 - self.hamming_weight)
+        return min_state, max_state
+
+
+@dataclasses.dataclass(frozen=True)
+class StateToIndexInfo:
+    offsets: NDArray[np.int64]
+    shift: int
+    prefix_bits: int
+    range_size: int
 
 
 @dataclasses.dataclass(frozen=True)
@@ -114,7 +150,6 @@ class PauliNonbranchingTerm:
         return NotImplemented
 
 
-@dataclasses.dataclass(init=False)
 class PauliLoweredTerms:
     has_diag: bool
     has_off_diag: bool
@@ -159,20 +194,49 @@ class PauliLoweredTerms:
             self.v_im_2d = np.zeros((0, 0), dtype=np.float64)
             self.mask = np.zeros(0, dtype=np.uint64)
 
+class LoweredSymmetries:
+    masks: NDArray[np.uint64]
+    shifts: NDArray[np.uint64]
+    characters_re: NDArray[np.float64]
+    characters_im: NDArray[np.float64]
+    networks: list[BenesNetwork]
 
-@dataclasses.dataclass(init=False)
+    def __init__(self, representation: list[tuple[Permutation, Rational]]):
+        if len(representation) == 0:
+            self.masks = None
+            self.shifts = None
+            self.characters_re = None
+            self.characters_im = None
+            self.networks = None
+        else:
+            with measure_time() as t:
+                self.networks = [permutation_to_benes_network(p) for p, _ in representation]
+            msg = f"permutation_to_benes_network took {t()} seconds; {t() / len(representation)} per permutation"
+            logger.debug(msg)
+
+            self.shifts = np.asarray(self.networks[0].shifts, dtype=np.uint64)
+            for i, b in enumerate(self.networks[1:], 1):
+                if not np.array_equal(b.shifts, self.shifts):
+                    msg = f"incompatible symmetries: {representation[0][0]} and {representation[i][0]}"
+                    raise ValueError(msg)
+            self.masks = np.vstack([np.asarray(b.masks, dtype=np.uint64) for b in self.networks])
+            characters = [sympy.exp(-2 * sympy.pi * sympy.I * r) for _, r in representation]
+            self.characters_re = np.asarray([sympy.re(c) for c in characters], dtype=np.float64)
+            self.characters_im = np.asarray([sympy.im(c) for c in characters], dtype=np.float64)
+
+
 class LoweredOperator:
+    info: BasisInfo
     terms: PauliLoweredTerms
     kernel: CompiledKernel
-    data: _ls.ffi.CData
 
-    def __init__(self, terms: list[PauliNonbranchingTerm]):
+    def __init__(self, info: BasisInfo, terms: list[PauliNonbranchingTerm], symm: LoweredSymmetries | None, state_to_index_info: StateToIndexInfo | None, verbose: bool = False):
+        self.info = info
         self.terms = PauliLoweredTerms(terms)
         # print(self.terms)
         # self.diag_kernel = diag_matrix_kernel(self.terms) if self.terms.s_diag.size > 0 else None
-        self.kernel = off_diag_matrix_kernel(
-            self.terms
-        )  # if self.terms.s_2d.shape[0] > 0 else None
+        self.kernel = off_diag_matrix_kernel(info=self.info, terms=self.terms, symm=symm, state_to_index_info=state_to_index_info, verbose=verbose)
+
 
         # diag_data = _ls.ffi.new("ls_diag_terms *")
         # if self.diag_kernel is None:
@@ -184,19 +248,19 @@ class LoweredOperator:
         # diag_data.v_im = _ls.ffi.from_buffer("const double *", self.terms.v_im_diag)
         # self.diag_data = diag_data
 
-        off_diag_data = _ls.ffi.new("ls_off_diag_terms *")
-        if self.kernel is None:
-            off_diag_data.kernel = _ls.ffi.NULL
-        else:
-            off_diag_data.kernel = self.kernel.ffi_fun_ptr
-        off_diag_data.number_terms = self.terms.s_2d.shape[0]
-        off_diag_data.number_reduced = self.terms.s_2d.shape[1]
-        off_diag_data.v_re = _ls.ffi.from_buffer("const double *", self.terms.v_re_2d)
-        off_diag_data.v_im = _ls.ffi.from_buffer("const double *", self.terms.v_im_2d)
-        off_diag_data.x = _ls.ffi.from_buffer("const uint64_t *", self.terms.mask)
-        self.data = off_diag_data
+        # off_diag_data = _ls.ffi.new("ls_off_diag_terms *")
+        # if self.kernel is None:
+        #     off_diag_data.kernel = _ls.ffi.NULL
+        # else:
+        #     off_diag_data.kernel = self.kernel.ffi_fun_ptr
+        # off_diag_data.number_terms = self.terms.s_2d.shape[0]
+        # off_diag_data.number_reduced = self.terms.s_2d.shape[1]
+        # off_diag_data.v_re = _ls.ffi.from_buffer("const double *", self.terms.v_re_2d)
+        # off_diag_data.v_im = _ls.ffi.from_buffer("const double *", self.terms.v_im_2d)
+        # off_diag_data.x = _ls.ffi.from_buffer("const uint64_t *", self.terms.mask)
+        # self.data = off_diag_data
 
-    def apply(self, states: NDArray, x: NDArray, out: NDArray):
+    def apply(self, states: NDArray, norms: NDArray, x: NDArray, out: NDArray):
         has_diag = len(self.terms.s_diag) > 0
         has_off_diag = self.terms.s_2d.shape[0] > 0
 
@@ -206,15 +270,17 @@ class LoweredOperator:
 
         dtype = np.dtype("float32")
         states = np.asarray(states, dtype=np.uint64, order="C")
+        norms = np.asarray(norms, dtype=np.uint16, order="C")
         x = np.asarray(x, dtype=dtype, order="F")
         out = np.asarray(out, dtype=dtype, order="F")
 
-        args = [states.view(np.int64)]
+        args = [states.view(np.int64), norms, x]
         if has_off_diag:
             args += [self.terms.v_re_2d, self.terms.v_im_2d]
         if has_diag:
             args += [self.terms.v_re_diag, self.terms.v_im_diag]
-        args += [x, out]
+        args += [states.view(np.int64), norms, x, out]
+
         self.kernel.callable(*args)
 
         # _ls.lib.ls_matrix_apply_c128(
@@ -244,7 +310,7 @@ class KernelCompiler:
     def __init__(self, temp_dir=None):
         if temp_dir is None:
             self.temp_dir = tempfile.mkdtemp(prefix="lattice-symmetries-cache")
-        logger.debug(f"'{self.temp_dir}' will be used for compiling kernels.")
+        logger.trace(f"'{self.temp_dir}' will be used for compiling kernels.")
         self.ffi = cffi.FFI()
         self.ffi.cdef(_KERNEL_DEFINITIONS)
         self.target = hl.get_jit_target_from_environment()
@@ -267,24 +333,24 @@ class KernelCompiler:
         tick = time.perf_counter()
         func, params, keep_alive = builder()
         tock = time.perf_counter()
-        logger.debug(f"Prepared {func_name} in {tock - tick} seconds.")
+        logger.trace(f"Prepared {func_name} in {tock - tick} seconds.")
 
         tick = time.perf_counter()
         callable = func.compile_to_callable(params, target=self.target)
         tock = time.perf_counter()
-        logger.debug(f"Compiled {func_name} to a Halide::Callable in {tock - tick} seconds.")
+        logger.trace(f"Compiled {func_name} to a Halide::Callable in {tock - tick} seconds.")
 
         tick = time.perf_counter()
         _, object_file = tempfile.mkstemp(suffix=".o", dir=self.temp_dir)
         func.compile_to_object(object_file, params, fn_name=func_name, target=self.target)
         tock = time.perf_counter()
-        logger.debug(f"Compiled {func_name} to {object_file} in {tock - tick} seconds.")
+        logger.trace(f"Compiled {func_name} to {object_file} in {tock - tick} seconds.")
 
         tick = time.perf_counter()
         library_file = os.path.splitext(object_file)[0] + ".so"
         self._link(library_file, object_file)
         tock = time.perf_counter()
-        logger.debug(f"Linked {object_file} to {library_file} in {tock - tick} seconds.")
+        logger.trace(f"Linked {object_file} to {library_file} in {tock - tick} seconds.")
 
         ffi_lib = self.ffi.dlopen(library_file, self.ffi.RTLD_NOW | self.ffi.RTLD_LOCAL)
         ffi_fun_ptr = self.ffi.gc(getattr(ffi_lib, func_name), lambda p: self.ffi.dlclose(ffi_lib))
@@ -304,6 +370,7 @@ def binomials_buffer(size: int = 65) -> hl.Buffer:
     return hl.Buffer(binomial_coeffs)
 
 
+"""
 def _build_fixed_hamming_state_to_index_kernel(
     number_sites: int,
     hamming_weight: int,
@@ -378,8 +445,9 @@ def _build_fixed_hamming_state_to_index_kernel(
             target=target,
         )
     return out, [alpha, mask, basis_states], keep_alive
+"""
 
-
+"""
 def _build_xored_state_to_index_kernel(info: BasisInfo, *args, **kwargs):
     if info.number_bits > 64:
         raise NotImplementedError("xored_state_to_index not supported on large systems")
@@ -421,13 +489,7 @@ def _build_xored_state_to_index_kernel(info: BasisInfo, *args, **kwargs):
 def xored_state_to_index_kernel(info: BasisInfo, *args, **kwargs) -> CompiledKernel:
     builder = lambda: _build_xored_state_to_index_kernel(info, *args, **kwargs)
     return COMPILER.link_and_load(builder, "xored_state_to_index_kernel")
-
-
-class LoweredSymmetries:
-    masks: NDArray[np.uint64]
-    shifts: NDArray[np.uint64]
-    characters_re: NDArray[np.float64]
-    characters_im: NDArray[np.float64]
+"""
 
 
 def _bit_permute_step_64(x, m, d):
@@ -438,31 +500,37 @@ def _bit_permute_step_64(x, m, d):
 def _make_permuted(alphas, masks, shifts):
     batch_idx = hl.Var("batch_idx")
     group_idx = hl.Var("group_idx")
-    y = hl.Func("y")
+    permuted = hl.Func("permuted")
 
     p = alphas[batch_idx]
     for i in range(len(shifts)):
-        p = _bit_permute_step_64(p, masks[group_idx, i], shifts[i])
+        p = _bit_permute_step_64(p, masks[i, group_idx], shifts[i])
 
-    y[batch_idx, group_idx] = p
-    return y
+    permuted[batch_idx, group_idx] = p
+    return permuted
 
 
-def _build_symmetric_is_representative_kernel(info: BasisInfo, symm: LoweredSymmetries):
-    masks = hl.Buffer(hl.Int(64), 2, symm.masks.view(np.int64), name="masks")
-    # shifts = hl.Buffer(hl.Int(64), 1, symm.shifts.view(np.int64), name="shifts")
-    characters_re = hl.Buffer(hl.Float(64), 1, symm.characters_re, name="characters")
+def _build_symmetric_is_representative_kernel(
+    info: BasisInfo,
+    target=hl.get_jit_target_from_environment(),
+    vector_size=8,
+    verbose: bool = False,
+):
+    symm = LoweredSymmetries(generate_representation(info.symmetries))
+    masks = hl.Buffer(symm.masks.view(np.int64), name="masks")
+    characters_re = hl.Buffer(symm.characters_re, name="characters")
     alphas = hl.ImageParam(hl.Int(64), 1, name="alphas")
+    inversion_mask = 2**info.number_bits - 1 if info.spin_inversion is not None else None
+    keep_alive = dict(masks=masks, characters_re=characters_re)
 
     number_masks = symm.masks.shape[0]
-    depth = symm.masks.shape[1]
-    # count = alpha.dim(0).extent()
+    # depth = symm.masks.shape[1]
 
     y = _make_permuted(alphas, masks, symm.shifts)
     (batch_idx, group_idx) = y.args()
 
     temp = hl.Func("temp")
-    r_group = hl.RDom([1, number_masks - 1], "k")
+    r_group = hl.RDom([hl.Range(1, number_masks - 1)], "r_group")
 
     init_n = hl.cast(hl.UInt(16), 1)
     if info.spin_inversion is not None:
@@ -486,44 +554,40 @@ def _build_symmetric_is_representative_kernel(info: BasisInfo, symm: LoweredSymm
         next_n = hl.cast(hl.UInt(16), is_greater | (is_equal & is_trivial)) * (
             next_n + hl.cast(hl.UInt(16), is_equal)
         )
-    #
-    #     rgroup_idx.where(current_n > 0);
-    #     temp(batch_idx) = next_n;
-    #
-    #     Func norm{"norm"};
-    #     norm(batch_idx) = temp(batch_idx);
-    #
-    #     auto const block_size = from_env("LS_HS_IS_REPRESENTATIVE_BLOCK_SIZE", 1);
-    #     LS_CHECK(block_size <= LS_HS_MAX_BLOCK_SIZE, "block_size too big");
-    #     // Shapes & strides
-    #     _x.dim(0).set_min(0).set_stride(1).set_extent(block_size * (_x.dim(0).extent() / block_size));
-    #     norm.output_buffer().dim(0).set_min(0).set_stride(1).set_extent(_x.dim(0).extent());
-    #
-    #     if (block_size > 1) {
-    #         Var outer{"outer"};
-    #         Var inner{"inner"};
-    #         norm.split(batch_idx, outer, inner, block_size).vectorize(inner);
-    #
-    #         temp.split(batch_idx, outer, inner, block_size).vectorize(inner);
-    #         temp.update(0).split(batch_idx, outer, inner, block_size).reorder(inner, rgroup_idx, outer).vectorize(inner);
-    #         temp.compute_at(norm, outer).store_in(MemoryType::Register);
-    #     }
-    #     else {
-    #         temp.compute_at(norm, batch_idx).store_in(MemoryType::Register);
-    #     }
-    #
-    #     auto target = get_jit_target_from_environment();
-    #     // target.set_features({Target::Feature::NoAsserts, Target::Feature::NoBoundsQuery});
-    #     if (static_cast<bool>(from_env("LS_HS_DEBUG_KERNELS", false))) {
-    #         norm.print_loop_nest();
-    #         norm.compile_to_lowered_stmt("is_representative.html", {_x}, Halide::HTML, target);
-    #     }
-    #     auto callable = norm.compile_to_callable({_x}, target);
-    #     return callable;
-    # }
+    r_group.where(current_n > 0)
+    temp[batch_idx] = next_n
+
+    norm = hl.Func("norm")
+    norm[batch_idx] = temp[batch_idx]
+
+    outer = hl.Var("outer")
+    inner = hl.Var("inner")
+    norm.split(batch_idx, outer, inner, vector_size, hl.TailStrategy.GuardWithIf)
+    norm.vectorize(inner)
+
+    temp.split(batch_idx, outer, inner, vector_size, hl.TailStrategy.GuardWithIf)
+    temp.vectorize(inner)
+    temp.update(0).split(batch_idx, outer, inner, vector_size, hl.TailStrategy.GuardWithIf)
+    temp.update(0).reorder(inner, r_group, outer)
+    temp.update(0).vectorize(inner)
+    temp.compute_at(norm, outer).store_at(norm, outer)
+    temp.bound_storage(batch_idx, vector_size).store_in(hl.MemoryType.Register)
+
+    if verbose:
+        norm.print_loop_nest()
+        target = target.with_feature(hl.TargetFeature.NoBoundsQuery)
+        target = target.with_feature(hl.TargetFeature.NoAsserts)
+        target = target.with_feature(hl.TargetFeature.AVX512_Zen4)
+        norm.compile_to_lowered_stmt(
+            "is_representative.stmt.html",
+            [alphas],
+            fmt=hl.StmtOutputFormat.HTML,
+            target=target,
+        )
+    return norm, [alphas], keep_alive
 
 
-def _build_is_representative_kernel(info: BasisInfo):
+def _build_is_representative_kernel(info: BasisInfo, *args, **kwargs):
     if info.number_bits > 64:
         raise NotImplementedError("is_representative not yet implemented for large systems")
 
@@ -533,7 +597,7 @@ def _build_is_representative_kernel(info: BasisInfo):
     keep_alive = dict()
 
     if len(info.symmetries) > 0:
-        pass
+        return _build_symmetric_is_representative_kernel(info, *args, **kwargs)
 
     if info.hamming_weight is None and info.spin_inversion is None and len(info.symmetries) == 0:
         # Identity function
@@ -547,11 +611,117 @@ def _build_is_representative_kernel(info: BasisInfo):
     return norm, [x], keep_alive
 
 
-def is_representative_kernel(info: BasisInfo) -> CompiledKernel:
-    builder = lambda: _build_is_representative_kernel(info)
+def is_representative_kernel(info: BasisInfo, *args, **kwargs) -> CompiledKernel:
+    builder = lambda: _build_is_representative_kernel(info, *args, **kwargs)
     return COMPILER.link_and_load(builder, "is_representative_kernel")
 
 
+
+
+
+def generate_offset_ranges(representatives: np.ndarray, number_bits: int, shift: int) -> tuple[np.ndarray, int]:
+    """
+    Generate overlapping ranges for binary search based on most significant bits.
+    
+    Args:
+        representatives: Sorted array of uint64 bit strings
+        number_bits: Number of most significant bits to use for range splitting
+        shift: Number of bits to shift right (usually total_bits - number_bits)
+    
+    Returns:
+        offsets: Array of starting positions for each range
+        range_size: Maximum size of any range
+    """
+    assert 0 <= number_bits < 64, "invalid number_bits"
+    assert shift < 64, "invalid shift"
+    if number_bits == 0:
+        return np.array([0, len(representatives)], dtype=np.intp), len(representatives)
+    
+    # Create small array of boundary values we're searching for
+    num_prefixes = 1 << number_bits
+    # Create shifted boundary values: [0, 1<<shift, 2<<shift, ...]
+    boundaries = (np.arange(num_prefixes, dtype=np.uint64) << shift)
+    # Find positions where each prefix starts
+    offsets = np.searchsorted(representatives, boundaries, side='left')
+    offsets = np.append(offsets, len(representatives))
+    sizes = np.diff(offsets)
+    max_range_size = np.max(sizes)
+    # Normalize ranges to have equal size
+    number_states = len(representatives)
+    mask = offsets[:-1] > (number_states - max_range_size)
+    offsets[:-1][mask] = number_states - max_range_size
+    return offsets, max_range_size
+
+
+
+
+
+
+"""
+def _build_state_to_index_binary_search_kernel(
+    *,
+    prefix_bits: int,
+    offsets: NDArray[np.int64],
+    range_size: int,
+    shift: int,
+    target=hl.get_jit_target_from_environment(),
+    verbose: bool = False,
+):
+    alpha = hl.ImageParam(hl.Int(64), 1, "alpha")
+    representatives = hl.ImageParam(hl.Int(64), 1, "representatives")
+    offsets_buf = hl.Buffer(offsets, name="offsets")
+    keep_alive = dict(offsets_buf=offsets_buf)
+
+    batch_idx = hl.Var("batch_idx")
+    needle = alpha[batch_idx]
+    alpha_key = hl.cast(hl.Int(32), (needle >> shift) & (2**prefix_bits - 1))
+    alpha_key = hl.unsafe_promise_clamped(alpha_key, 0, offsets_buf.dim(0).extent() - 1)
+    base = hl.cast(hl.Int(32), offsets_buf[alpha_key])
+    size = range_size
+    number_memory_accesses = 0
+    while size > 1:
+        half = size // 2
+        size -= half
+        k = hl.unsafe_promise_clamped(base + half, 0, representatives.dim(0).extent() - 1)
+        base = hl.select(representatives[k] < needle, k, base)
+        number_memory_accesses += 1
+    base = hl.unsafe_promise_clamped(base, 0, representatives.dim(0).extent() - 1)
+    base = hl.select(representatives[base] < needle, base + 1, base)
+    number_memory_accesses += 1
+    base = hl.unsafe_promise_clamped(base, 0, representatives.dim(0).extent() - 1)
+
+    result = hl.Func("result")
+    result[batch_idx] = hl.select(representatives[base] == needle, base, -1)
+    number_memory_accesses += 1
+
+    if verbose:
+        print(f"number_memory_accesses: {number_memory_accesses}; log2(range_size): {np.log2(range_size)}")
+        result.print_loop_nest()
+        target = target.with_feature(hl.TargetFeature.NoBoundsQuery)
+        target = target.with_feature(hl.TargetFeature.NoAsserts)
+        target = target.with_feature(hl.TargetFeature.AVX512_Zen4)
+        result.compile_to_lowered_stmt(
+            "state_to_index_binary_search.stmt.html",
+            [alpha, representatives],
+            fmt=hl.StmtOutputFormat.HTML,
+            target=target,
+        )
+    return result, [alpha, representatives], keep_alive
+
+
+def state_to_index_kernel(representatives: NDArray[np.uint64], prefix_bits: int = 17, **kwargs) -> CompiledKernel:
+    total_bits = int(representatives.max()).bit_length()
+    shift = max(0, total_bits - prefix_bits)
+    offsets, range_size = generate_offset_ranges(representatives, prefix_bits, shift)
+
+    builder = lambda: _build_state_to_index_binary_search_kernel(
+        prefix_bits=prefix_bits, offsets=offsets, range_size=range_size, shift=shift, **kwargs
+    )
+    return COMPILER.link_and_load(builder, "state_to_index_kernel")
+"""
+
+
+"""
 def _build_diag_matrix_kernel(
     terms: PauliLoweredTerms,
     real_only=False,
@@ -622,37 +792,75 @@ def diag_matrix_kernel(*args, real_only=False, **kwargs) -> CompiledKernel:
     builder = lambda: _build_diag_matrix_kernel(*args, real_only=real_only, **kwargs)
     fn = "diag_matrix_real_kernel" if real_only else "diag_matrix_complex_kernel"
     return COMPILER.link_and_load(builder, fn)
+"""
 
 
-def _build_off_diag_coeff(terms, *, alpha, v_re, v_im, s, real_only: bool):
+def _build_off_diag_coeff(terms: PauliLoweredTerms, *, alpha, v_re, v_im, real_only: bool, keep_alive: dict):
     # Compute off-diagonal matrix elements
     off_diag_coeff = hl.Func("off_diag_coeff")
     state_idx = hl.Var("state_idx")
     term_idx = hl.Var("term_idx")
-    if real_only:
-        off_diag_coeff[state_idx, term_idx] = hl.cast(hl.Float(64), 0)
-    else:
-        off_diag_coeff[state_idx, term_idx] = (hl.cast(hl.Float(64), 0), hl.cast(hl.Float(64), 0))
+    s = hl.Buffer(terms.s_2d.view(np.int64), name="s_off_diag")
+    keep_alive["s_off_diag"] = s
+
+    if False:
+        if real_only:
+            off_diag_coeff[state_idx, term_idx] = hl.cast(hl.Float(64), 0)
+        else:
+            off_diag_coeff[state_idx, term_idx] = (hl.cast(hl.Float(64), 0), hl.cast(hl.Float(64), 0))
 
     if terms.has_off_diag:
         number_reduced = terms.s_2d.shape[1]
-        r = hl.RDom([hl.Range(0, number_reduced)], "r_off_diag")
-        sign = hl.popcount(alpha[state_idx] & s[r, term_idx]) << 63
-        re = hl.reinterpret(hl.Float(64), hl.reinterpret(hl.Int(64), v_re[r, term_idx]) ^ sign)
-        im = hl.reinterpret(hl.Float(64), hl.reinterpret(hl.Int(64), v_im[r, term_idx]) ^ sign)
-        if real_only:
-            re += off_diag_coeff[state_idx, term_idx]
-            off_diag_coeff[state_idx, term_idx] = re
+
+        if True:
+            re = 0
+            im = 0
+            for r in range(number_reduced):
+                # v = alpha[state_idx] & s[r, term_idx]
+                # v ^= v >> 1
+                # v ^= v >> 2
+                # v = (v & 0x11111111) * 0x11111111
+                # sign = (v << 35) & hl.cast(hl.Int(64), -9223372036854775808)
+                sign = hl.popcount(alpha[state_idx] & s[r, term_idx]) << 63
+
+                re += hl.reinterpret(hl.Float(64), hl.reinterpret(hl.Int(64), v_re[r, term_idx]) ^ sign)
+                im += hl.reinterpret(hl.Float(64), hl.reinterpret(hl.Int(64), v_im[r, term_idx]) ^ sign)
+            if real_only:
+                off_diag_coeff[state_idx, term_idx] = re
+            else:
+                off_diag_coeff[state_idx, term_idx] = (re, im)
         else:
-            re += off_diag_coeff[state_idx, term_idx][0]
-            im += off_diag_coeff[state_idx, term_idx][1]
-            off_diag_coeff[state_idx, term_idx] = (re, im)
+            r = hl.RDom([hl.Range(0, number_reduced)], "r_off_diag")
+
+            v = alpha[state_idx] & s[r, term_idx]
+            v ^= v >> 1
+            v ^= v >> 2
+            v = (v & 0x11111111) * 0x11111111
+            sign = (v << 35) & hl.cast(hl.Int(64), -9223372036854775808)
+            # unsigned int v; // 32-bit word
+            # v ^= v >> 1;
+            # v ^= v >> 2;
+            # v = (v & 0x11111111U) * 0x11111111U;
+            # return (v >> 28) & 1;
+            # sign = hl.popcount(alpha[state_idx] & s[r, term_idx]) << 63
+            re = hl.reinterpret(hl.Float(64), hl.reinterpret(hl.Int(64), v_re[r, term_idx]) ^ sign)
+            im = hl.reinterpret(hl.Float(64), hl.reinterpret(hl.Int(64), v_im[r, term_idx]) ^ sign)
+            if real_only:
+                re += off_diag_coeff[state_idx, term_idx]
+                off_diag_coeff[state_idx, term_idx] = re
+            else:
+                re += off_diag_coeff[state_idx, term_idx][0]
+                im += off_diag_coeff[state_idx, term_idx][1]
+                off_diag_coeff[state_idx, term_idx] = (re, im)
     return off_diag_coeff
 
 
-def _build_diag_coeff(terms, *, alpha, v_re, v_im, s, real_only: bool):
+def _build_diag_coeff(terms: PauliLoweredTerms, *, alpha, v_re, v_im, real_only: bool, keep_alive: dict):
     diag_coeff = hl.Func("diag_coeff")
     state_idx = hl.Var("state_idx")
+    s = hl.Buffer(terms.s_diag.view(np.int64), name="s_diag")
+    keep_alive["s_diag"] = s
+
     if real_only:
         diag_coeff[state_idx] = hl.cast(hl.Float(64), 0)
     else:
@@ -660,6 +868,11 @@ def _build_diag_coeff(terms, *, alpha, v_re, v_im, s, real_only: bool):
 
     if terms.has_diag:
         r = hl.RDom([hl.Range(0, terms.s_diag.size)], "r_diag")
+        # v = alpha[state_idx] & s[r]
+        # v ^= v >> 1
+        # v ^= v >> 2
+        # v = (v & 0x11111111) * 0x11111111
+        # sign = (v << 35) & hl.cast(hl.Int(64), -9223372036854775808)
         sign = hl.popcount(alpha[state_idx] & s[r]) << 63
         re = hl.reinterpret(hl.Float(64), hl.reinterpret(hl.Int(64), v_re[r]) ^ sign)
         im = hl.reinterpret(hl.Float(64), hl.reinterpret(hl.Int(64), v_im[r]) ^ sign)
@@ -670,12 +883,140 @@ def _build_diag_coeff(terms, *, alpha, v_re, v_im, s, real_only: bool):
     return diag_coeff
 
 
+def _build_state_to_index(info: BasisInfo, state_to_index_info: StateToIndexInfo | None, *, representative, basis_states, keep_alive: dict):
+    state_to_index = hl.Func("state_to_index")
+    state_idx, term_idx = representative.args()
+    if info.is_state_index_identity:
+        assert representative[state_idx, term_idx].size() == 1
+        state_to_index[state_idx, term_idx] = representative[state_idx, term_idx]
+    elif not info.has_permutation_symmetries:
+        assert info.hamming_weight is not None
+        assert representative[state_idx, term_idx].size() == 1
+        binomials = binomials_buffer()
+        keep_alive["binomials"] = binomials
+
+        k = hl.RDom([hl.Range(0, info.hamming_weight)], "k")
+        state_to_index[state_idx, term_idx] = (hl.cast(hl.Int(64), 0), hl.cast(hl.UInt(64), representative[state_idx, term_idx]))
+        index, state = state_to_index[state_idx, term_idx][0], state_to_index[state_idx, term_idx][1]
+        trailing_zeros = hl.cast(hl.Int(32), hl.select(state == 0, 0, hl.count_trailing_zeros(state)))
+        state_to_index[state_idx, term_idx] = (index + binomials[trailing_zeros, k + 1], state & (state - 1))
+    else:
+        offsets = hl.Buffer(state_to_index_info.offsets, name="offsets")
+        keep_alive["offsets"] = offsets
+
+        number_states = basis_states.dim(0).extent()
+        needle = representative[state_idx, term_idx][0]
+        alpha_key = hl.cast(hl.Int(32), (needle >> state_to_index_info.shift) & (2**state_to_index_info.prefix_bits - 1))
+        alpha_key = hl.unsafe_promise_clamped(alpha_key, 0, state_to_index_info.offsets.size - 1)
+        base = hl.cast(hl.Int(32), offsets[alpha_key])
+        size = state_to_index_info.range_size
+        while size > 1:
+            half = size // 2
+            size -= half
+            k = hl.unsafe_promise_clamped(base + half, 0, number_states - 1)
+            base = hl.select(basis_states[k] < needle, k, base)
+        base = hl.unsafe_promise_clamped(base, 0, number_states - 1)
+        base = hl.select(basis_states[base] < needle, base + 1, base)
+        base = hl.unsafe_promise_clamped(base, 0, number_states - 1)
+        state_to_index[state_idx, term_idx] = hl.select(basis_states[base] == needle, base, -1)
+    return state_to_index
+
+def _build_state_info(info: BasisInfo, symm: LoweredSymmetries | None, terms: PauliLoweredTerms, *, alpha, keep_alive: dict):
+
+    if not info.has_permutation_symmetries:
+        representative = hl.Func("representative")
+        state_idx, term_idx = hl.Var("state_idx"), hl.Var("term_idx")
+        masks = hl.Buffer(terms.mask.view(np.int64), name="masks")
+        keep_alive["masks"] = masks
+        representative[state_idx, term_idx] = alpha[state_idx] ^ masks[term_idx]
+        return representative
+    if info.spin_inversion is not None:
+        raise NotImplementedError("😭")
+
+    print(terms.mask)
+    masks = np.ascontiguousarray(np.vstack([network(terms.mask) for network in symm.networks]).T)
+    print(masks)
+    masks = hl.Buffer(masks.view(np.int64), name="masks")
+    keep_alive["masks"] = masks
+
+    benes_masks = hl.Buffer(symm.masks.view(np.int64), name="benes_masks")
+    keep_alive["benes_masks"] = benes_masks
+
+    number_masks = symm.masks.shape[0]
+    number_terms = terms.mask.shape[0]
+    term_idx = hl.Var("term_idx")
+
+    # make permuted should start with index 1 rather than 0
+    permuted = _make_permuted(alpha, benes_masks, symm.shifts)
+    (state_idx, group_idx) = permuted.args()
+
+    representative = hl.Func("representative")
+    r_group = hl.RDom([hl.Range(1, number_masks - 1)], "r_group")
+
+    init_state = alpha[state_idx] ^ masks[0, term_idx]
+    init_index = hl.cast(hl.Int(32), 0)
+    representative[state_idx, term_idx] = (init_state, init_index)
+
+    current_state, current_index = representative[state_idx, term_idx][0], representative[state_idx, term_idx][1]
+    is_smaller = permuted[state_idx, r_group] ^ masks[r_group, term_idx] < current_state
+    next_state = hl.select(is_smaller, permuted[state_idx, r_group] ^ masks[r_group, term_idx], current_state)
+    next_index = hl.select(is_smaller, r_group, current_index)
+    representative[state_idx, term_idx] = (next_state, next_index)
+
+    return representative
+
+def _build_gather(info: BasisInfo, symm: LoweredSymmetries | None, terms: PauliLoweredTerms, *, init_norms, init_coeffs, norms, X, diag_coeff, off_diag_coeff, representative, state_to_index, keep_alive: dict, real_only: bool, dtype: hl.Type):
+    def _real(x):
+        return x if real_only else x[0]
+
+    gather = hl.Func("gather")
+    (state_idx,) = diag_coeff.args()
+    init_coeff = _real(diag_coeff[state_idx]) * init_coeffs[state_idx]
+    gather[state_idx] = hl.cast(dtype, init_coeff)
+
+    if info.has_permutation_symmetries:
+        characters_re = hl.Buffer(symm.characters_re, name="characters_re")
+        # characters_im = hl.Buffer(symm.characters.view(np.int64), name="characters_im")
+        keep_alive["characters_re"] = characters_re
+        # keep_alive["characters_im"] = characters_im
+        number_characters = symm.characters_re.size
+
+    number_terms = terms.mask.shape[0]
+    number_states = X.dim(0).extent()
+    if terms.has_off_diag:
+        r_gather = hl.RDom([hl.Range(0, number_terms)], "r_gather")
+        index = state_to_index[state_idx, r_gather]
+        if index.size() > 1:
+            index = index[0]
+        out_of_bounds = index < 0
+
+        if info.is_state_index_identity:
+            index = hl.unsafe_promise_clamped(hl.cast(hl.Int(32), index), 0, number_states - 1)
+        else:
+            index = hl.clamp(hl.cast(hl.Int(32), index), 0, number_states - 1)
+
+        coeff = _real(off_diag_coeff[state_idx, r_gather])
+        if info.has_permutation_symmetries:
+            group_idx = representative[state_idx, r_gather][1]
+            group_idx = hl.unsafe_promise_clamped(group_idx, 0, number_characters - 1)
+            coeff *= characters_re[group_idx] * hl.sqrt(hl.cast(hl.Float(64), norms[index]) / hl.cast(hl.Float(64), init_norms[state_idx]))
+
+        coeff = hl.cast(dtype, coeff)
+        if info.is_state_index_identity:
+            coeff = coeff * X[index]
+        else:
+            coeff = hl.select(out_of_bounds, hl.cast(dtype, 0), coeff * X[index])
+        gather[state_idx] = gather[state_idx] + coeff
+    return gather
+
 def _build_off_diag_matrix_kernel(
+    info: BasisInfo,
+    state_to_index_info: StateToIndexInfo | None,
+    symm: LoweredSymmetries | None,
     terms: PauliLoweredTerms,
     *,
-    spin_inversion=None,
-    spin_inversion_mask=None,
-    vector_size=8,
+    vector_size=16,
+    task_size=1024,
     target=hl.get_jit_target_from_environment(),
     dtype=hl.Float(32),
     real_only=True,
@@ -686,166 +1027,170 @@ def _build_off_diag_matrix_kernel(
     has_diag = terms.has_diag
     has_off_diag = terms.has_off_diag
 
-    alpha_buf = hl.ImageParam(hl.Int(64), 1, "alpha")
+    # Initial states and coefficients
+    init_alpha_buf = hl.ImageParam(hl.Int(64), 1, "init_alpha")
+    init_norms_buf = hl.ImageParam(hl.UInt(16), 1, "init_norms")
+    init_coeffs_buf = hl.ImageParam(dtype, 1, "init_coeffs")
+    # (Potentially) time-dependent matrix elements
     v_re_buf = hl.ImageParam(hl.Float(64), 2, "v_re")
     v_im_buf = hl.ImageParam(hl.Float(64), 2, "v_im")
     v_diag_re_buf = hl.ImageParam(hl.Float(64), 1, "v_diag_re")
     v_diag_im_buf = hl.ImageParam(hl.Float(64), 1, "v_diag_im")
+    # Basis states, norms
+    basis_states_buf = hl.ImageParam(hl.Int(64), 1, "basis_states")
+    norms_buf = hl.ImageParam(hl.UInt(16), 1, "norms")
+    # State vector
     X_buf = hl.ImageParam(dtype, 1, "X")
 
     s_buf = hl.Buffer(terms.s_2d.view(np.int64), name="s") if has_off_diag else None
     mask_buf = hl.Buffer(terms.mask.view(np.int64), name="mask") if has_off_diag else None
     s_diag_buf = hl.Buffer(terms.s_diag.view(np.int64), name="s_diag") if has_diag else None
+    keep_alive = dict(s_buf=s_buf, mask_buf=mask_buf, s_diag_buf=s_diag_buf)
 
     # Compute off-diagonal matrix elements
     off_diag_coeff = _build_off_diag_coeff(
         terms,
-        alpha=alpha_buf,
+        alpha=init_alpha_buf,
         v_re=v_re_buf,
         v_im=v_im_buf,
-        s=s_buf,
         real_only=real_only,
+        keep_alive=keep_alive,
     )
-    # coeff_temp = hl.Func("coeff_temp")
-    # term_idx = hl.Var("term_idx")
-    # if real_only:
-    #     coeff_temp[state_idx, term_idx] = hl.cast(hl.Float(64), 0)
-    # else:
-    #     coeff_temp[state_idx, term_idx] = (hl.cast(hl.Float(64), 0), hl.cast(hl.Float(64), 0))
-    # if has_off_diag:
-    #     r1 = hl.RDom([hl.Range(0, number_reduced)], "r1")
-    #     sign = hl.popcount(alpha_buf[state_idx] & s_buf[r1, term_idx]) << 63
-    #     re = hl.reinterpret(hl.Float(64), hl.reinterpret(hl.Int(64), v_re_buf[r1, term_idx]) ^ sign)
-    #     im = hl.reinterpret(hl.Float(64), hl.reinterpret(hl.Int(64), v_im_buf[r1, term_idx]) ^ sign)
-    #     if real_only:
-    #         re += coeff_temp[state_idx, term_idx]
-    #         coeff_temp[state_idx, term_idx] = re
-    #     else:
-    #         re += coeff_temp[state_idx, term_idx][0]
-    #         im += coeff_temp[state_idx, term_idx][1]
-    #         coeff_temp[state_idx, term_idx] = (re, im)
-
     # Compute diagonal matrix elements
     diag_coeff = _build_diag_coeff(
         terms,
-        alpha=alpha_buf,
+        alpha=init_alpha_buf,
         v_re=v_diag_re_buf,
         v_im=v_diag_im_buf,
-        s=s_diag_buf,
         real_only=real_only,
+        keep_alive=keep_alive,
     )
-
-    temp = hl.Func("temp")
-    (state_idx,) = diag_coeff.args()
-    print(state_idx)
-    number_states = X_buf.dim(0).extent()
-    if has_diag:
-        index = hl.cast(hl.Int(32), alpha_buf[state_idx])
-        index = hl.unsafe_promise_clamped(index, 0, number_states - 1)
-        if real_only:
-            init_coeff = diag_coeff[state_idx] * X_buf[index]
-        else:
-            init_coeff = diag_coeff[state_idx][0] * X_buf[index]
-    else:
-        init_coeff = 0
-    temp[state_idx] = hl.cast(dtype, init_coeff)
-
-    # if has_diag:
-    #     r_diag = hl.RDom([hl.Range(0, terms.s_diag.size)], "r_diag")
-    #     diag_coeff = hl.Func("diag_coeff")
-    #     if real_only:
-    #         diag_coeff[state_idx] = hl.cast(hl.Float(64), 0)
-    #     else:
-    #         diag_coeff[state_idx] = (hl.cast(hl.Float(64), 0), hl.cast(hl.Float(64), 0))
-    #     sign = hl.popcount(alpha_buf[state_idx] & s_diag_buf[r_diag]) << 63
-    #     re = hl.reinterpret(hl.Float(64), hl.reinterpret(hl.Int(64), v_diag_re_buf[r_diag]) ^ sign)
-    #     im = hl.reinterpret(hl.Float(64), hl.reinterpret(hl.Int(64), v_diag_im_buf[r_diag]) ^ sign)
-    #     if real_only:
-    #         diag_coeff[state_idx] = re + diag_coeff[state_idx]
-    #     else:
-    #         diag_coeff[state_idx] = (re + diag_coeff[state_idx][0], im + diag_coeff[state_idx][1])
-    #     index = hl.cast(hl.Int(32), alpha_buf[state_idx])
-    #     index = hl.unsafe_promise_clamped(index, 0, number_states - 1)
-    #     if real_only:
-    #         init_coeff = diag_coeff[state_idx] * X_buf[index]
-    #     else:
-    #         init_coeff = diag_coeff[state_idx][0] * X_buf[index]
-    # else:
-    #     init_coeff = 0
-
-    if has_off_diag:
-        number_terms = len(terms.mask)
-        r_gather = hl.RDom([hl.Range(0, number_terms)], "r_gather")
-        if real_only:
-            coeff = hl.cast(dtype, off_diag_coeff[state_idx, r_gather])
-        else:
-            coeff = hl.cast(dtype, off_diag_coeff[state_idx, r_gather][0])
-        beta = alpha_buf[state_idx] ^ mask_buf[r_gather]
-        # if spin_inversion is not None:
-        #     beta = hl.min(beta, beta ^ spin_inversion_mask)
-        #     if spin_inversion == -1:
-        #         flip = (beta ^ spin_inversion_mask) < beta
-        #         coeff = hl.select(flip, -coeff, coeff)
-        index = hl.cast(hl.Int(32), beta)
-        index = hl.unsafe_promise_clamped(index, 0, number_states - 1)
-        temp[state_idx] = temp[state_idx] + coeff * X_buf[index]
-
+    # Project states to representatives
+    representative = _build_state_info(
+        info,
+        symm,
+        terms,
+        alpha=init_alpha_buf,
+        keep_alive=keep_alive,
+    )
+    # Map states to indices
+    state_to_index = _build_state_to_index(
+        info,
+        state_to_index_info,
+        representative=representative,
+        basis_states=basis_states_buf,
+        keep_alive=keep_alive,
+    )
+    # Compute final state vector
+    gather = _build_gather(
+        info,
+        symm,
+        terms,
+        init_norms=init_norms_buf,
+        init_coeffs=init_coeffs_buf,
+        norms=norms_buf,
+        X=X_buf,
+        diag_coeff=diag_coeff,
+        off_diag_coeff=off_diag_coeff,
+        representative=representative,
+        state_to_index=state_to_index,
+        keep_alive=keep_alive,
+        real_only=real_only,
+        dtype=dtype,
+    )
     Y = hl.Func("Y")
-    Y[state_idx] = temp[state_idx]
+    (state_idx,) = gather.args()
+    Y[state_idx] = gather[state_idx]
 
     if not target.has_gpu_feature():
+        parallel = hl.Var("parallel")
         outer = hl.Var("outer")
         inner = hl.Var("inner")
+        # task_size = 1024
         Y.split(state_idx, outer, inner, vector_size, GuardWithIf)
-        Y.vectorize(inner).parallel(outer)
+        # Y.split(outer, parallel, outer, task_size, GuardWithIf)
+        # Y.reorder(inner, outer, parallel)
+        # Y.vectorize(inner)
 
         if has_off_diag:
-            temp.split(state_idx, outer, inner, vector_size, GuardWithIf)
-            temp.vectorize(inner)
-            temp.update(0).split(state_idx, outer, inner, vector_size, GuardWithIf)
-            temp.update(0).reorder(inner, r_gather, outer).vectorize(inner)
-            temp.compute_at(Y, outer).store_at(Y, outer)
-            temp.bound_storage(state_idx, vector_size).store_in(hl.MemoryType.Register)
-            off_diag_coeff.split(state_idx, outer, inner, vector_size, RoundUp)
-            off_diag_coeff.vectorize(inner)
-            off_diag_coeff.update(0).split(state_idx, outer, inner, vector_size, GuardWithIf)
-            (_, term_idx) = off_diag_coeff.args()
-            (r_off_diag,) = off_diag_coeff.rvars()
-            off_diag_coeff.update(0).reorder(inner, r_off_diag, term_idx, outer).vectorize(inner)
-            off_diag_coeff.compute_at(temp, r_gather).store_at(temp, r_gather)
-            off_diag_coeff.bound_storage(state_idx, vector_size).bound_storage(term_idx, 1)
-            off_diag_coeff.store_in(hl.MemoryType.Register)
+            (r_gather,) = gather.rvars()
+            gather.split(state_idx, outer, inner, vector_size, GuardWithIf)
+            gather.reorder(inner, outer).vectorize(inner)
+            gather.update(0).split(state_idx, outer, inner, vector_size, GuardWithIf)
+            gather.update(0).reorder(inner, r_gather, outer).vectorize(inner)
+            gather.compute_at(Y, outer).store_at(Y, outer)
+            gather.bound_storage(state_idx, vector_size).store_in(hl.MemoryType.Register)
+
+            if off_diag_coeff.has_update_definition():
+                off_diag_coeff.split(state_idx, outer, inner, vector_size, RoundUp)
+                off_diag_coeff.reorder(inner, outer).vectorize(inner)
+                (_, term_idx) = off_diag_coeff.args()
+                (r_off_diag,) = off_diag_coeff.rvars()
+                off_diag_coeff.update(0).split(state_idx, outer, inner, vector_size, GuardWithIf)
+                off_diag_coeff.update(0).reorder(inner, r_off_diag, term_idx, outer).vectorize(inner).unroll(r_off_diag)
+                off_diag_coeff.compute_at(gather, r_gather).store_at(gather, r_gather)
+                off_diag_coeff.bound_storage(state_idx, vector_size).bound_storage(term_idx, 1)
+                off_diag_coeff.store_in(hl.MemoryType.Register)
+
+            if info.is_state_index_identity:
+                state_to_index.compute_inline()
+            elif not info.has_permutation_symmetries:
+                (r_binomial,) = state_to_index.rvars()
+                (state_idx, term_idx) = state_to_index.args()
+                state_to_index.split(state_idx, outer, inner, vector_size, GuardWithIf)
+                state_to_index.split(outer, parallel, outer, task_size, GuardWithIf)
+                state_to_index.vectorize(inner)
+                state_to_index.update(0).split(state_idx, outer, inner, vector_size, GuardWithIf)
+                state_to_index.update(0).split(outer, parallel, outer, task_size, GuardWithIf)
+                state_to_index.update(0).reorder(inner, r_binomial, term_idx, outer, parallel).vectorize(inner)
+                state_to_index.compute_at(gather, r_gather).store_at(gather, r_gather)
+                state_to_index.bound_storage(state_idx, vector_size).bound_storage(term_idx, 1)
+                state_to_index.store_in(hl.MemoryType.Register)
+        else:
+            gather.compute_inline()
+            off_diag_coeff.compute_inline()
 
         if has_diag:
             diag_coeff.split(state_idx, outer, inner, vector_size, RoundUp)
-            diag_coeff.vectorize(inner)
+            diag_coeff.reorder(inner, outer).vectorize(inner)
             diag_coeff.update(0).split(state_idx, outer, inner, vector_size, GuardWithIf)
             (r_diag,) = diag_coeff.rvars()
             diag_coeff.update(0).reorder(inner, r_diag, outer).vectorize(inner)
-            where = temp if has_off_diag else Y
+            where = gather if has_off_diag else Y
             diag_coeff.compute_at(where, outer).store_at(where, outer)
             diag_coeff.bound_storage(state_idx, vector_size).store_in(hl.MemoryType.Register)
+            # if has_off_diag:
+            #     diag_coeff.compute_with(off_diag_coeff, inner)
+            #     # diag_coeff.update(0).compute_with(off_diag_coeff.update(0), outer)
+        else:
+            diag_coeff.compute_inline()
+        
+        # Y.split(outer, parallel, outer, task_size, GuardWithIf)
+        # Y.parallel(parallel)
+        Y.vectorize(inner)
 
-    count = alpha_buf.dim(0).extent()
-    alpha_buf.dim(0).set_min(0).set_stride(1)
+    count = init_alpha_buf.dim(0).extent()
+    init_alpha_buf.dim(0).set_min(0).set_stride(1)
+    init_coeffs_buf.dim(0).set_min(0).set_stride(1).set_extent(count)
     if has_off_diag:
         number_reduced = terms.s_2d.shape[1]
+        number_terms = terms.s_2d.shape[0]
         v_re_buf.dim(0).set_min(0).set_stride(1).set_extent(number_reduced)
         v_re_buf.dim(1).set_min(0).set_stride(number_reduced).set_extent(number_terms)
         v_im_buf.dim(0).set_min(0).set_stride(1).set_extent(number_reduced)
         v_im_buf.dim(1).set_min(0).set_stride(number_reduced).set_extent(number_terms)
-    if has_diag:
-        v_diag_re_buf.dim(0).set_min(0).set_stride(1)
-        v_diag_im_buf.dim(0).set_min(0).set_stride(1)
+    v_diag_re_buf.dim(0).set_min(0).set_stride(1)
+    v_diag_im_buf.dim(0).set_min(0).set_stride(1)
+    basis_states_buf.dim(0).set_min(0).set_stride(1)
     X_buf.dim(0).set_min(0).set_stride(1)
     Y.output_buffer().dim(0).set_min(0).set_stride(1).set_extent(count)
 
-    args = (alpha_buf,)
+    args = (init_alpha_buf, init_norms_buf, init_coeffs_buf)
     if has_off_diag:
         args += (v_re_buf, v_im_buf)
     if has_diag:
         args += (v_diag_re_buf, v_diag_im_buf)
-    args += (X_buf,)
+    args += (basis_states_buf, norms_buf, X_buf,)
 
     if verbose:
         Y.print_loop_nest()
@@ -858,7 +1203,7 @@ def _build_off_diag_matrix_kernel(
             fmt=hl.StmtOutputFormat.HTML,
             target=target,
         )
-    return Y, args, dict()
+    return Y, args, keep_alive
 
 
 def off_diag_matrix_kernel(*args, **kwargs) -> CompiledKernel:

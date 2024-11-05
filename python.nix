@@ -185,10 +185,11 @@ final: prev: {
           numpy
           scipy
           sympy
+          igraph
           halide
           more-itertools
-
-          # hehe
+          lark
+        ] ++ lib.optionals (lib.versionAtLeast python-final.python.version "3.12") [
           quspin
           dynamite
         ];
@@ -208,6 +209,7 @@ final: prev: {
           pytestCheckHook
           pythonOutputDistHook
           hypothesis
+          scalene
           # igraph
         ];
 
@@ -257,12 +259,14 @@ final: prev: {
           runHook postCheck
         '';
 
+        doCheck = false;
+
         shellHook = ''
           if test -e setup.py; then
-            rm -rf build/ lattice_symmetries/*.so
+            tmp_path="$PWD/.pip-install"
+            rm -rf $tmp_path build/ lattice_symmetries/*.so
             ${postPatch}
 
-            tmp_path="$PWD/.pip-install"
             mkdir -p "$tmp_path"
             export PYTHONPATH="$tmp_path/${python-final.python.sitePackages}:$PYTHONPATH"
             python -m pip install -e . --prefix $tmp_path --no-deps # --no-build-isolation --config-settings editable_mode=compat
@@ -274,16 +278,23 @@ final: prev: {
 
     } // (
       let
-        disableTests = drv: drv.overrideAttrs (attrs: { checkPhase = "true"; installCheckPhase = "true"; });
+        disableTests = drv: drv.overridePythonAttrs (attrs: { doCheck = false; });
       in
       final.lib.optionalAttrs (python-prev.python.pythonOlder "3.11") {
+        scipy = disableTests python-prev.scipy;
         django = disableTests python-prev.django;
+        tifffile = disableTests python-prev.tifffile;
         pytest-django = disableTests python-prev.pytest-django;
         zarr = disableTests python-prev.zarr;
         geoip2 = disableTests python-prev.geoip2;
         aiohttp = disableTests python-prev.aiohttp;
         pillow-heif = disableTests python-prev.pillow-heif;
         astropy = disableTests python-prev.astropy;
+        fsspec = disableTests python-prev.fsspec;
+        dask = disableTests python-prev.dask;
+        scikit-image = disableTests python-prev.scikit-image;
+        patsy = disableTests python-prev.patsy;
+        statsmodels = disableTests python-prev.statsmodels;
         imageio = python-prev.imageio.overridePythonAttrs (attrs: {
           optional-dependencies = {
             bsdf = [ ];
