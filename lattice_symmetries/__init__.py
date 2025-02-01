@@ -28,23 +28,35 @@
 
 __version__ = "3.0.0"
 
-from . import _ls, _numpy_helper, _parser, _axpy, _benes, _representation, _kernels, basis, expression, matrix
+from sympy.physics.quantum.pauli import SigmaX, SigmaY, SigmaZ
 
-from ._axpy import axpy
-from ._kernels import BasisInfo
-from ._benes import BenesNetwork, permutation_to_benes_network
-from ._representation import generate_representation
-from .basis import (
-    Basis,
-    SpinBasis,
-    fixed_hamming_state_to_index,
-    fixed_hamming_index_to_state,
-    enumerate_basis_states,
-)
+# Fix printing of pauli expressions
+def _proper_print_contents(t):
+    def f(self, printer, *args): return t.__name__ + "(" + printer._print(self.name) + ")"
+    return f
+SigmaX._print_contents = _proper_print_contents(SigmaX)
+SigmaY._print_contents = _proper_print_contents(SigmaY)
+SigmaZ._print_contents = _proper_print_contents(SigmaZ)
+
+
+# from . import _ls, _numpy_helper, _parser, _axpy, _benes, _representation, _kernels, basis, expression, matrix
+from . import _parser, expression, _benes
+
+# from ._axpy import axpy
+# from ._kernels import BasisInfo
+# from ._benes import BenesNetwork, permutation_to_benes_network
+# from ._representation import generate_representation
+# from .basis import (
+#     Basis,
+#     SpinBasis,
+#     fixed_hamming_state_to_index,
+#     fixed_hamming_index_to_state,
+#     enumerate_basis_states,
+# )
 from .expression import Expr
-from .matrix import Operator
+# from .matrix import Operator
 
-_ls.lib.ls_chpl_init()
+# _ls.lib.ls_chpl_init()
 
 
 # result = _ls.ffi.new("ls_numpy_array_1d *")

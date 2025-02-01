@@ -81,92 +81,92 @@ final: prev: {
         nativeCheckInputs = with python-final; [ pytestCheckHook ];
       };
 
-      petsc4py =
-        assert final.petsc.version == "3.21.3";
-        python-final.buildPythonPackage rec {
-          pname = "petsc4py";
-          version = final.petsc.version;
-          src = final.fetchurl {
-            url = "https://web.cels.anl.gov/projects/petsc/download/release-snapshots/petsc4py-${version}.tar.gz";
-            hash = "sha256-HDZk1bUnNUFxB3yJxLH+899KQb5xltErynSydZx+Jkg=";
-          };
-          preConfigure = ''
-            export PETSC_DIR=${final.petsc} PETSC_ARCH=""
-            rm conf/epydoc*
-          '';
-          strictDeps = true;
-          propagatedBuildInputs = with python-final; [ numpy ];
-          buildInputs = with final; [ petsc ];
-          nativeBuildInputs = with final; with python-final;
-            [ cython ]
-              ++ lib.optional petsc.mpiSupport mpi
-              ++ lib.optional (petsc.mpiSupport && mpi.pname == "openmpi") openssh;
-          nativeCheckInputs = with python-final; [ pytestCheckHook ];
-          pytestFlagsArray = [
-            "test/"
-          ];
-          disabledTestPaths = [
-            "test/test_stdout.py"
-          ];
-        };
+      # petsc4py =
+      #   assert final.petsc.version == "3.21.3";
+      #   python-final.buildPythonPackage rec {
+      #     pname = "petsc4py";
+      #     version = final.petsc.version;
+      #     src = final.fetchurl {
+      #       url = "https://web.cels.anl.gov/projects/petsc/download/release-snapshots/petsc4py-${version}.tar.gz";
+      #       hash = "sha256-HDZk1bUnNUFxB3yJxLH+899KQb5xltErynSydZx+Jkg=";
+      #     };
+      #     preConfigure = ''
+      #       export PETSC_DIR=${final.petsc} PETSC_ARCH=""
+      #       rm conf/epydoc*
+      #     '';
+      #     strictDeps = true;
+      #     propagatedBuildInputs = with python-final; [ numpy ];
+      #     buildInputs = with final; [ petsc ];
+      #     nativeBuildInputs = with final; with python-final;
+      #       [ cython ]
+      #         ++ lib.optional petsc.mpiSupport mpi
+      #         ++ lib.optional (petsc.mpiSupport && mpi.pname == "openmpi") openssh;
+      #     nativeCheckInputs = with python-final; [ pytestCheckHook ];
+      #     pytestFlagsArray = [
+      #       "test/"
+      #     ];
+      #     disabledTestPaths = [
+      #       "test/test_stdout.py"
+      #     ];
+      #   };
 
-      slepc4py =
-        assert final.slepc.version == "3.21.2";
-        python-final.buildPythonPackage rec {
-          pname = "slepc4py";
-          version = final.slepc.version;
-          src = python-final.fetchPypi {
-            inherit pname version;
-            hash = "sha256-9hH/dOR0nyFEWyNp29Dt9ATN9jnuyv1UGH0KKGXVIaA=";
-          };
-          preConfigure = ''
-            export PETSC_DIR=${final.petsc} PETSC_ARCH="" SLEPC_DIR=${final.slepc}
-            rm conf/epydoc*
-          '';
-          strictDeps = true;
-          propagatedBuildInputs = with python-final; [ numpy petsc4py ];
-          buildInputs = with final; [ petsc slepc ];
-          nativeBuildInputs = with final; with python-final;
-            [ cython ]
-              ++ lib.optional petsc.mpiSupport mpi
-              ++ lib.optional (petsc.mpiSupport && mpi.pname == "openmpi") openssh;
-          nativeCheckInputs = with python-final; [ pytestCheckHook ];
-          pytestFlagsArray = [
-            "test/"
-          ];
-        };
+      # slepc4py =
+      #   assert final.slepc.version == "3.21.2";
+      #   python-final.buildPythonPackage rec {
+      #     pname = "slepc4py";
+      #     version = final.slepc.version;
+      #     src = python-final.fetchPypi {
+      #       inherit pname version;
+      #       hash = "sha256-9hH/dOR0nyFEWyNp29Dt9ATN9jnuyv1UGH0KKGXVIaA=";
+      #     };
+      #     preConfigure = ''
+      #       export PETSC_DIR=${final.petsc} PETSC_ARCH="" SLEPC_DIR=${final.slepc}
+      #       rm conf/epydoc*
+      #     '';
+      #     strictDeps = true;
+      #     propagatedBuildInputs = with python-final; [ numpy petsc4py ];
+      #     buildInputs = with final; [ petsc slepc ];
+      #     nativeBuildInputs = with final; with python-final;
+      #       [ cython ]
+      #         ++ lib.optional petsc.mpiSupport mpi
+      #         ++ lib.optional (petsc.mpiSupport && mpi.pname == "openmpi") openssh;
+      #     nativeCheckInputs = with python-final; [ pytestCheckHook ];
+      #     pytestFlagsArray = [
+      #       "test/"
+      #     ];
+      #   };
 
-      dynamite = python-final.buildPythonPackage rec {
-        pname = "dynamite";
-        version = "0.4.0";
-        src = final.fetchFromGitHub {
-          owner = "GregDMeyer";
-          repo = "dynamite";
-          rev = "v${version}";
-          hash = "sha256-bFH0H/Asc7yokA/jqqDWL/UYgHU4HKSFOnIkv60X7qE=";
-        };
-        pyproject = true;
-        postPatch = ''
-          substituteInPlace setup.py \
-            --replace-fail "['git', 'describe', '--always']" "['echo', '${version}']" \
-            --replace-fail "['git', 'rev-parse', '--abbrev-ref', 'HEAD']" "['echo', 'master']"
-        '';
-        preConfigure = ''
-          export PETSC_DIR=${final.petsc} PETSC_ARCH="" SLEPC_DIR=${final.slepc}
-        '';
-        pythonRelaxDeps = [ "numpy" "petsc4py" "slepc4py" ];
-        propagatedBuildInputs = with final; with python-final;
-          [ numpy petsc4py scipy slepc4py threadpoolctl ]
-            ++ lib.optional petsc.mpiSupport mpi4py;
-        nativeBuildInputs = with final; with python-final;
-          [ cython setuptools ]
-            ++ lib.optional petsc.mpiSupport mpi
-            ++ lib.optional (petsc.mpiSupport && mpi.pname == "openmpi") openssh;
-        nativeCheckInputs = with python-final; [ pytestCheckHook ];
-        pytestFlagsArray = [
-          "tests/unit"
-        ];
-      };
+      # dynamite = python-final.buildPythonPackage rec {
+      #   pname = "dynamite";
+      #   version = "0.4.0";
+      #   src = final.fetchFromGitHub {
+      #     owner = "GregDMeyer";
+      #     repo = "dynamite";
+      #     rev = "v${version}";
+      #     hash = "sha256-bFH0H/Asc7yokA/jqqDWL/UYgHU4HKSFOnIkv60X7qE=";
+      #   };
+      #   pyproject = true;
+      #   postPatch = ''
+      #     substituteInPlace setup.py \
+      #       --replace-fail "['git', 'describe', '--always']" "['echo', '${version}']" \
+      #       --replace-fail "['git', 'rev-parse', '--abbrev-ref', 'HEAD']" "['echo', 'master']"
+      #   '';
+      #   preConfigure = ''
+      #     export PETSC_DIR=${final.petsc} PETSC_ARCH="" SLEPC_DIR=${final.slepc}
+      #   '';
+      #   pythonRelaxDeps = [ "numpy" "petsc4py" "slepc4py" ];
+      #   propagatedBuildInputs = with final; with python-final;
+      #     [ numpy petsc4py scipy slepc4py threadpoolctl ]
+      #       ++ lib.optional petsc.mpiSupport mpi4py;
+      #   nativeBuildInputs = with final; with python-final;
+      #     [ cython setuptools ]
+      #       ++ lib.optional petsc.mpiSupport mpi
+      #       ++ lib.optional (petsc.mpiSupport && mpi.pname == "openmpi") openssh;
+      #   nativeCheckInputs = with python-final; [ pytestCheckHook ];
+      #   pytestFlagsArray = [
+      #     "tests/unit"
+      #   ];
+      # };
 
       lattice-symmetries = python-final.buildPythonPackage rec {
         pname = "lattice-symmetries";
@@ -191,17 +191,18 @@ final: prev: {
           lark
         ] ++ lib.optionals (lib.versionAtLeast python-final.python.version "3.12") [
           quspin
-          dynamite
+          # dynamite
         ];
 
         buildInputs = [
-          final.lattice-symmetries-chapel
+          # final.lattice-symmetries-chapel
         ];
 
         nativeBuildInputs = with python-final; [
           setuptools
           final.tree
           final.ocl-icd
+          ipython
         ];
 
         nativeCheckInputs = with python-final; [
@@ -214,7 +215,7 @@ final: prev: {
         ];
 
         postPatch = ''
-          cp -v ${final.lattice-symmetries-chapel}/lib/liblattice_symmetries_chapel.* lattice_symmetries/
+          # cp -v {final.lattice-symmetries-chapel}/lib/liblattice_symmetries_chapel.* lattice_symmetries/
         '';
 
         preInstall = ''
@@ -259,7 +260,7 @@ final: prev: {
           runHook postCheck
         '';
 
-        doCheck = false;
+        doCheck = true;
 
         shellHook = ''
           if test -e setup.py; then

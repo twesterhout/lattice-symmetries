@@ -2,18 +2,18 @@
   description = "twesterhout/lattice-symmetries";
 
   nixConfig = {
-    extra-substituters = "https://twesterhout-chapel.cachix.org";
-    extra-trusted-public-keys = "twesterhout-chapel.cachix.org-1:bs5PQPqy21+rP2KJl+O40/eFVzdsTe6m7ZTiOEE7PaI=";
+    extra-substituters = "https://twesterhout.cachix.org";
+    extra-trusted-public-keys = "twesterhout.cachix.org-1:AtBrVtHiRtg7piQOwT9IWx3N/+q+lM6RrpxzpeT3zAE=";
   };
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    nix-chapel = {
-      url = "path:/home/tom/Projects/nix-chapel"; # github:twesterhout/nix-chapel";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.flake-utils.follows = "flake-utils";
-    };
+    # nix-chapel = {
+    #   url = "path:/home/tom/Projects/nix-chapel"; # github:twesterhout/nix-chapel";
+    #   inputs.nixpkgs.follows = "nixpkgs";
+    #   inputs.flake-utils.follows = "flake-utils";
+    # };
     # halide-haskell = {
     #   url = "github:twesterhout/halide-haskell/dynamic-dimensions";
     #   inputs.nixpkgs.follows = "nixpkgs";
@@ -57,32 +57,46 @@
           #     };
           #   });
 
-          slepc = final.callPackage ./nix/slepc.nix { };
+          # slepc = final.callPackage ./nix/slepc.nix { };
         })
-        inputs.nix-chapel.overlays.default
-        (final: prev: {
-          # Configure the Chapel runtime
-          chapel = prev.chapel.override {
-            compiler = "llvm"; # if enableSanitizers then "gnu" else "llvm";
-            settings = {
-              CHPL_GMP = "none";
-              CHPL_RE2 = "none";
-              CHPL_UNWIND = "none";
-              CHPL_LIB_PIC = "pic";
-              CHPL_TARGET_CPU = "none";
-            } // final.lib.optionalAttrs (false) {
-              CHPL_TARGET_MEM = "cstdlib";
-              CHPL_HOST_MEM = "cstdlib";
-              CHPL_TASKS = "fifo";
-              CHPL_SANITIZE_EXE = "address";
-            };
-          };
-        })
-        (import ./chapel.nix { inherit version; })
+        # inputs.nix-chapel.overlays.default
+        # (final: prev: {
+        #   # Configure the Chapel runtime
+        #   chapel = prev.chapel.override {
+        #     compiler = "llvm"; # if enableSanitizers then "gnu" else "llvm";
+        #     settings = {
+        #       CHPL_GMP = "none";
+        #       CHPL_RE2 = "none";
+        #       CHPL_UNWIND = "none";
+        #       CHPL_LIB_PIC = "pic";
+        #       CHPL_TARGET_CPU = "none";
+        #     } // final.lib.optionalAttrs (false) {
+        #       CHPL_TARGET_MEM = "cstdlib";
+        #       CHPL_HOST_MEM = "cstdlib";
+        #       CHPL_TASKS = "fifo";
+        #       CHPL_SANITIZE_EXE = "address";
+        #     };
+        #   };
+        # })
+        # (import ./chapel.nix { inherit version; })
         (import ./python.nix { inherit version; })
       ];
 
-      pkgs-for = system: import inputs.nixpkgs { inherit system; overlays = [ composed-overlay ]; };
+      patched-nixpkgs-for = system:
+        let pkgs = import inputs.nixpkgs { inherit system; };
+            pkgs' = pkgs.applyPatches {
+              name = "nixpkgs-patched";
+              src = inputs.nixpkgs;
+              patches = [
+                (builtins.fetchurl {
+                  url = "https://github.com/NixOS/nixpkgs/pull/375175/commits/0526936762b26e7df6151e0e3f58c4d68b1c8ef2.diff";
+                  sha256 = "sha256:0rq4q0qi7rdjrzznqpavck6fgsgxl863r2295r47w65z3szx7iqh";
+                })
+              ];
+            };
+        in import pkgs' { inherit system; overlays = [ composed-overlay ]; };
+
+      # pkgs-for = system: import inputs.nixpkgs { inherit system; overlays = [ composed-overlay ]; };
       # pkgs-for-haskell-dev = system: import nixpkgs { inherit system; overlays = [ (composed-overlay false) ]; };
     in
     {
@@ -95,7 +109,7 @@
 
       packages = inputs.flake-utils.lib.eachDefaultSystemMap (system:
 
-        with pkgs-for system; {
+        with patched-nixpkgs-for system; {
           # inherit (lattice-symmetries)
           #   kernels_v2
           #   haskell
@@ -105,16 +119,17 @@
           # inherit haskellPackages;
           # inherit (haskell.packages) ghc964;
           inherit python3Packages;
-          inherit python310Packages;
-          inherit chapel;
-          inherit lattice-symmetries-chapel-ffi;
-          inherit lattice-symmetries-chapel;
+          inherit python311Packages;
+          inherit bliss;
+          # inherit chapel;
+          # inherit lattice-symmetries-chapel-ffi;
+          # inherit lattice-symmetries-chapel;
           # inherit petsc slepc;
         });
 
       devShells = inputs.flake-utils.lib.eachDefaultSystemMap (system:
         let
-          pkgs = pkgs-for system;
+          pkgs = patched-nixpkgs-for system;
         in
         {
           # default = self.outputs.devShells.${system}.haskell;
@@ -196,7 +211,11 @@
           #   '';
           # };
 
-          python = with pkgs; python3Packages.lattice-symmetries;
+          python = with pkgs; python3Packages.lattice-symmetries.overrideAttrs (attrs: {
+            # nativeBuildInputs = (attrs.nativeBuildInputs or []) ++ [
+            #   python3Packages.pip
+            # ];
+          });
 
           testing = with pkgs; mkShell {
             nativeBuildInputs = [

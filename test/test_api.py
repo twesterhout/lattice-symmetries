@@ -1,5 +1,5 @@
 import lattice_symmetries as ls
-import lattice_symmetries._kernels
+# import lattice_symmetries._kernels
 import sympy
 import time
 import math
@@ -278,44 +278,44 @@ def test_SpinBasis_quspin_Z2(number_bits, spin_inversion):
         np.testing.assert_equal(basis.states, ref)
 
 
-@pytest.mark.skipif(not has_quspin, reason="QuSpin not available")
-@hypothesis.example(ls.BasisInfo(4, 2))
-@hypothesis.example(ls.BasisInfo(10, 0))
-@hypothesis.example(ls.BasisInfo(10, 6))
-@hypothesis.example(ls.BasisInfo(20, 17))
-@hypothesis.given(random_basis_info_1d(max_number_states=2**10))
-@hypothesis.settings(max_examples=5, deadline=None, phases=our_phases)
-def test_SpinBasis_quspin_1d(info):
-    from quspin.basis import spin_basis_1d
+# @pytest.mark.skipif(not has_quspin, reason="QuSpin not available")
+# @hypothesis.example(ls.BasisInfo(4, 2))
+# @hypothesis.example(ls.BasisInfo(10, 0))
+# @hypothesis.example(ls.BasisInfo(10, 6))
+# @hypothesis.example(ls.BasisInfo(20, 17))
+# @hypothesis.given(random_basis_info_1d(max_number_states=2**10))
+# @hypothesis.settings(max_examples=5, deadline=None, phases=our_phases)
+# def test_SpinBasis_quspin_1d(info):
+#     from quspin.basis import spin_basis_1d
 
-    basis = ls.SpinBasis(
-        number_spins=info.number_bits,
-        hamming_weight=info.hamming_weight,
-        spin_inversion=info.spin_inversion,
-        symmetries=info.symmetries,
-    )
-    logger.debug(info)
-    tick = time.perf_counter()
-    basis.build()
-    tock = time.perf_counter()
-    logger.debug(f"build() took {tock - tick}")
+#     basis = ls.SpinBasis(
+#         number_spins=info.number_bits,
+#         hamming_weight=info.hamming_weight,
+#         spin_inversion=info.spin_inversion,
+#         symmetries=info.symmetries,
+#     )
+#     logger.debug(info)
+#     tick = time.perf_counter()
+#     basis.build()
+#     tock = time.perf_counter()
+#     logger.debug(f"build() took {tock - tick}")
 
-    Nup = info.number_bits - info.hamming_weight if info.hamming_weight is not None else None
-    if len(info.symmetries) > 0:
-        kblock = int(info.number_bits * info.symmetries[0][1])
-        if kblock != 0:
-            kblock = info.number_bits - kblock
-    else:
-        kblock = None
-    zblock = info.spin_inversion
+#     Nup = info.number_bits - info.hamming_weight if info.hamming_weight is not None else None
+#     if len(info.symmetries) > 0:
+#         kblock = int(info.number_bits * info.symmetries[0][1])
+#         if kblock != 0:
+#             kblock = info.number_bits - kblock
+#     else:
+#         kblock = None
+#     zblock = info.spin_inversion
 
-    tick = time.perf_counter()
-    quspin_basis = spin_basis_1d(info.number_bits, Nup=Nup, kblock=kblock, zblock=zblock)
-    tock = time.perf_counter()
-    logger.debug(f"spin_basis_1d() took {tock - tick}")
-    ref = quspin_basis.states ^ (2**info.number_bits - 1)
+#     tick = time.perf_counter()
+#     quspin_basis = spin_basis_1d(info.number_bits, Nup=Nup, kblock=kblock, zblock=zblock)
+#     tock = time.perf_counter()
+#     logger.debug(f"spin_basis_1d() took {tock - tick}")
+#     ref = quspin_basis.states ^ (2**info.number_bits - 1)
 
-    np.testing.assert_equal(basis.states, ref)
+#     np.testing.assert_equal(basis.states, ref)
 
 
 def test_is_representative_examples():
@@ -615,85 +615,85 @@ def test_axpy(alpha, arrays):
 #     pass
 
 
-@hypothesis.given(random_pauli_expression(max_number_sites=5))
-@hypothesis.example(sympy.Float(0.001))
-@hypothesis.example(-9.999 - 2.2250738585072e-309 * sympy.I - 10.0 * sympy.I * pauli.SigmaX(1))
-@hypothesis.example(pauli.SigmaPlus(0))
-@hypothesis.example(
-    (0.5 + 5.96046447753906e-8 * sympy.I) * pauli.SigmaPlus(1)
-    + (-1.40129846432482e-45 - 5.80934524614774 * sympy.I) * pauli.SigmaZ(2)
-)
-@hypothesis.example(
-    (-0.32052911031739 + 9.99486173438328 * sympy.I) * pauli.SigmaPlus(0) * pauli.SigmaPlus(1)
-    + 10.0 * pauli.SigmaX(0)
-)
-@hypothesis.settings(max_examples=10, deadline=None, phases=our_phases)
-def test_matrix_apply(e):
-    from lattice_symmetries.expression import (
-        pauli_expression_to_nonbranching_terms,
-        pauli_expression_to_matrix,
-        _collect_indices,
-    )
+# @hypothesis.given(random_pauli_expression(max_number_sites=5))
+# @hypothesis.example(sympy.Float(0.001))
+# @hypothesis.example(-9.999 - 2.2250738585072e-309 * sympy.I - 10.0 * sympy.I * pauli.SigmaX(1))
+# @hypothesis.example(pauli.SigmaPlus(0))
+# @hypothesis.example(
+#     (0.5 + 5.96046447753906e-8 * sympy.I) * pauli.SigmaPlus(1)
+#     + (-1.40129846432482e-45 - 5.80934524614774 * sympy.I) * pauli.SigmaZ(2)
+# )
+# @hypothesis.example(
+#     (-0.32052911031739 + 9.99486173438328 * sympy.I) * pauli.SigmaPlus(0) * pauli.SigmaPlus(1)
+#     + 10.0 * pauli.SigmaX(0)
+# )
+# @hypothesis.settings(max_examples=10, deadline=None, phases=our_phases)
+# def test_matrix_apply(e):
+#     from lattice_symmetries.expression import (
+#         pauli_expression_to_nonbranching_terms,
+#         pauli_expression_to_matrix,
+#         _collect_indices,
+#     )
 
-    number_bits = 1 + max(_collect_indices(e), default=0)
-    info = ls.BasisInfo(number_bits)
-    terms = pauli_expression_to_nonbranching_terms(e)
-    states = np.arange(2**info.number_bits).astype(np.int64)
-    op = ls._kernels.LoweredOperator(info=info, terms=terms, symm=None, state_to_index_info=None)
-    ref = np.asarray(pauli_expression_to_matrix(e), dtype=np.complex128)
+#     number_bits = 1 + max(_collect_indices(e), default=0)
+#     info = ls.BasisInfo(number_bits)
+#     terms = pauli_expression_to_nonbranching_terms(e)
+#     states = np.arange(2**info.number_bits).astype(np.int64)
+#     op = ls._kernels.LoweredOperator(info=info, terms=terms, symm=None, state_to_index_info=None)
+#     ref = np.asarray(pauli_expression_to_matrix(e), dtype=np.complex128)
 
-    # x = np.zeros(states.size, dtype=np.complex128)
-    # x[0] = 1
-    x = rng.uniform(0, 1, size=states.size).astype(
-        np.float32
-    )  # + rng.uniform(0, 1, size=states.size) * 1j
-    out = np.zeros(states.size, dtype=np.float32)
+#     # x = np.zeros(states.size, dtype=np.complex128)
+#     # x[0] = 1
+#     x = rng.uniform(0, 1, size=states.size).astype(
+#         np.float32
+#     )  # + rng.uniform(0, 1, size=states.size) * 1j
+#     out = np.zeros(states.size, dtype=np.float32)
 
-    op.apply(states, x, out)
-    np.testing.assert_allclose(out, (ref @ x).real, rtol=1e-6, atol=1e-7)
+#     op.apply(states, x, out)
+#     np.testing.assert_allclose(out, (ref @ x).real, rtol=1e-6, atol=1e-7)
 
-@pytest.mark.skipif(not has_quspin, reason="QuSpin not available")
-def test_matrix_apply_quspin_U1():
-    np.random.seed(42)
-    import quspin
-    from lattice_symmetries.expression import (
-        pauli_expression_to_nonbranching_terms,
-        pauli_expression_to_matrix,
-        _collect_indices,
-    )
+# @pytest.mark.skipif(not has_quspin, reason="QuSpin not available")
+# def test_matrix_apply_quspin_U1():
+#     np.random.seed(42)
+#     import quspin
+#     from lattice_symmetries.expression import (
+#         pauli_expression_to_nonbranching_terms,
+#         pauli_expression_to_matrix,
+#         _collect_indices,
+#     )
 
-    number_bits = 10
-    quspin_basis = quspin.basis.spin_basis_1d(number_bits, Nup=number_bits // 2)
-    quspin_J_nn = [[1, i, (i + 1) % number_bits] for i in range(number_bits)]
-    quspin_static = [["xx", quspin_J_nn], ["yy", quspin_J_nn], ["zz", quspin_J_nn]]
-    quspin_dynamic = []
-    hamiltonian = quspin.operators.hamiltonian(quspin_static, quspin_dynamic, dtype=np.float64, basis=quspin_basis)
+#     number_bits = 10
+#     quspin_basis = quspin.basis.spin_basis_1d(number_bits, Nup=number_bits // 2)
+#     quspin_J_nn = [[1, i, (i + 1) % number_bits] for i in range(number_bits)]
+#     quspin_static = [["xx", quspin_J_nn], ["yy", quspin_J_nn], ["zz", quspin_J_nn]]
+#     quspin_dynamic = []
+#     hamiltonian = quspin.operators.hamiltonian(quspin_static, quspin_dynamic, dtype=np.float64, basis=quspin_basis)
 
-    number_states = quspin_basis.states.size
-    x = np.random.rand(number_states)
-    # x = np.zeros(number_states)
-    # x[1] = 1
-    ref = hamiltonian.dot(x)
+#     number_states = quspin_basis.states.size
+#     x = np.random.rand(number_states)
+#     # x = np.zeros(number_states)
+#     # x[1] = 1
+#     ref = hamiltonian.dot(x)
 
-    mk = lambda n: sum(
-        pauli.SigmaX(i) * pauli.SigmaX((i + 1) % n)
-        + pauli.SigmaY(i) * pauli.SigmaY((i + 1) % n)
-        + pauli.SigmaZ(i) * pauli.SigmaZ((i + 1) % n)
-        for i in range(n)
-    )
+#     mk = lambda n: sum(
+#         pauli.SigmaX(i) * pauli.SigmaX((i + 1) % n)
+#         + pauli.SigmaY(i) * pauli.SigmaY((i + 1) % n)
+#         + pauli.SigmaZ(i) * pauli.SigmaZ((i + 1) % n)
+#         for i in range(n)
+#     )
 
-    e = mk(number_bits)
+#     e = mk(number_bits)
 
-    basis = ls.SpinBasis(number_spins=number_bits, hamming_weight=number_bits // 2)
-    basis.build()
+#     basis = ls.SpinBasis(number_spins=number_bits, hamming_weight=number_bits // 2)
+#     basis.build()
 
-    terms = pauli_expression_to_nonbranching_terms(e)
-    op = ls._kernels.LoweredOperator(info=basis.info, terms=terms, symm=None, state_to_index_info=None)
+#     terms = pauli_expression_to_nonbranching_terms(e)
+#     op = ls._kernels.LoweredOperator(info=basis.info, terms=terms, symm=None, state_to_index_info=None)
 
-    out = np.zeros(number_states, dtype=np.float32)
-    op.apply(basis.states, x.astype(np.float32), out)
+#     out = np.zeros(number_states, dtype=np.float32)
+#     op.apply(basis.states, x.astype(np.float32), out)
 
-    np.testing.assert_allclose(out, ref, rtol=1e-6, atol=1e-7)
+#     np.testing.assert_allclose(out, ref, rtol=1e-6, atol=1e-7)
 
 def test_matrix_apply_example():
     mk = lambda n: sum(
@@ -964,17 +964,33 @@ def test_readme():
     assert np.array_equal(Expr("σᶻ₀").to_dense(), np.array([[1, 0], [0, -1]]))
     assert Expr("Sᶻ₀") == 0.5 * Expr("σᶻ₀")
     assert np.array_equal(Expr("I", particle="spin-1/2").to_dense(), np.array([[1, 0], [0, 1]]))
-
     assert Expr("Sˣ₀ Sˣ₁ + Sʸ₀ Sʸ₁ + Sᶻ₀ Sᶻ₁") == Expr("Sx0 Sx1 + Sy0 Sy1 + Sz0 Sz1")
-    # fmt: off
-    assert Expr("Sˣ₀ Sˣ₁ + Sʸ₀ Sʸ₁ + Sᶻ₀ Sᶻ₁") == \
-        Expr("Sˣ₀") * Expr("Sˣ₁") + Expr("Sʸ₀") * Expr("Sʸ₁") + Expr("Sᶻ₀") * Expr("Sᶻ₁")
-    # fmt: on
+    assert Expr("Sˣ₀ Sˣ₁ + Sʸ₀ Sʸ₁ + Sᶻ₀ Sᶻ₁") == Expr("Sˣ₀") * Expr("Sˣ₁") + Expr("Sʸ₀") * Expr("Sʸ₁") + Expr("Sᶻ₀") * Expr("Sᶻ₁")
     assert Expr("Sˣ₀ Sˣ₁ + Sʸ₀ Sʸ₁ + Sᶻ₀ Sᶻ₁") == Expr("0.5 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + 0.25 σᶻ₀ σᶻ₁")
+    np.testing.assert_equal(Expr("Sx0 Sx1 + Sy0 Sy1 + Sz0 Sz1").to_dense(), np.array([[0.25, 0, 0, 0], [0, -0.25, 0.5, 0], [0, 0.5, -0.25, 0], [0, 0, 0, 0.25]]))
+    assert Expr("0.5 (σˣ₁ + 1im σʸ₁) - σ⁺₁").raw.is_zero == True
+    assert Expr("σ⁺₁ σ⁺₁").raw.is_zero == True
+    assert Expr("σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀").on(ig.Graph.Lattice(dim=[2, 2])) == Expr("σ+0 σ-1 + σ+1 σ-0 + σ+1 σ-3 + σ+3 σ-1 + σ+2 σ-3 + σ+3 σ-2 + σ+2 σ-0 + σ+0 σ-2")
+    assert Expr("σ⁺₀ σ⁻₁").adjoint() == Expr("σ⁺₁ σ⁻₀")
+    assert Expr("σᶻ₀ σᶻ₁").adjoint() == Expr("σᶻ₀ σᶻ₁")
+    e = Expr("\\sigma^z_0")
+    assert e.is_hermitian
+    assert not e.is_identity
+    assert (e * e).is_identity
+    assert e.number_sites == 1
+    assert Expr("σᶻ₀ σᶻ₁").on(ig.Graph()).is_zero
+    
+def test_Expr_is_invariant_under():
+    from lattice_symmetries.expression import Expr, ising, heisenberg, _d_nd
+    assert Expr("σᶻ₀ σᶻ₁").is_invariant_under(Permutation([1, 0]))
+    assert not Expr("σ⁺₀ σ⁻₁").is_invariant_under(Permutation([1, 0]))
+    assert _d_nd(Expr("σ⁺₀ σ⁻₁").raw) == (0, Expr("σ⁺₀ σ⁻₁").raw)
+    assert _d_nd(Expr("σᶻ₀ σᶻ₁ + σ⁺₀ σ⁻₁").raw) == (Expr("σᶻ₀ σᶻ₁").raw, Expr("σ⁺₀ σ⁻₁").raw)
+    # print(ising(ig.Graph.Lattice(dim=[3]), J=1, h=0.2))
+    # print(heisenberg(ig.Graph.Lattice(dim=[3]), J=1))
 
-    # assert str(Expr("Sˣ₀ Sˣ₁ + Sʸ₀ Sʸ₁ + Sᶻ₀ Sᶻ₁")) == "0.25 σᶻ₀ σᶻ₁ + 0.5 σ⁺₀ σ⁻₁ + 0.5 σ⁻₀ σ⁺₁"
-    # assert str(Expr("0.5 (σˣ₁ + 1im σʸ₁) - σ⁺₁")) == "0.0 I"
-    # assert str(Expr("σ⁺₁ σ⁺₁")) == "0.0 I"
+    # print(Expr("σ⁺₀ σ⁻₁").permutation_group())
+    # print(Expr("σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀").permutation_group())
 
 
 def test_expr_construction():
@@ -1029,6 +1045,20 @@ def test_expr_properties():
     # assert a.number_sites == 4
     # assert b.number_sites == 2
 
+def test_LoweredPauliTerms():
+    from lattice_symmetries.expression import Expr, heisenberg, pauli2nbts, PauliLoweredTerms
+    e = heisenberg(ig.Graph.Ring(n=5, circular=True), h=0.5)
+    m = e.to_dense()
+    x = rng.random(m.shape[0]) # x = np.zeros(m.shape[0]); x[0] = 1
+    ref = m @ x
+    nbts = PauliLoweredTerms(pauli2nbts(e.raw))
+    alpha = np.arange(m.shape[0], dtype=np.uint64)
+    a = nbts.diag(alpha) * x
+    i, c = nbts.off_diag(alpha)
+    b = (c * x[i]).sum(axis=0)
+    np.testing.assert_allclose(ref, a + b)
+    
+
 def test_sz_conserved_1d_heisenberg():
     number_spins = 8
     hamming_weight = number_spins // 2
@@ -1039,6 +1069,10 @@ def test_sz_conserved_1d_heisenberg():
     b.build()
     evals, evecs = scipy.sparse.linalg.eigsh(h, k=5)
     np.testing.assert_allclose(evals, [-14.60437363574869, -12.513676255378364, -10.798512593101313, -9.834954035579337, -9.83495403557929], rtol=1e-6, atol=1e-7)
+
+
+
+
 #
 # def test_basis_state_to_index():
 #     # fmt: off

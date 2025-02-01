@@ -1,26 +1,18 @@
 from lark import Lark, Transformer
 import sympy
 from sympy.physics.quantum import pauli
+from sympy.physics.quantum.pauli import SigmaX, SigmaY, SigmaZ, SigmaPlus, SigmaMinus
 
 GRAMMAR = """
     ?start: sum_expr
-    
     sum_expr: scaled_term*
-    
     scaled_term: [SIGN] [coefficient] primitive_term+
-    
     primitive_term: "(" sum_expr ")" | identity | spin | fermion
-    
     identity: "I"
-    
     spin: PREFIX SUPERSCRIPT subscript
-    
     fermion: FERMION_OP subscript [SPIN_INDEX]
-    
     coefficient: IMAGINARY | NUMBER | "(" NUMBER SIGN IMAGINARY ")"
-    
     subscript: SUBSCRIPT_NUM | "_"? INT
-    
     // Terminals
     PREFIX: "σ" | "S" | "\\\\sigma"
     SUPERSCRIPT: "ˣ" | "ʸ" | "ᶻ" | "⁺" | "⁻" | "^"? ("x"|"y"|"z"|"+"|"-")
@@ -37,17 +29,13 @@ GRAMMAR = """
 """
 
 class ExpressionTransformer(Transformer):
-    def sum_expr(self, items):
-        if len(items) == 0:
-            return sympy.S.Zero
-        return sympy.Add(*items)
+    def sum_expr(self, items): return sympy.S.Zero if len(items) == 0 else sympy.Add(*items)
+    def identity(self, items): return sympy.S.One
 
     def scaled_term(self, items):
         (sign, coeff, *terms) = items
-        if coeff is None:
-            coeff = sympy.S.One
-        if sign == "-":
-            coeff = -coeff
+        if coeff is None: coeff = sympy.S.One
+        if sign == "-": coeff = -coeff
         return sympy.Mul(coeff, *terms)
     
     def primitive_term(self, items):
@@ -58,29 +46,11 @@ class ExpressionTransformer(Transformer):
             (expr,) = items
         return expr
 
-    def identity(self, items):
-        return sympy.S.One
-
     def spin(self, items):
         (prefix, superscript, subscript) = items
-        prefactor = sympy.S.One
-        if prefix == "S":
-            prefactor = sympy.Rational(1, 2)
-        superscript = superscript[-1]
-        mapping = {
-            "ˣ": pauli.SigmaX,
-            "x": pauli.SigmaX,
-            "ʸ": pauli.SigmaY,
-            "y": pauli.SigmaY,
-            "ᶻ": pauli.SigmaZ,
-            "z": pauli.SigmaZ,
-            "⁺": pauli.SigmaPlus,
-            "+": pauli.SigmaPlus,
-            "⁻": pauli.SigmaMinus,
-            "-": pauli.SigmaMinus,
-        }
+        mapping = {"ˣ": SigmaX, "x": SigmaX, "ʸ": SigmaY, "y": SigmaY, "ᶻ": SigmaZ, "z": SigmaZ, "⁺": SigmaPlus, "+": SigmaPlus, "⁻": SigmaMinus, "-": SigmaMinus}
         assert isinstance(subscript, int)
-        return sympy.Mul(prefactor, mapping[superscript](subscript))
+        return sympy.Mul(sympy.Rational(1, 2) if prefix == "S" else sympy.S.One, mapping[superscript[-1]](subscript))
 
     def coefficient(self, items):
         if len(items) == 3:
@@ -106,5 +76,4 @@ class ExpressionTransformer(Transformer):
 
 _PARSER = Lark(GRAMMAR, parser='lalr', transformer=ExpressionTransformer())
 
-def parse_expr(text: str):
-    return _PARSER.parse(text)
+def parse_expr(text: str): return _PARSER.parse(text)

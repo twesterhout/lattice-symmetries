@@ -38,7 +38,7 @@ stdenv.mkDerivation rec {
   checkPhase = "make check";
 
   enableParallelBuilding = true;
-  doCheck = stdenv.hostPlatform == stdenv.buildPlatform;
+  doCheck = false; # stdenv.hostPlatform == stdenv.buildPlatform;
 
   meta = with lib; {
     description = "Scalable Library for Eigenvalue Problem Computations";

@@ -5,46 +5,26 @@
         "systems": "systems"
       },
       "locked": {
-        "lastModified": 1726560853,
-        "narHash": "sha256-X6rJYSESBVr3hBoH0WbKE5KvhPU5bloyZ2L4K60/fPQ=",
+        "lastModified": 1731533236,
+        "narHash": "sha256-l0KFg5HjrsfsO/JpG+r7fRrqm12kzFHyUHqHCVpMMbI=",
         "owner": "numtide",
         "repo": "flake-utils",
-        "rev": "c1dfcf08411b08f6b8615f7d8971a2bfa81d5e8a",
+        "rev": "11707dc2f618dd54ca8739b309ec4fc024de578b",
         "type": "github"
       },
       "original": {
         "owner": "numtide",
         "repo": "flake-utils",
         "type": "github"
-      }
-    },
-    "nix-chapel": {
-      "inputs": {
-        "flake-utils": [
-          "flake-utils"
-        ],
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1725542756,
-        "narHash": "sha256-xndb1KWvXTGyddgqYAFl8rwDzpYcp+2JWmggam9T5jk=",
-        "path": "/home/tom/Projects/nix-chapel",
-        "type": "path"
-      },
-      "original": {
-        "path": "/home/tom/Projects/nix-chapel",
-        "type": "path"
       }
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1730272153,
-        "narHash": "sha256-B5WRZYsRlJgwVHIV6DvidFN7VX7Fg9uuwkRW9Ha8z+w=",
+        "lastModified": 1737205742,
+        "narHash": "sha256-rxkf8k6zfBzZigMKaN83XIm+2Wog4xvIEsho81AhkXk=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "2d2a9ddbe3f2c00747398f3dc9b05f7f2ebb0f53",
+        "rev": "5223d4097bb2c9e89d133f61f898df611d5ea3ca",
         "type": "github"
       },
       "original": {
@@ -57,7 +37,6 @@
     "root": {
       "inputs": {
         "flake-utils": "flake-utils",
-        "nix-chapel": "nix-chapel",
         "nixpkgs": "nixpkgs"
       }
     },

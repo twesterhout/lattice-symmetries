@@ -95,9 +95,12 @@ def _solve_cycle(edges: list[Edge]) -> list[Swap]:
     edges = deepcopy(edges)
 
     def should_swap(edge1, edge2):
+        # print(f"Should swap {edge1} & {edge2}", end="")
         if edge1.left[1] == edge2.left[1] or edge1.right[1] == edge2.right[1]:
+            # print("NO")
             return False
         if edge1.left[1] == edge2.right[1] or edge1.right[1] == edge2.left[1]:
+            # print("YES")
             return True
         assert False, f"invalid cycle {edges0}"
 
@@ -148,6 +151,7 @@ def _solve_stage(d, src, tgt):
     tgt_swaps = list(tgt_swaps)
     src = InvertiblePermutation(_apply_swaps(src.permutation, src_swaps))
     tgt = InvertiblePermutation(_apply_swaps(tgt.permutation, tgt_swaps))
+    print(src_swaps, tgt_swaps, src.permutation.array_form, tgt.permutation.array_form)
     return _get_mask(src_swaps), _get_mask(tgt_swaps), (src, tgt)
 
 
@@ -176,3 +180,84 @@ def permutation_to_benes_network(p: Permutation) -> BenesNetwork:
     p = p.resize(n)
     solution = _solve(InvertiblePermutation(Permutation(list(range(n)))), InvertiblePermutation(p))
     return BenesNetwork(*solution)
+
+    # initially all edges are
+    #   ("source", left=(i, src[i]), right=(i + d, src[i + d]))
+    #
+    # r  = src src_inv
+    #      dst dst_inv
+    # 
+def new_solve_stage(d, n, r):
+    from itertools import islice, accumulate; from more_itertools import iterate
+    smaller = np.arange(n) % (2 * d) < d; neighbor = np.arange(n) + np.where(smaller, d, -d)
+    # building the cycles
+    def f(acc): loc, v = acc; return loc ^ 1, r[loc, 0, neighbor[r[loc, 1, v]]]
+    es0 = (np.arange(0, n - d + 1, 2 * d).reshape(-1, 1) + np.arange(d)).reshape(-1, 1)
+    print(es0)
+    i = r[np.arange(2 * n) % 2, 1, np.hstack([v for _, v in islice(iterate(f, (0, r[0, 0, es0])), 2 * n)])]
+    print(i)
+    si = i[:, ::2]; ni = np.where(~smaller[si], neighbor[si], si)
+    print(ni)
+
+    seen = np.zeros((i.shape[0], n), dtype=np.bool_)
+    seen[np.ogrid[:i.shape[0], :i.shape[1]][0], i] = 1
+    print(seen)
+    # j = np.unique(np.sort(ni, axis=1), axis=0, return_index=True)[1]
+    j = np.unique(seen, axis=0, return_index=True)[1]
+    i, ni = i[j], ni[j]
+    print(i)
+    print(ni)
+    # finding swaps
+    m = np.bitwise_xor.accumulate(smaller[i[:, :-1]] == smaller[i[:, 1:]], axis=1)
+    swaps = i[:, 1:][m]
+    locs = np.repeat((np.arange(2 * n) % 2)[None, 1:], m.shape[0], axis=0)[m].astype(np.bool_)
+    src_swaps = np.unique(swaps[~locs])
+    dst_swaps = np.unique(swaps[locs])
+
+    k, j = src_swaps, neighbor[src_swaps]
+    a, b = r[0, 0, k], r[0, 0, j]
+    r[0, 0, k], r[0, 0, j] = b, a
+    r[0, 1, a], r[0, 1, b] = r[0, 1, b], r[0, 1, a]
+
+    k, j = dst_swaps, neighbor[dst_swaps]
+    a, b = r[1, 0, k], r[1, 0, j]
+    r[1, 0, k], r[1, 0, j] = b, a
+    r[1, 1, a], r[1, 1, b] = r[1, 1, b], r[1, 1, a]
+    return src_swaps, dst_swaps
+
+def new_solve(r):
+    r = r.copy()
+    n, d = r[0, 0].size, 1
+    stages = []
+    while 2 * d <= n:
+        swaps = new_solve_stage(d, n, r)
+        print(swaps)
+        print(r[0, 0], r[1, 0])
+        stages.append(swaps)
+        d *= 2
+    return stages
+
+
+import timeit
+np.random.seed(42); p = np.random.permutation(16)
+print(p)
+d, src, dst = 1, InvertiblePermutation(Permutation(range(p.size))), InvertiblePermutation(Permutation(p.tolist()))
+r = np.array([[src.permutation.array_form, src.inverse.array_form],
+              [dst.permutation.array_form, dst.inverse.array_form]])
+n = r[0, 0].size
+
+_solve(src, dst)
+# print(_initial_edges(d, src))
+# print(new_cycle0(d, n))
+# print([_get_cycle(d, src, dst, e) for e in _initial_edges(d, src)])
+# print(new_cycle(d, n, r, _initial_edges(d, src)[0]))
+# _, _, (a, b) = _solve_stage(d, src, dst) # solve_cycle(_get_cycle(d, src, dst, _initial_edges(d, src)[0])))
+# print(a.permutation.array_form, a.inverse.array_form) # solve_cycle(_get_cycle(d, src, dst, _initial_edges(d, src)[0])))
+# print(timeit.repeat(lambda: _solve_stage(d, src, dst), repeat=4, number=100))
+# print(new_solve_cycle(r, n, np.array(new_cycle(d, n, r, _initial_edges(d, src)[0]))))
+# print(new_solve(r))
+print(new_solve_stage(1, n, r))
+# print(new_solve_stage(2, n, r))
+
+# print(r[0, 0], r[0, 1])
+# print(timeit.repeat(lambda: new_solve_stage(d, n, r), repeat=4, number=100))
