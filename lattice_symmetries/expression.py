@@ -201,12 +201,9 @@ class PauliNonbranchingTerm:
         coeff, beta = self.act_on_ket(bra)
         return coeff.conjugate(), beta
     def __mul__(self, other):
-        if isinstance(other, PauliNonbranchingTerm):
-            x = self.x ^ other.x
-            s = self.s ^ other.s
-            v = self.v * other.v
-            return PauliNonbranchingTerm(v=v, x=x, s=s)
-        return NotImplemented
+        if not isinstance(other, PauliNonbranchingTerm):
+            return NotImplemented
+        return PauliNonbranchingTerm(v=self.v * other.v, x=self.x ^ other.x, s=self.s ^ other.s)
 
 def _pauli2nbts(e: sympy.Expr) -> list:
     if isinstance(e, Add): return list(itertools.chain.from_iterable(map(_pauli2nbts, e.args)))

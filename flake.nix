@@ -1,228 +1,58 @@
 {
   description = "twesterhout/lattice-symmetries";
-
-  nixConfig = {
-    extra-substituters = "https://twesterhout.cachix.org";
-    extra-trusted-public-keys = "twesterhout.cachix.org-1:AtBrVtHiRtg7piQOwT9IWx3N/+q+lM6RrpxzpeT3zAE=";
-  };
-
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
-    flake-utils.url = "github:numtide/flake-utils";
-    # nix-chapel = {
-    #   url = "path:/home/tom/Projects/nix-chapel"; # github:twesterhout/nix-chapel";
-    #   inputs.nixpkgs.follows = "nixpkgs";
-    #   inputs.flake-utils.follows = "flake-utils";
-    # };
-    # halide-haskell = {
-    #   url = "github:twesterhout/halide-haskell/dynamic-dimensions";
-    #   inputs.nixpkgs.follows = "nixpkgs";
-    #   inputs.flake-utils.follows = "flake-utils";
-    # };
-    # haskell-python-tools = {
-    #   url = "github:twesterhout/haskell-python-tools.nix";
-    #   inputs.nixpkgs.follows = "nixpkgs";
-    # };
+    # nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    nixpkgs.follows = "quantum-nix/nixpkgs";
+    nix-gl-host.url = "github:numtide/nix-gl-host";
+    nix-gl-host.inputs.nixpkgs.follows = "nixpkgs";
+    quantum-nix.url = "github:twesterhout/quantum-nix";
+    # quantum-nix.inputs.nixpkgs.follows = "nixpkgs";
+    quantum-nix.inputs.nix-gl-host.follows = "nix-gl-host";
+  };
+  nixConfig = {
+    extra-substituters = [
+      "https://twesterhout.cachix.org"
+      "https://nix-community.cachix.org"
+      "https://cuda-maintainers.cachix.org"
+    ];
+    extra-trusted-public-keys = [
+      "twesterhout.cachix.org-1:AtBrVtHiRtg7piQOwT9IWx3N/+q+lM6RrpxzpeT3zAE="
+      "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+      "cuda-maintainers.cachix.org-1:0dq3bujKpuEPMCX6U4WylrUDZ9JyUG0VpVZa7CNfq5E="
+    ];
   };
 
   outputs = inputs:
     let
-      inherit (inputs.nixpkgs) lib;
-      # inherit (haskell-python-tools.lib)
-      #   doInstallForeignLibs
-      #   doEnableRelocatedStaticLibs;
       version = "3.0.0";
 
-      # kernels-overlay = import ./kernels/overlay.nix { inherit version; };
-      # haskell-overlay = withRelocated: import ./haskell/overlay.nix {
-      #   inherit lib doInstallForeignLibs doEnableRelocatedStaticLibs;
-      #   inherit withRelocated;
-      # };
-      # chapel-overlay = import ./chapel/overlay.nix { inherit version; enableDebugging = false; };
+      inherit (inputs.nixpkgs) lib;
+      forEachSystem = f: lib.mapAttrs f inputs.nixpkgs.legacyPackages;
 
-      composed-overlay = lib.composeManyExtensions [
-        (final: prev: {
-          # petsc = (prev.petsc.override {
-          #   mpiSupport = true;
-          #   petsc-optimized = true;
-          #   petsc-scalar-type = "complex";
-          # }).overrideAttrs
-          #   (attrs: rec {
-          #     version = "3.20.5";
-          #     name = "${attrs.pname}-${version}";
-          #     # NOTE: We cannot use fetchFromGitLab because then PETSc tries to download SOWING...
-          #     src = final.fetchurl {
-          #       url = "https://web.cels.anl.gov/projects/petsc/download/release-snapshots/petsc-${version}.tar.gz";
-          #       hash = "sha256-+05jd1hzevkQsF8wp4UkVjORbNCpKbe2RHrRAo2k6lo=";
-          #     };
-          #   });
-
-          # slepc = final.callPackage ./nix/slepc.nix { };
-        })
-        # inputs.nix-chapel.overlays.default
-        # (final: prev: {
-        #   # Configure the Chapel runtime
-        #   chapel = prev.chapel.override {
-        #     compiler = "llvm"; # if enableSanitizers then "gnu" else "llvm";
-        #     settings = {
-        #       CHPL_GMP = "none";
-        #       CHPL_RE2 = "none";
-        #       CHPL_UNWIND = "none";
-        #       CHPL_LIB_PIC = "pic";
-        #       CHPL_TARGET_CPU = "none";
-        #     } // final.lib.optionalAttrs (false) {
-        #       CHPL_TARGET_MEM = "cstdlib";
-        #       CHPL_HOST_MEM = "cstdlib";
-        #       CHPL_TASKS = "fifo";
-        #       CHPL_SANITIZE_EXE = "address";
-        #     };
-        #   };
-        # })
-        # (import ./chapel.nix { inherit version; })
+      overlay = lib.composeManyExtensions [
+        inputs.nix-gl-host.overlays.default
+        inputs.quantum-nix.overlays.default
         (import ./python.nix { inherit version; })
       ];
-
-      patched-nixpkgs-for = system:
-        let pkgs = import inputs.nixpkgs { inherit system; };
-            pkgs' = pkgs.applyPatches {
-              name = "nixpkgs-patched";
-              src = inputs.nixpkgs;
-              patches = [
-                (builtins.fetchurl {
-                  url = "https://github.com/NixOS/nixpkgs/pull/375175/commits/0526936762b26e7df6151e0e3f58c4d68b1c8ef2.diff";
-                  sha256 = "sha256:0rq4q0qi7rdjrzznqpavck6fgsgxl863r2295r47w65z3szx7iqh";
-                })
-              ];
-            };
-        in import pkgs' { inherit system; overlays = [ composed-overlay ]; };
-
-      # pkgs-for = system: import inputs.nixpkgs { inherit system; overlays = [ composed-overlay ]; };
-      # pkgs-for-haskell-dev = system: import nixpkgs { inherit system; overlays = [ (composed-overlay false) ]; };
+      pkgs-for = system: import inputs.nixpkgs { inherit system; overlays = [ overlay ]; };
     in
     {
-      # overlays.default = composed-overlay true;
-
-      # templates.default = {
-      #   path = builtins.toPath "${./.}/template";
-      #   description = "Python project template that uses lattice-symmetries";
-      # };
-
-      packages = inputs.flake-utils.lib.eachDefaultSystemMap (system:
-
-        with patched-nixpkgs-for system; {
-          # inherit (lattice-symmetries)
-          #   kernels_v2
-          #   haskell
-          #   chapel
-          #   python
-          #   apptainer-python-minimal;
-          # inherit haskellPackages;
-          # inherit (haskell.packages) ghc964;
-          inherit python3Packages;
-          inherit python311Packages;
-          inherit bliss;
-          # inherit chapel;
-          # inherit lattice-symmetries-chapel-ffi;
-          # inherit lattice-symmetries-chapel;
-          # inherit petsc slepc;
+      overlays.default = overlay;
+      packages = forEachSystem (system: _:
+        let pkgs = pkgs-for system; in {
+          inherit (pkgs) python3Packages python311Packages python312Packages;
         });
-
-      devShells = inputs.flake-utils.lib.eachDefaultSystemMap (system:
-        let
-          pkgs = patched-nixpkgs-for system;
+      devShells = forEachSystem (system: _:
+        let pkgs = pkgs-for system;
         in
         {
-          # default = self.outputs.devShells.${system}.haskell;
-          # kernels = with pkgs; mkShell {
-          #   buildInputs = [ halide libffcall.dev libffcall.out ];
-          #   nativeBuildInputs = [ cmake gnumake ninja clang clang-tools ];
-          #   shellHook = ''
-          #     export HALIDE_PATH=${halide}
-          #     # export CMAKE_LIBRARY_PATH=${libffcall.out}/lib:$CMAKE_LIBRARY_PATH
-          #     # export CMAKE_INCLUDE_PATH=${libffcall.dev}/include:$CMAKE_INCLUDE_PATH
-          #   '';
-          # };
-          # haskell = with pkgs-for-haskell-dev system; haskellPackages.shellFor {
-          #   packages = ps: [ ps.lattice-symmetries-haskell ];
-          #   withHoogle = true;
-          #   nativeBuildInputs = with haskellPackages; [
-          #     cabal-install
-          #     cabal-fmt
-          #     fourmolu
-          #     haskell-language-server
-          #     python3Packages.grip
-          #   ];
-          #   shellHook = ''
-          #     if [ ! -f libkernels_v2.so ]; then
-          #       gcc -shared -o libkernels_v2.so ${lattice-symmetries.kernels_v2}/lib/libkernels_v2.a
-          #     fi
-          #     export LD_LIBRARY_PATH=$PWD:$LD_LIBRARY_PATH;
-          #   '';
-          # };
-          # chapel = with pkgs; mkShell {
-          #   buildInputs = [
-          #     lattice-symmetries.kernels_v2
-          #     lattice-symmetries.haskell
-          #     hdf5
-          #     hdf5.dev
-          #     halide
-          #   ];
-          #   nativeBuildInputs = [
-          #     # (chapel.override {
-          #     #   compiler = "gnu";
-          #     #   settings = { CHPL_TARGET_MEM = "cstdlib"; CHPL_HOST_MEM = "cstdlib"; CHPL_UNWIND = "none"; CHPL_TASKS = "fifo"; CHPL_SANITIZE_EXE = "address"; CHPL_LIB_PIC = "none"; };
-          #     # })
-          #     # (chapel.override {
-          #     #   llvmPackages = llvmPackages_16;
-          #     #   compiler = "llvm";
-          #     #   # settings = { CHPL_LIB_PIC = "pic"; CHPL_UNWIND = "system"; };
-          #     # })
-          #     # chapelFixupBinary
-          #     # (chapel.override {
-          #     #   compiler = "gnu";
-          #     #   settings = { CHPL_COMM = "gasnet"; CHPL_COMM_SUBSTRATE = "smp"; CHPL_UNWIND = "none"; };
-          #     # })
-          #     (chapel.override {
-          #       settings = { "CHPL_LIB_PIC" = "pic"; "CHPL_TARGET_CPU" = "haswell"; };
-          #     })
-          #     # (pr_XXX.override { compiler = "gnu"; })
-          #     gcc
-          #     gdb
-          #     valgrind
-          #     pkg-config
-          #     prettierd
-          #     parallel
-          #   ];
-          #   shellHook = ''
-          #     # export CHPL_COMM=gasnet
-          #     # export CHPL_COMM_SUBSTRATE=smp
-          #     # export CHPL_RT_OVERSUBSCRIBED=yes
-          #     # export CHPL_HOST_MEM=jemalloc
-          #     # export CHPL_TARGET_MEM=jemalloc
-          #     # export CHPL_LAUNCHER=none
-          #     export CHPL_CFLAGS='-I${pkgs.lattice-symmetries.kernels_v2}/include --no-ieee-float'
-          #     export CHPL_LDFLAGS='-L${pkgs.lattice-symmetries.haskell.lib}/lib'
-          #     export HDF5_CFLAGS='-I${pkgs.hdf5.dev}/include'
-          #     export HDF5_LDFLAGS='-L${pkgs.hdf5}/lib -lhdf5_hl -lhdf5 -lrt'
-          #     export HALIDE_PATH='${pkgs.halide}'
-
-          #     rm -f src/FFI.chpl
-          #     ln --symbolic ${pkgs.lattice-symmetries.ffi} src/FFI.chpl
-          #   '';
-          # };
-
-          python = with pkgs; python3Packages.lattice-symmetries.overrideAttrs (attrs: {
-            # nativeBuildInputs = (attrs.nativeBuildInputs or []) ++ [
-            #   python3Packages.pip
-            # ];
-          });
-
+          python = pkgs.python3Packages.lattice-symmetries;
           testing = with pkgs; mkShell {
             nativeBuildInputs = [
-              (python310.withPackages (ps: with ps; [ lattice-symmetries ]))
+              (python3.withPackages (ps: with ps; [ lattice-symmetries ]))
             ];
           };
-
         });
+      formatter = forEachSystem (system: pkgs: pkgs.nixpkgs-fmt);
     };
 }

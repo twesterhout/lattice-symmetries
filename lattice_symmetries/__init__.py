@@ -44,7 +44,7 @@ from . import _parser, expression, _benes
 
 # from ._axpy import axpy
 # from ._kernels import BasisInfo
-# from ._benes import BenesNetwork, permutation_to_benes_network
+from ._benes import BenesNetwork, perm2benes
 # from ._representation import generate_representation
 # from .basis import (
 #     Basis,
@@ -53,7 +53,7 @@ from . import _parser, expression, _benes
 #     fixed_hamming_index_to_state,
 #     enumerate_basis_states,
 # )
-from .expression import Expr
+from .expression import Expr, heisenberg, ising
 # from .matrix import Operator
 
 # _ls.lib.ls_chpl_init()
