@@ -229,66 +229,66 @@ def pauli2nbts(e: sympy.Expr, simplify=True) -> list:
     term = lambda arg: PauliNonbranchingTerm(v=Add(*(t.v for t in arg[1])), x=arg[0][0], s=arg[0][1])
     return list(filter(lambda t: not t.v.is_zero, map(term, groupby(sorted(_pauli2nbts(e), key=key), key))))
 
-class PauliLoweredTerms:
-    has_diag: bool
-    has_off_diag: bool
-    is_real: bool
-    is_imag: bool
-    s_diag: NDArray[np.uint64]
-    v_re_diag: NDArray[np.float64]
-    v_im_diag: NDArray[np.float64]
-    s_2d: NDArray[np.uint64]
-    v_re_2d: NDArray[np.float64]
-    v_im_2d: NDArray[np.float64]
-    mask: NDArray[np.uint64]
+# class PauliLoweredTerms:
+#     has_diag: bool
+#     has_off_diag: bool
+#     is_real: bool
+#     is_imag: bool
+#     s_diag: NDArray[np.uint64]
+#     v_re_diag: NDArray[np.float64]
+#     v_im_diag: NDArray[np.float64]
+#     s_2d: NDArray[np.uint64]
+#     v_re_2d: NDArray[np.float64]
+#     v_im_2d: NDArray[np.float64]
+#     mask: NDArray[np.uint64]
 
-    def __init__(self, terms: list[PauliNonbranchingTerm]):
-        v = np.asarray([complex(t.v) for t in terms], dtype=np.complex128)
-        x = np.asarray([t.x for t in terms], dtype=np.uint64)
-        s = np.asarray([t.s for t in terms], dtype=np.uint64)
-        n_diag = np.sum(x == 0)
-        self.has_diag = n_diag != 0
-        self.has_off_diag = n_diag < len(x)
-        self.is_real = np.all(v.imag == 0)
-        self.is_imag = np.all(v.real == 0) and not self.is_real
-        self.s_diag = s[:n_diag] if self.has_diag else None
-        self.v_re_diag = np.ascontiguousarray(v[:n_diag].real) if not self.is_imag else None
-        self.v_im_diag = np.ascontiguousarray(v[:n_diag].imag) if not self.is_real else None
-        if self.has_off_diag:
-            unique_xs, counts = np.unique(x[n_diag:], return_counts=True)
-            n_terms, n_reduced = counts.size, np.max(counts)
-            self.s_2d = np.zeros((n_terms, n_reduced), dtype=np.uint64)
-            self.v_re_2d = np.zeros((n_terms, n_reduced), dtype=np.float64) if not self.is_imag else None
-            self.v_im_2d = np.zeros((n_terms, n_reduced), dtype=np.float64) if not self.is_real else None
-            offsets = n_diag + np.pad(np.cumsum(counts), ((1, 0),))
-            for i in range(n_terms):
-                self.s_2d[i, :counts[i]] = s[offsets[i] : offsets[i] + counts[i]]
-                if self.v_re_2d is not None: self.v_re_2d[i, :counts[i]] = v[offsets[i] : offsets[i] + counts[i]].real
-                if self.v_im_2d is not None: self.v_im_2d[i, :counts[i]] = v[offsets[i] : offsets[i] + counts[i]].imag
-            self.mask = unique_xs
-        else:
-            self.s_2d = None
-            self.v_re_2d = None
-            self.v_im_2d = None
-            self.mask = None
+#     def __init__(self, terms: list[PauliNonbranchingTerm]):
+#         v = np.asarray([complex(t.v) for t in terms], dtype=np.complex128)
+#         x = np.asarray([t.x for t in terms], dtype=np.uint64)
+#         s = np.asarray([t.s for t in terms], dtype=np.uint64)
+#         n_diag = np.sum(x == 0)
+#         self.has_diag = n_diag != 0
+#         self.has_off_diag = n_diag < len(x)
+#         self.is_real = np.all(v.imag == 0)
+#         self.is_imag = np.all(v.real == 0) and not self.is_real
+#         self.s_diag = s[:n_diag] if self.has_diag else None
+#         self.v_re_diag = np.ascontiguousarray(v[:n_diag].real) if not self.is_imag else None
+#         self.v_im_diag = np.ascontiguousarray(v[:n_diag].imag) if not self.is_real else None
+#         if self.has_off_diag:
+#             unique_xs, counts = np.unique(x[n_diag:], return_counts=True)
+#             n_terms, n_reduced = counts.size, np.max(counts)
+#             self.s_2d = np.zeros((n_terms, n_reduced), dtype=np.uint64)
+#             self.v_re_2d = np.zeros((n_terms, n_reduced), dtype=np.float64) if not self.is_imag else None
+#             self.v_im_2d = np.zeros((n_terms, n_reduced), dtype=np.float64) if not self.is_real else None
+#             offsets = n_diag + np.pad(np.cumsum(counts), ((1, 0),))
+#             for i in range(n_terms):
+#                 self.s_2d[i, :counts[i]] = s[offsets[i] : offsets[i] + counts[i]]
+#                 if self.v_re_2d is not None: self.v_re_2d[i, :counts[i]] = v[offsets[i] : offsets[i] + counts[i]].real
+#                 if self.v_im_2d is not None: self.v_im_2d[i, :counts[i]] = v[offsets[i] : offsets[i] + counts[i]].imag
+#             self.mask = unique_xs
+#         else:
+#             self.s_2d = None
+#             self.v_re_2d = None
+#             self.v_im_2d = None
+#             self.mask = None
 
-    def diag(self, alpha: NDArray[np.uint64]) -> NDArray:
-        if not self.has_diag: raise ValueError("don't call diag() when has_diag is False")
-        assert alpha.dtype == np.dtype("uint64")
-        sign = np.bitwise_count(alpha.reshape(1, -1) & self.s_diag.reshape(-1, 1)).astype(np.uint64) << 63
-        re = (self.v_re_diag.reshape(-1, 1).view(np.uint64) ^ sign).view(np.float64).sum(axis=0) if not self.is_imag else None
-        im = (self.v_im_diag.reshape(-1, 1).view(np.uint64) ^ sign).view(np.float64).sum(axis=0) if not self.is_real else None
-        if self.is_real: return re
-        if self.is_imag: return 1j * im
-        return re + 1j * im
+#     def diag(self, alpha: NDArray[np.uint64]) -> NDArray:
+#         if not self.has_diag: raise ValueError("don't call diag() when has_diag is False")
+#         assert alpha.dtype == np.dtype("uint64")
+#         sign = np.bitwise_count(alpha.reshape(1, -1) & self.s_diag.reshape(-1, 1)).astype(np.uint64) << 63
+#         re = (self.v_re_diag.reshape(-1, 1).view(np.uint64) ^ sign).view(np.float64).sum(axis=0) if not self.is_imag else None
+#         im = (self.v_im_diag.reshape(-1, 1).view(np.uint64) ^ sign).view(np.float64).sum(axis=0) if not self.is_real else None
+#         if self.is_real: return re
+#         if self.is_imag: return 1j * im
+#         return re + 1j * im
 
-    def off_diag(self, alpha: NDArray[np.uint64]) -> tuple[NDArray, NDArray]:
-        if not self.has_off_diag: raise ValueError("don't call off_diag() when has_off_diag is False")
-        assert alpha.dtype == np.dtype("uint64")
-        sign = np.bitwise_count(alpha[None, None, :] & self.s_2d[:, :, None]).astype(np.uint64) << 63
-        re = (self.v_re_2d[:, :, None].view(np.uint64) ^ sign).view(np.float64).sum(axis=1) if not self.is_imag else None
-        im = (self.v_im_2d[:, :, None].view(np.uint64) ^ sign).view(np.float64).sum(axis=1) if not self.is_real else None
-        beta = alpha[None, :] ^ self.mask[:, None]
-        if self.is_real: return beta, re
-        if self.is_imag: return beta, 1j * im
-        return beta, re + 1j * im
+#     def off_diag(self, alpha: NDArray[np.uint64]) -> tuple[NDArray, NDArray]:
+#         if not self.has_off_diag: raise ValueError("don't call off_diag() when has_off_diag is False")
+#         assert alpha.dtype == np.dtype("uint64")
+#         sign = np.bitwise_count(alpha[None, None, :] & self.s_2d[:, :, None]).astype(np.uint64) << 63
+#         re = (self.v_re_2d[:, :, None].view(np.uint64) ^ sign).view(np.float64).sum(axis=1) if not self.is_imag else None
+#         im = (self.v_im_2d[:, :, None].view(np.uint64) ^ sign).view(np.float64).sum(axis=1) if not self.is_real else None
+#         beta = alpha[None, :] ^ self.mask[:, None]
+#         if self.is_real: return beta, re
+#         if self.is_imag: return beta, 1j * im
+#         return beta, re + 1j * im

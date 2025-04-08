@@ -9,9 +9,9 @@ final: prev: {
         inherit version;
         src = ./.;
         pyproject = true;
-        dependencies = with python-final; [ loguru numpy scipy sympy igraph halide more-itertools lark quspin ];
+        dependencies = with python-final; [ loguru numpy scipy sympy igraph halide more-itertools lark quspin final.simde cffi ];
         nativeBuildInputs = with python-final; [ final.tree final.ocl-icd setuptools ipython ];
-        nativeCheckInputs = with python-final; [ pip pytestCheckHook pythonOutputDistHook hypothesis ];
+        nativeCheckInputs = with python-final; [ pip pytestCheckHook pythonOutputDistHook hypothesis jax jaxlib jax-cuda12-plugin ];
         # preInstall = ''
         #   pushd dist/
         #   WHEEL_FILE=$(ls *.whl)

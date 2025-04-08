@@ -34,19 +34,26 @@
         inputs.quantum-nix.overlays.default
         (import ./python.nix { inherit version; })
       ];
-      pkgs-for = system: import inputs.nixpkgs { inherit system; overlays = [ overlay ]; };
+      pkgs-for-cpu = system: import inputs.nixpkgs { inherit system; overlays = [ overlay ]; };
+      pkgs-for-cuda = system: import inputs.nixpkgs {
+        inherit system;
+        config = { allowUnfree = true; cudaSupport = true; cudaCapabilities = [ "7.0" ]; cudaForwardCompat = true; };
+        overlays = [ overlay ];
+      };
     in
     {
       overlays.default = overlay;
       packages = forEachSystem (system: _:
-        let pkgs = pkgs-for system; in {
+        let pkgs = pkgs-for-cpu system; in {
           inherit (pkgs) python3Packages python311Packages python312Packages;
         });
       devShells = forEachSystem (system: _:
-        let pkgs = pkgs-for system;
+        let pkgs = pkgs-for-cuda system;
         in
         {
-          python = pkgs.python3Packages.lattice-symmetries;
+          python = pkgs.python3Packages.lattice-symmetries.overridePythonAttrs (attrs: {
+            nativeBuildInputs = with pkgs; (attrs.nativeBuildInputs or []) ++ [ pkgs.nix-gl-host ];
+          });
           testing = with pkgs; mkShell {
             nativeBuildInputs = [
               (python3.withPackages (ps: with ps; [ lattice-symmetries ]))

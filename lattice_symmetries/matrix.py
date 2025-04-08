@@ -1,50 +1,30 @@
-from lattice_symmetries.basis import Basis
-from lattice_symmetries.expression import Expr, pauli_expression_to_nonbranching_terms
-from lattice_symmetries._kernels import LoweredOperator, LoweredSymmetries
-import numpy as np
+import numpy as np, sympy, lattice_symmetries as ls
 from numpy.typing import NDArray
 from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import LinearOperator
 
+from lattice_symmetries.basis import Basis, SpinBasis
+from lattice_symmetries.expression import Expr, pauli2nbts
 
-class Operator(LinearOperator):
-    basis: Basis
-    expression: Expr
-    dtype: np.dtype
-    lowered_operator: LoweredOperator | None
 
-    def __init__(
-        self,
-        expression: Expr,
-        basis: Basis | None = None,
-        dtype: np.dtype = np.dtype("float32"),
-    ):
-        self.expression = expression
-        self.basis = basis
-        self.dtype = dtype
-        self.lowered_operator = None
-
-    @property
-    def shape(self) -> tuple[int, int]:
-        n = self.basis.number_states
-        return (n, n)
-
-    def apply_to_state_vector(self, vector: NDArray, out: NDArray | None = None, verbose: bool = False) -> NDArray:
-        self.basis.check_is_built()
-
-        if self.lowered_operator is None:
-            terms = pauli_expression_to_nonbranching_terms(self.expression.raw)
-            symm = LoweredSymmetries(self.basis.info.symmetries) if self.basis.info.has_permutation_symmetries else None
-            self.lowered_operator = LoweredOperator(info=self.basis.info, terms=terms, symm=symm, state_to_index_info=self.basis.state_to_index_info, verbose=verbose)
-
-        vector = np.asarray(vector, dtype=self.dtype, order="F")
-        if out is None:
-            out = np.zeros(self.basis.states.size, dtype=self.dtype)
-        else:
-            out = np.asarray(out, dtype=self.dtype, order="F")
-
-        self.lowered_operator.apply(self.basis.states, self.basis.norms, vector, out)
-        return out
-
-    def _matvec(self, x):
-        return self.apply_to_state_vector(x)
+class O(LinearOperator):
+    b: Basis; e: Expr; dtype: np.dtype; diag_ctx: any; off_diag_ctx: any
+    shape = property(lambda self: (self.b.number_states,) * 2)
+    def __init__(self, expr: Expr, basis=None, dtype=None):
+        self.e = expr
+        self.b = ls.Basis(ls.BasisInfo(expr.number_sites)) if basis is None else basis
+        ts = pauli2nbts(expr.raw)
+        need_cplx = any(sympy.im(t.v) != sympy.S.Zero for t in ts)
+        self.diag_ctx, self.off_diag_ctx = ls.compiler.oc_ctx_t(ts)
+        self.dtype = dtype if dtype is not None else \
+            np.dtype("complex128") if need_cplx else np.dtype("float64")
+    def _matvec(self, x): return self.apply_to_state_vector(x)
+    def apply_to_state_vector(self, vector: NDArray, out=None):
+        if np.issubdtype(self.dtype, np.complexfloating):
+            vector = vector.astype(self.dtype, copy=False)
+        return self._prepare_Matvec()(self.b.states, self.b.norms, vector, out=out)
+    def _prepare_Matvec(self):
+        self.b._check_is_built(); self.b._prepare_bs_ctx(); self.b._prepare_search_ctx()
+        return ls.compiler.Matvec(self.diag_ctx, self.off_diag_ctx, self.b.bs_ctx, self.b.search_ctx)
+        
+Operator = O

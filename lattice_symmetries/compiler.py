@@ -1,0 +1,277 @@
+import cffi, numpy as np, os, subprocess, sympy, tempfile, time, weakref, lattice_symmetries as ls
+from dataclasses import dataclass, field
+from loguru import logger
+from sympy import S, Rational
+from sympy.combinatorics import Permutation
+
+class KernelCompiler:
+    temp: str; ffi: any; cc: str
+    def __init__(self, temp_dir=None):
+        self.temp = temp_dir or tempfile.mkdtemp(prefix="lattice-symmetries-cache")
+        logger.trace(f"'{self.temp}' will be used for compiling kernels.")
+        self.ffi = cffi.FFI()
+        with open("declarations.h", "r") as f: self.ffi.cdef(f.read())
+        self.cc = "cc"
+        self.flags = ["-O2", "-DNDEBUG", "-Wno-psabi", "-fno-math-errno", "-ffast-math", "-ffreestanding", "-fPIC"]
+        self.flags += ["-nostdlib", "-ffreestanding"]
+        self.flags += ["-march=znver2", "-mtune=znver2"]
+        self.flags += ["-fopenmp"]
+    def compile(self, *srcs):
+        _, out = tempfile.mkstemp(suffix=".so", dir=self.temp)
+        args = [self.cc, *self.flags, "-shared", "-o", out, *srcs]
+        tick = time.perf_counter(); subprocess.run(args, check=True); tock = time.perf_counter()
+        logger.trace(f"Compiled in {tock - tick} seconds. Command was '{' '.join(args)}'")
+        return self.ffi.dlopen(out, self.ffi.RTLD_NOW | self.ffi.RTLD_LOCAL)
+
+COMPILER = KernelCompiler()
+
+@dataclass(frozen=True)
+class K:
+    diag64_f64: any; diag64_c128: any;
+    off_diag64_f64: any; off_diag64_c128: any;
+    norm64: any;
+    state_to_index: any; state_info: any;
+    matvec_f64: any; matvec_c128: any
+
+def build_kernels():
+    lib = COMPILER.compile("matvec.c")
+    k = K(
+        lib.diag64_f64, lib.diag64_c128,
+        lib.off_diag64_f64, lib.off_diag64_c128,
+        lib.norm64,
+        lib.state_to_index, lib.state_info,
+        lib.matvec_f64, lib.matvec_c128
+    )
+    weakref.finalize(k, lambda: COMPILER.ffi.dlclose(lib))
+    return k
+
+def build_enumerate_states():
+    lib = COMPILER.compile("enumerate_states.c")
+    @dataclass(frozen=True)
+    class K: enumerate_states: any; copy_finalize: any; candidates: any
+    fs = K(lib.enumerate_states, lib.copy_finalize, lib.candidates_simple)
+    weakref.finalize(fs, lambda: COMPILER.ffi.dlclose(lib))
+    return fs
+
+KERNELS = build_kernels()
+MORE_KERNELS = build_enumerate_states()
+
+ 
+
+@dataclass(frozen=True)
+class BasisInfo:
+    bits: int; hamming: int | None = None; inversion: int | None = None
+    symmetries: list[tuple[Permutation, Rational]] = field(default_factory=list)
+    def __post_init__(self):
+        if len(self.symmetries) > 0:
+            object.__setattr__(self, "symmetries", ls.generate_representation(self.symmetries))
+        for p, _ in self.symmetries: assert len(p.array_form) == self.bits
+        if self.bits <= 1: object.__setattr__(self, "symmetries", [])
+    has_ps = property(lambda self: len(self.symmetries) > 0)
+    is_s2i_id = property(lambda self: self.hamming is None and not self.has_ps)
+    @property
+    def min_and_max_state_estimate(self) -> tuple[int, int]:
+        l = 2**self.hamming - 1 if self.hamming else 0 
+        if self.hamming is None:
+            # If spin inversion is not None, leave the most significant bit as 0
+            r = 2**self.bits - 1 if self.inversion is None else 2 ** (self.bits - 1) - 1
+        else:
+            assert self.hamming <= self.bits
+            r = l << (self.bits - self.hamming) if self.inversion is None \
+                else l << (self.bits - 1 - self.hamming)
+        return l, r
+    
+
+
+NULL = COMPILER.ffi.NULL
+def b_f64(arr): return COMPILER.ffi.from_buffer("double*", arr, require_writable=True)
+def b_c128(arr): return COMPILER.ffi.from_buffer("void*", arr, require_writable=True)
+def b_u16(arr): return COMPILER.ffi.from_buffer("uint16_t*", arr, require_writable=True)
+def b_u64(arr): return COMPILER.ffi.from_buffer("uint64_t*", arr, require_writable=True)
+def b_i64(arr): return COMPILER.ffi.from_buffer("int64_t*", arr, require_writable=True)
+def cb_f64(arr): return COMPILER.ffi.from_buffer("const double*", arr, require_writable=False)
+def cb_c128(arr): return COMPILER.ffi.from_buffer("const void*", arr, require_writable=True)
+def cb_u8(arr): return COMPILER.ffi.from_buffer("const uint8_t*", arr, require_writable=False)
+def cb_u16(arr): return COMPILER.ffi.from_buffer("const uint16_t*", arr, require_writable=False)
+def cb_u32(arr): return COMPILER.ffi.from_buffer("const uint32_t*", arr, require_writable=False)
+def cb_u64(arr): return COMPILER.ffi.from_buffer("const uint64_t*", arr, require_writable=False)
+def cb_i32(arr): return COMPILER.ffi.from_buffer("const int32_t*", arr, require_writable=False)
+def cb_i64(arr): return COMPILER.ffi.from_buffer("const int64_t*", arr, require_writable=False)
+def b_g(arr):
+    if arr.dtype == np.float64: return b_f64(arr)
+    if arr.dtype == np.complex128: return b_c128(arr)
+def cb_g(arr):
+    if arr.dtype == np.float64: return cb_f64(arr)
+    if arr.dtype == np.complex128: return cb_c128(arr)
+
+@dataclass(frozen=True)
+class Ctx: p: any = NULL; keep_alive: any = None
+
+def _reorder(v, s):
+    cnt = np.bitwise_count(s); i = np.argsort(cnt, stable=True); s, v = s[i], v[i]
+    n_s0, n_s1, n_s2, n_sX = np.sum(cnt == 0), np.sum(cnt == 1), np.sum(cnt == 2), np.sum(cnt > 2)
+    k = n_s0; s1 = s[k:k + n_s1]; k += n_s1
+    _, c = np.unpackbits(s[k:k + n_s2].view(np.uint8).reshape(-1, 8, 1), axis=-1, bitorder="little").reshape(-1, 64).nonzero()
+    c = c.astype(np.uint64); assert len(c) == 2 * n_s2
+    s20, s21 = 1 << c[::2], 1 << c[1::2]
+    sX = s[k + n_s2:]
+    return (np.int32(n_s0), np.int32(n_s1), np.int32(n_s2), np.int32(n_sX),
+            np.ascontiguousarray(v.real), np.ascontiguousarray(v.imag), s1, s20, s21, sX)
+def _oc_ctx_t(terms):
+    if len(terms) == 0: return Ctx(COMPILER.ffi.new("oc_t *"))
+    # terms are sorted by x
+    v = np.asarray([complex(t.v) for t in terms], dtype=np.complex128)
+    x = np.asarray([t.x for t in terms], dtype=np.uint64)
+    s = np.asarray([t.s for t in terms], dtype=np.uint64)
+    xs, ns = np.unique(x, return_counts=True)
+    os = np.pad(np.cumsum(ns), ((1, 0),))
+    ts = [_reorder(v[o:o + n], s[o:o + n]) for o, n in zip(os, ns)]
+
+    n_s0, n_s1, n_s2, n_sX, v_re, v_im, s1, s20, s21, sX, mask = keep_alive = tuple(map(np.hstack, zip(*ts))) + (xs,)
+    p = COMPILER.ffi.new("oc_t *")
+    p.v_re, p.v_im = cb_f64(v_re), cb_f64(v_im)
+    p.s1, p.s20, p.s21, p.sX, p.mask = cb_u64(s1), cb_u64(s20), cb_u64(s21), cb_u64(sX), cb_u64(mask)
+    p.n_s0, p.n_s1, p.n_s2, p.n_sX = cb_i32(n_s0), cb_i32(n_s1), cb_i32(n_s2), cb_i32(n_sX)
+    p.n_t = len(mask)
+    return Ctx(p, keep_alive)
+def oc_ctx_t(terms):
+    nd = sum(int(t.x == 0) for t in terms)
+    return _oc_ctx_t(terms[:nd]), _oc_ctx_t(terms[nd:])
+
+def _lower_symmetries(symmetries):
+    assert len(symmetries) > 0, "no symmetries"
+    assert len(symmetries[0][0].array_form) > 1, "need at least 2 bits"
+    nets = [ls.perm2benes(p) for p, _ in symmetries]
+    shifts = np.asarray(nets[0].shifts, dtype=np.uint32)
+    masks = np.vstack([np.asarray(b.masks, dtype=np.uint64) for b in nets])
+    i = ~np.all(masks == 0, axis=0)
+    if not np.any(i): i[0] = True
+    chis = [sympy.exp(-2 * sympy.pi * sympy.I * r) for _, r in symmetries]
+    is1 = np.asarray([1 if chi == S.One else -1 if chi == -S.One else 0
+        for chi in chis], dtype=np.int64)
+    chi_re = np.asarray([sympy.re(c) for c in chis], dtype=np.float64)
+    chi_im = - np.asarray([sympy.im(c) for c in chis], dtype=np.float64) # TODO: check me!!
+    return np.ascontiguousarray(masks[:, i]), shifts[i], is1, chi_re, chi_im
+def bs_ctx_t(info):
+    if not info.has_ps: return Ctx()
+    assert info.hamming is None
+    symmetries = info.symmetries
+    masks, shifts, is1, chi_re, chi_im = _lower_symmetries(symmetries)
+    flags = np.zeros((masks.shape[0], 3), dtype=np.uint8)
+    flags[:, 0] = info.inversion is not None
+    flags[:, 1] = is1 == 1
+    flags[:, 2] = ((info.inversion == 1) & (is1 == 1)) | ((info.inversion == -1) & (is1 == -1))
+
+    p = COMPILER.ffi.new("bs_ctx_t *")
+    p.masks, p.shifts, p.flags = cb_u64(masks), cb_u32(shifts), cb_u8(flags)
+    p.inversion_mask = 2**info.bits - 1
+    p.chi_re, p.chi_im = cb_f64(chi_re), cb_f64(chi_im)
+    p.n_m, p.n_r = masks.shape
+    return Ctx(p, (masks, shifts, flags, chi_re, chi_im))
+
+def _offset_ranges(reps, bits: int, shift: int):
+    assert 0 <= bits < 64, "invalid number_bits"
+    assert shift < 64, "invalid shift"
+    if bits == 0: return np.array([0, len(reps)], dtype=np.int64), len(reps)
+    boundaries = (np.arange(1 << bits, dtype=np.uint64) << shift)
+    offsets = np.searchsorted(reps, boundaries, side='left')
+    offsets = np.append(offsets, len(reps))
+    size = np.max(np.diff(offsets))
+    # Normalize ranges to have equal size
+    offsets[:-1] = np.minimum(offsets[:-1], len(reps) - size)
+    return offsets, size
+def search_ctx_t(info, reps=None, norms=None, prefix_bits: int = 16):
+    if reps is None and norms is None and info.is_s2i_id: return Ctx()
+    prefix_bits = max(0, min(info.bits, prefix_bits))
+    shift = info.bits - prefix_bits
+    offsets, size = _offset_ranges(reps, prefix_bits, shift)
+    p = COMPILER.ffi.new("search_ctx_t *")
+    p.reps, p.norm, p.offsets = cb_u64(reps), cb_u16(norms), cb_i64(offsets)
+    p.range_size, p.shift, p.mask = size, shift, 2**prefix_bits - 1
+    return Ctx(p, (reps, norms, offsets))
+
+def enumerate_states(info, ctx=None):
+    l, r = info.min_and_max_state_estimate
+    if info.is_s2i_id:
+        states = np.arange(l, r + 1, dtype=np.uint64)
+        norms = np.ones(states.size, dtype=np.uint16)
+    elif info.has_ps and info.hamming is None:
+        if ctx is None: ctx = bs_ctx_t(info)
+        chunk_size = max(1024, (r - l + 1) // (128 * os.cpu_count()))
+        starts = np.arange(l, r + 1, chunk_size)
+        sizes = np.append(np.diff(starts), [r - starts[-1] + 1])
+        starts = starts - 1
+        total_size = COMPILER.ffi.new("int64_t *")
+        with ls.measure_time() as dt1:
+            chunks = MORE_KERNELS.enumerate_states(starts.size, cb_i64(sizes), cb_u64(starts),
+                MORE_KERNELS.candidates, KERNELS.norm64, ctx.p, total_size)
+        if chunks == NULL: raise MemoryError("enumerate_states kernel failed to allocate memory")
+        with ls.measure_time() as dt2:
+            states, norms = np.empty(total_size[0], dtype=np.uint64), np.empty(total_size[0], dtype=np.uint16)
+            MORE_KERNELS.copy_finalize(starts.size, chunks, b_u64(states), b_u16(norms))
+    else:
+        raise NotImplementedError()
+    states.flags.writeable, norms.flags.writeable = False, False
+    return states, norms
+def state_to_index(states, ctx, out=None):
+    states = np.asarray(states, dtype=np.uint64, order="C")
+    assert ctx.p != NULL, "don't invoke compiler.state_to_index if is_s2i_id==True"
+    assert states.ndim ==1, "expected a one-dimensional array"
+    if out is None: out = np.empty(states.size, dtype=np.int64)
+    else: assert out.ndim == 1 and out.dtype == np.int64 \
+            and out.size == states.size and out.flags["C_CONTIGUOUS"]
+    KERNELS.state_to_index(states.size, cb_u64(states), ctx.p, b_i64(out))
+    return out
+def state_info(states, ctx, rep=None, idx=None):
+    states = np.asarray(states, dtype=np.uint64, order="C")
+    assert ctx.p != NULL, "don't invoke compiler.state_info if has_ps==False"
+    assert states.ndim ==1, "expected a one-dimensional array"
+    if rep is None: rep = np.empty(states.size, dtype=np.uint64)
+    else: assert rep.ndim == 1 and rep.dtype == np.uint64 \
+            and rep.size == states.size and rep.flags["C_CONTIGUOUS"]
+    if idx is None: idx = np.empty(states.size, dtype=np.int64)
+    else: assert idx.ndim == 1 and idx.dtype == np.uint64 \
+            and idx.size == states.size and idx.flags["C_CONTIGUOUS"]
+    KERNELS.state_info(states.size, cb_u64(states), ctx.p, b_u64(rep), b_i64(idx))
+    return rep, idx
+
+def _pad(alpha, norm, x):
+    n = alpha.size; p = ((0, 64 - n),)
+    if n < 64: return np.pad(alpha, p, mode="edge"), np.pad(norm, p), np.pad(x, p)
+    else: return alpha, norm, x
+def _suffix(dtype): return dict(float64="f64", complex128="c128")[dtype.name]
+    
+@dataclass(frozen=True)
+class Matvec:
+    diag_ctx: any; off_diag_ctx: any; bs_ctx: any; search_ctx: any
+    def __call__(self, alpha, norm, x, out=None):
+        alpha = np.asarray(alpha, dtype=np.uint64, order="C")
+        norm = np.asarray(norm, dtype=np.uint16, order="C")
+        x = np.asarray(x, order="C")
+        alpha0, norm0, x0 = _pad(alpha, norm, x)
+        dtype, n = x.dtype, alpha.size
+        kernel = getattr(KERNELS, "matvec_" + _suffix(dtype))
+        assert alpha.size == n and norm.size == n
+        if self.search_ctx.p != NULL: assert x.size == self.search_ctx.keep_alive[0].size
+        if out is None: out = np.zeros(alpha0.size, dtype=dtype)
+        else: assert out.ndim == 1 and out.dtype == dtype \
+            and out.size == alpha0.size and out.flags["C_CONTIGUOUS"]
+        kernel(max(n, 64), cb_u64(alpha0), cb_u16(norm0), cb_g(x0), cb_g(x), b_g(out),
+            self.diag_ctx.p, self.off_diag_ctx.p, self.bs_ctx.p, self.search_ctx.p)
+        return out[:n]
+    def _diag64(self, alpha, x): # NOTE: for testing only
+        alpha, x = map(np.ascontiguousarray, (alpha, x))
+        alpha0, _, x0 = _pad(alpha, x, x)
+        dtype, n = x.dtype, alpha.size
+        out = np.zeros(64, dtype=dtype)
+        kernel = getattr(KERNELS, f"diag64_{_suffix(x.dtype)}")
+        kernel(0, cb_u64(alpha0), cb_g(x0), b_g(out), self.diag_ctx.p)
+        return out[:min(n, 64)]
+    def _off_diag64(self, alpha, norm, x):
+        alpha, norm, x = map(np.ascontiguousarray, (alpha, norm, x))
+        alpha0, norm0, x0 = _pad(alpha, norm, x)
+        dtype, n = x.dtype, alpha.size
+        out = np.zeros(64, dtype=dtype)
+        kernel = getattr(KERNELS, f"off_diag64_{_suffix(x.dtype)}")
+        kernel(0, cb_u64(alpha0), cb_u16(norm0), cb_g(x), b_g(out), self.off_diag_ctx.p, self.bs_ctx.p, self.search_ctx.p)
+        return out[:min(n, 64)]

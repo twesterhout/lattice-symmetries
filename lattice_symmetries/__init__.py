@@ -28,39 +28,25 @@
 
 __version__ = "3.0.0"
 
-from sympy.physics.quantum.pauli import SigmaX, SigmaY, SigmaZ
+import contextlib, time
+from sympy.physics.quantum.pauli import SigmaX, SigmaY, SigmaZ, SigmaPlus, SigmaMinus
+from sympy.combinatorics import Permutation, PermutationGroup
 
 # Fix printing of pauli expressions
-def _proper_print_contents(t):
-    def f(self, printer, *args): return t.__name__ + "(" + printer._print(self.name) + ")"
-    return f
-SigmaX._print_contents = _proper_print_contents(SigmaX)
-SigmaY._print_contents = _proper_print_contents(SigmaY)
-SigmaZ._print_contents = _proper_print_contents(SigmaZ)
+def _fix_print():
+    def _proper(t):
+        def f(self, p, *args): return t.__name__ + "(" + p._print(self.name) + ")"
+        return f
+    for o in [SigmaX, SigmaY, SigmaZ, SigmaPlus, SigmaMinus]: o._print_contents = _proper(o)
+_fix_print()
 
+@contextlib.contextmanager
+def measure_time(): tick = tock = time.perf_counter(); yield lambda: tock - tick; tock = time.perf_counter() 
 
-# from . import _ls, _numpy_helper, _parser, _axpy, _benes, _representation, _kernels, basis, expression, matrix
-from . import _parser, expression, _benes
-
-# from ._axpy import axpy
-# from ._kernels import BasisInfo
+from . import _benes, _parser, _representation, expression, compiler, basis, matrix
 from ._benes import BenesNetwork, perm2benes
-# from ._representation import generate_representation
-# from .basis import (
-#     Basis,
-#     SpinBasis,
-#     fixed_hamming_state_to_index,
-#     fixed_hamming_index_to_state,
-#     enumerate_basis_states,
-# )
-from .expression import Expr, heisenberg, ising
-# from .matrix import Operator
-
-# _ls.lib.ls_chpl_init()
-
-
-# result = _ls.ffi.new("ls_numpy_array_1d *")
-# _ls.lib.the_ultimate_solution(_ls.lib.ls_alloc_numpy_array_1d, result)
-# print(result.handle)
-# print(_ls.ffi.from_handle(result.handle))
-# _ls.lib.ls_PyObject_decref(result.handle)
+from ._representation import generate_representation
+from .expression import Expr, pauli2nbts, heisenberg, ising
+from .compiler import COMPILER, KERNELS, MORE_KERNELS, BasisInfo
+from .basis import B, Basis, SpinBasis
+from .matrix import O, Operator
