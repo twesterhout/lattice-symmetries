@@ -270,7 +270,6 @@ def random_operator(
 
     return quspin_op, ls_expr
 
-
 def reverse_bits(x, n_bits):
     x = np.array(x)
     x_reversed = np.zeros_like(x)

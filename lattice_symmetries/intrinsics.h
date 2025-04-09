@@ -9,7 +9,7 @@ typedef int8_t i8; typedef int16_t i16; typedef int32_t i32; typedef int64_t i64
 typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef uint64_t u64;
 typedef float f32; typedef double f64; typedef float _Complex c64; typedef double _Complex c128;
 
-#define INTERNAL // static HEDLEY_ALWAYS_INLINE
+#define INTERNAL static HEDLEY_ALWAYS_INLINE
 #define assume(cond) __attribute__((__assume__(cond)))
 #define M 2
 
@@ -70,8 +70,8 @@ F2(Vd,addd,add_pd)
 F2(Vd,subd,sub_pd)
 F2(Vd,muld,mul_pd)
 F2(Vd,divd,div_pd)
-INTERNAL static Vd fmad(Vd const a, Vd const b, Vd const c) { return I(B,fmadd_pd,a,b,c); }
-INTERNAL static Vd fnmad(Vd const a, Vd const b, Vd const c) { return I(B,fnmadd_pd,a,b,c); }
+INTERNAL Vd fmad(Vd const a, Vd const b, Vd const c) { return I(B,fmadd_pd,a,b,c); }
+INTERNAL Vd fnmad(Vd const a, Vd const b, Vd const c) { return I(B,fnmadd_pd,a,b,c); }
 INTERNAL Vd scaled(Vd const a, Vd const b) { return muld(a, b); }
 INTERNAL Vd sqrtd(Vd const x) { return I(B,sqrt_pd,x); }
 INTERNAL Vd Rd(f64 const *p) { return I(B,loadu_pd,p); }
@@ -110,7 +110,7 @@ INTERNAL void Wz(c128 *p, Vz const z) {
 
 #if M == 1
 #  define _gatherq(p,i,s) I(B,i64gather_epi64,i,p,s)
-#  define _mask_gatherq(p,i,m,s) I(B,mask_i64gather_epi64,Zd,m,i,p,s)
+#  define _mask_gatherq(p,i,m,s) I(B,mask_i64gather_epi64,Zi,m,i,p,s)
 #  define gatherd(p,i) I(B,i64gather_pd,i,p,8)
 #  define mask_gatherd(p,i,m) I(B,mask_i64gather_pd,Zd,m,i,p,8)
 #elif M == 2
@@ -125,8 +125,14 @@ INTERNAL Vz gatherz(c128 const *p, Vi const i) { Vi const i2 = shl(i, 1); return
 INTERNAL Vd gather2d(f64 const *re, f64 const *im, Vi const i) { return gatherd(re, i); }
 INTERNAL Vz gather2z(f64 const *re, f64 const *im, Vi const i) { return (Vz){gatherd(re, i), gatherd(im, i)}; }
 INTERNAL Vd pq2pd(Vi x) { x = or(x, d2i(Sd(0x0010000000000000))); return subd(i2d(x), Sd(0x0010000000000000)); }
-INTERNAL Vd gather_norm(u16 const *p, Vi const i) { return pq2pd(and(_gatherq((i64 const*)p, i, 2), Si(0xFFFF))); }
-INTERNAL Vd load_norm(u16 const *p) { return gather_norm(p, I(B,set_epi64x,3,2,1,0)); }
+// INTERNAL Vd gather_norm(u16 const *p, Vi const i) { return pq2pd(and(_gatherq((i64 const*)p, i, 2), Si(0xFFFF))); }
+INTERNAL Vd load_norm(u16 const *p) {
+#if M == 1
+    return I(B,set_pd,p[7],p[6],p[5],p[4],p[3],p[2],p[1],p[0]);
+#elif M == 2
+    return I(B,set_pd,p[3],p[2],p[1],p[0]);
+#endif
+}
 #define mask_gather_norm(p,i,m) pq2pd(and(_mask_gatherq((i64 const*)p, i, m, 2), Si(0xFFFF)))
 
 #if M == 1
@@ -142,9 +148,21 @@ INTERNAL Vd load_norm(u16 const *p) { return gather_norm(p, I(B,set_epi64x,3,2,1
 #endif
 #define NOT_(a) xor(a, eqi(Zi, Zi))
 #define NOT(a) NOT_(a)
-INTERNAL Vi m1(Vi const x, Vi const m) { return NOT(eqi(and(x, m), Zi)); }
+INTERNAL Vi m1(Vi const x, Vi const m) {
+#if M == 1
+    return I(B,movm_epi64,I(B,test_epi64_mask,x,m));
+#elif M == 2
+    return xor(eqi(and(x, m), Zi), eqi(Zi, Zi));
+#endif
+}
+INTERNAL Vi m2(Vi const x, Vi const m_0, Vi const m_1) { return xor(m1(x, m_0), m1(x, m_1)); }
+INTERNAL Vi mX(Vi const x, Vi const m) { return popcnt(and(x, m)); }
+INTERNAL Vd signedd(Vd const v, Vi m) { m = shl(m, 63); return i2d(xor(d2i(v), m)); }
+INTERNAL Vz signedz(Vz const v, Vi m) { m = shl(m, 63); return (Vz){i2d(xor(d2i(v.re), m)), i2d(xor(d2i(v.im), m))}; }
 
-#if M == 2
+#if M == 1
+#  define gt(a,b) I(B,cmp_epi64_mask,b,a,1)
+#elif M == 2
 #  define gt(a,b) I(B,cmpgt_epi64,a,b)
 #endif
 

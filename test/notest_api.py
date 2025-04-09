@@ -49,102 +49,8 @@ def test_trailing_zeros():
     assert trailing_zeros(40) == 3
     assert trailing_zeros(128) == 7
 
-def test_generate_offset_ranges():
-    from lattice_symmetries._kernels import generate_offset_ranges
-
-    representatives = np.array([0, 1, 2, 4, 8, 9, 16, 17], dtype=np.uint64)
-    number_bits = 3
-    shift = 61
-    offsets, range_size = generate_offset_ranges(representatives, number_bits, shift)
-    np.testing.assert_equal(offsets, [0, 0, 0, 0, 0, 0, 0, 0, 8])
-    assert range_size == 8
-    
-    number_bits = 3
-    shift = 2
-    offsets, range_size = generate_offset_ranges(representatives, number_bits, shift)
-    np.testing.assert_equal(offsets, [0, 3, 4, 5, 5, 5, 5, 5, 8])
-    assert range_size == 3
-
-    representatives = np.array([0, 1, 2, 3], dtype=np.uint64)
-    number_bits = 0
-    for shift in range(64):
-        offsets, range_size = generate_offset_ranges(representatives, number_bits, shift)
-        assert len(offsets) == 2
-        assert offsets[0] == 0
-        assert offsets[1] == len(representatives)
-        assert range_size == len(representatives)
-
-    representatives = np.array([42], dtype=np.uint64)
-    number_bits = 2
-    shift = 4
-    offsets, range_size = generate_offset_ranges(representatives, number_bits, shift)
-    np.testing.assert_equal(offsets, [0, 0, 0, 0, 1])
-    assert range_size == 1
-
-    # Test with numbers that have large gaps between them
-    representatives = np.array([0, (1 << 32), (2 << 32), (3 << 32)], dtype=np.uint64)
-    number_bits = 2
-    shift = 32
-    offsets, range_size = generate_offset_ranges(representatives, number_bits, shift)
-    assert len(offsets) == 5  # 2^2 + 1
-    assert offsets[0] == 0
-    assert offsets[1] == 1
-    assert offsets[2] == 2
-    assert offsets[3] == 3
-    assert offsets[4] == 4
-    assert range_size == 1
-
-def test_state_to_index_binary_search():
-    from lattice_symmetries._kernels import state_to_index_kernel
-
-    # Test with small numbers first
-    representatives = np.array([0, 1, 2, 4, 8, 9, 16, 17], dtype=np.int64)
-    kernel = state_to_index_kernel(representatives, prefix_bits=1)
-    alpha = np.array([0, 1, 4, 5], dtype=np.int64)
-    out = np.zeros(alpha.size, dtype=np.int32)
-    kernel.callable(alpha, representatives, out)
-    np.testing.assert_equal(out, [0, 1, 3, -1])
-
-    # Test with larger numbers and more complex patterns
-    representatives = np.array([0, 3, 7, 15, 31, 63, 127, 255, 511, 1023], dtype=np.int64)
-    kernel = state_to_index_kernel(representatives, prefix_bits=4)
-    alpha = np.array([31, 0, 255, 7, 1024, 15, 63, 512, 3, 127, 8, 511, 32, 16, 256, 64, 1023], dtype=np.int64)
-    out = np.zeros(alpha.size, dtype=np.int32)
-    kernel.callable(alpha, representatives, out)
-    np.testing.assert_equal(out, [4, 0, 7, 2, -1, 3, 5, -1, 1, 6, -1, 8, -1, -1, -1, -1, 9])
 
 
-def test_SpinBasis():
-    basis = ls.SpinBasis(3)
-    basis.build()
-    np.testing.assert_equal(basis.index(basis.states), np.arange(2**3))
-    assert basis.number_states == 2**3
-    assert [basis.state_to_string(basis.states[i]) for i in range(basis.number_states)] == [
-        "|000⟩",
-        "|001⟩",
-        "|010⟩",
-        "|011⟩",
-        "|100⟩",
-        "|101⟩",
-        "|110⟩",
-        "|111⟩",
-    ]
-
-    basis = ls.SpinBasis(3, hamming_weight=2)  # We want the subspace with only 2 spins up
-    basis.build()
-    assert [basis.state_to_string(basis.states[i]) for i in range(basis.number_states)] == [
-        "|011⟩",
-        "|101⟩",
-        "|110⟩",
-    ]
-
-    basis = ls.SpinBasis(4, hamming_weight=2, spin_inversion=-1)
-    basis.build()
-    assert [basis.state_to_string(basis.states[i]) for i in range(basis.number_states)] == [
-        "|0011⟩",
-        "|0101⟩",
-        "|0110⟩",
-    ]
 
 
 def reverse_bits(x, n_bits):
@@ -345,25 +251,6 @@ def test_is_representative_examples():
         print(basis.state_to_string(a), n)
 
 
-@st.composite
-def random_pauli_term(draw, number_sites, max_order=3):
-    operators = [pauli.SigmaX, pauli.SigmaY, pauli.SigmaZ, pauli.SigmaPlus, pauli.SigmaMinus]
-    p = draw(st.sampled_from(operators))
-    c = draw(st.complex_numbers(min_magnitude=1e-3, max_magnitude=10, allow_subnormal=False))
-    i = st.integers(min_value=0, max_value=number_sites - 1)
-    indices = st.lists(i, min_size=0, max_size=max_order).map(sorted)
-    return c * reduce(operator.mul, map(p, draw(indices)), S.One)
-
-
-@st.composite
-def random_pauli_expression(draw, max_number_sites=8, max_terms=10, max_order=3):
-    number_sites = draw(st.integers(min_value=1, max_value=max_number_sites - 1))
-    elements = st.lists(
-        random_pauli_term(number_sites=number_sites, max_order=max_order),
-        min_size=1,
-        max_size=max_terms,
-    )
-    return reduce(operator.add, draw(elements))
 
 
 @hypothesis.given(random_pauli_term(number_sites=4, max_order=3))

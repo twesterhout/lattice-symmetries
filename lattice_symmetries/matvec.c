@@ -12,10 +12,7 @@ static void Pz(Vz z) { Pd(z.re); Pd(z.im); }
 // INTERNAL Vd gather_norm(u16 const *p, Vi const i) { return pq2pd(AND(OP(i64gather_epi64, (i64 const*)p, i, 2), Si(0xFFFF))); }
 
 // INTERNAL Vi m1(Vi const x, Vi const m) { return NOT(EQ(AND(x, m), Zi)); }
-INTERNAL Vi m2(Vi const x, Vi const m_0, Vi const m_1) { return xor(m1(x, m_0), m1(x, m_1)); }
-INTERNAL Vi mX(Vi const x, Vi const m) { return popcnt(and(x, m)); }
-INTERNAL Vd signedd(Vd const v, Vi m) { m = shl(m, 63); return i2d(xor(d2i(v), m)); }
-INTERNAL Vz signedz(Vz const v, Vi m) { m = shl(m, 63); return (Vz){i2d(xor(d2i(v.re), m)), i2d(xor(d2i(v.im), m))}; }
+// INTERNAL Vi m2(Vi const x, Vi const m_0, Vi const m_1) { return xor(m1(x, m_0), m1(x, m_1)); }
 
 INTERNAL Vd zerod(void) { return Zd; }
 INTERNAL Vz zeroz(void) { return (Vz){Zd, Zd}; }
@@ -88,7 +85,8 @@ INTERNAL Vix2 reprN(Vi x, bs_ctx_t const *ctx) {
     // the first row of ctx->masks is always the identity permutation
     i64 k = 1; u64 const *masks = ctx->masks + k * ctx->n_r; Vi r = x, i = Zi;
     for (Vi vk = Si(k), one = Si(1); k < ctx->n_m; ++k, vk = addq(vk, one), masks += ctx->n_r) {
-        Vi const y = permute(x, masks, ctx->shifts, ctx->n_r), p = gt(r, y);
+        Vi const y = permute(x, masks, ctx->shifts, ctx->n_r);
+        typeof(gt(r, y)) const p = gt(r, y);
         r = select(p, y, r);  i = select(p, vk, i);
     }
     return (Vix2){r, i};
