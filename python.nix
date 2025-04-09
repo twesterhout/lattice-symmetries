@@ -9,29 +9,14 @@ final: prev: {
         inherit version;
         src = ./.;
         pyproject = true;
-        dependencies = with python-final; [ loguru numpy scipy sympy igraph halide more-itertools lark quspin final.simde cffi ];
-        nativeBuildInputs = with python-final; [ final.tree final.ocl-icd setuptools ipython ];
-        nativeCheckInputs = with python-final; [ pip pytestCheckHook pythonOutputDistHook hypothesis jax jaxlib jax-cuda12-plugin ];
-        # preInstall = ''
-        #   pushd dist/
-        #   WHEEL_FILE=$(ls *.whl)
-        #   wheel unpack $WHEEL_FILE
-        #   rm -v $WHEEL_FILE
-
-        #   pushd lattice_symmetries-${version}
-        #   tree
-        #   patchelf --debug --remove-rpath lattice_symmetries/liblattice_symmetries_chapel.*
-        #   patchelf --debug --set-rpath '$ORIGIN' lattice_symmetries/_ls.*
-        #   popd
-
-        #   wheel pack lattice_symmetries-${version}
-        #   rm -r lattice_symmetries-${version}
-        #   popd
-        # '';
-        preCheck = "rm -rf lattice_symmetries";
+        dependencies = with python-final; [
+          loguru numpy scipy sympy igraph more-itertools lark quspin final.simde cffi ];
+        nativeBuildInputs = with python-final; [ setuptools ];
+        nativeCheckInputs = with python-final; [ pip pytestCheckHook pythonOutputDistHook hypothesis ];
+        # preCheck = "rm -rf lattice_symmetries";
         checkPhase = ''
           runHook preCheck
-          python3 -m pytest --color=yes --capture=no test/test_api.py | tee output.txt
+          python3 -m pytest --color=yes --capture=no test/ | tee output.txt
           grep -q -E '(FAILURES|failed)' output.txt && exit 1
           runHook postCheck
         '';
