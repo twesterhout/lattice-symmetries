@@ -1,8 +1,10 @@
-import cffi, numpy as np, os, subprocess, sympy, tempfile, time, weakref, lattice_symmetries as ls
+import cffi, numpy as np, os, pathlib, subprocess, sympy, tempfile, time, weakref, lattice_symmetries as ls
 from dataclasses import dataclass, field
 from loguru import logger
 from sympy import S, Rational
 from sympy.combinatorics import Permutation
+
+FOLDER = pathlib.Path(__file__).parent.resolve()
 
 class KernelCompiler:
     temp: str; ffi: any; cc: str
@@ -10,7 +12,7 @@ class KernelCompiler:
         self.temp = temp_dir or tempfile.mkdtemp(prefix="lattice-symmetries-cache")
         logger.trace(f"'{self.temp}' will be used for compiling kernels.")
         self.ffi = cffi.FFI()
-        with open("declarations.h", "r") as f: self.ffi.cdef(f.read())
+        with open(FOLDER / "declarations.h", "r") as f: self.ffi.cdef(f.read())
         self.cc = "cc"
         self.flags = ["-O2", "-DNDEBUG", "-Wno-psabi", "-fno-math-errno", "-ffast-math", "-ffreestanding", "-fPIC"]
         self.flags += ["-nostdlib", "-ffreestanding"]
@@ -18,7 +20,7 @@ class KernelCompiler:
         self.flags += ["-fopenmp"]
     def compile(self, *srcs):
         _, out = tempfile.mkstemp(suffix=".so", dir=self.temp)
-        args = [self.cc, *self.flags, "-shared", "-o", out, *srcs]
+        args = [self.cc, *self.flags, "-shared", "-o", out, *map(str, srcs)]
         tick = time.perf_counter(); subprocess.run(args, check=True); tock = time.perf_counter()
         logger.trace(f"Compiled in {tock - tick} seconds. Command was '{' '.join(args)}'")
         return self.ffi.dlopen(out, self.ffi.RTLD_NOW | self.ffi.RTLD_LOCAL)
@@ -34,7 +36,7 @@ class K:
     matvec_f64: any; matvec_c128: any
 
 def build_kernels():
-    lib = COMPILER.compile("matvec.c")
+    lib = COMPILER.compile(FOLDER / "matvec.c")
     k = K(
         lib.diag64_f64, lib.diag64_c128,
         lib.off_diag64_f64, lib.off_diag64_c128,
@@ -46,7 +48,7 @@ def build_kernels():
     return k
 
 def build_enumerate_states():
-    lib = COMPILER.compile("enumerate_states.c")
+    lib = COMPILER.compile(FOLDER / "enumerate_states.c")
     @dataclass(frozen=True)
     class K: enumerate_states: any; copy_finalize: any; candidates: any
     fs = K(lib.enumerate_states, lib.copy_finalize, lib.candidates_simple)

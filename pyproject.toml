@@ -35,11 +35,13 @@ Documentation = "https://github.com/twesterhout/lattice-symmetries/README.md"
 Repository = "https://github.com/twesterhout/lattice-symmetries.git"
 
 [tool.setuptools.package-data]
-lattice_symmetries = ["liblattice_symmetries_chapel.*"]
+lattice_symmetries = ["*.h", "*.c"]
 
 [tool.black]
-line-length = 100
+line-length = 120
 
 [tool.ruff]
-line-length = 100
+line-length = 120
+
+[tool.ruff.lint]
 ignore = ["E731"]
