@@ -33,8 +33,8 @@ typedef struct search_ctx_t {
 } search_ctx_t;
 
 void norm64(uint64_t const *, bs_ctx_t const *, uint16_t *);
-void diag64_f64(i64, u64 const *, void const *, void *, const oc_t *);
-void diag64_c128(i64, u64 const *, void const *, void *, const oc_t *);
+void diag64_f64(u64 const *, void const *, void *, const oc_t *);
+void diag64_c128(u64 const *, void const *, void *, const oc_t *);
 void off_diag64_f64(u64 const *, u16 const *, void const *, void *, const oc_t *, const bs_ctx_t *, const search_ctx_t *);
 void off_diag64_c128(u64 const *, u16 const *, void const *, void *, const oc_t *, const bs_ctx_t *, const search_ctx_t *);
 

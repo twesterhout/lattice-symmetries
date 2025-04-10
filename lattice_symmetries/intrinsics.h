@@ -190,7 +190,7 @@ INTERNAL Vz signedz(Vz const v, Vi m) { m = shl(m, 63); return (Vz){i2d(xor(d2i(
 #define PX(x, t, w, f) \
     do { \
         t temp[B / (8 * sizeof(t))]; I(B,w,temp,x); \
-        printf("["); for (int k = 0; k < B / (8 * sizeof(t)); ++k) { printf(f ",", temp[k]); } printf("]\n"); \
+        printf("["); for (u64 k = 0; k < B / (8 * sizeof(t)); ++k) { printf(f ",", temp[k]); } printf("]\n"); \
     } while(0)
 #define Pw(x) PX(x, int32_t, storeu_epi32, "%i")
 #define Pi(x) PX(x, int64_t, storeu_epi64, "%zi")
@@ -201,6 +201,7 @@ INTERNAL Vz signedz(Vz const v, Vi m) { m = shl(m, 63); return (Vz){i2d(xor(d2i(
 #define _(z) ({z;})
 #define $(b,z) if(b){z;}else
 #define D(t,g,k,x...) static HEDLEY_ALWAYS_INLINE t g(x){return _(k);}
+#define De(t,g,k,x...) t g(x){return _(k);}
 #define Dd(g,k,x...) D(Vd,g##d,k,x)
 #define Dz(g,k,x...) D(Vz,g##z,k,x)
 #define Z2(x,y) (Vz){x,y}

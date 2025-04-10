@@ -15,8 +15,8 @@ class KernelCompiler:
         self.ffi = cffi.FFI()
         with open(FOLDER / "declarations.h", "r") as f: self.ffi.cdef(f.read())
         self.cc = os.getenv("CC", default="cc")
-        self.flags = ["-O3", "-DNDEBUG"] # , "-g"]
-        self.flags += ["-Wno-psabi", "-fno-math-errno", "-ffast-math"]
+        self.flags = ["-O3", "-DNDEBUG", "-funroll-loops"] # , "-g"]
+        self.flags += ["-Wall", "-Wextra", "-Wno-comment", "-Wno-unused-parameter", "-Wno-psabi", "-fno-math-errno", "-ffast-math"]
         # self.flags += ["-nostdlib", "-ffreestanding"]
         # self.flags += ["-march=znver2", "-mtune=znver2"]
         self.flags += ["-march=native", "-mtune=native"]
@@ -279,7 +279,7 @@ class Matvec:
         dtype, n = x.dtype, alpha.size
         out = np.zeros(64, dtype=dtype)
         kernel = getattr(KERNELS, f"diag64_{_suffix(x.dtype)}")
-        kernel(0, cb_u64(alpha0), cb_g(x0), b_g(out), self.diag_ctx.p)
+        kernel(cb_u64(alpha0), cb_g(x0), b_g(out), self.diag_ctx.p)
         return out[:min(n, 64)]
     def _off_diag64(self, alpha, norm, x):
         alpha, norm, x = map(np.ascontiguousarray, (alpha, norm, x))
