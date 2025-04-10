@@ -1,16 +1,23 @@
 #pragma once
 
-#include <simde/x86/sse.h>
-#include <simde/x86/avx2.h>
-#include <simde/x86/fma.h>
+// #include <stdio.h>
+// #include <simde/x86/avx2.h>
 #include <simde/x86/avx512.h>
+// #include <simde/x86/fma.h>
+// #include <simde/x86/avx512.h>
+
+#define INTERNAL static HEDLEY_ALWAYS_INLINE
 
 typedef int8_t i8; typedef int16_t i16; typedef int32_t i32; typedef int64_t i64;
 typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef uint64_t u64;
 typedef float f32; typedef double f64; typedef float _Complex c64; typedef double _Complex c128;
 
-#define INTERNAL static HEDLEY_ALWAYS_INLINE
+
+#if defined(__clang__)
+#define assume(cond) __builtin_assume(cond)
+#else
 #define assume(cond) __attribute__((__assume__(cond)))
+#endif
 #define M 2
 
 // always operate on B bits of data
@@ -42,6 +49,11 @@ T(B);
 #undef T__
 #undef T
 typedef struct Vz { Vd re; Vd im; } Vz;
+#if M == 1
+    typedef simde__mmask8 M8;
+#else
+    typedef Vi M8;
+#endif
 
 #define Zi I(B,_S(setzero))
 #define Zd I(B,setzero_pd)
@@ -63,8 +75,8 @@ F2(Vi,or,_S(or))
 F2(Vi,addq,add_epi64)
 F2(Vi,subq,sub_epi64)
 INTERNAL Vi popcnt(Vi const x) { return I(B,popcnt_epi64,x); }
-INTERNAL Vi Ri(i64 const *p) { return I(B,loadu_epi64,p); }
-INTERNAL void Wi(i64 *p, Vi const x) { I(B,_S(storeu),p,x); }
+INTERNAL Vi Ri(void const *p) { return I(B,loadu_epi64,p); }
+INTERNAL void Wi(void *p, Vi const x) { I(B,_S(storeu),p,x); }
 
 F2(Vd,addd,add_pd)
 F2(Vd,subd,sub_pd)
@@ -141,11 +153,20 @@ INTERNAL Vd load_norm(u16 const *p) {
 #  define select(s,a,b) I(B,blendv_epi8,b,a,s)
 #endif
 
+INTERNAL M8 eqq(Vi const a, Vi const b) {
 #if M == 1
-#  define eqi(a,b) I(B,movm_epi64,I(B,cmp_epi64_mask,a,b,0))
+    return I(B,cmp_epi64_mask,a,b,0);
 #elif M == 2
-#  define eqi(a,b) I(B,cmpeq_epi64,a,b)
+    return I(B,cmpeq_epi64,a,b);
 #endif
+}
+
+#if M == 1
+#  define eqi(a,b) I(B,movm_epi64,eqq(a,b))
+#elif M == 2
+#  define eqi(a,b) eqq(a,b)
+#endif
+
 #define NOT_(a) xor(a, eqi(Zi, Zi))
 #define NOT(a) NOT_(a)
 INTERNAL Vi m1(Vi const x, Vi const m) {
@@ -166,16 +187,28 @@ INTERNAL Vz signedz(Vz const v, Vi m) { m = shl(m, 63); return (Vz){i2d(xor(d2i(
 #  define gt(a,b) I(B,cmpgt_epi64,a,b)
 #endif
 
-
 #define PX(x, t, w, f) \
     do { \
-        t temp[B / sizeof(t)]; I(B,w,temp,x); \
-        printf("["); for (int k = 0; k < B / sizeof(t); ++k) { printf(f ",", temp[k]); } printf("]\n"); \
+        t temp[B / (8 * sizeof(t))]; I(B,w,temp,x); \
+        printf("["); for (int k = 0; k < B / (8 * sizeof(t)); ++k) { printf(f ",", temp[k]); } printf("]\n"); \
     } while(0)
 #define Pw(x) PX(x, int32_t, storeu_epi32, "%i")
 #define Pi(x) PX(x, int64_t, storeu_epi64, "%zi")
 #define Ps(x) PX(x, float, storeu_ps, "%e")
 #define Pd(x) PX(x, double, storeu_pd, "%e")
+
+
+#define _(z) ({z;})
+#define $(b,z) if(b){z;}else
+#define D(t,g,k,x...) static HEDLEY_ALWAYS_INLINE t g(x){return _(k);}
+#define Dd(g,k,x...) D(Vd,g##d,k,x)
+#define Dz(g,k,x...) D(Vz,g##z,k,x)
+#define Z2(x,y) (Vz){x,y}
+#define f64c f64 const
+#define c(t) t const
+// For loop over a counter v of length n
+#define _L(v,n,x...) for(i32 v=0;v<(n);++v){x;}
+
 
 
 // ===================================================================================
@@ -287,13 +320,13 @@ INTERNAL Vi xor(Vi const a, Vi const b) { return I(B,xor,Bt); }
 
 #define ASSUME(cond) __attribute__((__assume__(cond)))
 
-#define PX(x, t, K, w, f) \
+#define PX(x, t, w, f) \
     do { \
-        t temp[K]; OP(w, temp, x); \
-        printf("["); for (int k = 0; k < K; ++k) { printf(f ",", temp[k]); } printf("]\n"); \
+        t temp[B / (8 * sizeof(t))]; OP(w, temp, x); \
+        printf("["); for (int k = 0; k < B / (8 * sizeof(t)); ++k) { printf(f ",", temp[k]); } printf("]\n"); \
     } while(0)
-#define Pw(x) PX(x, int32_t, 2 * N, storeu_epi32, "%i")
-#define Pi(x) PX(x, int64_t, N, storeu_epi64, "%zi")
-#define Ps(x) PX(x, float, 2 * N, storeu_ps, "%e")
-#define Pd(x) PX(x, double, N, storeu_pd, "%e")
+#define Pw(x) PX(x, int32_t, storeu_epi32, "%i")
+#define Pi(x) PX(x, int64_t, storeu_epi64, "%zi")
+#define Ps(x) PX(x, float, storeu_ps, "%e")
+#define Pd(x) PX(x, double, storeu_pd, "%e")
 #endif

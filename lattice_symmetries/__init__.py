@@ -29,6 +29,7 @@
 __version__ = "3.0.0"
 
 import contextlib, time
+from sympy import Rational
 from sympy.physics.quantum.pauli import SigmaX, SigmaY, SigmaZ, SigmaPlus, SigmaMinus
 from sympy.combinatorics import Permutation, PermutationGroup
 

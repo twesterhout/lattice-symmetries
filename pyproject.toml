@@ -23,6 +23,7 @@ dependencies = [
     "numpy",
     "scipy",
     "sympy",
+    "igraph",
     # NOTE: Adding Halide here generates a bunch of problems which I don't know how
     # to solve at the moment, so for now one has to do a separate pip install
     # of Halide

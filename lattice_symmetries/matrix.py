@@ -1,6 +1,5 @@
 import numpy as np, sympy, lattice_symmetries as ls
 from numpy.typing import NDArray
-from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import LinearOperator
 
 from lattice_symmetries.basis import Basis, SpinBasis

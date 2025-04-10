@@ -49,8 +49,8 @@ chunk_t one(i64 const n, u64 x0, candidates64_fn const candidates64, norm64_fn c
 
 void* enumerate_states(i64 nc, i64 *sizes, u64 *starts, void *candidates64, void *norms64, void const* ctx, i64 *total_size) {
   PK; chunk_t *cs = a(chunk_t, nc); if (cs == NULL) { return NULL; }
-  _Atomic int ec = 0;
-  _Atomic i64 sz = 0;
+  int ec = 0; // atomic
+  i64 sz = 0; // atomic
 #pragma omp parallel for schedule(dynamic, 1) \
     default(none) firstprivate(nc, cs, sizes, starts, candidates64, norms64, ctx) shared(ec, sz)
   for (i64 k = 0; k < nc; ++k) {

@@ -21,30 +21,23 @@ def measure_quspin(n, matrix=True, dtype=np.float64):
     rng = np.random.default_rng(5)
     x = rng.random(basis.Ns, dtype=np.float64)
     out = np.zeros(basis.Ns, dtype=np.float64)
-    r = timeit.repeat(lambda: h.dot(x), repeat=8, number=1)
+    r = timeit.repeat(lambda: h.dot(x, out=out), repeat=8, number=1)
     return np.min(r).item(), np.std(r).item()
 
 def measure_ls(n):
     rng = np.random.default_rng(5)
-    h = ls.heisenberg(ig.Graph.Ring(n, circular=n > 2))
-    terms = ls.expression.pauli2nbts(simplify(h.raw))
-    kernels = ls.compiler.build_kernels()
-    p_diag, p_off_diag, _keep_alive = ls.compiler.get_ctxs(terms)
-    alpha = np.arange(2**n, dtype=np.uint64)
+    e = ls.heisenberg(ig.Graph.Ring(n, circular=n > 2))
+    o = ls.O(e, ls.SpinBasis(n))
+    o.b.build()
     x = rng.random(2**n, dtype=np.float64)
     out = np.zeros(2**n, dtype=np.float64)
     assert x.size >= 64
-    ffi = ls.COMPILER.ffi
-    p_diag.alpha0 = ffi.from_buffer("const uint64_t*", alpha, require_writable=False)
-    p_diag.X = ffi.from_buffer("const double*", x, require_writable=False)
-    p_off_diag.alpha0 = ffi.from_buffer("const uint64_t*", alpha, require_writable=False)
-    p_off_diag.X = ffi.from_buffer("const double*", x, require_writable=False)
-    f = lambda: kernels.matvec(out.size, p_diag, p_off_diag, ffi.from_buffer("double*", out, require_writable=True))
+    f = lambda: o.apply_to_state_vector(x, out=out)
     r = timeit.repeat(f, repeat=8, number=1)
     return np.min(r), np.std(r)
 
 if __name__ == "__main__":
-    print(",".join(map(str, measure_quspin(20, matrix=True))))
-    # print(",".join(map(str, measure_quspin(20, matrix=False))))
-    # print(",".join(map(str, measure_ls(20))))
+    # print(",".join(map(str, measure_quspin(25, matrix=True))))
+    # print(",".join(map(str, measure_quspin(25, matrix=False))))
+    print(",".join(map(str, measure_ls(30))))
 

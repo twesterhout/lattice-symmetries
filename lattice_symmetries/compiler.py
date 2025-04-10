@@ -5,6 +5,7 @@ from sympy import S, Rational
 from sympy.combinatorics import Permutation
 
 FOLDER = pathlib.Path(__file__).parent.resolve()
+SIMDE_PATH = os.getenv("SIMDE_PATH", str(FOLDER))
 
 class KernelCompiler:
     temp: str; ffi: any; cc: str
@@ -13,11 +14,14 @@ class KernelCompiler:
         logger.trace(f"'{self.temp}' will be used for compiling kernels.")
         self.ffi = cffi.FFI()
         with open(FOLDER / "declarations.h", "r") as f: self.ffi.cdef(f.read())
-        self.cc = "cc"
-        self.flags = ["-O2", "-DNDEBUG", "-Wno-psabi", "-fno-math-errno", "-ffast-math", "-ffreestanding", "-fPIC"]
-        self.flags += ["-nostdlib", "-ffreestanding"]
-        self.flags += ["-march=znver2", "-mtune=znver2"]
-        self.flags += ["-fopenmp"]
+        self.cc = os.getenv("CC", default="cc")
+        self.flags = ["-O3", "-DNDEBUG"] # , "-g"]
+        self.flags += ["-Wno-psabi", "-fno-math-errno", "-ffast-math"]
+        # self.flags += ["-nostdlib", "-ffreestanding"]
+        # self.flags += ["-march=znver2", "-mtune=znver2"]
+        self.flags += ["-march=native", "-mtune=native"]
+        self.flags += ["-fPIC", "-fopenmp"]
+        if SIMDE_PATH is not None: self.flags += ["-I", SIMDE_PATH]
     def compile(self, *srcs):
         _, out = tempfile.mkstemp(suffix=".so", dir=self.temp)
         args = [self.cc, *self.flags, "-shared", "-o", out, *map(str, srcs)]
@@ -146,14 +150,16 @@ def _lower_symmetries(symmetries):
     nets = [ls.perm2benes(p) for p, _ in symmetries]
     shifts = np.asarray(nets[0].shifts, dtype=np.uint32)
     masks = np.vstack([np.asarray(b.masks, dtype=np.uint64) for b in nets])
-    i = ~np.all(masks == 0, axis=0)
-    if not np.any(i): i[0] = True
+    # i = ~np.all(masks == 0, axis=0)
+    # if not np.any(i): i[0] = True
+    # masks, shifts = np.ascontiguousarray(masks[:, i]), shifts[i]
     chis = [sympy.exp(-2 * sympy.pi * sympy.I * r) for _, r in symmetries]
     is1 = np.asarray([1 if chi == S.One else -1 if chi == -S.One else 0
         for chi in chis], dtype=np.int64)
     chi_re = np.asarray([sympy.re(c) for c in chis], dtype=np.float64)
     chi_im = - np.asarray([sympy.im(c) for c in chis], dtype=np.float64) # TODO: check me!!
-    return np.ascontiguousarray(masks[:, i]), shifts[i], is1, chi_re, chi_im
+    print("shifts=", shifts)
+    return masks, shifts, is1, chi_re, chi_im
 def bs_ctx_t(info):
     if not info.has_ps: return Ctx()
     assert info.hamming is None
@@ -182,7 +188,7 @@ def _offset_ranges(reps, bits: int, shift: int):
     # Normalize ranges to have equal size
     offsets[:-1] = np.minimum(offsets[:-1], len(reps) - size)
     return offsets, size
-def search_ctx_t(info, reps=None, norms=None, prefix_bits: int = 16):
+def search_ctx_t(info, reps=None, norms=None, prefix_bits: int = 22):
     if reps is None and norms is None and info.is_s2i_id: return Ctx()
     prefix_bits = max(0, min(info.bits, prefix_bits))
     shift = info.bits - prefix_bits
@@ -190,6 +196,12 @@ def search_ctx_t(info, reps=None, norms=None, prefix_bits: int = 16):
     p = COMPILER.ffi.new("search_ctx_t *")
     p.reps, p.norm, p.offsets = cb_u64(reps), cb_u16(norms), cb_i64(offsets)
     p.range_size, p.shift, p.mask = size, shift, 2**prefix_bits - 1
+    print(f"range_size={size}")
+    n, steps = size, 0
+    while n > 1:
+        n -= n // 2; steps += 1
+    steps += 1
+    print(f"steps={steps}")
     return Ctx(p, (reps, norms, offsets))
 
 def enumerate_states(info, ctx=None):
@@ -275,5 +287,5 @@ class Matvec:
         dtype, n = x.dtype, alpha.size
         out = np.zeros(64, dtype=dtype)
         kernel = getattr(KERNELS, f"off_diag64_{_suffix(x.dtype)}")
-        kernel(0, cb_u64(alpha0), cb_u16(norm0), cb_g(x), b_g(out), self.off_diag_ctx.p, self.bs_ctx.p, self.search_ctx.p)
+        kernel(cb_u64(alpha0), cb_u16(norm0), cb_g(x), b_g(out), self.off_diag_ctx.p, self.bs_ctx.p, self.search_ctx.p)
         return out[:min(n, 64)]

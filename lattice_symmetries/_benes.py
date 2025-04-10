@@ -63,7 +63,7 @@ def _solve(p: Permutation) -> tuple[list, NDArray, list]:
 @lru_cache(maxsize=1000)
 def perm2benes(p: Permutation) -> BenesNetwork:
     if p.size == 0: return BenesNetwork(masks=[], shifts=[], swaps=[])
-    return _solve(p.resize(2**(p.size - 1).bit_length()))
+    return _solve(p.resize(max(2**(p.size - 1).bit_length(), 64)))
 
 def unpack2cycle(g: PermutationGroup) -> Callable:
     networks = list(map(perm2benes, g.elements))

@@ -104,8 +104,6 @@ def quspin_heisenberg(info, graph, symmetries=None):
     hamiltonian = quspin.operators.hamiltonian(static, [], basis=basis, dtype=np.complex128, check_symm=False, check_herm=False)
     return basis, hamiltonian
 
-        
-
 @pytest.mark.parametrize("number_bits,k", [(3, 0), (3, 1), (3, 2), (4, 0), (4, 1), (4, 2), (5, 0), (6, 0), (6, 1), (6, 2), (6, 3), (10, 5)])
 def test_ringX_translation(number_bits, k):
     import quspin, quspin.operators
@@ -129,7 +127,7 @@ def test_ringX_translation(number_bits, k):
         x = rng.random(b.states.size, dtype=np.float64)
         out = o @ x
         out_ref = quspin_hamiltonian.dot(x[invert(order)])[order].real
-        np.testing.assert_allclose(out, out_ref)
+        np.testing.assert_allclose(out, out_ref, rtol=1e-8, atol=1e-10)
 
     x = rng.random(2 * b.states.size, dtype=np.float64).view(np.complex128)
     out = o @ x

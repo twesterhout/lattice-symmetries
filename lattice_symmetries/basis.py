@@ -58,8 +58,13 @@ class B:
         if self.bs_ctx is None: object.__setattr__(self, "bs_ctx", ls.compiler.bs_ctx_t(self.i))
     def _prepare_search_ctx(self):
         if self.search_ctx is None:
-            if not self.i.is_s2i_id: self._check_is_built()
-            object.__setattr__(self, "search_ctx", ls.compiler.search_ctx_t(self.i, self.states, self.norms))
+            if not self.i.is_s2i_id:
+                self._check_is_built()
+                ctx = ls.compiler.search_ctx_t(self.i, self.states, self.norms)
+            else:
+                ctx = ls.compiler.Ctx(ls.compiler.NULL, None)
+            object.__setattr__(self, "search_ctx", ctx)
+                
     def _check_is_built(self):
         if not self.is_built: raise ValueError("basis states have not been built yet; if you wish to do so, use the basis.build() function")
 Basis = B
