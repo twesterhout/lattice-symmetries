@@ -10,7 +10,7 @@ final: prev: {
         src = ./.;
         pyproject = true;
         dependencies = with python-final; [
-          loguru numpy scipy sympy igraph more-itertools lark quspin cffi ];
+          loguru numpy scipy sympy igraph more-itertools lark quspin cffi uniplot ];
         nativeBuildInputs = with python-final; [ setuptools ];
         nativeCheckInputs = with python-final; [ pip pytestCheckHook pythonOutputDistHook hypothesis ];
         # preCheck = "rm -rf lattice_symmetries";

@@ -48,11 +48,11 @@
           inherit (pkgs) python3Packages python311Packages python312Packages;
         });
       devShells = forEachSystem (system: _:
-        let pkgs = pkgs-for-cuda system;
+        let pkgs = pkgs-for-cpu system;
         in
         {
           python = pkgs.python3Packages.lattice-symmetries.overridePythonAttrs (attrs: {
-            nativeBuildInputs = with pkgs; (attrs.nativeBuildInputs or []) ++ [ pkgs.nix-gl-host ];
+            nativeBuildInputs = with pkgs; (attrs.nativeBuildInputs or []) ++ [ pkgs.python3Packages.ipython ]; # pkgs.nix-gl-host ];
           });
           testing = with pkgs; mkShell {
             nativeBuildInputs = [
