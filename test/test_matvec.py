@@ -161,7 +161,7 @@ def test_ringX_reflection(number_bits, k):
     out_ref = quspin_hamiltonian.dot(x[invert(order)])[order]
     np.testing.assert_allclose(out, out_ref, rtol=1e-8, atol=1e-10)
 
-@pytest.mark.parametrize("number_bits,k1,k2", [(3, 0, 0), (4, 0, 0), (4, 2, 1), (8, 0, 0), (8, 4, 1), (8, 0, 1)])
+@pytest.mark.parametrize("number_bits,k1,k2", [(3, 0, 0), (4, 0, 0), (4, 2, 1), (8, 0, 0), (8, 4, 1), (8, 0, 1), (10, 0, 0)])
 def test_ringX_both(number_bits, k1, k2):
     p1 = Permutation(np.roll(np.arange(number_bits), shift=-1))
     p2 = Permutation(np.arange(number_bits)[::-1])

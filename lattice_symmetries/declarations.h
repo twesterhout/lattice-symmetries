@@ -8,8 +8,7 @@ typedef struct oc_t {
     u64 const *s1, *s20, *s21, *sX;
     u64 const *mask;
     i32 const *n_s0, *n_s1, *n_s2, *n_sX;
-    i32 n_t;
-    char padding[4];
+    i32 n_t, stride;
 } oc_t;
 
 typedef struct bs_ctx_t {
@@ -29,7 +28,8 @@ typedef struct search_ctx_t {
     i64 range_size;
     u64 mask;
     i32 shift;
-    char padding[20];
+    i32 steps;
+    char padding[16];
 } search_ctx_t;
 
 void norm64(uint64_t const *, bs_ctx_t const *, uint16_t *);

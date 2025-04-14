@@ -5,7 +5,6 @@ from sympy import S, Rational
 from sympy.combinatorics import Permutation
 
 FOLDER = pathlib.Path(__file__).parent.resolve()
-SIMDE_PATH = os.getenv("SIMDE_PATH", str(FOLDER))
 
 class KernelCompiler:
     temp: str; ffi: any; cc: str
@@ -15,13 +14,18 @@ class KernelCompiler:
         self.ffi = cffi.FFI()
         with open(FOLDER / "declarations.h", "r") as f: self.ffi.cdef(f.read())
         self.cc = os.getenv("CC", default="cc")
-        self.flags = ["-O3", "-DNDEBUG", "-funroll-loops"] # , "-g"]
-        self.flags += ["-Wall", "-Wextra", "-Wno-comment", "-Wno-unused-parameter", "-Wno-psabi", "-fno-math-errno", "-ffast-math"]
+        self.flags = ["-O3", "-ftree-vectorize", "-g"] # , "-g"]
+        self.flags += ["-Wall", "-Wextra", "-W", "-Wno-comment", "-Wno-unused-parameter", "-Wno-psabi", "-fno-math-errno", "-ffast-math"]
+        M = os.getenv("LS_M")
+        if M is not None:
+            assert M in ["1", "2", "3"]; logger.trace(f"Kernels will be compiled for M={M}.")
+            self.flags += [f"-DM={M}"]
         # self.flags += ["-nostdlib", "-ffreestanding"]
         # self.flags += ["-march=znver2", "-mtune=znver2"]
         self.flags += ["-march=native", "-mtune=native"]
+        # Always required
         self.flags += ["-fPIC", "-fopenmp"]
-        if SIMDE_PATH is not None: self.flags += ["-I", SIMDE_PATH]
+        self.flags += ["-I", os.getenv("LS_SIMDE_PATH", str(FOLDER))]
     def compile(self, *srcs):
         _, out = tempfile.mkstemp(suffix=".so", dir=self.temp)
         args = [self.cc, *self.flags, "-shared", "-o", out, *map(str, srcs)]
@@ -113,6 +117,51 @@ def cb_g(arr):
 @dataclass(frozen=True)
 class Ctx: p: any = NULL; keep_alive: any = None
 
+@dataclass
+class Term:
+    n_s0: int; n_s1: int; n_s2: int; n_sX: int
+    s1: any; s20: any; s21: any; sX: any
+    v_re: any; v_im: any
+    def __init__(self, v, s):
+        cnt = np.bitwise_count(s); i = np.argsort(cnt, stable=True); s, v = s[i], v[i]
+        self.n_s0, self.n_s1, self.n_s2, self.n_sX = \
+            np.sum(cnt == 0), np.sum(cnt == 1), np.sum(cnt == 2), np.sum(cnt > 2)
+        k = self.n_s0; self.s1 = s[k:k + self.n_s1].copy(); k += self.n_s1
+        c = np.unpackbits(s[k:k + self.n_s2].view(np.uint8).reshape(-1, 8, 1),
+            axis=-1, bitorder="little").reshape(-1, 64).nonzero()[1].astype(np.uint64)
+        assert len(c) == 2 * self.n_s2; self.s20, self.s21 = 1 << c[::2], 1 << c[1::2]
+        self.sX = s[k + self.n_s2:].copy()
+        self.v_re, self.v_im = map(np.ascontiguousarray, (v.real.copy(), v.imag.copy()))
+    def resize(self, n):
+        assert self.n_s0 + self.n_s1 + self.n_s2 + self.n_sX <= n
+        for arr in (self.s1, self.s20, self.s21, self.sX, self.v_re, self.v_im):
+            arr.resize(n, refcheck=False)
+def _stack_terms(ts, mask):
+    if len(ts) == 0: return Ctx(COMPILER.ffi.new("oc_t *"))
+    n_t, stride = len(ts), max((t.n_s0 + t.n_s1 + t.n_s2 + t.n_sX for t in ts), default=0)
+    for t in ts: t.resize(stride)
+    a = lambda s: [getattr(t, s) for t in ts]
+    n_s0 = np.array([t.n_s0 for t in ts], dtype=np.int32)
+    n_s1 = np.array([t.n_s1 for t in ts], dtype=np.int32)
+    n_s2 = np.array([t.n_s2 for t in ts], dtype=np.int32)
+    n_sX = np.array([t.n_sX for t in ts], dtype=np.int32)
+    s1 = np.stack([t.s1 for t in ts])
+    s20 = np.stack([t.s20 for t in ts])
+    s21 = np.stack([t.s21 for t in ts])
+    sX = np.stack([t.sX for t in ts])
+    v_re, v_im = np.stack(a("v_re")), np.stack(a("v_im"))
+    assert mask.dtype == np.uint64 and mask.size == n_t
+    for arr in (s1, s20, s21, sX): assert arr.dtype == np.uint64
+    for arr in (v_re, v_im): assert arr.dtype == np.float64
+    for arr in (s1, s20, s21, sX, v_re, v_im):
+        assert arr.shape == (n_t, stride) and arr.flags["C_CONTIGUOUS"]
+    p = COMPILER.ffi.new("oc_t *")
+    p.v_re, p.v_im = cb_f64(v_re), cb_f64(v_im)
+    p.s1, p.s20, p.s21, p.sX, p.mask = cb_u64(s1), cb_u64(s20), cb_u64(s21), cb_u64(sX), cb_u64(mask)
+    p.n_s0, p.n_s1, p.n_s2, p.n_sX = cb_i32(n_s0), cb_i32(n_s1), cb_i32(n_s2), cb_i32(n_sX)
+    p.n_t, p.stride = n_t, stride
+    return Ctx(p, (n_s0, n_s1, n_s2, n_sX, v_re, v_im, s1, s20, s21, sX, mask))
+
 def _reorder(v, s):
     cnt = np.bitwise_count(s); i = np.argsort(cnt, stable=True); s, v = s[i], v[i]
     n_s0, n_s1, n_s2, n_sX = np.sum(cnt == 0), np.sum(cnt == 1), np.sum(cnt == 2), np.sum(cnt > 2)
@@ -131,15 +180,17 @@ def _oc_ctx_t(terms):
     s = np.asarray([t.s for t in terms], dtype=np.uint64)
     xs, ns = np.unique(x, return_counts=True)
     os = np.pad(np.cumsum(ns), ((1, 0),))
-    ts = [_reorder(v[o:o + n], s[o:o + n]) for o, n in zip(os, ns)]
+    ts = [Term(v[o:o + n], s[o:o + n]) for o, n in zip(os, ns)]
+    return _stack_terms(ts, xs)
+    # ts = [_reorder(v[o:o + n], s[o:o + n]) for o, n in zip(os, ns)]
 
-    n_s0, n_s1, n_s2, n_sX, v_re, v_im, s1, s20, s21, sX, mask = keep_alive = tuple(map(np.hstack, zip(*ts))) + (xs,)
-    p = COMPILER.ffi.new("oc_t *")
-    p.v_re, p.v_im = cb_f64(v_re), cb_f64(v_im)
-    p.s1, p.s20, p.s21, p.sX, p.mask = cb_u64(s1), cb_u64(s20), cb_u64(s21), cb_u64(sX), cb_u64(mask)
-    p.n_s0, p.n_s1, p.n_s2, p.n_sX = cb_i32(n_s0), cb_i32(n_s1), cb_i32(n_s2), cb_i32(n_sX)
-    p.n_t = len(mask)
-    return Ctx(p, keep_alive)
+    # n_s0, n_s1, n_s2, n_sX, v_re, v_im, s1, s20, s21, sX, mask = keep_alive = tuple(map(np.hstack, zip(*ts))) + (xs,)
+    # p = COMPILER.ffi.new("oc_t *")
+    # p.v_re, p.v_im = cb_f64(v_re), cb_f64(v_im)
+    # p.s1, p.s20, p.s21, p.sX, p.mask = cb_u64(s1), cb_u64(s20), cb_u64(s21), cb_u64(sX), cb_u64(mask)
+    # p.n_s0, p.n_s1, p.n_s2, p.n_sX = cb_i32(n_s0), cb_i32(n_s1), cb_i32(n_s2), cb_i32(n_sX)
+    # p.n_t = len(mask)
+    # return Ctx(p, keep_alive)
 def oc_ctx_t(terms):
     nd = sum(int(t.x == 0) for t in terms)
     return _oc_ctx_t(terms[:nd]), _oc_ctx_t(terms[nd:])
@@ -158,7 +209,6 @@ def _lower_symmetries(symmetries):
         for chi in chis], dtype=np.int64)
     chi_re = np.asarray([sympy.re(c) for c in chis], dtype=np.float64)
     chi_im = - np.asarray([sympy.im(c) for c in chis], dtype=np.float64) # TODO: check me!!
-    print("shifts=", shifts)
     return masks, shifts, is1, chi_re, chi_im
 def bs_ctx_t(info):
     if not info.has_ps: return Ctx()
@@ -196,12 +246,9 @@ def search_ctx_t(info, reps=None, norms=None, prefix_bits: int = 22):
     p = COMPILER.ffi.new("search_ctx_t *")
     p.reps, p.norm, p.offsets = cb_u64(reps), cb_u16(norms), cb_i64(offsets)
     p.range_size, p.shift, p.mask = size, shift, 2**prefix_bits - 1
-    print(f"range_size={size}")
     n, steps = size, 0
-    while n > 1:
-        n -= n // 2; steps += 1
-    steps += 1
-    print(f"steps={steps}")
+    while n > 1: n -= n // 2; steps += 1
+    p.steps = steps
     return Ctx(p, (reps, norms, offsets))
 
 def enumerate_states(info, ctx=None):

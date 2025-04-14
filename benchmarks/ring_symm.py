@@ -36,17 +36,26 @@ def measure_quspin(shape, matrix=True, dtype=np.float64, **kwargs):
     ]
     print(basis.Ns)
 
-    kwargs = dict(basis=basis, dtype=dtype, check_herm=False) #check_symm=False, 
-    h = hamiltonian(static, [], **kwargs) if matrix \
-        else quantum_LinearOperator(static, **kwargs)
+    kwargs = dict(basis=basis, dtype=dtype, check_herm=False) #check_symm=False,
+    with ls.measure_time() as dt:
+        h = hamiltonian(static, [], **kwargs) if matrix \
+            else quantum_LinearOperator(static, **kwargs)
+    print(f"Operator construction took {dt()}")
 
     rng = np.random.default_rng(5)
-    x = rng.random(basis.Ns, dtype=np.float64)
-    out = np.zeros(basis.Ns, dtype=np.float64)
+    if dtype == np.complex128:
+        x = rng.random(2*basis.Ns, dtype=np.float64).view(np.complex128)
+        out = np.zeros(basis.Ns, dtype=np.complex128)
+    else:
+        assert dtype == np.float64
+        x = rng.random(basis.Ns, dtype=np.float64)
+        out = np.zeros(basis.Ns, dtype=np.float64)
+
+    print("Measuring ...")
     r = timeit.repeat(lambda: h.dot(x, out=out), repeat=1, number=1)
     return np.min(r).item(), np.std(r).item()
 
-def measure_ls(shape):
+def measure_ls(shape,cplx=False):
     graph, symms = setup(shape)
     e = ls.heisenberg(graph)
     b = ls.SpinBasis(len(graph.vs), symmetries=symms)
@@ -55,8 +64,12 @@ def measure_ls(shape):
     print(o.b.number_states)
 
     rng = np.random.default_rng(5)
-    x = rng.random(o.b.number_states, dtype=np.float64)
-    out = np.zeros(o.b.number_states, dtype=np.float64)
+    if cplx:
+        x = rng.random(2*o.b.number_states, dtype=np.float64).view(np.complex128)
+        out = np.zeros(o.b.number_states, dtype=np.complex128)
+    else:
+        x = rng.random(o.b.number_states, dtype=np.float64)
+        out = np.zeros(o.b.number_states, dtype=np.float64)
     assert x.size >= 64
     f = lambda: o.apply_to_state_vector(x, out=out)
     r = timeit.repeat(f, repeat=1, number=1)
@@ -64,6 +77,8 @@ def measure_ls(shape):
 
 if __name__ == "__main__":
     # print(",".join(map(str, measure_quspin(30, matrix=True))))
-    print(",".join(map(str, measure_ls((5, 6)))))
-    # print(",".join(map(str, measure_quspin((6, 6), matrix=False, Ns_block_est=239123150))))
+    print(",".join(map(str, measure_ls((5, 6),cplx=False))))
+    print(",".join(map(str, measure_ls((5, 6),cplx=True))))
+    # print(",".join(map(str, measure_quspin((5, 6),dtype=np.float64,matrix=False)))) # , Ns_block_est=239123150))))
+    # print(",".join(map(str, measure_quspin((5, 6),dtype=np.complex128,matrix=False)))) # , Ns_block_est=239123150))))
 
