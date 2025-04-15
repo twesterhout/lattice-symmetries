@@ -77,7 +77,7 @@ D(Vi,d2i,I(_S(castpd),x),c(Vd)x)D(Vi,s2i,I(_S(castps),x),c(Vs)x)
 #if M == 1
 #   define eqi(a,b) I(movm_epi64,eqq(a,b))
 #   define gt(a,b) I(cmp_epi64_mask,b,a,1)
-#   define select(s,a,b) I(mask_blend_epi8,s,b,a)
+#   define select(s,a,b) I(mask_blend_epi64,s,b,a)
     D(M8,eqq,I(cmp_epi64_mask,a,b,0),c(Vi)a,c(Vi)b)
     D(Vi,Si,I(set1_epi64,x),c(i64)x)
 #else
@@ -122,7 +122,7 @@ Dz(zero,(Z2(Zd,Zd)),void)D(Vz,addz,Z2(addd(a.re, b.re),addd(a.im, b.im)),c(Vz)a,
 #endif
 // u16
 #if M == 1
-    // Why is SIMDe missing this function...?
+    // Why is SIMDe missing these functions...?
     SIMDE_FUNCTION_ATTRIBUTES simde__m512d simde_mm512_cvtepi32_pd (simde__m256i a) {
       #if defined(SIMDE_X86_AVX512F_NATIVE)
         return _mm512_cvtepi32_pd(a);
@@ -134,9 +134,25 @@ Dz(zero,(Z2(Zd,Zd)),void)D(Vz,addz,Z2(addd(a.re, b.re),addd(a.im, b.im)),c(Vz)a,
         return simde__m512d_from_private(r_);
       #endif
     }
+    SIMDE_FUNCTION_ATTRIBUTES simde__m256i simde_mm512_cvtepi32_epi16 (simde__m512i a) {
+      #if defined(SIMDE_X86_AVX512F_NATIVE)
+        return _mm512_cvtepi32_epi16(a);
+      #else
+        simde__m512i_private const a_ = simde__m512i_to_private(a);
+        simde__m256i const low = a_.m256i[0], high = a_.m256i[1];
+        simde__m256i const mask  = simde_mm256_set1_epi32(0x0000FFFF);         // mask for low words
+        simde__m256i const lowm  = simde_mm256_and_si256(low, mask);           // words of low
+        simde__m256i const highm = simde_mm256_and_si256(high, mask);          // words of high
+        simde__m256i const pk    = simde_mm256_packus_epi32(lowm,highm);       // unsigned pack
+        return simde_mm256_permute4x64_epi64(pk, 0xD8);                        // put in right place
+      #endif
+    }
     D(Vd,Rw2d,I(cvtepi32_pd,I4(cvtepu16_epi32,I2(loadu_si128,(c(void)*)p))),c(u16)*p)
-
-// TODO
+    D(void,Wq2w,_(
+        c(Vi) y0 = I(inserti64x4,I(castsi256_si512,I(cvtepi64_epi32,x[0])),I(cvtepi64_epi32,x[1]),1);
+        c(Vi) y1 = I(inserti64x4,I(castsi256_si512,I(cvtepi64_epi32,x[2])),I(cvtepi64_epi32,x[3]),1);
+        c(Vi) z = I(inserti64x4,I(castsi256_si512, I(cvtepi32_epi16, y0)),I(cvtepi32_epi16, y1), 1);
+        Wi((void*)p,z)),u16*p,c(Vi)x[static 4])
 #elif M == 2
     D(Vd,Rw2d,I4(cvtepi32_pd,I2(cvtepu16_epi32,I2(loadu_epi64,(c(u64)*)p))),c(u16)*p)
     D(void,Wq2w,_(
@@ -165,7 +181,7 @@ Dz(zero,(Z2(Zd,Zd)),void)D(Vz,addz,Z2(addd(a.re, b.re),addd(a.im, b.im)),c(Vz)a,
         I4(cvtepi32_pd,I2(blend_epi16,I4(mask_i64gather_epi32,I2(setzero_si128),(c(i32)*)p,i,_m,2),I2(setzero_si128),0b10101010))
     ),c(u16)*p,c(Vi)i,c(Vi)m)
 #else
-    D(Vi,gthq,I2(set_epi64,(simde__m64)p[I2(extract_epi64,i,1)],(simde__m64)p[I2(cvtsi128_si64,i)]),c(u64)*p,c(Vi)i)
+    D(Vi,gthq,I2(set_epi64x,p[I2(extract_epi64,i,1)],p[I2(cvtsi128_si64,i)]),c(u64)*p,c(Vi)i)
     D(Vd,gthd,I2(set_pd,p[I2(extract_epi64,i,1)],p[I2(cvtsi128_si64,i)]),c(f64)*p,c(Vi)i)D(Vd,mgthd,I2(set_pd,I2(extract_epi64,m,1)?p[I2(extract_epi64,i,1)]:0.0,I2(cvtsi128_si64,m)?p[I2(cvtsi128_si64,i)]:0.0),c(f64)*p,c(Vi)i,c(Vi)m)
     D(Vd,mgthw2d,I2(set_pd,I2(extract_epi64,m,1)?p[I2(extract_epi64,i,1)]:0.0,I2(cvtsi128_si64,m)?p[I2(cvtsi128_si64,i)]:0.0),c(u16)*p,c(Vi)i,c(Vi)m)
 #endif

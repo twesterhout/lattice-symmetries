@@ -14,8 +14,9 @@ class KernelCompiler:
         self.ffi = cffi.FFI()
         with open(FOLDER / "declarations.h", "r") as f: self.ffi.cdef(f.read())
         self.cc = os.getenv("CC", default="cc")
-        self.flags = ["-O3", "-ftree-vectorize", "-g"] # , "-g"]
-        self.flags += ["-Wall", "-Wextra", "-W", "-Wno-comment", "-Wno-unused-parameter", "-Wno-psabi", "-fno-math-errno", "-ffast-math"]
+        self.flags = ["-O2"] # ["-O3", "-ftree-vectorize"]
+        self.flags += ["-fno-math-errno", "-ffast-math"]
+        self.flags += ["-Wall", "-Wextra", "-W", "-Wno-comment", "-Wno-unused-parameter", "-Wno-psabi", ]
         M = os.getenv("LS_M")
         if M is not None:
             assert M in ["1", "2", "3"]; logger.trace(f"Kernels will be compiled for M={M}.")
@@ -73,6 +74,7 @@ class BasisInfo:
     bits: int; hamming: int | None = None; inversion: int | None = None
     symmetries: list[tuple[Permutation, Rational]] = field(default_factory=list)
     def __post_init__(self):
+        if not isinstance(self.bits, int): object.__setattr__(self, "bits", int(self.bits))
         if len(self.symmetries) > 0:
             object.__setattr__(self, "symmetries", ls.generate_representation(self.symmetries))
         for p, _ in self.symmetries: assert len(p.array_form) == self.bits
@@ -161,17 +163,16 @@ def _stack_terms(ts, mask):
     p.n_s0, p.n_s1, p.n_s2, p.n_sX = cb_i32(n_s0), cb_i32(n_s1), cb_i32(n_s2), cb_i32(n_sX)
     p.n_t, p.stride = n_t, stride
     return Ctx(p, (n_s0, n_s1, n_s2, n_sX, v_re, v_im, s1, s20, s21, sX, mask))
-
-def _reorder(v, s):
-    cnt = np.bitwise_count(s); i = np.argsort(cnt, stable=True); s, v = s[i], v[i]
-    n_s0, n_s1, n_s2, n_sX = np.sum(cnt == 0), np.sum(cnt == 1), np.sum(cnt == 2), np.sum(cnt > 2)
-    k = n_s0; s1 = s[k:k + n_s1]; k += n_s1
-    _, c = np.unpackbits(s[k:k + n_s2].view(np.uint8).reshape(-1, 8, 1), axis=-1, bitorder="little").reshape(-1, 64).nonzero()
-    c = c.astype(np.uint64); assert len(c) == 2 * n_s2
-    s20, s21 = 1 << c[::2], 1 << c[1::2]
-    sX = s[k + n_s2:]
-    return (np.int32(n_s0), np.int32(n_s1), np.int32(n_s2), np.int32(n_sX),
-            np.ascontiguousarray(v.real), np.ascontiguousarray(v.imag), s1, s20, s21, sX)
+# def _reorder(v, s):
+#     cnt = np.bitwise_count(s); i = np.argsort(cnt, stable=True); s, v = s[i], v[i]
+#     n_s0, n_s1, n_s2, n_sX = np.sum(cnt == 0), np.sum(cnt == 1), np.sum(cnt == 2), np.sum(cnt > 2)
+#     k = n_s0; s1 = s[k:k + n_s1]; k += n_s1
+#     _, c = np.unpackbits(s[k:k + n_s2].view(np.uint8).reshape(-1, 8, 1), axis=-1, bitorder="little").reshape(-1, 64).nonzero()
+#     c = c.astype(np.uint64); assert len(c) == 2 * n_s2
+#     s20, s21 = 1 << c[::2], 1 << c[1::2]
+#     sX = s[k + n_s2:]
+#     return (np.int32(n_s0), np.int32(n_s1), np.int32(n_s2), np.int32(n_sX),
+#             np.ascontiguousarray(v.real), np.ascontiguousarray(v.imag), s1, s20, s21, sX)
 def _oc_ctx_t(terms):
     if len(terms) == 0: return Ctx(COMPILER.ffi.new("oc_t *"))
     # terms are sorted by x

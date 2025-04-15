@@ -100,7 +100,7 @@ class Expr:
         if isinstance(expression, str): expression = parse_expr(expression)
         if simplify: expression = simplify_pauli_expression(expression)
         if particle is not None and particle != "spin-1/2": raise ValueError(f"expected 'particle' to be 'spin-1/2', but got {particle}")
-        self.raw = expression if sites is None else expression.on(sites).raw
+        self.raw = expression if sites is None else Expr(expression).on(sites).raw
     def __str__(self): return str(self.raw)
     def __repr__(self): return repr(self.raw)
     def __add__(self, other: "Expr") -> "Expr": return Expr(self.raw + other.raw) if isinstance(other, Expr) else Expr(self.raw + other)
