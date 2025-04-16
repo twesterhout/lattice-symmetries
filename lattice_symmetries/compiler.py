@@ -15,7 +15,7 @@ class KernelCompiler:
         with open(FOLDER / "declarations.h", "r") as f: self.ffi.cdef(f.read())
         self.cc = os.getenv("CC", default="cc")
         self.flags = ["-O2"] # ["-O3", "-ftree-vectorize"]
-        self.flags += ["-fno-math-errno", "-ffast-math"]
+        self.flags += ["-fno-math-errno", "-ffast-math", "-fschedule-insns", "-fschedule-insns2"]
         self.flags += ["-Wall", "-Wextra", "-W", "-Wno-comment", "-Wno-unused-parameter", "-Wno-psabi", ]
         M = os.getenv("LS_M")
         if M is not None:
@@ -111,6 +111,8 @@ def b_g(arr):
 def cb_g(arr):
     if arr.dtype == np.float64: return cb_f64(arr)
     if arr.dtype == np.complex128: return cb_c128(arr)
+def b_void(arr): return COMPILER.ffi.from_buffer("void*", arr, require_writable=True)
+def cb_void(arr): return COMPILER.ffi.from_buffer("const void*", arr, require_writable=False)
 
 @dataclass(frozen=True)
 class Ctx: p: any = NULL; keep_alive: any = None
@@ -295,10 +297,13 @@ def state_info(states, ctx, rep=None, idx=None):
 
 def _pad(alpha, norm, x):
     n = alpha.size; p = ((0, 64 - n),)
+    if x.dtype == np.float16:
+        # TODO: FIXME: we read float32 internally, so we need an extra element at the end
+        pass
     if n < 64: return np.pad(alpha, p, mode="edge"), np.pad(norm, p), np.pad(x, p)
     else: return alpha, norm, x
 def _suffix(dtype): return dict(float64="f64", complex128="c128")[dtype.name]
-def _tc(dtype): return dict(float64=0, complex128=3)[dtype.name]
+def _tc(dtype): return dict(float64=0, float32=1, float16=2, complex128=3, complex64=4)[dtype.name]
     
 @dataclass(frozen=True)
 class Matvec:
@@ -314,7 +319,7 @@ class Matvec:
         if out is None: out = np.zeros(alpha0.size, dtype=dtype)
         else: assert out.ndim == 1 and out.dtype == dtype \
             and out.size == alpha0.size and out.flags["C_CONTIGUOUS"]
-        KERNELS.matvec(_tc(dtype), max(n, 64), cb_u64(alpha0), cb_u16(norm0), cb_g(x0), cb_g(x), b_g(out),
+        KERNELS.matvec(_tc(dtype), max(n, 64), cb_u64(alpha0), cb_u16(norm0), cb_void(x0), cb_void(x), b_void(out),
             self.diag_ctx.p, self.off_diag_ctx.p, self.bs_ctx.p, self.search_ctx.p)
         return out[:n]
     def _diag64(self, alpha, x): # NOTE: for testing only
@@ -322,12 +327,12 @@ class Matvec:
         alpha0, _, x0 = _pad(alpha, x, x)
         dtype, n = x.dtype, alpha.size
         out = np.zeros(64, dtype=dtype)
-        KERNELS.diag64(_tc(dtype), cb_u64(alpha0), cb_g(x0), b_g(out), self.diag_ctx.p)
+        KERNELS.diag64(_tc(dtype), cb_u64(alpha0), cb_void(x0), b_void(out), self.diag_ctx.p)
         return out[:min(n, 64)]
     def _off_diag64(self, alpha, norm, x):
         alpha, norm, x = map(np.ascontiguousarray, (alpha, norm, x))
         alpha0, norm0, x0 = _pad(alpha, norm, x)
         dtype, n = x.dtype, alpha.size
         out = np.zeros(64, dtype=dtype)
-        KERNELS.off_diag64(_tc(dtype), cb_u64(alpha0), cb_u16(norm0), cb_g(x), b_g(out), self.off_diag_ctx.p, self.bs_ctx.p, self.search_ctx.p)
+        KERNELS.off_diag64(_tc(dtype), cb_u64(alpha0), cb_u16(norm0), cb_void(x), b_void(out), self.off_diag_ctx.p, self.bs_ctx.p, self.search_ctx.p)
         return out[:min(n, 64)]

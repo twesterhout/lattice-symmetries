@@ -18,9 +18,25 @@ def test_ring3_no_symm():
     b.build()
     x, n = rng.random(128, dtype=np.float64).view(np.complex128), b.number_states
 
+    # complex128
     ref = _off_diag(e.to_dense()) @ x[:n]
     out = o._prepare_Matvec()._off_diag64(b.states, b.norms, x)
     np.testing.assert_allclose(out[:n], ref)
+    # complex64
+    x = rng.random(128, dtype=np.float32).view(np.complex64)
+    ref = _off_diag(e.to_dense()) @ x[:n]
+    out = o._prepare_Matvec()._off_diag64(b.states, b.norms, x)
+    np.testing.assert_allclose(out[:n], ref)
+    # float32
+    x = rng.random(64, dtype=np.float32)
+    ref = _off_diag(e.to_dense()) @ x[:n]
+    out = o._prepare_Matvec()._off_diag64(b.states, b.norms, x)
+    np.testing.assert_allclose(out[:n], ref, rtol=1e-5, atol=1e-7)
+    # float16
+    x = rng.random(64, dtype=np.float32).astype(np.float16)
+    ref = _off_diag(e.to_dense()) @ x[:n]
+    out = o._prepare_Matvec()._off_diag64(b.states, b.norms, x)
+    np.testing.assert_allclose(out[:n], ref, rtol=1e-3, atol=1e-5)
 
 
 def test_ring3_symm():
@@ -40,7 +56,25 @@ def test_ring3_symm():
     assert out[2] == pytest.approx(4 * x.real[2])
     assert out[3] == pytest.approx(0.0)
 
+    out = matvec._off_diag64(b.states, b.norms, x.real.astype(np.float32))
+    assert out[0] == pytest.approx(0.0)
+    assert out[1] == pytest.approx(4 * x.real[1])
+    assert out[2] == pytest.approx(4 * x.real[2])
+    assert out[3] == pytest.approx(0.0)
+
+    out = matvec._off_diag64(b.states, b.norms, x.real.astype(np.float16))
+    assert out[0] == pytest.approx(0.0)
+    assert out[1] == pytest.approx(4 * x.real.astype(np.float16)[1])
+    assert out[2] == pytest.approx(4 * x.real.astype(np.float16)[2])
+    assert out[3] == pytest.approx(0.0)
+
     out = matvec._off_diag64(b.states, b.norms, x)
+    assert out[0] == pytest.approx(0.0)
+    assert out[1] == pytest.approx(4 * x[1])
+    assert out[2] == pytest.approx(4 * x[2])
+    assert out[3] == pytest.approx(0.0)
+
+    out = matvec._off_diag64(b.states, b.norms, x.astype(np.complex64))
     assert out[0] == pytest.approx(0.0)
     assert out[1] == pytest.approx(4 * x[1])
     assert out[2] == pytest.approx(4 * x[2])

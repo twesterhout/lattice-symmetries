@@ -5,7 +5,8 @@
 #define Ci(t,u) i32 r=i*c->stride;Vi m[u];V##t acc[u];$(c->n_s0[i]>0,_(_L(_b,u,acc[_b]=bcast2##t(c->v_re,c->v_im,r));++r)){_L(_b,u,acc[_b]=zero##t())}
 #define Ck(t,u,b,x...) _L(k,b,_L(_b,u,m[_b]=(x));_L(_b,u,acc[_b]=add##t(acc[_b],signed##t(bcast2##t(c->v_re,c->v_im,r),m[_b])));++r)
 #define Dcoeff(t,u) D(void,coeff##t##u##xN,_(Ci(t,u)Ck(t,u,c->n_s1[i],m1(x[_b],Si(c->s1[i*c->stride+k])))Ck(t,u,c->n_s2[i],m2(x[_b],Si(c->s20[i*c->stride+k]),Si(c->s21[i*c->stride+k])))Ck(t,u,c->n_sX[i],mX(x[_b],Si(c->sX[i*c->stride+k])))_L(_b,u,o[_b]=acc[_b])),c(Vi)x[u],V##t o[u],c(i32)i,c(oc_t)*c)
-Dcoeff(d,1)Dcoeff(d,4)Dcoeff(z,1)Dcoeff(z,4)
+// Dcoeff(d,1)Dcoeff(d,4)
+Dcoeff(z,1)Dcoeff(z,4)
 #undef Dcoeff
 #undef Ci
 #undef Ck
