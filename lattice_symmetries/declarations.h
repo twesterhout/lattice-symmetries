@@ -33,13 +33,10 @@ typedef struct search_ctx_t {
 } search_ctx_t;
 
 void norm64(uint64_t const *, bs_ctx_t const *, uint16_t *);
-void diag64_f64(u64 const *, void const *, void *, const oc_t *);
-void diag64_c128(u64 const *, void const *, void *, const oc_t *);
-void off_diag64_f64(u64 const *, u16 const *, void const *, void *, const oc_t *, const bs_ctx_t *, const search_ctx_t *);
-void off_diag64_c128(u64 const *, u16 const *, void const *, void *, const oc_t *, const bs_ctx_t *, const search_ctx_t *);
+void diag64(i32, u64 const *, void const *, void *, const oc_t *);
+void off_diag64(i32, u64 const *, u16 const *, void const *, void *, const oc_t *, const bs_ctx_t *, const search_ctx_t *);
 
-void matvec_f64(i64, u64 const *, u16 const *, void const *, void const *, void *, const oc_t *, const oc_t *, const bs_ctx_t *, const search_ctx_t *);
-void matvec_c128(i64, u64 const *, u16 const *, void const *, void const *, void *, const oc_t *, const oc_t *, const bs_ctx_t *, const search_ctx_t *);
+void matvec(i32, i64, u64 const *, u16 const *, void const *, void const *, void *, const oc_t *, const oc_t *, const bs_ctx_t *, const search_ctx_t *);
 
 void state_to_index(int64_t, uint64_t const *, search_ctx_t const *, int64_t *);
 void state_info(int64_t, uint64_t const *, bs_ctx_t const *, uint64_t *, int64_t *);

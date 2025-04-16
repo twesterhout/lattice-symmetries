@@ -38,20 +38,16 @@ COMPILER = KernelCompiler()
 
 @dataclass(frozen=True)
 class K:
-    diag64_f64: any; diag64_c128: any;
-    off_diag64_f64: any; off_diag64_c128: any;
-    norm64: any;
+    diag64: any; off_diag64: any; norm64: any;
     state_to_index: any; state_info: any;
-    matvec_f64: any; matvec_c128: any
+    matvec: any;
 
 def build_kernels():
     lib = COMPILER.compile(FOLDER / "matvec.c")
     k = K(
-        lib.diag64_f64, lib.diag64_c128,
-        lib.off_diag64_f64, lib.off_diag64_c128,
-        lib.norm64,
+        lib.diag64, lib.off_diag64, lib.norm64,
         lib.state_to_index, lib.state_info,
-        lib.matvec_f64, lib.matvec_c128
+        lib.matvec,
     )
     weakref.finalize(k, lambda: COMPILER.ffi.dlclose(lib))
     return k
@@ -302,6 +298,7 @@ def _pad(alpha, norm, x):
     if n < 64: return np.pad(alpha, p, mode="edge"), np.pad(norm, p), np.pad(x, p)
     else: return alpha, norm, x
 def _suffix(dtype): return dict(float64="f64", complex128="c128")[dtype.name]
+def _tc(dtype): return dict(float64=0, complex128=3)[dtype.name]
     
 @dataclass(frozen=True)
 class Matvec:
@@ -312,13 +309,12 @@ class Matvec:
         x = np.asarray(x, order="C")
         alpha0, norm0, x0 = _pad(alpha, norm, x)
         dtype, n = x.dtype, alpha.size
-        kernel = getattr(KERNELS, "matvec_" + _suffix(dtype))
         assert alpha.size == n and norm.size == n
         if self.search_ctx.p != NULL: assert x.size == self.search_ctx.keep_alive[0].size
         if out is None: out = np.zeros(alpha0.size, dtype=dtype)
         else: assert out.ndim == 1 and out.dtype == dtype \
             and out.size == alpha0.size and out.flags["C_CONTIGUOUS"]
-        kernel(max(n, 64), cb_u64(alpha0), cb_u16(norm0), cb_g(x0), cb_g(x), b_g(out),
+        KERNELS.matvec(_tc(dtype), max(n, 64), cb_u64(alpha0), cb_u16(norm0), cb_g(x0), cb_g(x), b_g(out),
             self.diag_ctx.p, self.off_diag_ctx.p, self.bs_ctx.p, self.search_ctx.p)
         return out[:n]
     def _diag64(self, alpha, x): # NOTE: for testing only
@@ -326,14 +322,12 @@ class Matvec:
         alpha0, _, x0 = _pad(alpha, x, x)
         dtype, n = x.dtype, alpha.size
         out = np.zeros(64, dtype=dtype)
-        kernel = getattr(KERNELS, f"diag64_{_suffix(x.dtype)}")
-        kernel(cb_u64(alpha0), cb_g(x0), b_g(out), self.diag_ctx.p)
+        KERNELS.diag64(_tc(dtype), cb_u64(alpha0), cb_g(x0), b_g(out), self.diag_ctx.p)
         return out[:min(n, 64)]
     def _off_diag64(self, alpha, norm, x):
         alpha, norm, x = map(np.ascontiguousarray, (alpha, norm, x))
         alpha0, norm0, x0 = _pad(alpha, norm, x)
         dtype, n = x.dtype, alpha.size
         out = np.zeros(64, dtype=dtype)
-        kernel = getattr(KERNELS, f"off_diag64_{_suffix(x.dtype)}")
-        kernel(cb_u64(alpha0), cb_u16(norm0), cb_g(x), b_g(out), self.off_diag_ctx.p, self.bs_ctx.p, self.search_ctx.p)
+        KERNELS.off_diag64(_tc(dtype), cb_u64(alpha0), cb_u16(norm0), cb_g(x), b_g(out), self.off_diag_ctx.p, self.bs_ctx.p, self.search_ctx.p)
         return out[:min(n, 64)]

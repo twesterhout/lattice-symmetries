@@ -10,12 +10,21 @@ Dcoeff(d,1)Dcoeff(d,4)Dcoeff(z,1)Dcoeff(z,4)
 #undef Ci
 #undef Ck
 
+D(i32,stride,_(c(i32)sizes[6]={sizeof(f64),sizeof(f32),sizeof(f16),sizeof(c128),sizeof(c64),sizeof(c32)};sizes[t]),c(i32)t)
+
 // Diagonal coefficients
-#define Ddiag(t,s,u) D(void,diag##t##u##xN,_(Vi alpha[u];_L(_b,u,alpha[_b]=Ri(alpha0+_b*N));V##t acc[u];$(ctx->n_t>0,coeff##t##u##xN(alpha,acc,0,ctx))_L(_b,u,acc[_b]=zero##t());_L(_b,u,W##t((s*)out+_b*N,mul##t(acc[_b],R##t((s*)x0+_b*N))))),c(u64)*alpha0,c(s)*x0,s*out,c(oc_t)*ctx)
-#define Ddiag64(t,s) De(void,diag64_##s, _(_L(k,64/N,diag##t##1xN(alpha0+k*N,(c(s)*)x0+k*N,(s*)out+k*N,ctx))),c(u64)*alpha0,c(void)*x0,void*out,c(oc_t)*ctx)
-Ddiag(d,f64,1)Ddiag(z,c128,1)Ddiag64(d,f64)Ddiag64(z,c128)
-#undef Ddiag
-#undef Ddiag64
+// #define Ddiag(t,s,u) D(void,diag##t##u##xN,_(Vi alpha[u];_L(_b,u,alpha[_b]=Ri(alpha0+_b*N));V##t acc[u];$(ctx->n_t>0,coeff##t##u##xN(alpha,acc,0,ctx))_L(_b,u,acc[_b]=zero##t());_L(_b,u,W##t((s*)out+_b*N,mul##t(acc[_b],R##t((s*)x0+_b*N))))),c(u64)*alpha0,c(s)*x0,s*out,c(oc_t)*ctx)
+D(void,diag1xN,_(c(Vi)alpha=Ri(alpha0);Vz acc=zeroz(),x=Rx(t,x0);if(ctx->n_t>0){coeffz1xN(&alpha,&acc,0,ctx);}Wx(t,out,mulz(acc,x))),c(i32)t,c(u64)*alpha0,c(void)*x0,void*out,c(oc_t)*ctx)
+
+// #define Ddiag64(t,s) De(void,diag64_##s, _(_L(k,64/N,diag##t##1xN(alpha0+k*N,(c(s)*)x0+k*N,(s*)out+k*N,ctx))),c(u64)*alpha0,c(void)*x0,void*out,c(oc_t)*ctx)
+De(void,diag64,_(c(i32)inc=stride(t);_L(k,64/N,diag1xN(t,alpha0+k*N,(c(char)*)x0+k*inc*N,(char*)out+k*inc*N,ctx))),c(i32)t,c(u64)*alpha0,c(void)*x0,void*out,c(oc_t)*ctx)
+// Ddiag(d,f64,1)Ddiag(z,c128,1)Ddiag64(d,f64)Ddiag64(z,c128)
+// #undef Ddiag
+// #undef Ddiag64
+// Ddiagx(d)Ddiagx(z)Ddiag64(d)Ddiag64(z)
+
+// De(void,diag64_f64,diag64(0,alpha0,x0,out,ctx),c(u64)*alpha0,c(void)*x0,void*out,c(oc_t)*ctx)
+// De(void,diag64_c128,diag64(3,alpha0,x0,out,ctx),c(u64)*alpha0,c(void)*x0,void*out,c(oc_t)*ctx)
 
 // Representatives
 D(Vi,pstep,_(c(Vi)y=and(xor(shr(x,d),x),m);xor(xor(x,y),shl(y,d))),c(Vi)x,c(Vi)m,c(u32)d)
@@ -52,18 +61,19 @@ static void repr_search4xN(c(Vi)a[4],c(Vi)r[4],c(bs_ctx_t)*bs_ctx,c(search_ctx_t
 }
 
 // Off-diagonal part with symmetries
-D(void,_beta4xN,_(U4(bs[u]=xor(as[i+u],Si(c->mask[j])))),c(Vi)as[static 4],Vi bs[static 4],c(i32)i,c(i32)j,c(oc_t)*c)
-D(void,_chid4xN,_(U4(chi[u]=gthd(c->chi_re,gid[u]))),c(Vi)gid[static 4],Vd chi[static 4],c(bs_ctx_t)*c)
-D(void,_chiz4xN,_(U4(chi[u].re=gthd(c->chi_re,gid[u]),chi[u].im=gthd(c->chi_im,gid[u]))),c(Vi)gid[static 4],Vz chi[static 4],c(bs_ctx_t)*c)
-D(void,_uptd4xN,_(U4(
-    Vd x=mgthd(_x,idx[u],msk[u]);
-    Vd n=mgthw2d(_n,idx[u],msk[u]);
-    Vd n0=Rw2d(_n0+(i+u)*N);
-    Vd c=muld(sqrtd(divd(n,n0)),muld(chi[u],acc[u]));
-    outer[i+u]=fmad(c,x,outer[i+u]);
-)),c(Vi)idx[static 4],c(M8)msk[static 4],c(Vd)acc[static 4],c(Vd)chi[static 4],Vd outer[static 4],c(i32)i,c(f64)*_x,c(u16)*_n,c(u16)*_n0)
-D(void,_uptz4xN,_(U4(
-    Vz x=mgthz(_x,idx[u],msk[u]);
+D(void,beta4xN,_(U4(bs[u]=xor(as[i+u],Si(c->mask[j])))),c(Vi)as[static 4],Vi bs[static 4],c(i32)i,c(i32)j,c(oc_t)*c)
+// D(void,_chid4xN,_(U4(chi[u]=gthd(c->chi_re,gid[u]))),c(Vi)gid[static 4],Vd chi[static 4],c(bs_ctx_t)*c)
+D(void,chi4xN,_(U4(chi[u].re=gthd(c->chi_re,gid[u]),chi[u].im=gthd(c->chi_im,gid[u]))),c(Vi)gid[static 4],Vz chi[static 4],c(bs_ctx_t)*c)
+
+// D(void,_uptd4xN,_(U4(
+//     Vd x=mgthrx(0,_x,idx[u],msk[u]);
+//     Vd n=mgthw2d(_n,idx[u],msk[u]);
+//     Vd n0=Rw2d(_n0+(i+u)*N);
+//     Vd c=muld(sqrtd(divd(n,n0)),muld(chi[u],acc[u]));
+//     outer[i+u]=fmad(c,x,outer[i+u]);
+// )),c(i32)t,c(Vi)idx[static 4],c(M8)msk[static 4],c(Vd)acc[static 4],c(Vd)chi[static 4],Vd outer[static 4],c(i32)i,c(f64)*_x,c(u16)*_n,c(u16)*_n0)
+D(void,upt4xN,_(U4(
+    Vz x=Gmx(t,_x,idx[u],msk[u]);
     Vd n=mgthw2d(_n,idx[u],msk[u]);
     Vd n0=Rw2d(_n0+(i+u)*N);
     Vd c1=sqrtd(divd(n,n0));
@@ -71,87 +81,119 @@ D(void,_uptz4xN,_(U4(
     Vz c3=mulz(x,c2);
     outer[i+u].re=fmad(c1,c3.re,outer[i+u].re);
     outer[i+u].im=fmad(c1,c3.im,outer[i+u].im);
-)),c(Vi)idx[static 4],c(M8)msk[static 4],c(Vz)acc[static 4],c(Vz)chi[static 4],Vz outer[static 4],c(i32)i,c(c128)*_x,c(u16)*_n,c(u16)*_n0)
-#define DodT8xN(t,s) \
-    static void odT##t##8xN(c(u64)*_alpha,c(u16)*_norm,c(s)*_X,s*out,c(oc_t)*ctx,c(bs_ctx_t)*bs_ctx,c(search_ctx_t)*search_ctx){ \
-        Vi as[8],bs[4],rep[4],gid[4],idx[4];M8 msk[4];V##t chi[4],acc[4],outer[8]; \
-        U8(outer[u]=zero##t()) \
-        U8(as[u]=Ri(_alpha+u*N)) \
-        _beta4xN(as,bs,0,0,ctx); \
-        repr4xN(bs,bs_ctx,rep,gid); \
-        for(i32 j=0;j<8*ctx->n_t-4;j+=4){ \
-            _beta4xN(as,bs,(j+4)%8,(j+4)/8,ctx); \
-            _chi##t##4xN(gid,chi,bs_ctx); \
-            repr_search4xN(bs,rep,bs_ctx,search_ctx,rep,gid,msk,idx); \
-            /*prefetch##t##4xN(idx,search_ctx->norm,_X);*/ \
-            c(i32)ti=j/8,bi=j%8; \
-            coeff##t##4xN(as+bi,acc,ti,ctx); \
-            _upt##t##4xN(idx,msk,acc,chi,outer,bi,_X,search_ctx->norm,_norm); \
-        } \
-        search4xN(rep,msk,idx,search_ctx); \
-        _chi##t##4xN(gid,chi,bs_ctx); \
-        /*prefetch##t##4xN(idx,search_ctx->norm,_X);*/ \
-        c(i32)ti=ctx->n_t-1,bi=4; \
-        coeff##t##4xN(as+bi,acc,ti,ctx); \
-        _upt##t##4xN(idx,msk,acc,chi,outer,bi,_X,search_ctx->norm,_norm); \
-        U8(W##t(out+u*N,add##t(R##t(out+u*N),outer[u]))) \
+)),c(i32)t,c(Vi)idx[static 4],c(M8)msk[static 4],c(Vz)acc[static 4],c(Vz)chi[static 4],Vz outer[static 4],c(i32)i,c(c128)*_x,c(u16)*_n,c(u16)*_n0)
+Di(void,odT8xN,_(
+    Vi as[8],bs[4],rep[4],gid[4],idx[4];M8 msk[4];Vz chi[4],acc[4],outer[8];
+    c(i32)inc=stride(t);U8(outer[u]=Rx(t,(c(char)*)out+u*inc*N))U8(as[u]=Ri(_alpha+u*N))
+    beta4xN(as,bs,0,0,ctx);repr4xN(bs,bs_ctx,rep,gid);
+    for(i32 j=0;j<8*ctx->n_t-4;j+=4){
+        beta4xN(as,bs,(j+4)%8,(j+4)/8,ctx);chi4xN(gid,chi,bs_ctx);
+        repr_search4xN(bs,rep,bs_ctx,search_ctx,rep,gid,msk,idx);/*prefetch##t##4xN(idx,search_ctx->norm,_X);*/
+        coeffz4xN(as+j%8,acc,j/8,ctx);upt4xN(t,idx,msk,acc,chi,outer,j%8,_X,search_ctx->norm,_norm);
     }
-DodT8xN(d,f64)DodT8xN(z,c128)
+    search4xN(rep,msk,idx,search_ctx);chi4xN(gid,chi,bs_ctx);
+    /*prefetch##t##4xN(idx,search_ctx->norm,_X);*/
+    coeffz4xN(as+4,acc,ctx->n_t-1,ctx);upt4xN(t,idx,msk,acc,chi,outer,4,_X,search_ctx->norm,_norm);
+    U8(Wx(t,(char*)out+u*inc*N,outer[u]))
+),c(i32)t,c(u64)*_alpha,c(u16)*_norm,c(void)*_X,void*out,c(oc_t)*ctx,c(bs_ctx_t)*bs_ctx,c(search_ctx_t)*search_ctx)
+Di(void,odF4xN,_(
+    Vi as[4],bs[4];Vz acc[4],outer[4];
+    c(i32)inc=stride(t);U4(outer[u]=Rx(t,(c(char)*)out+u*inc*N))U4(as[u]=Ri(_alpha+u*N))
+    _L(ti,ctx->n_t,
+        beta4xN(as,bs,0,ti,ctx);/*prefetch##t##4xN(idx,search_ctx->norm,_X);*/
+        coeffz4xN(as,acc,ti,ctx);U4(outer[u]=addz(mulz(acc[u],Gx(t,_X,bs[u])),outer[u]))
+    )
+    U4(Wx(t,(char*)out+u*inc*N,outer[u]))
+),c(i32)t,c(u64)*_alpha,c(u16)*_norm,c(void)*_X,void*out,c(oc_t)*ctx,c(bs_ctx_t)*bs_ctx,c(search_ctx_t)*search_ctx)
+
+// static void odT##t##8xN(c(i32)t,c(u64)*_alpha,c(u16)*_norm,c(void)*_X,void*out,c(oc_t)*ctx,c(bs_ctx_t)*bs_ctx,c(search_ctx_t)*search_ctx){ \
+//     Vi as[8],bs[4],rep[4],gid[4],idx[4];M8 msk[4];Vz chi[4],acc[4],outer[8]; \
+//     c(i32)inc=stride(t); \
+//     U8(outer[u]=Rx(t,(c(char)*)out+u*inc*N)) \
+//     U8(as[u]=Ri(_alpha+u*N)) \
+//     _beta4xN(as,bs,0,0,ctx); \
+//     repr4xN(bs,bs_ctx,rep,gid); \
+//     for(i32 j=0;j<8*ctx->n_t-4;j+=4){ \
+//         _beta4xN(as,bs,(j+4)%8,(j+4)/8,ctx); \
+//         _chiz4xN(gid,chi,bs_ctx); \
+//         repr_search4xN(bs,rep,bs_ctx,search_ctx,rep,gid,msk,idx); \
+//         /*prefetch##t##4xN(idx,search_ctx->norm,_X);*/ \
+//         c(i32)ti=j/8,bi=j%8; \
+//         coeffz4xN(as+bi,acc,ti,ctx); \
+//         _uptz4xN(t,idx,msk,acc,chi,outer,bi,_X,search_ctx->norm,_norm); \
+//     } \
+//     search4xN(rep,msk,idx,search_ctx); \
+//     _chiz4xN(gid,chi,bs_ctx); \
+//     /*prefetch##t##4xN(idx,search_ctx->norm,_X);*/ \
+//     c(i32)ti=ctx->n_t-1,bi=4; \
+//     coeffz4xN(as+bi,acc,ti,ctx); \
+//     _uptz4xN(t,idx,msk,acc,chi,outer,bi,_X,search_ctx->norm,_norm); \
+//     U8(Wx(t,(char*)out+u*inc*N,outer[u])) \
+// }
+// DodT8xN(d,f64)DodT8xN(z,c128)
 
 // Off-diagonal part without symmetries
-#define DodF4xN(t,s) \
-    static void odF##t##4xN(c(u64)*_alpha,c(u16)*_norm,c(s)*_X,s*out,c(oc_t)*ctx,c(bs_ctx_t)*bs_ctx,c(search_ctx_t)*search_ctx){ \
-        Vi as[4],bs[4];V##t acc[4],outer[4]; \
-        U4(outer[u]=zero##t())U4(as[u]=Ri(_alpha+u*N)) \
-        _L(ti,ctx->n_t, \
-            _beta4xN(as,bs,0,ti,ctx); \
-            /*prefetch##t##4xN(idx,search_ctx->norm,_X);*/ \
-            coeff##t##4xN(as,acc,ti,ctx); \
-            U4(outer[u]=add##t(mul##t(acc[u],gth##t(_X,bs[u])),outer[u])) \
-        ) \
-        U4(W##t(out+u*N,add##t(R##t(out+u*N),outer[u]))) \
-    }
-DodF4xN(d,f64)DodF4xN(z,c128)
+// #define DodF4xN(t,s) \
+//     static void odF##t##4xN(c(u64)*_alpha,c(u16)*_norm,c(s)*_X,s*out,c(oc_t)*ctx,c(bs_ctx_t)*bs_ctx,c(search_ctx_t)*search_ctx){ \
+//         Vi as[4],bs[4];V##t acc[4],outer[4]; \
+//         U4(outer[u]=zero##t())U4(as[u]=Ri(_alpha+u*N)) \
+//         _L(ti,ctx->n_t, \
+//             beta4xN(as,bs,0,ti,ctx); \
+//             /*prefetch##t##4xN(idx,search_ctx->norm,_X);*/ \
+//             coeff##t##4xN(as,acc,ti,ctx); \
+//             U4(outer[u]=add##t(mul##t(acc[u],gth##t(_X,bs[u])),outer[u])) \
+//         ) \
+//         U4(W##t(out+u*N,add##t(R##t(out+u*N),outer[u]))) \
+//     }
+// DodF4xN(d,f64)DodF4xN(z,c128)
 
-#define Doff_diag64(t,s) De(void,off_diag64_##s,_( \
-    if(ctx->n_t<=0)return;i32 k=0;while(k<64){ \
-        if(bs_ctx!=NULL){odT##t##8xN(alpha0+k,norm0+k,X,(s*)out+k,ctx,bs_ctx,search_ctx);k+=8*N;} \
-        else{odF##t##4xN(alpha0+k,norm0+k,X,(s*)out+k,ctx,bs_ctx,search_ctx);k+=4*N;} \
-    }),c(u64)*alpha0,c(u16)*norm0,c(void)*X,void*out,c(oc_t)*ctx,c(bs_ctx_t)*bs_ctx,c(search_ctx_t)*search_ctx)
-Doff_diag64(d,f64)Doff_diag64(z,c128)
-#undef Doff_diag64
+De(void,off_diag64,_(
+    if(ctx->n_t<=0)return;c(i32)inc=stride(t);typeof(&odT8xN) const f=bs_ctx!=NULL?odT8xN:odF4xN;c(i32)step=bs_ctx!=NULL?8*N:4*N;
+    for(i32 k=0;k<64;k+=step){f(t,alpha0+k,norm0+k,X,(char*)out+k*inc,ctx,bs_ctx,search_ctx);}
+),c(i32)t,c(u64)*alpha0,c(u16)*norm0,c(void)*X,void*out,c(oc_t)*ctx,c(bs_ctx_t)*bs_ctx,c(search_ctx_t)*search_ctx)
+
+// #define Doff_diag64(t,s,code) De(void,off_diag64_##s,_( \
+//     if(ctx->n_t<=0)return;i32 k=0;while(k<64){ \
+//         if(bs_ctx!=NULL){odT8xN(code,alpha0+k,norm0+k,X,(s*)out+k,ctx,bs_ctx,search_ctx);k+=8*N;} \
+//         else{odF4xN(code,alpha0+k,norm0+k,X,(s*)out+k,ctx,bs_ctx,search_ctx);k+=4*N;} \
+//     }),c(u64)*alpha0,c(u16)*norm0,c(void)*X,void*out,c(oc_t)*ctx,c(bs_ctx_t)*bs_ctx,c(search_ctx_t)*search_ctx)
+// Doff_diag64(d,f64,0)Doff_diag64(z,c128,3)
+// #undef Doff_diag64
+Di(void,matvec_inner,_(c(i32)inc=stride(t);diag64(t,alpha0+i,(c(char)*)X0+i*inc,(char*)out+i*inc,diag);off_diag64(t,alpha0+i,norm0+i,X,(char*)out+i*inc,off_diag,bs,search)),
+    c(i32)t,c(i64)i,c(u64)*alpha0,c(u16)*norm0,c(void)*X0,c(void)*X,void*out,c(oc_t)*diag,c(oc_t)*off_diag,c(bs_ctx_t)*bs,c(search_ctx_t)*search)
 
 // Matvec for 64 elements
-#define matvec_inner_template(t) \
-    void matvec_inner_##t(i64 const i, u64 const *alpha0, u16 const *norm0, void const *X0, void const *X, void *out, \
-            oc_t const *diag, oc_t const *off_diag, bs_ctx_t const *bs, search_ctx_t const *search) { \
-        diag64_##t(alpha0 + i, (t const*)X0 + i, (t*)out + i, diag); off_diag64_##t(alpha0 + i, norm0 + i, X, (t*)out + i, off_diag, bs, search); \
-    }
-matvec_inner_template(f64)matvec_inner_template(c128)
-#undef matvec_inner_template
+// #define matvec_inner_template(s,t,c) \
+//     void matvec_inner_##t(i64 const i, u64 const *alpha0, u16 const *norm0, void const *X0, void const *X, void *out, \
+//             oc_t const *diag, oc_t const *off_diag, bs_ctx_t const *bs, search_ctx_t const *search) { \
+//         diag64(c, alpha0 + i, (t const*)X0 + i, (t*)out + i, diag); \
+//         off_diag64(c, alpha0 + i, norm0 + i, X, (t*)out + i, off_diag, bs, search); \
+//     }
+// matvec_inner_template(d,f64,0)matvec_inner_template(z,c128,3)
+// #undef matvec_inner_template
 
-typedef void (*matvec_internal_t)(i64, u64 const *, u16 const *, void const *, void const *, void *,
-                                  oc_t const *, oc_t const *, bs_ctx_t const *, search_ctx_t const *);
+// typedef void (*matvec_internal_t)(i64, u64 const *, u16 const *, void const *, void const *, void *,
+//                                   oc_t const *, oc_t const *, bs_ctx_t const *, search_ctx_t const *);
 
-INTERNAL void matvec(i64 const n, u64 const *alpha0, u16 const *norm0, void const *X0, void const *X, void *out,
-        oc_t const *diag_ctx, oc_t const *off_diag_ctx, bs_ctx_t const *bs_ctx, search_ctx_t const *search_ctx, matvec_internal_t inner) {
+void matvec(i32 const t, i64 const n, u64 const *alpha0, u16 const *norm0, void const *X0, void const *X, void *out,
+        oc_t const *diag_ctx, oc_t const *off_diag_ctx, bs_ctx_t const *bs_ctx, search_ctx_t const *search_ctx) {
     if (n < 64) { return; }
     
     i64 const n_b = n / 64, n_r = n % 64;
 #pragma omp parallel for schedule(dynamic, 256) default(none) \
-        firstprivate(n_b, alpha0, norm0, X0, X, out, diag_ctx, off_diag_ctx, bs_ctx, search_ctx, inner)
-    for (i64 bi = 0; bi < n_b; ++bi) { inner(64 * bi, alpha0, norm0, X0, X, out, diag_ctx, off_diag_ctx, bs_ctx, search_ctx); }
-    if (n_r != 0) { inner(n - 64, alpha0, norm0, X0, X, out, diag_ctx, off_diag_ctx, bs_ctx, search_ctx); }
+        firstprivate(t, n_b, alpha0, norm0, X0, X, out, diag_ctx, off_diag_ctx, bs_ctx, search_ctx)
+    for (i64 bi = 0; bi < n_b; ++bi) { matvec_inner(t, 64 * bi, alpha0, norm0, X0, X, out, diag_ctx, off_diag_ctx, bs_ctx, search_ctx); }
+    if (n_r != 0) { matvec_inner(t, n - 64, alpha0, norm0, X0, X, out, diag_ctx, off_diag_ctx, bs_ctx, search_ctx); }
 }
 
-void matvec_f64(i64 const n, u64 const *alpha0, u16 const *norm0, void const *X0, void const *X, void *out,
-        oc_t const *diag_ctx, oc_t const *off_diag_ctx, bs_ctx_t const *bs_ctx, search_ctx_t const *search_ctx) {
-    matvec(n, alpha0, norm0, X0, X, out, diag_ctx, off_diag_ctx, bs_ctx, search_ctx, matvec_inner_f64);
-}
-void matvec_c128(i64 const n, u64 const *alpha0, u16 const *norm0, void const *X0, void const *X, void *out,
-        oc_t const *diag_ctx, oc_t const *off_diag_ctx, bs_ctx_t const *bs_ctx, search_ctx_t const *search_ctx) {
-    matvec(n, alpha0, norm0, X0, X, out, diag_ctx, off_diag_ctx, bs_ctx, search_ctx, matvec_inner_c128);
-}
+// void matvec_f64(i64 const n, u64 const *alpha0, u16 const *norm0, void const *X0, void const *X, void *out,
+//         oc_t const *diag_ctx, oc_t const *off_diag_ctx, bs_ctx_t const *bs_ctx, search_ctx_t const *search_ctx) {
+//     matvec(n, alpha0, norm0, X0, X, out, diag_ctx, off_diag_ctx, bs_ctx, search_ctx, matvec_inner_f64);
+// }
+// void matvec_c128(i64 const n, u64 const *alpha0, u16 const *norm0, void const *X0, void const *X, void *out,
+//         oc_t const *diag_ctx, oc_t const *off_diag_ctx, bs_ctx_t const *bs_ctx, search_ctx_t const *search_ctx) {
+//     matvec(n, alpha0, norm0, X0, X, out, diag_ctx, off_diag_ctx, bs_ctx, search_ctx, matvec_inner_c128);
+// }
 
 
 #define with_in(tmp_x, x, t, n, ...) t tmp_x[4*N]; __builtin_memset(tmp_x, 0, 4 * N * sizeof(t)); __builtin_memcpy(tmp_x, x, n * sizeof(t)); __VA_ARGS__
