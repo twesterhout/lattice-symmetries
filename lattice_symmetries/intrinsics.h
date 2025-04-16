@@ -19,6 +19,10 @@
 #   endif
 #endif
 
+#if !defined(USE_F16)
+#  define USE_F16 SIMDE_FLOAT16_API == SIMDE_FLOAT16_API_FLOAT16
+#endif
+
 // type code (i32)
 // 0: f64
 // 1: f32
@@ -31,8 +35,11 @@
 
 typedef int8_t i8; typedef int16_t i16; typedef int32_t i32; typedef int64_t i64;
 typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef uint64_t u64;
-typedef _Float16 f16; typedef float f32; typedef double f64;
-typedef _Float16 _Complex c32; typedef float _Complex c64; typedef double _Complex c128;
+typedef float f32; typedef double f64;
+typedef float _Complex c64; typedef double _Complex c128;
+#if USE_F16
+typedef _Float16 f16; typedef _Float16 _Complex c32;
+#endif
 
 #define _(z...) ({z;})
 #define $(b,z) if(b){z;}else
@@ -155,6 +162,8 @@ D(Vi,d2i,I(_S(castpd),x),c(Vd)x)D(Vi,s2i,I(_S(castps),x),c(Vs)x)
         return simde_mm256_insertf128_ps(simde_mm256_castps128_ps256(a0),a1,1);
       #endif
     }
+
+#   if USE_F16
     SIMDE_FUNCTION_ATTRIBUTES simde__m512d simde_mm512_cvtph_pd (simde__m128i a) {
       #if defined(SIMDE_X86_AVX512FP16_NATIVE)
         return _mm512_cvtph_pd((__m128h)a);
@@ -174,6 +183,7 @@ D(Vi,d2i,I(_S(castpd),x),c(Vd)x)D(Vi,s2i,I(_S(castps),x),c(Vs)x)
         return simde_mm_insert_epi64(a0, simde_mm_cvtsi128_si64(a1), 1);
       #endif
     }
+#   endif
 #endif
 
 // Vi
@@ -184,23 +194,23 @@ Dd(zero,Zd,void)D(Vd,Rd,I(loadu_pd,p),c(f64)*p)D(Vd,Sd,I(set1_pd,x),c(f64)x)D(vo
 typedef struct Vz { Vd re; Vd im; } Vz;
 Dz(zero,(Z2(Zd,Zd)),void)D(Vz,addz,Z2(addd(a.re, b.re),addd(a.im, b.im)),c(Vz)a,c(Vz)b)D(Vz,mulz,Z2(fnmad(a.im,b.im,muld(a.re,b.re)),fmad(a.im,b.re,muld(a.re,b.im))),c(Vz)a,c(Vz)b)
 #if M == 1
-    D(Vz,Rz,_(
-        c(Vd)a=Rd((c(f64)*)p),b=Rd((c(f64)*)p+N);_Alignas(Vi)c(i64)idx[N]={0,2,4,6,1,3,5,7};
-        c(Vd)c=I(permutexvar_pd,I(load_epi64,idx),I(unpacklo_pd,a,b)),d=I(permutexvar_pd,I(load_epi64,idx),I(unpackhi_pd,a,b));
-        Z2(c,d)), c(c128)*p)
+    // D(Vz,Rz,_(
+    //     c(Vd)a=Rd((c(f64)*)p),b=Rd((c(f64)*)p+N);_Alignas(Vi)c(i64)idx[N]={0,2,4,6,1,3,5,7};
+    //     c(Vd)c=I(permutexvar_pd,I(load_epi64,idx),I(unpacklo_pd,a,b)),d=I(permutexvar_pd,I(load_epi64,idx),I(unpackhi_pd,a,b));
+    //     Z2(c,d)), c(c128)*p)
     // TODO: boy is this one ugly... is there a better way?
-    De(void,Wz,_(
-        _Alignas(Vi)c(i64)idx1[N]={0b0000,0b0001,0b1000,0b1001,0b0010,0b0011,0b1010,0b1011};
-        _Alignas(Vi)c(i64)idx2[N]={0b0100,0b0101,0b1100,0b1101,0b0110,0b0111,0b1110,0b1111};
-        c(Vd)a=I(unpacklo_pd,z.re,z.im),b=I(unpackhi_pd,z.re,z.im);
-        c(Vd)c=I(permutex2var_pd,a,I(load_epi64,idx1),b),d=I(permutex2var_pd,a,I(load_epi64,idx2),b);
-        Wd((f64*)p,c);Wd((f64*)p+N,d)),c(c128)*p,c(Vz)z)
+    // De(void,Wz,_(
+    //     _Alignas(Vi)c(i64)idx1[N]={0b0000,0b0001,0b1000,0b1001,0b0010,0b0011,0b1010,0b1011};
+    //     _Alignas(Vi)c(i64)idx2[N]={0b0100,0b0101,0b1100,0b1101,0b0110,0b0111,0b1110,0b1111};
+    //     c(Vd)a=I(unpacklo_pd,z.re,z.im),b=I(unpackhi_pd,z.re,z.im);
+    //     c(Vd)c=I(permutex2var_pd,a,I(load_epi64,idx1),b),d=I(permutex2var_pd,a,I(load_epi64,idx2),b);
+    //     Wd((f64*)p,c);Wd((f64*)p+N,d)),c(c128)*p,c(Vz)z)
 #elif M == 2
-    D(Vz,Rz,_(c(Vd)a=Rd((c(f64)*)p),b=Rd((c(f64)*)p+N),c=I(permute2f128_pd,a,b,0b00110001),d=I(permute2f128_pd,a,b,0b00100000);Z2(I(unpacklo_pd,d,c),I(unpackhi_pd,d,c))),c(c128)*p)
-    D(void,Wz,_(c(Vd)a=I4(unpacklo_pd,z.re,z.im),b=I4(unpackhi_pd,z.re,z.im),c=I(permute2f128_pd,a,b,0b00110001),d=I(permute2f128_pd,a,b,0b00100000);Wd((f64*)p,d),Wd((f64*)p+N,c)),c128*p,c(Vz)z)
+    // D(Vz,Rz,_(c(Vd)a=Rd((c(f64)*)p),b=Rd((c(f64)*)p+N),c=I(permute2f128_pd,a,b,0b00110001),d=I(permute2f128_pd,a,b,0b00100000);Z2(I(unpacklo_pd,d,c),I(unpackhi_pd,d,c))),c(c128)*p)
+    // D(void,Wz,_(c(Vd)a=I4(unpacklo_pd,z.re,z.im),b=I4(unpackhi_pd,z.re,z.im),c=I(permute2f128_pd,a,b,0b00110001),d=I(permute2f128_pd,a,b,0b00100000);Wd((f64*)p,d),Wd((f64*)p+N,c)),c128*p,c(Vz)z)
 #else
-    D(Vz,Rz,_(c(Vd)a=Rd((c(f64)*)p),b=Rd((c(f64)*)p+N);Z2(I(unpacklo_pd,a,b),I(unpackhi_pd,a,b))),c(c128)*p)
-    D(void,Wz,_(Wd((f64*)p,I(unpacklo_pd,z.re,z.im)),Wd((f64*)p+N,I(unpackhi_pd,z.re,z.im))),c128*p,c(Vz)z)
+    // D(Vz,Rz,_(c(Vd)a=Rd((c(f64)*)p),b=Rd((c(f64)*)p+N);Z2(I(unpacklo_pd,a,b),I(unpackhi_pd,a,b))),c(c128)*p)
+    // D(void,Wz,_(Wd((f64*)p,I(unpacklo_pd,z.re,z.im)),Wd((f64*)p+N,I(unpackhi_pd,z.re,z.im))),c128*p,c(Vz)z)
 #endif
 // u16
 #if M == 1
@@ -246,9 +256,11 @@ Dz(zero,(Z2(Zd,Zd)),void)D(Vz,addz,Z2(addd(a.re, b.re),addd(a.im, b.im)),c(Vz)a,
 #define Rf8(p) I4(loadu_ps,p)
 #define Rf4(p) I2(loadu_ps,p)
 #define Rf2(p) I2(loadl_pi,I2(setzero_ps),(simde__m64 const*)(p))
-#define Rh8(p) I2(loadu_si128,p)
-#define Rh4(p) I2(loadu_si64,p)
-#define Rh2(p) I2(loadu_si32,p)
+#if USE_F16
+#  define Rh8(p) I2(loadu_si128,p)
+#  define Rh4(p) I2(loadu_si64,p)
+#  define Rh2(p) I2(loadu_si32,p)
+#endif
 // write
 #define Wd8(p,x) I8(storeu_pd,p,x)
 #define Wd4(p,x) I4(storeu_pd,p,x)
@@ -256,9 +268,11 @@ Dz(zero,(Z2(Zd,Zd)),void)D(Vz,addz,Z2(addd(a.re, b.re),addd(a.im, b.im)),c(Vz)a,
 #define Wf8(p,x) I4(storeu_ps,p,x)
 #define Wf4(p,x) I2(storeu_ps,p,x)
 #define Wf2(p,x) I2(storel_pi,(simde__m64*)(p),x)
-#define Wh8(p,x) I2(storeu_si128,p,x)
-#define Wh4(p,x) I2(storeu_si64,p,x)
-#define Wh2(p,x) I2(store_ss,(f32*)(p),(simde__m128)x)
+#if USE_F16
+#  define Wh8(p,x) I2(storeu_si128,p,x)
+#  define Wh4(p,x) I2(storeu_si64,p,x)
+#  define Wh2(p,x) I2(store_ss,(f32*)(p),(simde__m128)x)
+#endif
 // mask gather real
 
 // #define mgthd8(p,i,m) I8(mask_i64gather_pd,I8(setzero_pd),m,i,p,8)
@@ -437,21 +451,22 @@ Dz(zero,(Z2(Zd,Zd)),void)D(Vz,addz,Z2(addd(a.re, b.re),addd(a.im, b.im)),c(Vz)a,
 #  define cvtf2N_Vz(a) _(Z2(I2(cvtps_pd,I2(shuffle_ps,a,I2(setzero_ps),0x08)),I2(cvtps_pd,I2(shuffle_ps,a,I2(setzero_ps),0x0d))))
 #endif
 
-#if M == 1
-#define Rh(p) Rh8(p)
-#define Wh(p,z) Wh8(p,z)
-#elif M == 2
-#define Rh(p) Rh4(p)
-#define Wh(p,z) Wh4(p,z)
-#else
-#define Rh(p) Rh2(p)
-#define Wh(p,z) Wh2(p,z)
+#if USE_F16
+#  if M == 1
+#    define Rh(p) Rh8(p)
+#    define Wh(p,z) Wh8(p,z)
+#  elif M == 2
+#    define Rh(p) Rh4(p)
+#    define Wh(p,z) Wh4(p,z)
+#  else
+#    define Rh(p) Rh2(p)
+#    define Wh(p,z) Wh2(p,z)
+#  endif
 #endif
 
 De(Vz,Rx,_(Vz r;switch(t){
      /*f64*/case 0: r=Z2(Rd(p),Zd);break;
      /*f32*/case 1: r=Z2(I(cvtps_pd,Ih(loadu_ps,p)),Zd);break;
-     /*f16*/case 2: r=Z2(I(cvtps_pd,Ih(cvtph_ps,Rh(p))),Zd);break;
 #if M == 1
     /*c128*/case 3: {c(f64)*_p=p;c(Vd)a=Rd(_p),b=Rd(_p+N);_Alignas(Vi)c(i64)idx[8]={0,2,4,6,1,3,5,7};c(Vd)c=I(permutexvar_pd,I(load_epi64,idx),I(unpacklo_pd,a,b)),d=I(permutexvar_pd,I(load_epi64,idx),I(unpackhi_pd,a,b));r=Z2(c,d);break;}
 #elif M == 2
@@ -460,13 +475,18 @@ De(Vz,Rx,_(Vz r;switch(t){
     /*c128*/case 3: {c(f64)*_p=p;c(Vd)a=Rd(_p),b=Rd(_p+N);r=Z2(I2(unpacklo_pd,a,b),I2(unpackhi_pd,a,b));break;}
 #endif
      /*c64*/case 4: r=cvtf2N_Vz(I(loadu_ps,(c(f32)*)p));break;
+#if USE_F16
+     /*f16*/case 2: r=Z2(I(cvtps_pd,Ih(cvtph_ps,Rh(p))),Zd);break;
     /*c32*/default: {c(f16)*_p=p;_Alignas(Vd)f64 re[N],im[N];_L(u,N,re[u]=_p[2*u],im[u]=_p[2*u+1]);r=Z2(Rd(re),Rd(im));break;}
+#else
+     /*f16*/case 2: r=Z2(Zd,Zd);break;
+    /*c32*/default: r=Z2(Zd,Zd);break;
+#endif
 };r),c(i32)t,c(void)*p)
 
 De(void,Wx,_(switch(t){
      /*f64*/case 0: I(storeu_pd,p,z.re);break;
      /*f32*/case 1: Ih(storeu_ps,p,I(cvtpd_ps,z.re));break;
-     /*f16*/case 2: Wh(p,Ih(cvtps_ph,I(cvtpd_ps,z.re),SIMDE_MM_FROUND_TO_NEAREST_INT));break;
 #if M == 1
     /*c128*/case 3: {_Alignas(Vi)c(i64)idx1[N]={0b0000,0b0001,0b1000,0b1001,0b0010,0b0011,0b1010,0b1011},idx2[N]={0b0100,0b0101,0b1100,0b1101,0b0110,0b0111,0b1110,0b1111};
         c(Vd)a=I(unpacklo_pd,z.re,z.im),b=I(unpackhi_pd,z.re,z.im),c=I(permutex2var_pd,a,I(load_epi64,idx1),b),d=I(permutex2var_pd,a,I(load_epi64,idx2),b);
@@ -485,25 +505,41 @@ De(void,Wx,_(switch(t){
         I2(storeu_ps,_p,c);(void)d;
 #endif
         break;}
+#if USE_F16
+     /*f16*/case 2: Wh(p,Ih(cvtps_ph,I(cvtpd_ps,z.re),SIMDE_MM_FROUND_TO_NEAREST_INT));break;
     /*c32*/default: {f16*_p=p;_Alignas(Vd)f64 re[N],im[N];Wd(re,z.re);Wd(im,z.im);_L(u,N,_p[2*u]=(f16)re[u],_p[2*u+1]=(f16)im[u]);break;}
+#else
+     /*f16*/case 2: break;
+    /*c32*/default: break;
+#endif
 }),c(i32)t,void*p,c(Vz)z)
 
 De(Vz,Gmx,_(Vz r;switch(t){
      /*f64*/case 0: r=Z2(_mgthd((c(f64)*)p,i,m,8),Zd);break;
      /*f32*/case 1: r=Z2(I(cvtps_pd,_mgthf((c(f32)*)p,i,m,4)),Zd);break;
-     /*f16*/case 2: {c(f16)*_p=p;_Alignas(Vi)i64 _i[N];_Alignas(Vd)f64 re[N];c(u32)_m=_M8_to_i(m);Wi(_i,i);_L(u,N,re[u]=((_m>>u)&1)?_p[_i[u]]:0.0);r=Z2(Rd(re),Zd);break;}
     /*c128*/case 3: r=Z2(_mgthd((c(f64)*)p,shl(i,1),m,8),_mgthd((c(f64)*)p+1,shl(i,1),m,8));break;
      /*c64*/case 4: r=cvtf2N_Vz(d2f(_mgthd((c(f64)*)p,i,m,8)));break;
+#if USE_F16
+     /*f16*/case 2: {c(f16)*_p=p;_Alignas(Vi)i64 _i[N];_Alignas(Vd)f64 re[N];c(u32)_m=_M8_to_i(m);Wi(_i,i);_L(u,N,re[u]=((_m>>u)&1)?_p[_i[u]]:0.0);r=Z2(Rd(re),Zd);break;}
     /*c32*/default: {c(f16)*_p=p;_Alignas(Vi)i64 _i[N];_Alignas(Vd)f64 re[N],im[N];c(u32)_m=_M8_to_i(m);Wi(_i,i);_L(u,N,re[u]=((_m>>u)&1)?_p[2*_i[u]]:0.0,im[u]=((_m>>u)&1)?_p[2*_i[u]+1]:0.0);r=Z2(Rd(re),Rd(im));break;}
+#else
+     /*f16*/case 2: r=Z2(Zd,Zd);break;
+    /*c32*/default: r=Z2(Zd,Zd);break;
+#endif
 };r),c(i32)t,c(void)*p,c(Vi)i,c(M8)m)
 
 De(Vz,Gx,_(Vz r; switch(t){
      /*f64*/case 0: r=Z2(_gthd((c(f64)*)p,i,8),Zd);break;
      /*f32*/case 1: r=Z2(I(cvtps_pd,_gthf((c(f32)*)p,i,4)),Zd);break;
-     /*f16*/case 2: {c(f16)*_p=p;_Alignas(Vi)i64 _i[N];_Alignas(Vd)f64 re[N];Wi(_i,i);_L(u,N,re[u]=_p[_i[u]]);r=Z2(Rd(re),Zd);break;}
     /*c128*/case 3: r=Z2(_gthd((c(f64)*)p,shl(i,1),8),_gthd((c(f64)*)p+1,shl(i,1),8));break;
      /*c64*/case 4: r=cvtf2N_Vz(d2f(_gthd((c(f64)*)p,i,8)));break;
+#if USE_F16
+     /*f16*/case 2: {c(f16)*_p=p;_Alignas(Vi)i64 _i[N];_Alignas(Vd)f64 re[N];Wi(_i,i);_L(u,N,re[u]=_p[_i[u]]);r=Z2(Rd(re),Zd);break;}
     /*c32*/default: {c(f16)*_p=p;_Alignas(Vi)i64 _i[N];_Alignas(Vd)f64 re[N],im[N];Wi(_i,i);_L(u,N,re[u]=_p[2*_i[u]],im[u]=_p[2*_i[u]+1]);r=Z2(Rd(re),Rd(im));break;}
+#else
+     /*f16*/case 2: r=Z2(Zd,Zd); break;
+    /*c32*/default: r=Z2(Zd,Zd); break;
+#endif
 };r),c(i32)t,c(void)*p,c(Vi)i)
 
 

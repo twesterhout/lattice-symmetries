@@ -33,10 +33,11 @@ def test_ring3_no_symm():
     out = o._prepare_Matvec()._off_diag64(b.states, b.norms, x)
     np.testing.assert_allclose(out[:n], ref, rtol=1e-5, atol=1e-7)
     # float16
-    x = rng.random(64, dtype=np.float32).astype(np.float16)
-    ref = _off_diag(e.to_dense()) @ x[:n]
-    out = o._prepare_Matvec()._off_diag64(b.states, b.norms, x)
-    np.testing.assert_allclose(out[:n], ref, rtol=1e-3, atol=1e-5)
+    if ls.KERNELS.has_float16():
+        x = rng.random(64, dtype=np.float32).astype(np.float16)
+        ref = _off_diag(e.to_dense()) @ x[:n]
+        out = o._prepare_Matvec()._off_diag64(b.states, b.norms, x)
+        np.testing.assert_allclose(out[:n], ref, rtol=1e-3, atol=1e-5)
 
 
 def test_ring3_symm():
@@ -62,11 +63,12 @@ def test_ring3_symm():
     assert out[2] == pytest.approx(4 * x.real[2])
     assert out[3] == pytest.approx(0.0)
 
-    out = matvec._off_diag64(b.states, b.norms, x.real.astype(np.float16))
-    assert out[0] == pytest.approx(0.0)
-    assert out[1] == pytest.approx(4 * x.real.astype(np.float16)[1])
-    assert out[2] == pytest.approx(4 * x.real.astype(np.float16)[2])
-    assert out[3] == pytest.approx(0.0)
+    if ls.KERNELS.has_float16():
+        out = matvec._off_diag64(b.states, b.norms, x.real.astype(np.float16))
+        assert out[0] == pytest.approx(0.0)
+        assert out[1] == pytest.approx(4 * x.real.astype(np.float16)[1])
+        assert out[2] == pytest.approx(4 * x.real.astype(np.float16)[2])
+        assert out[3] == pytest.approx(0.0)
 
     out = matvec._off_diag64(b.states, b.norms, x)
     assert out[0] == pytest.approx(0.0)
@@ -162,6 +164,10 @@ def test_ringX_translation(number_bits, k):
         out = o @ x
         out_ref = quspin_hamiltonian.dot(x[invert(order)])[order].real
         np.testing.assert_allclose(out, out_ref, rtol=1e-8, atol=1e-10)
+
+        out = o @ x.astype(np.float32)
+        out_ref = quspin_hamiltonian.dot(x[invert(order)].astype(np.float32).astype(np.float64))[order].real
+        np.testing.assert_allclose(out, out_ref, rtol=1e-5, atol=1e-7)
 
     x = rng.random(2 * b.states.size, dtype=np.float64).view(np.complex128)
     out = o @ x

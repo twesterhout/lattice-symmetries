@@ -9,17 +9,16 @@ final: prev: {
         inherit version;
         src = ./.;
         pyproject = true;
-        dependencies = with python-final; [
-          loguru numpy scipy sympy igraph more-itertools lark quspin cffi uniplot ];
+        dependencies = with python-final; [ loguru numpy scipy sympy igraph more-itertools lark cffi ];
         nativeBuildInputs = with python-final; [ setuptools ];
-        nativeCheckInputs = with python-final; [ pip pytestCheckHook pythonOutputDistHook hypothesis ];
+        nativeCheckInputs = with python-final; [ pip pytestCheckHook pythonOutputDistHook hypothesis quspin uniplot ];
         # preCheck = "rm -rf lattice_symmetries";
-        checkPhase = ''
-          runHook preCheck
-          python3 -m pytest --color=yes --capture=no test/ | tee output.txt
-          grep -q -E '(FAILURES|failed)' output.txt && exit 1
-          runHook postCheck
-        '';
+        # checkPhase = ''
+        #   runHook preCheck
+        #   python3 -m pytest --color=yes --capture=no test/ | tee output.txt
+        #   grep -q -E '(FAILURES|failed)' output.txt && exit 1
+        #   runHook postCheck
+        # '';
         doCheck = true;
 
         shellHook = ''

@@ -1,6 +1,8 @@
 #include "intrinsics.h"
 #include "declarations.h"
 
+De(int,has_float16,USE_F16)
+
 // Matrix elements
 #define Ci(t,u) i32 r=i*c->stride;Vi m[u];V##t acc[u];$(c->n_s0[i]>0,_(_L(_b,u,acc[_b]=bcast2##t(c->v_re,c->v_im,r));++r)){_L(_b,u,acc[_b]=zero##t())}
 #define Ck(t,u,b,x...) _L(k,b,_L(_b,u,m[_b]=(x));_L(_b,u,acc[_b]=add##t(acc[_b],signed##t(bcast2##t(c->v_re,c->v_im,r),m[_b])));++r)
@@ -11,7 +13,7 @@ Dcoeff(z,1)Dcoeff(z,4)
 #undef Ci
 #undef Ck
 
-D(i32,stride,_(c(i32)sizes[6]={sizeof(f64),sizeof(f32),sizeof(f16),sizeof(c128),sizeof(c64),sizeof(c32)};sizes[t]),c(i32)t)
+D(i32,stride,_(c(i32)sizes[6]={sizeof(f64),sizeof(f32),/*sizeof(f16)*/2,sizeof(c128),sizeof(c64),/*sizeof(c32)*/4};sizes[t]),c(i32)t)
 
 // Diagonal coefficients
 // #define Ddiag(t,s,u) D(void,diag##t##u##xN,_(Vi alpha[u];_L(_b,u,alpha[_b]=Ri(alpha0+_b*N));V##t acc[u];$(ctx->n_t>0,coeff##t##u##xN(alpha,acc,0,ctx))_L(_b,u,acc[_b]=zero##t());_L(_b,u,W##t((s*)out+_b*N,mul##t(acc[_b],R##t((s*)x0+_b*N))))),c(u64)*alpha0,c(s)*x0,s*out,c(oc_t)*ctx)

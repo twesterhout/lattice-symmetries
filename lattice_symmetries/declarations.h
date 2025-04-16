@@ -32,6 +32,7 @@ typedef struct search_ctx_t {
     char padding[16];
 } search_ctx_t;
 
+int has_float16(void);
 void norm64(uint64_t const *, bs_ctx_t const *, uint16_t *);
 void diag64(i32, u64 const *, void const *, void *, const oc_t *);
 void off_diag64(i32, u64 const *, u16 const *, void const *, void *, const oc_t *, const bs_ctx_t *, const search_ctx_t *);

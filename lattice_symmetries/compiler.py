@@ -7,7 +7,7 @@ from sympy.combinatorics import Permutation
 FOLDER = pathlib.Path(__file__).parent.resolve()
 
 class KernelCompiler:
-    temp: str; ffi: any; cc: str
+    temp: str; ffi: any; cc: str;
     def __init__(self, temp_dir=None):
         self.temp = temp_dir or tempfile.mkdtemp(prefix="lattice-symmetries-cache")
         logger.trace(f"'{self.temp}' will be used for compiling kernels.")
@@ -15,18 +15,23 @@ class KernelCompiler:
         with open(FOLDER / "declarations.h", "r") as f: self.ffi.cdef(f.read())
         self.cc = os.getenv("CC", default="cc")
         self.flags = ["-O2"] # ["-O3", "-ftree-vectorize"]
-        self.flags += ["-fno-math-errno", "-ffast-math", "-fschedule-insns", "-fschedule-insns2"]
-        self.flags += ["-Wall", "-Wextra", "-W", "-Wno-comment", "-Wno-unused-parameter", "-Wno-psabi", ]
+        self.flags += ["-march=native", "-mtune=native"]
+        self.flags += ["-Wall", "-Wextra", "-W", "-Wno-comment", "-Wno-unused-parameter", "-Wno-psabi"]
+        self.flags += ["-fno-math-errno", "-ffast-math"]
+        if "clang" not in self._version(): self.flags += ["-fschedule-insns", "-fschedule-insns2"]
+        # self.flags += ["-nostdlib", "-ffreestanding"]
+        # Always required
+        self.flags += ["-fPIC", "-fopenmp"]
+        self.flags += ["-I", os.getenv("LS_SIMDE_PATH", str(FOLDER))]
         M = os.getenv("LS_M")
         if M is not None:
             assert M in ["1", "2", "3"]; logger.trace(f"Kernels will be compiled for M={M}.")
             self.flags += [f"-DM={M}"]
-        # self.flags += ["-nostdlib", "-ffreestanding"]
-        # self.flags += ["-march=znver2", "-mtune=znver2"]
-        self.flags += ["-march=native", "-mtune=native"]
-        # Always required
-        self.flags += ["-fPIC", "-fopenmp"]
-        self.flags += ["-I", os.getenv("LS_SIMDE_PATH", str(FOLDER))]
+        F16 = os.getenv("LS_F16")
+        if F16 is not None:
+            assert F16 in ["0", "1"]; logger.trace(f"Setting USE_F16={F16}.")
+            self.flags += [f"-DUSE_F16={F16}"]
+    def _version(self): return subprocess.run([self.cc, "--version"], check=True, capture_output=True, text=True).stdout
     def compile(self, *srcs):
         _, out = tempfile.mkstemp(suffix=".so", dir=self.temp)
         args = [self.cc, *self.flags, "-shared", "-o", out, *map(str, srcs)]
@@ -40,14 +45,14 @@ COMPILER = KernelCompiler()
 class K:
     diag64: any; off_diag64: any; norm64: any;
     state_to_index: any; state_info: any;
-    matvec: any;
+    matvec: any; has_float16: any;
 
 def build_kernels():
     lib = COMPILER.compile(FOLDER / "matvec.c")
     k = K(
         lib.diag64, lib.off_diag64, lib.norm64,
         lib.state_to_index, lib.state_info,
-        lib.matvec,
+        lib.matvec, lib.has_float16
     )
     weakref.finalize(k, lambda: COMPILER.ffi.dlclose(lib))
     return k
@@ -303,7 +308,11 @@ def _pad(alpha, norm, x):
     if n < 64: return np.pad(alpha, p, mode="edge"), np.pad(norm, p), np.pad(x, p)
     else: return alpha, norm, x
 def _suffix(dtype): return dict(float64="f64", complex128="c128")[dtype.name]
-def _tc(dtype): return dict(float64=0, float32=1, float16=2, complex128=3, complex64=4)[dtype.name]
+
+if KERNELS.has_float16():
+    def _tc(dtype): return dict(float64=0, float32=1, float16=2, complex128=3, complex64=4)[dtype.name]
+else:
+    def _tc(dtype): return dict(float64=0, float32=1, complex128=3, complex64=4)[dtype.name]
     
 @dataclass(frozen=True)
 class Matvec:
