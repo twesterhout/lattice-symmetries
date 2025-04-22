@@ -14,7 +14,7 @@ class KernelCompiler:
         self.ffi = cffi.FFI()
         with open(FOLDER / "declarations.h", "r") as f: self.ffi.cdef(f.read())
         self.cc = os.getenv("CC", default="cc")
-        self.flags = ["-O2"] # ["-O3", "-ftree-vectorize"]
+        self.flags = ["-O3", "-ftree-vectorize", "-DNDEBUG"] # ["-O3", "-ftree-vectorize"]
         self.flags += ["-march=native", "-mtune=native"]
         self.flags += ["-Wall", "-Wextra", "-W", "-Wno-comment", "-Wno-unused-parameter", "-Wno-psabi"]
         self.flags += ["-fno-math-errno", "-ffast-math"]
@@ -54,7 +54,7 @@ def build_kernels():
         lib.state_to_index, lib.state_info,
         lib.matvec, lib.has_float16
     )
-    weakref.finalize(k, lambda: COMPILER.ffi.dlclose(lib))
+    # weakref.finalize(k, lambda: COMPILER.ffi.dlclose(lib))
     return k
 
 def build_enumerate_states():
@@ -62,7 +62,7 @@ def build_enumerate_states():
     @dataclass(frozen=True)
     class K: enumerate_states: any; copy_finalize: any; candidates: any
     fs = K(lib.enumerate_states, lib.copy_finalize, lib.candidates_simple)
-    weakref.finalize(fs, lambda: COMPILER.ffi.dlclose(lib))
+    # weakref.finalize(fs, lambda: COMPILER.ffi.dlclose(lib))
     return fs
 
 KERNELS = build_kernels()
@@ -97,25 +97,25 @@ class BasisInfo:
 
 
 NULL = COMPILER.ffi.NULL
-def b_f64(arr): return COMPILER.ffi.from_buffer("double*", arr, require_writable=True)
-def b_c128(arr): return COMPILER.ffi.from_buffer("void*", arr, require_writable=True)
-def b_u16(arr): return COMPILER.ffi.from_buffer("uint16_t*", arr, require_writable=True)
-def b_u64(arr): return COMPILER.ffi.from_buffer("uint64_t*", arr, require_writable=True)
-def b_i64(arr): return COMPILER.ffi.from_buffer("int64_t*", arr, require_writable=True)
-def cb_f64(arr): return COMPILER.ffi.from_buffer("const double*", arr, require_writable=False)
-def cb_c128(arr): return COMPILER.ffi.from_buffer("const void*", arr, require_writable=True)
-def cb_u8(arr): return COMPILER.ffi.from_buffer("const uint8_t*", arr, require_writable=False)
-def cb_u16(arr): return COMPILER.ffi.from_buffer("const uint16_t*", arr, require_writable=False)
-def cb_u32(arr): return COMPILER.ffi.from_buffer("const uint32_t*", arr, require_writable=False)
-def cb_u64(arr): return COMPILER.ffi.from_buffer("const uint64_t*", arr, require_writable=False)
-def cb_i32(arr): return COMPILER.ffi.from_buffer("const int32_t*", arr, require_writable=False)
-def cb_i64(arr): return COMPILER.ffi.from_buffer("const int64_t*", arr, require_writable=False)
-def b_g(arr):
-    if arr.dtype == np.float64: return b_f64(arr)
-    if arr.dtype == np.complex128: return b_c128(arr)
-def cb_g(arr):
-    if arr.dtype == np.float64: return cb_f64(arr)
-    if arr.dtype == np.complex128: return cb_c128(arr)
+def b_f64(arr): return COMPILER.ffi.from_buffer("f64*", arr, require_writable=True)
+# def b_c128(arr): return COMPILER.ffi.from_buffer("void*", arr, require_writable=True)
+def b_u16(arr): return COMPILER.ffi.from_buffer("u16*", arr, require_writable=True)
+def b_u64(arr): return COMPILER.ffi.from_buffer("u64*", arr, require_writable=True)
+def b_i64(arr): return COMPILER.ffi.from_buffer("i64*", arr, require_writable=True)
+def cb_f64(arr): return COMPILER.ffi.from_buffer("const f64*", arr, require_writable=False)
+# def cb_c128(arr): return COMPILER.ffi.from_buffer("const void*", arr, require_writable=True)
+def cb_u8(arr): return COMPILER.ffi.from_buffer("const u8*", arr, require_writable=False)
+def cb_u16(arr): return COMPILER.ffi.from_buffer("const u16*", arr, require_writable=False)
+def cb_u32(arr): return COMPILER.ffi.from_buffer("const u32*", arr, require_writable=False)
+def cb_u64(arr): return COMPILER.ffi.from_buffer("const u64*", arr, require_writable=False)
+def cb_i32(arr): return COMPILER.ffi.from_buffer("const i32*", arr, require_writable=False)
+def cb_i64(arr): return COMPILER.ffi.from_buffer("const i64*", arr, require_writable=False)
+# def b_g(arr):
+#     if arr.dtype == np.float64: return b_f64(arr)
+#     if arr.dtype == np.complex128: return b_c128(arr)
+# def cb_g(arr):
+#     if arr.dtype == np.float64: return cb_f64(arr)
+#     if arr.dtype == np.complex128: return cb_c128(arr)
 def b_void(arr): return COMPILER.ffi.from_buffer("void*", arr, require_writable=True)
 def cb_void(arr): return COMPILER.ffi.from_buffer("const void*", arr, require_writable=False)
 
@@ -242,7 +242,7 @@ def _offset_ranges(reps, bits: int, shift: int):
     # Normalize ranges to have equal size
     offsets[:-1] = np.minimum(offsets[:-1], len(reps) - size)
     return offsets, size
-def search_ctx_t(info, reps=None, norms=None, prefix_bits: int = 22):
+def search_ctx_t(info, reps=None, norms=None, prefix_bits: int = 20):
     if reps is None and norms is None and info.is_s2i_id: return Ctx()
     prefix_bits = max(0, min(info.bits, prefix_bits))
     shift = info.bits - prefix_bits
@@ -266,7 +266,7 @@ def enumerate_states(info, ctx=None):
         starts = np.arange(l, r + 1, chunk_size)
         sizes = np.append(np.diff(starts), [r - starts[-1] + 1])
         starts = starts - 1
-        total_size = COMPILER.ffi.new("int64_t *")
+        total_size = COMPILER.ffi.new("i64 *")
         with ls.measure_time() as dt1:
             chunks = MORE_KERNELS.enumerate_states(starts.size, cb_i64(sizes), cb_u64(starts),
                 MORE_KERNELS.candidates, KERNELS.norm64, ctx.p, total_size)
@@ -308,29 +308,25 @@ def _pad(alpha, norm, x):
     if n < 64: return np.pad(alpha, p, mode="edge"), np.pad(norm, p), np.pad(x, p)
     else: return alpha, norm, x
 def _suffix(dtype): return dict(float64="f64", complex128="c128")[dtype.name]
-
-if KERNELS.has_float16():
-    def _tc(dtype): return dict(float64=0, float32=1, float16=2, complex128=3, complex64=4)[dtype.name]
-else:
-    def _tc(dtype): return dict(float64=0, float32=1, complex128=3, complex64=4)[dtype.name]
+def _tc(dtype): return dict(float64=0, float32=1, complex128=3, complex64=4)[dtype.name]
     
 @dataclass(frozen=True)
 class Matvec:
     diag_ctx: any; off_diag_ctx: any; bs_ctx: any; search_ctx: any
-    def __call__(self, alpha, norm, x, out=None):
-        alpha = np.asarray(alpha, dtype=np.uint64, order="C")
-        norm = np.asarray(norm, dtype=np.uint16, order="C")
-        x = np.asarray(x, order="C")
-        alpha0, norm0, x0 = _pad(alpha, norm, x)
-        dtype, n = x.dtype, alpha.size
-        assert alpha.size == n and norm.size == n
+    def __call__(self, alpha0, norm0, x0, x=None, out=None):
+        alpha0 = np.asarray(alpha0, dtype=np.uint64, order="C")
+        norm0 = np.asarray(norm0, dtype=np.uint16, order="C")
+        x0 = np.asarray(x0, order="C")
+        x = x0 if x is None else np.asarray(x, order="C")
+        dtype, n0 = x0.dtype, alpha0.size; n = max(n0, 64)
+        assert x0.size == n0 and norm0.size == n0
         if self.search_ctx.p != NULL: assert x.size == self.search_ctx.keep_alive[0].size
-        if out is None: out = np.zeros(alpha0.size, dtype=dtype)
-        else: assert out.ndim == 1 and out.dtype == dtype \
-            and out.size == alpha0.size and out.flags["C_CONTIGUOUS"]
-        KERNELS.matvec(_tc(dtype), max(n, 64), cb_u64(alpha0), cb_u16(norm0), cb_void(x0), cb_void(x), b_void(out),
+        if out is None: out = np.zeros(n, dtype=dtype)
+        else: assert out.shape == (n,) and out.dtype == dtype and out.flags["C_CONTIGUOUS"]
+        alpha0, norm0, x0 = _pad(alpha0, norm0, x0)
+        KERNELS.matvec(_tc(dtype), n, cb_u64(alpha0), cb_u16(norm0), cb_void(x0), cb_void(x), b_void(out),
             self.diag_ctx.p, self.off_diag_ctx.p, self.bs_ctx.p, self.search_ctx.p)
-        return out[:n]
+        return out[:n0]
     def _diag64(self, alpha, x): # NOTE: for testing only
         alpha, x = map(np.ascontiguousarray, (alpha, x))
         alpha0, _, x0 = _pad(alpha, x, x)

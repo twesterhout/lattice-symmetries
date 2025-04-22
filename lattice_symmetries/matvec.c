@@ -1,51 +1,52 @@
 #include "intrinsics.h"
 #include "declarations.h"
 
-De(int,has_float16,USE_F16)
+De(int,has_float16,0)
 
-// Matrix elements
-#define Ci(t,u) i32 r=i*c->stride;Vi m[u];V##t acc[u];$(c->n_s0[i]>0,_(_L(_b,u,acc[_b]=bcast2##t(c->v_re,c->v_im,r));++r)){_L(_b,u,acc[_b]=zero##t())}
-#define Ck(t,u,b,x...) _L(k,b,_L(_b,u,m[_b]=(x));_L(_b,u,acc[_b]=add##t(acc[_b],signed##t(bcast2##t(c->v_re,c->v_im,r),m[_b])));++r)
-#define Dcoeff(t,u) D(void,coeff##t##u##xN,_(Ci(t,u)Ck(t,u,c->n_s1[i],m1(x[_b],Si(c->s1[i*c->stride+k])))Ck(t,u,c->n_s2[i],m2(x[_b],Si(c->s20[i*c->stride+k]),Si(c->s21[i*c->stride+k])))Ck(t,u,c->n_sX[i],mX(x[_b],Si(c->sX[i*c->stride+k])))_L(_b,u,o[_b]=acc[_b])),c(Vi)x[u],V##t o[u],c(i32)i,c(oc_t)*c)
-// Dcoeff(d,1)Dcoeff(d,4)
-Dcoeff(z,1)Dcoeff(z,4)
-#undef Dcoeff
-#undef Ci
-#undef Ck
-
+// Byte increment for different data types
 D(i32,stride,_(c(i32)sizes[6]={sizeof(f64),sizeof(f32),/*sizeof(f16)*/2,sizeof(c128),sizeof(c64),/*sizeof(c32)*/4};sizes[t]),c(i32)t)
 
+// Matrix elements.
+//
+// acc = 0
+// for r in range(n_r):
+//   sign = 1 if popcount(x & s[r]) % 2 == 0 else -1
+//   acc += sign * v[r]
+#define Ck(u,b,x...) _L(k,b,_L(_b,u,m[_b]=(x));_L(_b,u,c(Vz)z=flipsign(bcast2(c->v_re,c->v_im,r),m[_b]);acc[_b].re+=z.re;acc[_b].im+=z.im);++r)
+#define Dcoeff(u) \
+    D(void,coeffz##u##xN,_( \
+        i32 r=i*c->stride;Vq m[u];Vz acc[u]; \
+        c(Vz)acc0=(c->n_s0[i]>0)?bcast2(c->v_re,c->v_im,r++):Z2(Zd,Zd);_L(_b,u,acc[_b]=acc0) \
+        Ck(u,c->n_s1[i],m1(x[_b],Si(c->s1[i*c->stride+k]))) \
+        Ck(u,c->n_s2[i],m2(x[_b],Si(c->s20[i*c->stride+k]),Si(c->s21[i*c->stride+k]))) \
+        Ck(u,c->n_sX[i],mX(x[_b],Si(c->sX[i*c->stride+k]))) \
+        _L(_b,u,o[_b]=acc[_b]) \
+    ),c(Vq)x[u],Vz o[u],c(i32)i,c(oc_t)*c)
+Dcoeff(1)Dcoeff(4)
+#undef Dcoeff
+#undef Ck
+
 // Diagonal coefficients
-// #define Ddiag(t,s,u) D(void,diag##t##u##xN,_(Vi alpha[u];_L(_b,u,alpha[_b]=Ri(alpha0+_b*N));V##t acc[u];$(ctx->n_t>0,coeff##t##u##xN(alpha,acc,0,ctx))_L(_b,u,acc[_b]=zero##t());_L(_b,u,W##t((s*)out+_b*N,mul##t(acc[_b],R##t((s*)x0+_b*N))))),c(u64)*alpha0,c(s)*x0,s*out,c(oc_t)*ctx)
-D(void,diag1xN,_(c(Vi)alpha=Ri(alpha0);Vz acc=zeroz(),x=Rx(t,x0);if(ctx->n_t>0){coeffz1xN(&alpha,&acc,0,ctx);}Wx(t,out,mulz(acc,x))),c(i32)t,c(u64)*alpha0,c(void)*x0,void*out,c(oc_t)*ctx)
-
-// #define Ddiag64(t,s) De(void,diag64_##s, _(_L(k,64/N,diag##t##1xN(alpha0+k*N,(c(s)*)x0+k*N,(s*)out+k*N,ctx))),c(u64)*alpha0,c(void)*x0,void*out,c(oc_t)*ctx)
-De(void,diag64,_(c(i32)inc=stride(t);_L(k,64/N,diag1xN(t,alpha0+k*N,(c(char)*)x0+k*inc*N,(char*)out+k*inc*N,ctx))),c(i32)t,c(u64)*alpha0,c(void)*x0,void*out,c(oc_t)*ctx)
-// Ddiag(d,f64,1)Ddiag(z,c128,1)Ddiag64(d,f64)Ddiag64(z,c128)
-// #undef Ddiag
-// #undef Ddiag64
-// Ddiagx(d)Ddiagx(z)Ddiag64(d)Ddiag64(z)
-
-// De(void,diag64_f64,diag64(0,alpha0,x0,out,ctx),c(u64)*alpha0,c(void)*x0,void*out,c(oc_t)*ctx)
-// De(void,diag64_c128,diag64(3,alpha0,x0,out,ctx),c(u64)*alpha0,c(void)*x0,void*out,c(oc_t)*ctx)
+D(void,diag1xN,_(c(Vq)alpha=Rq(alpha0,0);Vz acc=Z2(Zd,Zd),x=Rx(t,x0);if(ctx->n_t>0){coeffz1xN(&alpha,&acc,0,ctx);}Wx(t,out,mulz(acc,x))),c(i32)t,c(u64)*alpha0,c(void)*x0,void*out,c(oc_t)*ctx)
+De(void,diag64,_(c(i32)inc=stride(t);_L(k,64/N,diag1xN(t,alpha0+k*N,(c(u8)*)x0+k*inc*N,(u8*)out+k*inc*N,ctx))),c(i32)t,c(u64)*alpha0,c(void)*x0,void*out,c(oc_t)*ctx)
 
 // Representatives
-D(Vi,pstep,_(c(Vi)y=and(xor(shr(x,d),x),m);xor(xor(x,y),shl(y,d))),c(Vi)x,c(Vi)m,c(u32)d)
+D(Vuq,pstep,_(c(Vuq)y=((x>>d)^x)&m;(x^y)^(y<<d)),c(Vuq)x,c(Vuq)m,c(u32)d)
 // the first row of ctx->masks is always the identity permutation
-#define Rsetup(u,a,ctx) c(u64)*masks=ctx->masks+ctx->n_r;Vi b[u],rep[u],gid[u];_L(_u,u,rep[_u]=a[_u],gid[_u]=Zi)
-#define Rs_(u,i,s) m=Si(masks[i]);_L(_u,u,b[_u]=pstep(b[_u],m,s))
-#define Rpermute(u) _(_L(_u,u,b[_u]=a[_u]);Vi m;Rs_(u,0,1);Rs_(u,1,2);Rs_(u,2,4);Rs_(u,3,8);Rs_(u,4,16);Rs_(u,5,32);Rs_(u,6,16);Rs_(u,7,8);Rs_(u,8,4);Rs_(u,9,2);Rs_(u,10,1))
-#define Rupdate(u,k) _(M8 p[u];c(Vi)vk=Si(k);_L(_u,u,p[_u]=gt(rep[_u],b[_u]))_L(_u,u,rep[_u]=select(p[_u],b[_u],rep[_u]),gid[_u]=select(p[_u],vk,gid[_u])))
-D(void,repr4xN,_(Rsetup(4,a,ctx);for(i64 k=1;k<ctx->n_m;++k,masks+=ctx->n_r){Rpermute(4);Rupdate(4,k);}_L(_u,4,_rep[_u]=rep[_u],_gid[_u]=gid[_u])),c(Vi)a[4],c(bs_ctx_t)*ctx,Vi _rep[4],Vi _gid[4])
+#define Rsetup(u,a,ctx) c(u64)*masks=ctx->masks+ctx->n_r;Vq b[u],rep[u],gid[u];_L(_u,u,rep[_u]=a[_u],gid[_u]=Zi)
+#define Rs_(u,i,s) m=Si(masks[i]);_L(_u,u,b[_u]=(Vq)pstep((Vuq)b[_u],(Vuq)m,s))
+#define Rpermute(u) _(_L(_u,u,b[_u]=a[_u]);Vq m;Rs_(u,0,1);Rs_(u,1,2);Rs_(u,2,4);Rs_(u,3,8);Rs_(u,4,16);Rs_(u,5,32);Rs_(u,6,16);Rs_(u,7,8);Rs_(u,8,4);Rs_(u,9,2);Rs_(u,10,1))
+#define Rupdate(u,k) _(M8 p[u];c(Vq)vk=Si(k);_L(_u,u,p[_u]=gt(rep[_u],b[_u]))_L(_u,u,rep[_u]=select(p[_u],b[_u],rep[_u]),gid[_u]=select(p[_u],vk,gid[_u])))
+D(void,repr4xN,_(Rsetup(4,a,ctx);for(i64 k=1;k<ctx->n_m;++k,masks+=ctx->n_r){Rpermute(4);Rupdate(4,k);}_L(_u,4,_rep[_u]=rep[_u],_gid[_u]=gid[_u])),c(Vq)a[static 4],c(bs_ctx_t)*ctx,Vq _rep[static 4],Vq _gid[static 4])
 
 // Binary search
-#define Ssetup(u,x,ctx) i64 n=ctx->range_size;Vi j[u],v[u];_L(_u,u,j[_u]=gthq((c(u64)*)ctx->offsets,and(shr(x[_u],ctx->shift),Si(ctx->mask))))
-#define Sgather(u,h,ctx) _L(_u,u,v[_u]=gthq(ctx->reps+h,j[_u]))
-#define Supdate(u,h,x) _L(_u,u,j[_u]=select(gt(x[_u],v[_u]),addq(j[_u],Si(h)),j[_u]))
-D(void,search4xN,_(Ssetup(4,x,ctx);while(n>1){c(i64)h=n/2;Sgather(4,h,ctx);n-=h;Supdate(4,h,x)}Sgather(4,0,ctx);Supdate(4,1,x);Sgather(4,0,ctx);_L(_u,4,m[_u]=eqq(x[_u],v[_u]),i[_u]=j[_u])),c(Vi)x[4],M8 m[4],Vi i[4],c(search_ctx_t)*ctx)
+#define Ssetup(u,x,ctx) i64 n=ctx->range_size;Vq j[u],v[u];_L(_u,u,j[_u]=Gq((c(u64)*)ctx->offsets,(x[_u]>>ctx->shift)&Si(ctx->mask)))
+#define Sgather(u,h,ctx) _L(_u,u,v[_u]=Gq(ctx->reps+h,j[_u]))
+#define Supdate(u,h,x) _L(_u,u,j[_u]=select(gt(x[_u],v[_u]),j[_u]+Si(h),j[_u]))
+D(void,search4xN,_(Ssetup(4,x,ctx);while(n>1){c(i64)h=n/2;Sgather(4,h,ctx);n-=h;Supdate(4,h,x)}Sgather(4,0,ctx);Supdate(4,1,x);Sgather(4,0,ctx);_L(_u,4,m[_u]=eq(x[_u],v[_u]);i[_u]=j[_u])),c(Vq)x[4],M8 m[4],Vq i[4],c(search_ctx_t)*ctx)
 
 // Fused repr and search---the bottleneck for simulations with symmetries
-static void repr_search4xN(c(Vi)a[4],c(Vi)r[4],c(bs_ctx_t)*bs_ctx,c(search_ctx_t)*search_ctx,Vi _rep[4],Vi _gid[4],M8 _msk[4],Vi _idx[4]){
+void repr_search4xN(c(Vq)a[4],c(Vq)r[4],c(bs_ctx_t)*bs_ctx,c(search_ctx_t)*search_ctx,Vq _rep[4],Vq _gid[4],M8 _msk[4],Vq _idx[4]){
     Ssetup(4,r,search_ctx);Rsetup(4,a,bs_ctx);
     c(i64)cnt=bs_ctx->n_m>search_ctx->steps?search_ctx->steps:bs_ctx->n_m;
     i64 k = 1;
@@ -59,14 +60,14 @@ static void repr_search4xN(c(Vi)a[4],c(Vi)r[4],c(bs_ctx_t)*bs_ctx,c(search_ctx_t
     for(;k<bs_ctx->n_m;++k,masks+=bs_ctx->n_r){Rpermute(4);Rupdate(4,k);}
     while(n>1){c(i64)h=n/2;Sgather(4,h,search_ctx);n-=h;Supdate(4,h,r)}
     Sgather(4,0,search_ctx);Supdate(4,1,r);Sgather(4,0,search_ctx)
-    _L(_u,4,_msk[_u]=eqq(r[_u],v[_u]),_idx[_u]=j[_u]) // do this first in case the next line writes to r
-    _L(_u,4,_rep[_u]=rep[_u],_gid[_u]=gid[_u])
+    _L(_u,4,_msk[_u]=eq(r[_u],v[_u]);_idx[_u]=j[_u]) // do this first in case the next line writes to r
+    _L(_u,4,_rep[_u]=rep[_u];_gid[_u]=gid[_u])
 }
 
 // Off-diagonal part with symmetries
-D(void,beta4xN,_(U4(bs[u]=xor(as[i+u],Si(c->mask[j])))),c(Vi)as[static 4],Vi bs[static 4],c(i32)i,c(i32)j,c(oc_t)*c)
-// D(void,_chid4xN,_(U4(chi[u]=gthd(c->chi_re,gid[u]))),c(Vi)gid[static 4],Vd chi[static 4],c(bs_ctx_t)*c)
-D(void,chi4xN,_(U4(chi[u].re=gthd(c->chi_re,gid[u]),chi[u].im=gthd(c->chi_im,gid[u]))),c(Vi)gid[static 4],Vz chi[static 4],c(bs_ctx_t)*c)
+De(void,beta4xN,_(U4(bs[u]=as[i+u]^Si(c->mask[j]))),c(Vq)as[static 4],Vq bs[static 4],c(i32)i,c(i32)j,c(oc_t)*c)
+// D(void,_chid4xN,_(U4(chi[u]=gthd(c->chi_re,gid[u]))),c(Vq)gid[static 4],Vd chi[static 4],c(bs_ctx_t)*c)
+De(void,chi4xN,_(U4(chi[u].re=_gthd(c->chi_re,gid[u],8),chi[u].im=_gthd(c->chi_im,gid[u],8))),c(Vq)gid[static 4],Vz chi[static 4],c(bs_ctx_t)*c)
 
 // D(void,_uptd4xN,_(U4(
 //     Vd x=mgthrx(0,_x,idx[u],msk[u]);
@@ -74,109 +75,53 @@ D(void,chi4xN,_(U4(chi[u].re=gthd(c->chi_re,gid[u]),chi[u].im=gthd(c->chi_im,gid
 //     Vd n0=Rw2d(_n0+(i+u)*N);
 //     Vd c=muld(sqrtd(divd(n,n0)),muld(chi[u],acc[u]));
 //     outer[i+u]=fmad(c,x,outer[i+u]);
-// )),c(i32)t,c(Vi)idx[static 4],c(M8)msk[static 4],c(Vd)acc[static 4],c(Vd)chi[static 4],Vd outer[static 4],c(i32)i,c(f64)*_x,c(u16)*_n,c(u16)*_n0)
-D(void,upt4xN,_(U4(
+// )),c(i32)t,c(Vq)idx[static 4],c(M8)msk[static 4],c(Vd)acc[static 4],c(Vd)chi[static 4],Vd outer[static 4],c(i32)i,c(f64)*_x,c(u16)*_n,c(u16)*_n0)
+De(void,upt4xN,_(U4(
     Vz x=Gmx(t,_x,idx[u],msk[u]);
-    Vd n=mgthw2d(_n,idx[u],msk[u]);
+    Vd n=Gmw(_n,idx[u],msk[u]);
     Vd n0=Rw2d(_n0+(i+u)*N);
-    Vd c1=sqrtd(divd(n,n0));
+    Vd c1=sqrtd(n/n0);
     Vz c2=mulz(chi[u],acc[u]);
     Vz c3=mulz(x,c2);
-    outer[i+u].re=fmad(c1,c3.re,outer[i+u].re);
-    outer[i+u].im=fmad(c1,c3.im,outer[i+u].im);
-)),c(i32)t,c(Vi)idx[static 4],c(M8)msk[static 4],c(Vz)acc[static 4],c(Vz)chi[static 4],Vz outer[static 4],c(i32)i,c(c128)*_x,c(u16)*_n,c(u16)*_n0)
-Di(void,odT8xN,_(
-    Vi as[8],bs[4],rep[4],gid[4],idx[4];M8 msk[4];Vz chi[4],acc[4],outer[8];
-    c(i32)inc=stride(t);U8(outer[u]=Rx(t,(c(char)*)out+u*inc*N))U8(as[u]=Ri(_alpha+u*N))
+    outer[i+u].re+=c1*c3.re;
+    outer[i+u].im+=c1*c3.im;
+)),c(i32)t,c(Vq)idx[static 4],c(M8)msk[static 4],c(Vz)acc[static 4],c(Vz)chi[static 4],Vz outer[static 4],c(i32)i,c(c128)*_x,c(u16)*_n,c(u16)*_n0)
+De(void,odT8xN,_(
+    Vq as[8],bs[4],rep[4],gid[4],idx[4];M8 msk[4];Vz chi[4],acc[4],outer[8];
+    c(i32)inc=stride(t);U8(outer[u]=Rx(t,(c(u8)*)out+u*inc*N))U8(as[u]=Rq(_alpha,u))
     beta4xN(as,bs,0,0,ctx);repr4xN(bs,bs_ctx,rep,gid);
     for(i32 j=0;j<8*ctx->n_t-4;j+=4){
         beta4xN(as,bs,(j+4)%8,(j+4)/8,ctx);chi4xN(gid,chi,bs_ctx);
-        repr_search4xN(bs,rep,bs_ctx,search_ctx,rep,gid,msk,idx);/*prefetch##t##4xN(idx,search_ctx->norm,_X);*/
+        repr_search4xN(bs,rep,bs_ctx,search_ctx,rep,gid,msk,idx);
+        _L(u,4*N,prefetch(search_ctx->norm+idx[u/4][u%4],0,3);prefetch((c(u8)*)_X+inc*idx[u/4][u%4]))
         coeffz4xN(as+j%8,acc,j/8,ctx);upt4xN(t,idx,msk,acc,chi,outer,j%8,_X,search_ctx->norm,_norm);
     }
     search4xN(rep,msk,idx,search_ctx);chi4xN(gid,chi,bs_ctx);
-    /*prefetch##t##4xN(idx,search_ctx->norm,_X);*/
+    _L(u,4*N,prefetch(search_ctx->norm+idx[u/4][u%4],0,3);prefetch((c(u8)*)_X+inc*idx[u/4][u%4]))
     coeffz4xN(as+4,acc,ctx->n_t-1,ctx);upt4xN(t,idx,msk,acc,chi,outer,4,_X,search_ctx->norm,_norm);
-    U8(Wx(t,(char*)out+u*inc*N,outer[u]))
+    U8(Wx(t,(u8*)out+u*inc*N,outer[u]))
 ),c(i32)t,c(u64)*_alpha,c(u16)*_norm,c(void)*_X,void*out,c(oc_t)*ctx,c(bs_ctx_t)*bs_ctx,c(search_ctx_t)*search_ctx)
-Di(void,odF4xN,_(
-    Vi as[4],bs[4];Vz acc[4],outer[4];
-    c(i32)inc=stride(t);U4(outer[u]=Rx(t,(c(char)*)out+u*inc*N))U4(as[u]=Ri(_alpha+u*N))
+De(void,odF4xN,_(
+    Vq as[4],bs[4];Vz acc[4],outer[4];
+    c(i32)inc=stride(t);U4(outer[u]=Rx(t,(c(u8)*)out+u*inc*N))U4(as[u]=Rq(_alpha,u))
     _L(ti,ctx->n_t,
         beta4xN(as,bs,0,ti,ctx);/*prefetch##t##4xN(idx,search_ctx->norm,_X);*/
-        coeffz4xN(as,acc,ti,ctx);U4(outer[u]=addz(mulz(acc[u],Gx(t,_X,bs[u])),outer[u]))
+        coeffz4xN(as,acc,ti,ctx);U4(c(Vz)z=mulz(acc[u],Gx(t,_X,bs[u]));outer[u].re+=z.re;outer[u].im+=z.im)
     )
-    U4(Wx(t,(char*)out+u*inc*N,outer[u]))
+    U4(Wx(t,(u8*)out+u*inc*N,outer[u]))
 ),c(i32)t,c(u64)*_alpha,c(u16)*_norm,c(void)*_X,void*out,c(oc_t)*ctx,c(bs_ctx_t)*bs_ctx,c(search_ctx_t)*search_ctx)
 
-// static void odT##t##8xN(c(i32)t,c(u64)*_alpha,c(u16)*_norm,c(void)*_X,void*out,c(oc_t)*ctx,c(bs_ctx_t)*bs_ctx,c(search_ctx_t)*search_ctx){ \
-//     Vi as[8],bs[4],rep[4],gid[4],idx[4];M8 msk[4];Vz chi[4],acc[4],outer[8]; \
-//     c(i32)inc=stride(t); \
-//     U8(outer[u]=Rx(t,(c(char)*)out+u*inc*N)) \
-//     U8(as[u]=Ri(_alpha+u*N)) \
-//     _beta4xN(as,bs,0,0,ctx); \
-//     repr4xN(bs,bs_ctx,rep,gid); \
-//     for(i32 j=0;j<8*ctx->n_t-4;j+=4){ \
-//         _beta4xN(as,bs,(j+4)%8,(j+4)/8,ctx); \
-//         _chiz4xN(gid,chi,bs_ctx); \
-//         repr_search4xN(bs,rep,bs_ctx,search_ctx,rep,gid,msk,idx); \
-//         /*prefetch##t##4xN(idx,search_ctx->norm,_X);*/ \
-//         c(i32)ti=j/8,bi=j%8; \
-//         coeffz4xN(as+bi,acc,ti,ctx); \
-//         _uptz4xN(t,idx,msk,acc,chi,outer,bi,_X,search_ctx->norm,_norm); \
-//     } \
-//     search4xN(rep,msk,idx,search_ctx); \
-//     _chiz4xN(gid,chi,bs_ctx); \
-//     /*prefetch##t##4xN(idx,search_ctx->norm,_X);*/ \
-//     c(i32)ti=ctx->n_t-1,bi=4; \
-//     coeffz4xN(as+bi,acc,ti,ctx); \
-//     _uptz4xN(t,idx,msk,acc,chi,outer,bi,_X,search_ctx->norm,_norm); \
-//     U8(Wx(t,(char*)out+u*inc*N,outer[u])) \
-// }
-// DodT8xN(d,f64)DodT8xN(z,c128)
-
-// Off-diagonal part without symmetries
-// #define DodF4xN(t,s) \
-//     static void odF##t##4xN(c(u64)*_alpha,c(u16)*_norm,c(s)*_X,s*out,c(oc_t)*ctx,c(bs_ctx_t)*bs_ctx,c(search_ctx_t)*search_ctx){ \
-//         Vi as[4],bs[4];V##t acc[4],outer[4]; \
-//         U4(outer[u]=zero##t())U4(as[u]=Ri(_alpha+u*N)) \
-//         _L(ti,ctx->n_t, \
-//             beta4xN(as,bs,0,ti,ctx); \
-//             /*prefetch##t##4xN(idx,search_ctx->norm,_X);*/ \
-//             coeff##t##4xN(as,acc,ti,ctx); \
-//             U4(outer[u]=add##t(mul##t(acc[u],gth##t(_X,bs[u])),outer[u])) \
-//         ) \
-//         U4(W##t(out+u*N,add##t(R##t(out+u*N),outer[u]))) \
-//     }
-// DodF4xN(d,f64)DodF4xN(z,c128)
-
 De(void,off_diag64,_(
-    if(ctx->n_t<=0)return;c(i32)inc=stride(t);typeof(&odT8xN) const f=bs_ctx!=NULL?odT8xN:odF4xN;c(i32)step=bs_ctx!=NULL?8*N:4*N;
-    for(i32 k=0;k<64;k+=step){f(t,alpha0+k,norm0+k,X,(char*)out+k*inc,ctx,bs_ctx,search_ctx);}
+    if(ctx->n_t<=0)return;
+    c(i32)inc=stride(t);c(typeof(&odT8xN))f=bs_ctx!=0?odT8xN:odF4xN;c(i32)step=bs_ctx!=0?8*N:4*N;
+    for(i32 k=0;k<64;k+=step){f(t,alpha0+k,norm0+k,X,(u8*)out+k*inc,ctx,bs_ctx,search_ctx);}
 ),c(i32)t,c(u64)*alpha0,c(u16)*norm0,c(void)*X,void*out,c(oc_t)*ctx,c(bs_ctx_t)*bs_ctx,c(search_ctx_t)*search_ctx)
 
-// #define Doff_diag64(t,s,code) De(void,off_diag64_##s,_( \
-//     if(ctx->n_t<=0)return;i32 k=0;while(k<64){ \
-//         if(bs_ctx!=NULL){odT8xN(code,alpha0+k,norm0+k,X,(s*)out+k,ctx,bs_ctx,search_ctx);k+=8*N;} \
-//         else{odF4xN(code,alpha0+k,norm0+k,X,(s*)out+k,ctx,bs_ctx,search_ctx);k+=4*N;} \
-//     }),c(u64)*alpha0,c(u16)*norm0,c(void)*X,void*out,c(oc_t)*ctx,c(bs_ctx_t)*bs_ctx,c(search_ctx_t)*search_ctx)
-// Doff_diag64(d,f64,0)Doff_diag64(z,c128,3)
-// #undef Doff_diag64
-Di(void,matvec_inner,_(c(i32)inc=stride(t);diag64(t,alpha0+i,(c(char)*)X0+i*inc,(char*)out+i*inc,diag);off_diag64(t,alpha0+i,norm0+i,X,(char*)out+i*inc,off_diag,bs,search)),
-    c(i32)t,c(i64)i,c(u64)*alpha0,c(u16)*norm0,c(void)*X0,c(void)*X,void*out,c(oc_t)*diag,c(oc_t)*off_diag,c(bs_ctx_t)*bs,c(search_ctx_t)*search)
-
-// Matvec for 64 elements
-// #define matvec_inner_template(s,t,c) \
-//     void matvec_inner_##t(i64 const i, u64 const *alpha0, u16 const *norm0, void const *X0, void const *X, void *out, \
-//             oc_t const *diag, oc_t const *off_diag, bs_ctx_t const *bs, search_ctx_t const *search) { \
-//         diag64(c, alpha0 + i, (t const*)X0 + i, (t*)out + i, diag); \
-//         off_diag64(c, alpha0 + i, norm0 + i, X, (t*)out + i, off_diag, bs, search); \
-//     }
-// matvec_inner_template(d,f64,0)matvec_inner_template(z,c128,3)
-// #undef matvec_inner_template
-
-// typedef void (*matvec_internal_t)(i64, u64 const *, u16 const *, void const *, void const *, void *,
-//                                   oc_t const *, oc_t const *, bs_ctx_t const *, search_ctx_t const *);
+Di(void,matvec_inner,_(
+   c(i32)inc=stride(t);
+   diag64(t,alpha0+i,(c(u8)*)X0+i*inc,(u8*)out+i*inc,diag);
+   off_diag64(t,alpha0+i,norm0+i,X,(u8*)out+i*inc,off_diag,bs,search)
+),c(i32)t,c(i64)i,c(u64)*alpha0,c(u16)*norm0,c(void)*X0,c(void)*X,void*out,c(oc_t)*diag,c(oc_t)*off_diag,c(bs_ctx_t)*bs,c(search_ctx_t)*search)
 
 void matvec(i32 const t, i64 const n, u64 const *alpha0, u16 const *norm0, void const *X0, void const *X, void *out,
         oc_t const *diag_ctx, oc_t const *off_diag_ctx, bs_ctx_t const *bs_ctx, search_ctx_t const *search_ctx) {
@@ -189,20 +134,10 @@ void matvec(i32 const t, i64 const n, u64 const *alpha0, u16 const *norm0, void 
     if (n_r != 0) { matvec_inner(t, n - 64, alpha0, norm0, X0, X, out, diag_ctx, off_diag_ctx, bs_ctx, search_ctx); }
 }
 
-// void matvec_f64(i64 const n, u64 const *alpha0, u16 const *norm0, void const *X0, void const *X, void *out,
-//         oc_t const *diag_ctx, oc_t const *off_diag_ctx, bs_ctx_t const *bs_ctx, search_ctx_t const *search_ctx) {
-//     matvec(n, alpha0, norm0, X0, X, out, diag_ctx, off_diag_ctx, bs_ctx, search_ctx, matvec_inner_f64);
-// }
-// void matvec_c128(i64 const n, u64 const *alpha0, u16 const *norm0, void const *X0, void const *X, void *out,
-//         oc_t const *diag_ctx, oc_t const *off_diag_ctx, bs_ctx_t const *bs_ctx, search_ctx_t const *search_ctx) {
-//     matvec(n, alpha0, norm0, X0, X, out, diag_ctx, off_diag_ctx, bs_ctx, search_ctx, matvec_inner_c128);
-// }
-
-
 #define with_in(tmp_x, x, t, n, ...) t tmp_x[4*N]; __builtin_memset(tmp_x, 0, 4 * N * sizeof(t)); __builtin_memcpy(tmp_x, x, n * sizeof(t)); __VA_ARGS__
 #define with_out(tmp_x, x, t, n, ...) t tmp_x[4*N]; __builtin_memset(tmp_x, 0, 4 * N * sizeof(t)); __VA_ARGS__; __builtin_memcpy(x, tmp_x, n * sizeof(t))
 
-#define INNER(_k) {c(i64)k=(_k);Vi a[4],r[4],i[4];_L(_u,4,a[_u]=Ri(xs+k+_u*N));repr4xN(a,ctx,r,i);_L(_u,4,Wi(rep+k+_u*N,r[_u]),Wi(gid+k+_u*N,i[_u]))}
+#define INNER(_k) {c(i64)k=(_k);Vq a[4],r[4],i[4];_L(_u,4,a[_u]=Rq(xs+k,_u));repr4xN(a,ctx,r,i);_L(_u,4,Wq(rep+k,_u,r[_u]),Wq(gid+k,_u,i[_u]))}
 void state_info(c(i64)n,c(u64)*xs,c(bs_ctx_t)*ctx,u64*rep,i64*gid){
     if(n<=0){return;}
     if(n<4*N){with_in(tmp_xs,xs,u64,n,with_out(tmp_rep,rep,u64,n,with_out(tmp_gid,gid,i64,n,state_info(4*N,tmp_xs,ctx,tmp_rep,tmp_gid))));return;}
@@ -214,8 +149,8 @@ void state_info(c(i64)n,c(u64)*xs,c(bs_ctx_t)*ctx,u64*rep,i64*gid){
 }
 #undef INNER
 
-#define INNER(_k) {c(i64)k=(_k);Vi a[4],idx[4];M8 msk[4];_L(_u,4,a[_u]=Ri(xs+k+_u*N));search4xN(a,msk,idx,ctx);_L(_u,4,Wi(out+k+_u*N,select(msk[_u],idx[_u],Si(-1))))}
-void state_to_index(int64_t const n, uint64_t const *xs, search_ctx_t const *ctx, int64_t *out) {
+#define INNER(_k) {c(i64)k=(_k);Vq a[4],idx[4];M8 msk[4];_L(_u,4,a[_u]=Rq(xs+k,_u));search4xN(a,msk,idx,ctx);_L(_u,4,Wq(out+k,_u,select(msk[_u],idx[_u],Si(-1))))}
+void state_to_index(c(i64)n, c(u64)*xs, search_ctx_t const *ctx, i64 *out) {
     if(n<=0){return;}
     if(n<4*N){with_in(tmp_xs,xs,u64,n,with_out(tmp_out,out,i64,n,state_to_index(4*N,tmp_xs,ctx,tmp_out)));return;}
 
@@ -226,40 +161,32 @@ void state_to_index(int64_t const n, uint64_t const *xs, search_ctx_t const *ctx
 }
 #undef INNER
 
-Vi permute(Vi x, u64 const *masks, u32 const *shifts, i32 const n) { i32 i = 0; do { x = pstep(x, Si(masks[i]), shifts[i]); ++i; } while (i < n); return x; }
+// Vq permute(Vq x, u64 const *masks, u32 const *shifts, i32 const n) { i32 i = 0; do { x = pstep(x, Si(masks[i]), shifts[i]); ++i; } while (i < n); return x; }
 
-#if M == 1
-D(u32,movemask,m,c(M8)m)
-#else
-D(u32,movemask,I(movemask_pd,i2d(m)),c(M8)m)
-#endif
 
-INTERNAL u32 ap_f(Vi const x, Vi const v) { return movemask(gt(x, v)); }
-INTERNAL Vi ap_e(Vi const norm, Vi const x, Vi const v) { return addq(norm, shr(eqi(x, v), 63)); }
-static HEDLEY_ALWAYS_INLINE Vi norm(Vi x, bs_ctx_t const* ctx) {
-    int k = 1; unsigned flag = 0; Vi norm = Si(1)/*, m = Si(ctx->inversion_mask)*/;
-    uint8_t const* flags = ctx->flags + k * 3; uint64_t const* masks = ctx->masks + k * ctx->n_r;
+D(u32,ap_f,movemask(gt(x,v)),c(Vq)x,c(Vq)v)
+D(Vq,ap_e,norm+((x==v)&0x1),c(Vq)norm,c(Vq)x,c(Vq)v)
+static inline Vq norm(Vq x, bs_ctx_t const* ctx) {
+    int k = 1; unsigned flag = 0; Vq norm = Si(1)/*, m = Si(ctx->inversion_mask)*/;
+    u8 const* flags = ctx->flags + k * 3; u64 const* masks = ctx->masks + k * ctx->n_r;
+    Vq a[1]={x};Vq b[1];
     for (; k < ctx->n_m; ++k, masks += ctx->n_r, flags += 3) {
-        uint8_t const /*use_f2 = flags[0], */use_e1 = flags[1]/*, use_e2 = flags[2]*/;
-        Vi y = permute(x, masks, ctx->shifts, ctx->n_r);
+        u8 const /*use_f2 = flags[0], */use_e1 = flags[1]/*, use_e2 = flags[2]*/;
+        Rpermute(1); c(Vq)y=b[0]; // permute(x, masks, ctx->shifts, ctx->n_r);
         flag |= ap_f(x, y);
         // if (use_f2) { y2 = XOR(y, m); AP_F(y2); }
         if (use_e1) { norm = ap_e(norm, x, y); }
-        else { flag |= movemask(eqq(x, y)); }
+        else { flag |= movemask(eq(x,y)); }
         if (flag == (1<<N)-1) { return Zi; }
         // if (use_e2) { AP_E(y2); }
     }
-#if M == 1
-    Vi const c = I(set_epi64,1<<7,1<<6,1<<5,1<<4,1<<3,1<<2,1<<1,1);
-#elif M == 2
-    Vi const c = I(set_epi64x,0b1000,0b100,0b10,0b1);
-#else
-    Vi const c = I(set_epi64x,0b10,0b1);
-#endif
-    Vi const p = eqi(and(Si(flag), c), c);
-    return andnot(p, norm);
+    c(Vq)c=A(((Vq){1,1<<1,1<<2,1<<3,1<<4,1<<5,1<<6,1<<7}),
+             ((Vq){1,1<<1,1<<2,1<<3}),
+             ((Vq){1,1<<1}));
+    Vq const p = (Si(flag)&c)==c;
+    return (~p)&norm;
 }
 
-void norm64(uint64_t const *alpha, bs_ctx_t const *ctx, uint16_t *out) {
-    for(i32 k=0;k<64;k+=4*N) { Vi n[4];U4(n[u]=norm(Ri(alpha+k+u*N),ctx)); Wq2w(out+k,n); }
+void norm64(u64 const *alpha, bs_ctx_t const *ctx, u16 *out) {
+    for(i32 k=0;k<64;k+=4*N) { Vq n[4];U4(n[u]=norm(Rq(alpha+k,u),ctx)); Wq2w(out+k,n); }
 }

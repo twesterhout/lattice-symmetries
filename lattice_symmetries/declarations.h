@@ -1,6 +1,6 @@
 // This file should be included AFTER intrinsics.h
-typedef int8_t i8; typedef int16_t i16; typedef int32_t i32; typedef int64_t i64;
-typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef uint64_t u64;
+typedef char i8; typedef short i16; typedef int i32; typedef long long i64;
+typedef unsigned char u8; typedef unsigned short u16; typedef unsigned u32; typedef unsigned long long u64;
 typedef float f32; typedef double f64; typedef float _Complex c64; typedef double _Complex c128;
 
 typedef struct oc_t {
@@ -33,15 +33,15 @@ typedef struct search_ctx_t {
 } search_ctx_t;
 
 int has_float16(void);
-void norm64(uint64_t const *, bs_ctx_t const *, uint16_t *);
+void norm64(u64 const *, bs_ctx_t const *, u16 *);
 void diag64(i32, u64 const *, void const *, void *, const oc_t *);
 void off_diag64(i32, u64 const *, u16 const *, void const *, void *, const oc_t *, const bs_ctx_t *, const search_ctx_t *);
 
 void matvec(i32, i64, u64 const *, u16 const *, void const *, void const *, void *, const oc_t *, const oc_t *, const bs_ctx_t *, const search_ctx_t *);
 
-void state_to_index(int64_t, uint64_t const *, search_ctx_t const *, int64_t *);
-void state_info(int64_t, uint64_t const *, bs_ctx_t const *, uint64_t *, int64_t *);
+void state_to_index(i64, u64 const *, search_ctx_t const *, i64 *);
+void state_info(i64, u64 const *, bs_ctx_t const *, u64 *, i64 *);
 
-void candidates_simple(uint64_t, uint64_t *);
-void* enumerate_states(int64_t, int64_t *, uint64_t *, void *, void *, void const *, int64_t *);
-void copy_finalize(int64_t, void *, uint64_t *, uint16_t *);
+void candidates_simple(u64, u64 *);
+void* enumerate_states(i64, i64 *, u64 *, void *, void *, void const *, i64 *);
+void copy_finalize(i64, void *, u64 *, u16 *);
