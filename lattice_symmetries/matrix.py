@@ -1,4 +1,5 @@
 import numpy as np, sympy, lattice_symmetries as ls
+from loguru import logger
 from numpy.typing import NDArray
 from scipy.sparse.linalg import LinearOperator
 

@@ -242,7 +242,7 @@ typedef A(simde__mmask8,Vq,Vq) M8; // AVX512 uses bitmasks; everything else just
 
 D(Vq,Si,((Vq){RN(x)}),c(i64)x)
 D(Vd,Sd,((Vd){RN(x)}),c(f64)x)
-D(u32,movemask,A(,O(movmskpd256),O(movmskpd))((Vd)m),c(M8)m)
+D(u32,movemask,A(m,O(movmskpd256)((Vd)m),O(movmskpd)((Vd)m)),c(M8)m)
 
 #if M == 1
 #   define hi(X) _Generic((X), V8d: V8d_hi, V4d: V4d_hi, V16f: V16f_hi, V8f: V8f_hi)(X)
