@@ -16,7 +16,7 @@
 #   endif
 #endif
 
-#if M == 1 || M == 3
+#if M == 1
 #include <immintrin.h>
 #include <simde/x86/avx512.h>
 #endif
@@ -29,6 +29,12 @@ typedef float float32_t; // Need it for some weird reason at M == 3 ...
 #  define A(f1,f2,f3) f2
 #else
 #  define A(f1,f2,f3) f3
+#endif
+
+#if defined(__clang__)
+#  define GC(g,c) clang
+#else
+#  define GC(g,c) g
 #endif
 
 #if defined(__clang__)
@@ -142,58 +148,67 @@ SIMDE_FUNCTION_ATTRIBUTES simde__m256 simde_mm512_cvtpd_ps (simde__m512d a) {
 #define R2(x) x,x
 #define R4(x) x,x,x,x
 #define R8(x) x,x,x,x,x,x,x,x
-
+#define R16(x) x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x
 #define RF2(f) f(0),f(1)
 #define RF4(f) f(0),f(1),f(2),f(3)
 #define RF8(f) f(0),f(1),f(2),f(3),f(4),f(5),f(6),f(7)
 
 #if M == 1
 #   define B 512
-#   define _S(f) f##_si512
+// #   define _S(f) f##_si512
 #   define I(f,x...) I8(f,x)
-#   define Zi Z8i
-#   define Zd Z8d
-#   define Zf Z16f
 #   define RN(x) R8(x)
 #   define RFN(f) RF8(f)
 #elif M == 2
 #   define B 256
-#   define _S(f) f##_si256
-#   define I(f,x...) I4(f,x)
-#   define Zi Z4i
-#   define Zd Z4d
-#   define Zf Z8f
+// #   define _S(f) f##_si256
+// #   define I(f,x...) I4(f,x)
 #   define RN(x) R4(x)
 #   define RFN(f) RF4(f)
 #else
 #   define B 128
-#   define _S(f) f##_si128
+// #   define _S(f) f##_si128
 #   define I(f,x...) I2(f,x)
-#   define Zi Z2i
-#   define Zd Z2d
-#   define Zf Z4f
 #   define RN(x) R2(x)
 #   define RFN(f) RF2(f)
 #endif
+#define Zi ((Vq){RN(0)})
+#define Zd ((Vd){RN(0.0)})
+#define Zf ((Vd){RN(0.0f),RN(0.0f)})
 #define N (B / 64)
 #define Va(n) __attribute__((vector_size(n),aligned(n)))
 #define Vu(n) __attribute__((vector_size(n),aligned(1)))
+// #if defined(__clang__)
+// #  define shfl1(x...) __builtin_shufflevector(x)
+// // #  define shuffle2(x...) __builtin_shufflevector(x)
+// #else
+// #  define shfl1(x...) __builtin_shuffle(x)
+// // #  define shuffle2(x...) __builtin_shufflevector(x)
+// #endif
+#define E_(x...) x
+#define cvt(x,t) __builtin_convertvector(x,t)
+#define shfl1(x...) GC(__builtin_shuffle(x),__builtin_shufflevector(x))
 #if defined(__clang__)
-#  define shuffle1(x...) __builtin_shufflevector(x)
-#else
-#  define shuffle1(x...) __builtin_shuffle(x)
+#  define shfl2(a,b,c...) __builtin_shufflevector(a,b,c)
+#else // GCCs older than 12 don't support __builtin_shufflevector
+#  define _F16(a,b,c,d,e,f,g,h,i,j,k,l,m,n,p,q,...) a,b,c,d,e,f,g,h,i,j,k,l,m,n,p,q
+#  define _F8(a,b,c,d,e,f,g,h,...) a,b,c,d,e,f,g,h
+#  define _F4(a,b,c,d,...) a,b,c,d
+#  define _F2(a,b,...) a,b
+#  define _cast_to_int(t,x...) _Generic((t), V8d: (V8q){_F8(x)}, V4d: (V4q){_F4(x)}, V2d: (V2q){_F2(x)}, \
+                                             V16f: (V16i){_F16(x)}, V8f: (V8i){_F8(x)}, V4f: (V4i){_F4(x)})
+#  define shfl2(a,b,c...) __builtin_shuffle(a,b,_cast_to_int(a,c,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1))
 #endif
-#define shuffle2(x...) __builtin_shufflevector(x)
 
-#define Z8i ((V8q){0,0,0,0,0,0,0,0})
-#define Z8d ((V8d){0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0})
-#define Z16f ((V16f){0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f})
-#define Z4i ((V4q){0,0,0,0})
-#define Z4d ((V4d){0.0,0.0,0.0,0.0})
-#define Z8f ((V8f){0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f})
-#define Z2i ((V2q){0,0})
-#define Z2d ((V2d){0.0,0.0})
-#define Z4f ((V4f){0.0f,0.0f,0.0f,0.0f})
+// #define Z8i ((V8q){R8(0)})
+// #define Z8d ((V8d){R8(0.0)})
+// #define Z16f ((V16f){R16(0.0f)})
+// #define Z4i ((V4q){R4(0)})
+// #define Z4d ((V4d){R4(0.0)})
+// #define Z8f ((V8f){R8(0.0f)})
+// #define Z2i ((V2q){R2(0)})
+// #define Z2d ((V2d){R2(0.0)})
+#define Z4f ((V4f){R4(0.0f)})
 
 // unaligned SIMD vector types; use these only for reading and writing
 typedef i64 _Vq Vu(B/8);typedef f64 _Vd Vu(B/8);typedef f32 _Vf Vu(B/8);
@@ -213,113 +228,47 @@ typedef f64 V8d Va(64);typedef f64 V4d Va(32); typedef f64 V2d Va(16);
 typedef f32 V16f Va(64);typedef f32 V8f Va(32); typedef f32 V4f Va(16);
 // M-dependent aliases
 typedef i64 Vq Va(B/8);typedef u64 Vuq Va(B/8);typedef i32 Vi Va(B/8);typedef u16 Vw Va(B/8);typedef char Vb Va(B/8);typedef f64 Vd Va(B/8);typedef f32 Vf Va(B/8);
-// complex number
+// complex numbers
 typedef struct Vz{Vd re;Vd im;}Vz;
 // Mask type that's returned from various comparison operators and that we ues for masked gather
 typedef A(simde__mmask8,Vq,Vq) M8; // AVX512 uses bitmasks; everything else just uses vectors
 
-#if M == 1
-    D(V4d,V8d_hi,I8(extractf64x4_pd,x,1),c(V8d)x)
-    D(V8f,V16f_hi,I8(extractf32x8_ps,x,1),c(V16f)x)
-    D(V4d,V8d_lo,I8(castpd512_pd256,x),c(V8d)x)
-    D(V8f,V16f_lo,I8(castps512_ps256,x),c(V16f)x)
-    D(V8d,V8f_d,I8(cvtps_pd,x),c(V8f)x)
-    D(V8f,V8d_f,I8(cvtpd_ps,x),c(V8d)x)
-#endif
+// interleave/deinterleave for c128
+#define unpack_Vz_idx0 A(E_(0,2,4,6,8,10,12,14),E_(0,2,4,6),E_(0,2))
+#define unpack_Vz_idx1 A(E_(1,3,5,7,9,11,13,15),E_(1,3,5,7),E_(1,3))
+#define pack_Vz_idx0 A(E_(0,8, 1,9, 2,10,3,11),E_(0,4,1,5),E_(0,2))
+#define pack_Vz_idx1 A(E_(4,12,5,13,6,14,7,15),E_(2,6,3,7),E_(1,3))
+D(Vz,unpack_Vz,_(Z2(shfl2(a,b,unpack_Vz_idx0),shfl2(a,b,unpack_Vz_idx1))),c(Vd)a,c(Vd)b)
+D(Vz,pack_Vz,_(Z2(shfl2(a,b,pack_Vz_idx0),shfl2(a,b,pack_Vz_idx1))),c(Vd)a,c(Vd)b)
+
+// interleave/deinterleave for c64
 #if M <= 2
-    D(V2d,V4d_hi,(O(vextractf128_pd256)(x,1)),c(V4d)x)
-    D(V4f,V8f_hi,(O(vextractf128_ps256)(x,1)),c(V8f)x)
-    D(V2d,V4d_lo,shuffle2(x,x,0,1),c(V4d)x)
-    D(V4f,V8f_lo,shuffle2(x,x,0,1,2,3),c(V8f)x)
-    D(V4f,V4d_f,(__builtin_convertvector(x,V4f)),c(V4d)x)
-    D(V4d,V4f_d,(__builtin_convertvector(x,V4d)),c(V4f)x)
-    D(V4f,V2d_f,O(cvtpd2ps)(x),c(V2d)x)
-#endif
-#if M == 3
-    D(V2d,V4f_d,((Vd){(f64)x[0],(f64)x[1]}),c(V4f)x)
-    D(V4f,V2d_f,((Vf){(f32)x[0],(f32)x[1],0.0f,0.0f}),c(V2d)x)
+#  if defined(__clang__)
+#    define lo_Vf(x) A(E_(shfl2(x,x,0,1,2,3,4,5,6,7)),E_(shfl2(x,x,0,1,2,3)),)
+#    define hi_Vf(x) A(E_(shfl2(x,x,8,9,10,11,12,13,14,15)),E_(shfl2(x,x,4,5,6,7)),)
+#    define from_lohi_Vf(lo,hi) A(E_(shfl2(lo,hi,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15)),E_(shfl2(lo,hi,0,1,2,3,4,5,6,7)),)
+#  else
+#    define lo_Vf(x) A(I8(castps512_ps256,x),O(ps_ps256)(x),)
+#    define hi_Vf(x) A(I8(extractf32x8_ps,x,1),O(vextractf128_ps256)(x,1),)
+#    define from_lohi_Vf(lo,hi) A(E_(I8(insertf32x8,I8(castps256_ps512,lo),hi,1)),E_(O(vinsertf128_ps256)(O(ps256_ps)(lo),hi,1)),)
+#  endif
+#  define unpack_Vf_idx A(E_(0,2,4,6,8,10,12,14,1,3,5,7,9,11,13,15),E_(0,2,4,6,1,3,5,7),)
+#  define pack_Vf_idx A(E_(0,8,1,9,2,10,3,11,4,12,5,13,6,14,7,15),E_(0,4,1,5,2,6,3,7),)
+   D(Vz,unpack_Vf,_(c(Vf)b=shfl1(a,(Vi){unpack_Vf_idx});Z2(cvt(lo_Vf(b),Vd),cvt(hi_Vf(b),Vd))),c(Vf)a)
+   D(Vf,pack_Vf,_(shfl1(from_lohi_Vf(cvt(a,A(V8f,V4f,)),cvt(b,A(V8f,V4f,))),(Vi){pack_Vf_idx})),c(Vd)a,c(Vd)b)
+#else
+   D(Vz,unpack_Vf,_(Z2((Vd){(f64)a[0],(f64)a[2]},(Vd){(f64)a[1],(f64)a[3]})),c(Vf)a)
+   D(Vf,pack_Vf,_((Vf){(f32)a[0],(f32)b[0],(f32)a[1],(f32)b[1]}),c(Vd)a,c(Vd)b)
 #endif
 
 D(Vq,Si,((Vq){RN(x)}),c(i64)x)
 D(Vd,Sd,((Vd){RN(x)}),c(f64)x)
 D(u32,movemask,A(m,O(movmskpd256)((Vd)m),O(movmskpd)((Vd)m)),c(M8)m)
-
-#if M == 1
-#   define hi(X) _Generic((X), V8d: V8d_hi, V4d: V4d_hi, V16f: V16f_hi, V8f: V8f_hi)(X)
-#   define lo(X) _Generic((X), V8d: V8d_lo, V4d: V4d_lo, V16f: V16f_lo, V8f: V8f_lo)(X)
-#   define d2f(X) _Generic((X), V8d: V8d_f, V4d: V4d_f, V2d: V2d_f)(X)
-#   define f2d(X) _Generic((X), V8f: V8f_d, V4f: V4f_d)(X)
-#   define select(s,a,b) I(mask_blend_epi64,s,b,a)
-    // D(u32,movemask,m,c(M8)m)
-#elif M == 2
-#   define hi(X) _Generic((X), V4d: V4d_hi, V8f: V8f_hi)(X)
-#   define lo(X) _Generic((X), V4d: V4d_lo, V8f: V8f_lo)(X)
-#   define d2f(X) _Generic((X), V4d: V4d_f, V2d: V2d_f)(X)
-#   define f2d(X) _Generic((X), V4f: V4f_d)(X)
-#   define select(s,a,b) (Vq)O(pblendvb256)((Vb)(b),(Vb)(a),(Vb)(s))
-    // D(u32,movemask,O(movmskpd256)((Vd)m),c(M8)m)
-#else
-#   define d2f(X) _Generic((X), V2d: V2d_f)(X)
-#   define f2d(X) _Generic((X), V4f: V4f_d)(X)
-#   define select(s,a,b) I(blendv_epi8,b,a,s)
-    // D(u32,movemask,I(movemask_pd,(Vd)(m)),c(M8)m)
-#endif
-
-#if M == 1
-#   define gt(a,b) I(cmp_epi64_mask,b,a,1)
-#   define eq(a,b) I(cmp_epi64_mask,a,b,0)
-#else
-#   define gt(a,b) ((a)>(b))
-#   define eq(a,b) ((a)==(b))
-#endif
-
-#if M == 2
-#define shl(x,imm) 
-
-#endif
-
-#if M == 1
-#  define EVEN 0,2,4,6,8,10,12,14
-#  define ODD 1,3,5,7,9,11,13,15
-#  define Rx4 c(Vf)b=shuffle1(a,(Vi){EVEN,ODD});r=Z2(f2d(lo(b)),f2d(hi(b)))
-#  define Wx3_idx0 0,8,1,9,2,10,3,11
-#  define Wx3_idx1 4,12,5,13,6,14,7,15
-#  define Wx4_idx Wx3_idx0,Wx3_idx1
-#  define Vhf simde__m256
-#  define Vhi simde__m256i
-#  define Vhw V16w
-#  define Wq2w_idx0 0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30
-#  define Wq2w_idx1 32,34,36,38,40,42,44,46,48,50,52,54,56,58,60,62
-#  define Gmw_idx0 0,17,2,19,4,21,6,23,8,25,10,27,12,29,14,31
-#  define Gmw_zero (V16w){0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
-#elif M == 2
-#  define EVEN 0,2,4,6
-#  define ODD 1,3,5,7
-#  define Rx4 c(Vf)b=shuffle1(a,(Vi){EVEN,ODD});r=Z2(f2d(lo(b)),f2d(hi(b)))
-#  define Wx3_idx0 0,4,1,5
-#  define Wx3_idx1 2,6,3,7
-#  define Wx4_idx Wx3_idx0,Wx3_idx1
-#  define Vhf simde__m128
-#  define Vhi simde__m128i
-#  define Vhw V8w
-#  define Wq2w_idx0 0,2,4,6,8,10,12,14
-#  define Wq2w_idx1 16,18,20,22,24,26,28,30
-#  define Gmw_idx0 0,9,2,11,4,13,6,15
-#  define Gmw_zero (V8w){0,0,0,0,0,0,0,0}
-#else
-#  define EVEN 0,2
-#  define ODD 1,3
-#  define Rx4 r=Z2((Vd){(f64)a[0],(f64)a[2]},(Vd){(f64)a[1],(f64)a[3]})
-#  define Wx3_idx0 0,2
-#  define Wx3_idx1 1,3
-#  define Wx4_idx 0,4,1,5
-#  define Vhi simde__m128i
-#  define Vhw V8w
-#  define Wq2w_idx0 0,2,4,6
-#  define Wq2w_idx1 8,10,12,14
-#  define Gmw_idx0 0,9,2,11,-1,-1,-1,-1
-#  define Gmw_zero (V8w){0,0,0,0,0,0,0,0}
-#endif
+#define gt(a,b) A(I8(cmp_epi64_mask,b,a,1),((a)>(b)),((a)>(b)))
+#define eq(a,b) A(I8(cmp_epi64_mask,b,a,0),((a)==(b)),((a)==(b)))
+#define sqrtd(x) A(I8(sqrt_pd,x),O(sqrtpd256)(x),I2(sqrt_pd,x))
+#define select(s,a,b) A(I(mask_blend_epi64,s,b,a),E_((Vq)O(pblendvb256)((Vb)(b),(Vb)(a),(Vb)(s))), I(blendv_epi8,b,a,s))
+#define prefetch(p...) __builtin_prefetch(p)
 
 #if M == 1
 #  define Gq(p,i) I(i64gather_epi64,i,p,8)
@@ -330,19 +279,20 @@ D(u32,movemask,A(m,O(movmskpd256)((Vd)m),O(movmskpd)((Vd)m)),c(M8)m)
 #  define _mgthi(p,i,m,s) I(mask_i64gather_epi32,I4(setzero_si256),m,i,p,s)
 #elif M == 2
 #  define Gq(p,i) O(gatherdiv4di)(Zi,(c(i64)*)(p),i,((Vq){~0,~0,~0,~0}),8)
-#  define maski64_i32(m) shuffle2((Vi)m,(Vi)m,0,2,4,6)
+// #  define maski64_i32(m) shuffle2((Vi)m,(Vi)m,0,2,4,6)
+#  define maski64_i32(m) __builtin_convertvector(m&0xFFFFFFFF,V4i)
 #  define _mgthd(p,i,m,s) O(gatherdiv4df)(Zd,p,i,(Vd)(m),s)
-#  define _mgthf(p,i,m,s) O(gatherdiv4sf256)(Z4f,p,i,(V4f)(maski64_i32(m)),s)
+#  define _mgthf(p,i,m,s) cvt(O(gatherdiv4sf256)(Z4f,p,i,(V4f)(maski64_i32(m)),s),Vd)
 #  define _mgthi(p,i,m,s) O(gatherdiv4si256)(((V4i){0,0,0,0}),p,i,(V4i)(maski64_i32(m)),s)
 #  define _gthd(p,i,s) _mgthd(p,i,Zd==Zd,s)
-#  define _gthf(p,i,s) O(gatherdiv4sf256)(Z4f,p,i,Z4f==Z4f,s)
+#  define _gthf(p,i,s) cvt(O(gatherdiv4sf256)(Z4f,p,i,Z4f==Z4f,s),Vd)
 #else
-#   define maski64_i32(m) shuffle2((Vi)m,(Vi)m,0,2,4,6)
+// #   define maski64_i32(m) shuffle2((Vi)m,(Vi)m,0,2,4,6)
     D(Vq,Gq,((Vq){p[i[0]],p[i[1]]}),c(u64)*p,c(Vq)i)
     D(Vd,_gthd,_(c(u8)*p0=(c(u8)*)p+i[0]*s,*p1=(c(u8)*)p+i[1]*s;(Vd){*(c(f64)*)p0,*(c(f64)*)p1}),c(f64)*p,c(Vq)i,c(i32)s)
-    D(Vf,_gthf,_(c(u8)*p0=(c(u8)*)p+i[0]*s,*p1=(c(u8)*)p+i[1]*s;(Vf){*(c(f32)*)p0,*(c(f32)*)p1,0.0f,0.0f}),c(f32)*p,c(Vq)i,c(i32)s)
+    D(Vd,_gthf,_(c(u8)*p0=(c(u8)*)p+i[0]*s,*p1=(c(u8)*)p+i[1]*s;(Vd){(f64)*(c(f32)*)p0,(f64)*(c(f32)*)p1}),c(f32)*p,c(Vq)i,c(i32)s)
     D(Vd,_mgthd,_(c(u8)*p0=(c(u8)*)p+i[0]*s,*p1=(c(u8)*)p+i[1]*s;(Vd){m[0]?*(c(f64)*)p0:0.0,m[1]?*(c(f64)*)p1:0.0}),c(f64)*p,c(Vq)i,c(M8)m,c(i32)s)
-    D(Vf,_mgthf,_(c(u8)*p0=(c(u8)*)p+i[0]*s,*p1=(c(u8)*)p+i[1]*s;(Vf){m[0]?*(c(f32)*)p0:0.0f,m[1]?*(c(f32)*)p1:0.0f,0.0f,0.0f}),c(f32)*p,c(Vq)i,c(M8)m,c(i32)s)
+    D(Vd,_mgthf,_(c(u8)*p0=(c(u8)*)p+i[0]*s,*p1=(c(u8)*)p+i[1]*s;(Vd){m[0]?(f64)*(c(f32)*)p0:0.0,m[1]?(f64)*(c(f32)*)p1:0.0}),c(f32)*p,c(Vq)i,c(M8)m,c(i32)s)
     D(Vi,_mgthi,_(c(u8)*p0=(c(u8)*)p+i[0]*s,*p1=(c(u8)*)p+i[1]*s;(Vi){m[0]?*(c(i32)*)p0:0,m[1]?*(c(i32)*)p1:0,0,0}),c(i32)*p,c(Vq)i,c(M8)m,c(i32)s)
 #endif
 
@@ -359,36 +309,36 @@ D(Vz,Rx,_(Vz r;switch(t){
     /*f64*/case 0: r=Z2(Rd(p,0),Zd);break;
     /*f32*/case 1: {c(f32)*_p=p;VL(u,N,r.re[u]=(f64)_p[u]);r.im=Zd;break;}
     /*f16*/case 2: r=Z2(Zd,Zd);break;
-   /*c128*/case 3: {c(Vd)a=Rd(p,0),b=Rd(p,1);r=Z2(shuffle2(a,b,EVEN),shuffle2(a,b,ODD));break;}
-    /*c64*/case 4: {c(Vf)a=Rf(p,0);Rx4;break;}
+   /*c128*/case 3: {c(Vd)a=Rd(p,0),b=Rd(p,1);r=unpack_Vz(a,b);break;}
+    /*c64*/case 4: r=unpack_Vf(Rf(p,0));break;
    /*c32*/default: r=Z2(Zd,Zd);break;
 };r),c(i32)t,c(void)*p)
 
 // Wx---convert Vz to type t and write to p.
 D(void,Wx,_(switch(t){
-    /*f64*/case 0: {Wd(p,0,z.re);break;}
+    /*f64*/case 0: Wd(p,0,z.re);break;
     /*f32*/case 1: {f32*_p=p;VL(u,N,_p[u]=(f32)z.re[u]);break;}
     /*f16*/case 2: break;
-   /*c128*/case 3: {Wd(p,0,shuffle2(z.re,z.im,Wx3_idx0));Wd(p,1,shuffle2(z.re,z.im,Wx3_idx1));break;}
-    /*c64*/case 4: {Wf(p,0,shuffle2(d2f(z.re),d2f(z.im),Wx4_idx));break;}
+   /*c128*/case 3: {c(Vz)q=pack_Vz(z.re,z.im);Wd(p,0,q.re);Wd(p,1,q.im);break;}
+    /*c64*/case 4: Wf(p,0,pack_Vf(z.re,z.im));break;
    /*c32*/default: break;
 }),c(i32)t,void*p,c(Vz)z)
 
 D(Vz,Gmx,_(Vz r;switch(t){
     /*f64*/case 0: r=Z2(_mgthd((c(f64)*)p,i,m,8),Zd);break;
-    /*f32*/case 1: r=Z2(f2d(_mgthf((c(f32)*)p,i,m,4)),Zd);break;
+    /*f32*/case 1: r=Z2(_mgthf((c(f32)*)p,i,m,4),Zd);break;
     /*f16*/case 2: r=Z2(Zd,Zd);break;
    /*c128*/case 3: r=Z2(_mgthd((c(f64)*)p,i<<1,m,8),_mgthd((c(f64)*)p+1,i<<1,m,8));break;
-    /*c64*/case 4: {c(Vf)a=(Vf)_mgthd((c(f64)*)p,i,m,8);Rx4;break;}
+    /*c64*/case 4: r=unpack_Vf((Vf)_mgthd((c(f64)*)p,i,m,8));break;
    /*c32*/default: r=Z2(Zd,Zd);break;
 };r),c(i32)t,c(void)*p,c(Vq)i,c(M8)m)
 
 D(Vz,Gx,_(Vz r;switch(t){
      /*f64*/case 0: r=Z2(_gthd((c(f64)*)p,i,8),Zd);break;
-     /*f32*/case 1: r=Z2(f2d(_gthf((c(f32)*)p,i,4)),Zd);break;
+     /*f32*/case 1: r=Z2(_gthf((c(f32)*)p,i,4),Zd);break;
      /*f16*/case 2: r=Z2(Zd,Zd);break;
     /*c128*/case 3: r=Z2(_gthd((c(f64)*)p,i<<1,8),_gthd((c(f64)*)p+1,i<<1,8));break;
-     /*c64*/case 4: {c(Vf)a=(Vf)_gthd((c(f64)*)p,i,8);Rx4;break;}
+     /*c64*/case 4: r=unpack_Vf((Vf)_gthd((c(f64)*)p,i,8));break;
     /*c32*/default: r=Z2(Zd,Zd);break;
 };r),c(i32)t,c(void)*p,c(Vq)i)
 
@@ -396,42 +346,26 @@ D(Vz,Gx,_(Vz r;switch(t){
 D(Vd,Rw2d,_(Vd r;VL(u,N,r[u]=p[u]);r),c(u16)*p)
 
 // Wq2w---convert N i64 numbers (i.e., Vq) to u16 and write them to p. Receives 4 Vq as input and writes 1 Vw to p.
-D(void,Wq2w,_(*(Vw*)p=shuffle2((Vw)shuffle2((Vi)x[0],(Vi)x[1],Wq2w_idx0),(Vw)shuffle2((Vi)x[2],(Vi)x[3],Wq2w_idx0),Wq2w_idx0,Wq2w_idx1);return),u16*p,c(Vq)x[static 4])
+D(void,Wq2w,_(_L(k,4,VL(u,N,p[u+k*N]=(u16)x[k][u]))),u16*p,c(Vq)x[static 4])
 
-#if M == 1 || M == 3
-#  define epi32_pd(x) I(cvtepi32_pd,x)
-#else
-#  define epi32_pd(x) __builtin_convertvector(x,Vd)
-#endif
-
-D(Vd,Gmw,_(
-    __auto_type x=(A(Vhi,V4i,Vhi))shuffle2((Vhw)_mgthi((c(i32)*)p,i,m,2),Gmw_zero,Gmw_idx0);
-    A(I(cvtepi32_pd,x),epi32_pd(x),I(cvtepi32_pd,x))
-),c(u16)*p,c(Vq)i,c(M8)m)
+De(Vd,Gmw,_(c(u32)_m=movemask(m); Vd r;VL(u,N,r[u]=((_m>>u)&1)?(f64)p[i[u]]:0.0);r),c(u16)*p,c(Vq)i,c(M8)m)
+// __builtin_convertvector((A(V8i,V4i,V4i))shuffle2((Vhw)_mgthi((c(i32)*)p,i,m,2),Gmw_zero,Gmw_idx0),Vd)
 
 #define _F_popcnt(i) __builtin_popcountll(x[i])
 D(Vq,popcnt,_((Vq){RFN(_F_popcnt)}),c(Vq)x)
 #undef _F_popcnt
 
-#if M == 1 || M == 3
-    D(Vd,sqrtd,I(sqrt_pd,x),c(Vd)x)
-#else
-#   define sqrtd(x) O(sqrtpd256)(x)
-#endif
 
 D(Vz,mulz,Z2(a.re*b.re-a.im*b.im,a.im*b.re+a.re*b.im),c(Vz)a,c(Vz)b)
-#if M == 1
-    D(Vq,m1,I(movm_epi64,I(test_epi64_mask,x,m)),c(Vq)x,c(Vq)m)
-#else
-    D(Vq,m1,(x&m)!=(Vq)Zi,c(Vq)x,c(Vq)m)
-#endif
+D(Vq,m1,A(I8(movm_epi64,I(test_epi64_mask,x,m)),(x&m)!=Zi,(x&m)!=Zi),c(Vq)x,c(Vq)m)
 D(Vq,m2,m1(x,m_0)^m1(x,m_1),c(Vq)x,c(Vq)m_0,c(Vq)m_1)
 D(Vq,mX,popcnt(x&m),c(Vq)x,c(Vq)m)
 D(Vz,bcast2,(Z2(Sd(re[k]),Sd(im[k]))),c(f64)*re,c(f64)*im,c(i32)k)
 D(Vz,flipsign,_(m=m<<63;Z2((Vd)((Vq)v.re^m),(Vd)((Vq)v.im^m))),c(Vz)v,Vq m)
+
 // TODO: The loop is ugly, but the compilers vectorize it
-#define prefetch(p...) __builtin_prefetch(p)
 D(void,prefetchq,_(_L(k,N,prefetch(p+idx[k],0,3))),c(u64)*p,c(Vq)idx)
+
 // TODO: Should get rid of these ...
 // static void prefetchd4xN(Vi idx[4],c(u16)*n,c(f64)*x){_L(k,4*N,c(i32)i=((c(i64)*)idx)[k];simde_mm_prefetch(n+i,_MM_HINT_ET0);simde_mm_prefetch(x+i,_MM_HINT_ET0))}
 // static void prefetchz4xN(Vi idx[4],c(u16)*n,c(c128)*x){_L(k,4*N,c(i32)i=((c(i64)*)idx)[k];simde_mm_prefetch(n+i,_MM_HINT_ET0);simde_mm_prefetch(x+i,_MM_HINT_ET0))}

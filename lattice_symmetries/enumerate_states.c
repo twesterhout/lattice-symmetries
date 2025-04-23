@@ -38,7 +38,7 @@ void candidates_simple(u64 x0, u64 *out) { ++x0; for (int k = 0; k < 64; ++k, ++
     for (i64 k = 0; k < (b); ++k) { if (ns[k] != 0) { ap(&c, xs[k], ns[k]); } }
 chunk_t one(i64 const n, u64 x0, candidates64_fn const candidates64, norm64_fn const norm64, void const* ctx) {
   chunk_t c = (chunk_t){.xs = NULL, .ns = NULL, .cp = 0, .sz = 0, .ec = 0};
-  PK; u64 *xs = a(u64, 64); u16 *ns = a(u16, 64); i64 i = 0;
+  PK; (void)K; u64 *xs = a(u64, 64); u16 *ns = a(u16, 64); i64 i = 0;
   for (; i < n - 64; i += 64) { ITER(64); if (c.ec != 0) { break; } }
   if (c.ec == 0 && i < n) { ITER(n - i); }
   if (c.ec != 0) { reset(&c); }
@@ -48,7 +48,7 @@ chunk_t one(i64 const n, u64 x0, candidates64_fn const candidates64, norm64_fn c
 #undef ITER
 
 void* enumerate_states(i64 nc, i64 *sizes, u64 *starts, void *candidates64, void *norms64, void const* ctx, i64 *total_size) {
-  PK; chunk_t *cs = a(chunk_t, nc); if (cs == NULL) { return NULL; }
+  PK; (void)K; chunk_t *cs = a(chunk_t, nc); if (cs == NULL) { return NULL; }
   int ec = 0; // atomic
   i64 sz = 0; // atomic
 #pragma omp parallel for schedule(dynamic, 1) \
