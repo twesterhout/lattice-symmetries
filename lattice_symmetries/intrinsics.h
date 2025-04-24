@@ -17,17 +17,20 @@
 #endif
 
 #if M == 1
-#include <immintrin.h>
-#include <simde/x86/avx512.h>
+#  include <immintrin.h>
+#  include <simde/x86/avx512.h>
+#elif M == 3
+   // We rely on SIMDe to implement WASM intrinsics using SSE or NEON
+   #include <simde/wasm/simd128.h>
 #endif
 
 typedef float float32_t; // Need it for some weird reason at M == 3 ...
 
-#if M == 1
+#if M == 1 // 512
 #  define A(f1,f2,f3) f1
-#elif M == 2
+#elif M == 2 // 256
 #  define A(f1,f2,f3) f2
-#else
+#else // 128
 #  define A(f1,f2,f3) f3
 #endif
 
@@ -56,29 +59,18 @@ typedef float float32_t; // Need it for some weird reason at M == 3 ...
 #endif
 #endif
 
-
 // Debugging
-#define PX(x, t, w, f) \
-    do { \
-        t temp[B / (8 * sizeof(t))]; I(w,temp,x); \
-        printf("["); for (u64 k = 0; k < B / (8 * sizeof(t)); ++k) { printf(f ",", temp[k]); } printf("]\n"); \
-    } while(0)
-#if M == 1 || M == 2
-#define Pw(x) PX(x, int32_t, storeu_epi32, "%i")
-#define Pi(x) PX(x, int64_t, storeu_epi64, "%zi")
-#define Ps(x) PX(x, float, storeu_ps, "%e")
-#define Pd(x) PX(x, double, storeu_pd, "%e")
-#else
-#define Pw(x) PX(x, int32_t, storeu_si128, "%i")
-#define Pi(x) PX(x, int64_t, storeu_si128, "%zi")
-#define Ps(x) PX(x, float, storeu_ps, "%e")
-#define Pd(x) PX(x, double, storeu_pd, "%e")
-#endif
+#define PX(x, t, w, f) _(printf("[");for(u64 k=0;k<B/(8*sizeof(t));++k){printf(f ",",(x)[k]);}printf("]\n"))
+#define Pw(x) PX(x,i32,"%i")
+#define Pi(x) PX(x,i64,"%zi")
+#define Ps(x) PX(x,f32,"%e")
+#define Pd(x) PX(x,f64,"%e")
 
 typedef char i8; typedef short i16; typedef int i32; typedef long long i64;
 typedef unsigned char u8; typedef unsigned short u16; typedef unsigned u32; typedef unsigned long long u64;
 typedef float f32; typedef double f64; typedef float _Complex c64; typedef double _Complex c128;
 
+#define E_(x...) x
 #define _(z...) ({z;})
 #define D(t,g,k,x...) __attribute__((__always_inline__)) static inline t g(x){return _(k);}
 #define Di(t,g,k,x...) static t g(x){return _(k);}
@@ -91,59 +83,11 @@ typedef float f32; typedef double f64; typedef float _Complex c64; typedef doubl
 #define U8(x...) _L(u,8,x)
 #define I__(p,f,x...) simde_##p##_##f(x)
 #define I_(p,f,x...) I__(p,f,x)
-#define I2(f,x...) I_(mm,f,x)
-#define I4(f,x...) I_(mm256,f,x)
+// #define I2(f,x...) I_(mm,f,x)
+// #define I4(f,x...) I_(mm256,f,x)
 #define I8(f,x...) I_(mm512,f,x)
-#define O_(f) __builtin_ia32_##f
+#define O_(f) A(__builtin_ia32_##f,__builtin_ia32_##f,simde_wasm_##f)
 #define O(f) O_(f)
-
-#if M == 1
-SIMDE_FUNCTION_ATTRIBUTES simde__m512d simde_mm512_cvtepi32_pd (simde__m256i a) {
-  #if defined(SIMDE_X86_AVX512F_NATIVE)
-    return _mm512_cvtepi32_pd(a);
-  #else
-    simde__m512d_private r_;
-    simde__m256i_private a_ = simde__m256i_to_private(a);
-    r_.m256d[0] = simde_mm256_cvtepi32_pd(a_.m128i[0]);
-    r_.m256d[1] = simde_mm256_cvtepi32_pd(a_.m128i[1]);
-    return simde__m512d_from_private(r_);
-  #endif
-}
-SIMDE_FUNCTION_ATTRIBUTES simde__m256i simde_mm512_cvtepi32_epi16 (simde__m512i a) {
-  #if defined(SIMDE_X86_AVX512F_NATIVE)
-    return _mm512_cvtepi32_epi16(a);
-  #else
-    simde__m512i_private const a_ = simde__m512i_to_private(a);
-    simde__m256i const low = a_.m256i[0], high = a_.m256i[1];
-    simde__m256i const mask  = simde_mm256_set1_epi32(0x0000FFFF);         // mask for low words
-    simde__m256i const lowm  = simde_mm256_and_si256(low, mask);           // words of low
-    simde__m256i const highm = simde_mm256_and_si256(high, mask);          // words of high
-    simde__m256i const pk    = simde_mm256_packus_epi32(lowm,highm);       // unsigned pack
-    return simde_mm256_permute4x64_epi64(pk, 0xD8);                        // put in right place
-  #endif
-}
-SIMDE_FUNCTION_ATTRIBUTES simde__m512d simde_mm512_cvtps_pd (simde__m256 a) {
-  #if defined(SIMDE_X86_AVX512F_NATIVE)
-    return _mm512_cvtps_pd(a);
-  #else
-    simde__m512d_private r_;
-    simde__m256_private const a_ = simde__m256_to_private(a);
-    r_.m256d[0] = simde_mm256_cvtps_pd(a_.m128[0]);
-    r_.m256d[1] = simde_mm256_cvtps_pd(a_.m128[1]);
-    return simde__m512d_from_private(r_);
-  #endif
-}
-SIMDE_FUNCTION_ATTRIBUTES simde__m256 simde_mm512_cvtpd_ps (simde__m512d a) {
-  #if defined(SIMDE_X86_AVX512F_NATIVE)
-    return _mm512_cvtpd_ps(a);
-  #else
-    simde__m512d_private const a_ = simde__m512d_to_private(a);
-    simde__m128 a0 = simde_mm256_cvtpd_ps(a_.m256d[0]);
-    simde__m128 a1 = simde_mm256_cvtpd_ps(a_.m256d[1]);
-    return simde_mm256_insertf128_ps(simde_mm256_castps128_ps256(a0),a1,1);
-  #endif
-}
-#endif
 
 #define R2(x) x,x
 #define R4(x) x,x,x,x
@@ -152,42 +96,19 @@ SIMDE_FUNCTION_ATTRIBUTES simde__m256 simde_mm512_cvtpd_ps (simde__m512d a) {
 #define RF2(f) f(0),f(1)
 #define RF4(f) f(0),f(1),f(2),f(3)
 #define RF8(f) f(0),f(1),f(2),f(3),f(4),f(5),f(6),f(7)
-
-#if M == 1
-#   define B 512
-// #   define _S(f) f##_si512
-#   define I(f,x...) I8(f,x)
-#   define RN(x) R8(x)
-#   define RFN(f) RF8(f)
-#elif M == 2
-#   define B 256
-// #   define _S(f) f##_si256
-// #   define I(f,x...) I4(f,x)
-#   define RN(x) R4(x)
-#   define RFN(f) RF4(f)
-#else
-#   define B 128
-// #   define _S(f) f##_si128
-#   define I(f,x...) I2(f,x)
-#   define RN(x) R2(x)
-#   define RFN(f) RF2(f)
-#endif
+#define B A(512,256,128)
+#define N (B/64)
+#define RN(x) A(R8,R4,R2)(x)
+#define RFN(f) A(RF8,RF4,RF2)(f)
 #define Zi ((Vq){RN(0)})
 #define Zd ((Vd){RN(0.0)})
 #define Zf ((Vd){RN(0.0f),RN(0.0f)})
-#define N (B / 64)
+#define Z4f ((V4f){R4(0.0f)})
 #define Va(n) __attribute__((vector_size(n),aligned(n)))
 #define Vu(n) __attribute__((vector_size(n),aligned(1)))
-// #if defined(__clang__)
-// #  define shfl1(x...) __builtin_shufflevector(x)
-// // #  define shuffle2(x...) __builtin_shufflevector(x)
-// #else
-// #  define shfl1(x...) __builtin_shuffle(x)
-// // #  define shuffle2(x...) __builtin_shufflevector(x)
-// #endif
-#define E_(x...) x
 #define cvt(x,t) __builtin_convertvector(x,t)
 #define shfl1(x...) GC(__builtin_shuffle(x),__builtin_shufflevector(x))
+
 #if defined(__clang__)
 #  define shfl2(a,b,c...) __builtin_shufflevector(a,b,c)
 #else // GCCs older than 12 don't support __builtin_shufflevector
@@ -199,17 +120,6 @@ SIMDE_FUNCTION_ATTRIBUTES simde__m256 simde_mm512_cvtpd_ps (simde__m512d a) {
                                              V16f: (V16i){_F16(x)}, V8f: (V8i){_F8(x)}, V4f: (V4i){_F4(x)})
 #  define shfl2(a,b,c...) __builtin_shuffle(a,b,_cast_to_int(a,c,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1))
 #endif
-
-// #define Z8i ((V8q){R8(0)})
-// #define Z8d ((V8d){R8(0.0)})
-// #define Z16f ((V16f){R16(0.0f)})
-// #define Z4i ((V4q){R4(0)})
-// #define Z4d ((V4d){R4(0.0)})
-// #define Z8f ((V8f){R8(0.0f)})
-// #define Z2i ((V2q){R2(0)})
-// #define Z2d ((V2d){R2(0.0)})
-#define Z4f ((V4f){R4(0.0f)})
-
 // unaligned SIMD vector types; use these only for reading and writing
 typedef i64 _Vq Vu(B/8);typedef f64 _Vd Vu(B/8);typedef f32 _Vf Vu(B/8);
 #define _R(t,p,i) ((c(t)*)(p))[i]
@@ -263,20 +173,24 @@ D(Vz,pack_Vz,_(Z2(shfl2(a,b,pack_Vz_idx0),shfl2(a,b,pack_Vz_idx1))),c(Vd)a,c(Vd)
 
 D(Vq,Si,((Vq){RN(x)}),c(i64)x)
 D(Vd,Sd,((Vd){RN(x)}),c(f64)x)
-D(u32,movemask,A(m,O(movmskpd256)((Vd)m),O(movmskpd)((Vd)m)),c(M8)m)
+De(u32,movemask,A(m,O(movmskpd256)((Vd)m),O(i64x2_bitmask)((simde_v128_t)m)),c(M8)m)
+De(Vd,sqrtd,A(I8(sqrt_pd,x),O(sqrtpd256)(x),(Vd)O(f64x2_sqrt)((simde_v128_t)x)),c(Vd)x)
+De(Vq,selectq,A(
+  I8(mask_blend_epi64,s,a,b),
+  E_((Vq)O(pblendvb256)((Vb)(a),(Vb)(b),(Vb)(s))),
+  E_((Vq)O(v128_bitselect)((simde_v128_t)b,(simde_v128_t)a,O(i8x16_shr((simde_v128_t)s,7))))
+),c(M8)s,c(Vq)b,c(Vq)a)
 #define gt(a,b) A(I8(cmp_epi64_mask,b,a,1),((a)>(b)),((a)>(b)))
 #define eq(a,b) A(I8(cmp_epi64_mask,b,a,0),((a)==(b)),((a)==(b)))
-#define sqrtd(x) A(I8(sqrt_pd,x),O(sqrtpd256)(x),I2(sqrt_pd,x))
-#define select(s,a,b) A(I(mask_blend_epi64,s,b,a),E_((Vq)O(pblendvb256)((Vb)(b),(Vb)(a),(Vb)(s))), I(blendv_epi8,b,a,s))
 #define prefetch(p...) __builtin_prefetch(p)
 
 #if M == 1
-#  define Gq(p,i) I(i64gather_epi64,i,p,8)
-#  define _gthd(p,i,s) I(i64gather_pd,i,p,s)
-#  define _gthf(p,i,s) I(i64gather_ps,i,p,s)
-#  define _mgthd(p,i,m,s) I(mask_i64gather_pd,Zd,m,i,p,s)
-#  define _mgthf(p,i,m,s) I(mask_i64gather_ps,I4(setzero_ps),m,i,p,s)
-#  define _mgthi(p,i,m,s) I(mask_i64gather_epi32,I4(setzero_si256),m,i,p,s)
+#  define Gq(p,i) I8(i64gather_epi64,i,p,8)
+#  define _gthd(p,i,s) I8(i64gather_pd,i,p,s)
+#  define _gthf(p,i,s) I8(i64gather_ps,i,p,s)
+#  define _mgthd(p,i,m,s) I8(mask_i64gather_pd,Zd,m,i,p,s)
+#  define _mgthf(p,i,m,s) I8(mask_i64gather_ps,I4(setzero_ps),m,i,p,s)
+#  define _mgthi(p,i,m,s) I8(mask_i64gather_epi32,I4(setzero_si256),m,i,p,s)
 #elif M == 2
 #  define Gq(p,i) O(gatherdiv4di)(Zi,(c(i64)*)(p),i,((Vq){~0,~0,~0,~0}),8)
 // #  define maski64_i32(m) shuffle2((Vi)m,(Vi)m,0,2,4,6)
@@ -357,7 +271,7 @@ D(Vq,popcnt,_((Vq){RFN(_F_popcnt)}),c(Vq)x)
 
 
 D(Vz,mulz,Z2(a.re*b.re-a.im*b.im,a.im*b.re+a.re*b.im),c(Vz)a,c(Vz)b)
-D(Vq,m1,A(I8(movm_epi64,I(test_epi64_mask,x,m)),(x&m)!=Zi,(x&m)!=Zi),c(Vq)x,c(Vq)m)
+D(Vq,m1,A(I8(movm_epi64,I8(test_epi64_mask,x,m)),(x&m)!=Zi,(x&m)!=Zi),c(Vq)x,c(Vq)m)
 D(Vq,m2,m1(x,m_0)^m1(x,m_1),c(Vq)x,c(Vq)m_0,c(Vq)m_1)
 D(Vq,mX,popcnt(x&m),c(Vq)x,c(Vq)m)
 D(Vz,bcast2,(Z2(Sd(re[k]),Sd(im[k]))),c(f64)*re,c(f64)*im,c(i32)k)

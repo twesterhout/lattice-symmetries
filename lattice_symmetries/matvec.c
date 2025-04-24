@@ -36,13 +36,13 @@ D(Vuq,pstep,_(c(Vuq)y=((x>>d)^x)&m;(x^y)^(y<<d)),c(Vuq)x,c(Vuq)m,c(u32)d)
 #define Rsetup(u,a,ctx) c(u64)*masks=ctx->masks+ctx->n_r;Vq b[u],rep[u],gid[u];_L(_u,u,rep[_u]=a[_u],gid[_u]=Zi)
 #define Rs_(u,i,s) m=Si(masks[i]);_L(_u,u,b[_u]=(Vq)pstep((Vuq)b[_u],(Vuq)m,s))
 #define Rpermute(u) _(_L(_u,u,b[_u]=a[_u]);Vq m;Rs_(u,0,1);Rs_(u,1,2);Rs_(u,2,4);Rs_(u,3,8);Rs_(u,4,16);Rs_(u,5,32);Rs_(u,6,16);Rs_(u,7,8);Rs_(u,8,4);Rs_(u,9,2);Rs_(u,10,1))
-#define Rupdate(u,k) _(M8 p[u];c(Vq)vk=Si(k);_L(_u,u,p[_u]=gt(rep[_u],b[_u]))_L(_u,u,rep[_u]=select(p[_u],b[_u],rep[_u]),gid[_u]=select(p[_u],vk,gid[_u])))
+#define Rupdate(u,k) _(M8 p[u];c(Vq)vk=Si(k);_L(_u,u,p[_u]=gt(rep[_u],b[_u]))_L(_u,u,rep[_u]=selectq(p[_u],b[_u],rep[_u]),gid[_u]=selectq(p[_u],vk,gid[_u])))
 D(void,repr4xN,_(Rsetup(4,a,ctx);for(i64 k=1;k<ctx->n_m;++k,masks+=ctx->n_r){Rpermute(4);Rupdate(4,k);}_L(_u,4,_rep[_u]=rep[_u],_gid[_u]=gid[_u])),c(Vq)a[static 4],c(bs_ctx_t)*ctx,Vq _rep[static 4],Vq _gid[static 4])
 
 // Binary search
 #define Ssetup(u,x,ctx) i64 n=ctx->range_size;Vq j[u],v[u];_L(_u,u,j[_u]=Gq((c(u64)*)ctx->offsets,(x[_u]>>ctx->shift)&Si(ctx->mask)))
 #define Sgather(u,h,ctx) _L(_u,u,v[_u]=Gq(ctx->reps+h,j[_u]))
-#define Supdate(u,h,x) _L(_u,u,j[_u]=select(gt(x[_u],v[_u]),j[_u]+Si(h),j[_u]))
+#define Supdate(u,h,x) _L(_u,u,j[_u]=selectq(gt(x[_u],v[_u]),j[_u]+Si(h),j[_u]))
 D(void,search4xN,_(Ssetup(4,x,ctx);while(n>1){c(i64)h=n/2;Sgather(4,h,ctx);n-=h;Supdate(4,h,x)}Sgather(4,0,ctx);Supdate(4,1,x);Sgather(4,0,ctx);_L(_u,4,m[_u]=eq(x[_u],v[_u]);i[_u]=j[_u])),c(Vq)x[4],M8 m[4],Vq i[4],c(search_ctx_t)*ctx)
 
 // Fused repr and search---the bottleneck for simulations with symmetries
@@ -149,7 +149,7 @@ void state_info(c(i64)n,c(u64)*xs,c(bs_ctx_t)*ctx,u64*rep,i64*gid){
 }
 #undef INNER
 
-#define INNER(_k) {c(i64)k=(_k);Vq a[4],idx[4];M8 msk[4];_L(_u,4,a[_u]=Rq(xs+k,_u));search4xN(a,msk,idx,ctx);_L(_u,4,Wq(out+k,_u,select(msk[_u],idx[_u],Si(-1))))}
+#define INNER(_k) {c(i64)k=(_k);Vq a[4],idx[4];M8 msk[4];_L(_u,4,a[_u]=Rq(xs+k,_u));search4xN(a,msk,idx,ctx);_L(_u,4,Wq(out+k,_u,selectq(msk[_u],idx[_u],Si(-1))))}
 void state_to_index(c(i64)n, c(u64)*xs, search_ctx_t const *ctx, i64 *out) {
     if(n<=0){return;}
     if(n<4*N){with_in(tmp_xs,xs,u64,n,with_out(tmp_out,out,i64,n,state_to_index(4*N,tmp_xs,ctx,tmp_out)));return;}
