@@ -24,8 +24,6 @@
    #include <simde/wasm/simd128.h>
 #endif
 
-typedef float float32_t; // Need it for some weird reason at M == 3 ...
-
 #if M == 1 // 512
 #  define A(f1,f2,f3) f1
 #elif M == 2 // 256
@@ -35,7 +33,7 @@ typedef float float32_t; // Need it for some weird reason at M == 3 ...
 #endif
 
 #if defined(__clang__)
-#  define GC(g,c) clang
+#  define GC(g,c) c
 #else
 #  define GC(g,c) g
 #endif
@@ -78,7 +76,7 @@ typedef float f32; typedef double f64; typedef float _Complex c64; typedef doubl
 #define Z2(x...) (Vz){x}
 #define c(t) t const
 #define _L(v,n,x...) for(i32 v=0;v<(n);++v){x;}
-#define VL(v,n,x...) _Pragma("omp simd") for(i32 v=0;v<(n);++v){x;}
+#define VL(v,n,x...) GC(,_Pragma("omp simd")) for(i32 v=0;v<(n);++v){x;}
 #define U4(x...) _L(u,4,x)
 #define U8(x...) _L(u,8,x)
 #define I__(p,f,x...) simde_##p##_##f(x)
@@ -173,9 +171,9 @@ D(Vz,pack_Vz,_(Z2(shfl2(a,b,pack_Vz_idx0),shfl2(a,b,pack_Vz_idx1))),c(Vd)a,c(Vd)
 
 D(Vq,Si,((Vq){RN(x)}),c(i64)x)
 D(Vd,Sd,((Vd){RN(x)}),c(f64)x)
-De(u32,movemask,A(m,O(movmskpd256)((Vd)m),O(i64x2_bitmask)((simde_v128_t)m)),c(M8)m)
-De(Vd,sqrtd,A(I8(sqrt_pd,x),O(sqrtpd256)(x),(Vd)O(f64x2_sqrt)((simde_v128_t)x)),c(Vd)x)
-De(Vq,selectq,A(
+D(u32,movemask,A(m,O(movmskpd256)((Vd)m),O(i64x2_bitmask)((simde_v128_t)m)),c(M8)m)
+D(Vd,sqrtd,A(I8(sqrt_pd,x),O(sqrtpd256)(x),(Vd)O(f64x2_sqrt)((simde_v128_t)x)),c(Vd)x)
+D(Vq,selectq,A(
   I8(mask_blend_epi64,s,a,b),
   E_((Vq)O(pblendvb256)((Vb)(a),(Vb)(b),(Vb)(s))),
   E_((Vq)O(v128_bitselect)((simde_v128_t)b,(simde_v128_t)a,O(i8x16_shr((simde_v128_t)s,7))))
@@ -184,31 +182,20 @@ De(Vq,selectq,A(
 #define eq(a,b) A(I8(cmp_epi64_mask,b,a,0),((a)==(b)),((a)==(b)))
 #define prefetch(p...) __builtin_prefetch(p)
 
-#if M == 1
-#  define Gq(p,i) I8(i64gather_epi64,i,p,8)
-#  define _gthd(p,i,s) I8(i64gather_pd,i,p,s)
-#  define _gthf(p,i,s) I8(i64gather_ps,i,p,s)
-#  define _mgthd(p,i,m,s) I8(mask_i64gather_pd,Zd,m,i,p,s)
-#  define _mgthf(p,i,m,s) I8(mask_i64gather_ps,I4(setzero_ps),m,i,p,s)
-#  define _mgthi(p,i,m,s) I8(mask_i64gather_epi32,I4(setzero_si256),m,i,p,s)
-#elif M == 2
-#  define Gq(p,i) O(gatherdiv4di)(Zi,(c(i64)*)(p),i,((Vq){~0,~0,~0,~0}),8)
-// #  define maski64_i32(m) shuffle2((Vi)m,(Vi)m,0,2,4,6)
+#if M == 2
 #  define maski64_i32(m) __builtin_convertvector(m&0xFFFFFFFF,V4i)
-#  define _mgthd(p,i,m,s) O(gatherdiv4df)(Zd,p,i,(Vd)(m),s)
-#  define _mgthf(p,i,m,s) cvt(O(gatherdiv4sf256)(Z4f,p,i,(V4f)(maski64_i32(m)),s),Vd)
-#  define _mgthi(p,i,m,s) O(gatherdiv4si256)(((V4i){0,0,0,0}),p,i,(V4i)(maski64_i32(m)),s)
-#  define _gthd(p,i,s) _mgthd(p,i,Zd==Zd,s)
-#  define _gthf(p,i,s) cvt(O(gatherdiv4sf256)(Z4f,p,i,Z4f==Z4f,s),Vd)
-#else
-// #   define maski64_i32(m) shuffle2((Vi)m,(Vi)m,0,2,4,6)
-    D(Vq,Gq,((Vq){p[i[0]],p[i[1]]}),c(u64)*p,c(Vq)i)
-    D(Vd,_gthd,_(c(u8)*p0=(c(u8)*)p+i[0]*s,*p1=(c(u8)*)p+i[1]*s;(Vd){*(c(f64)*)p0,*(c(f64)*)p1}),c(f64)*p,c(Vq)i,c(i32)s)
-    D(Vd,_gthf,_(c(u8)*p0=(c(u8)*)p+i[0]*s,*p1=(c(u8)*)p+i[1]*s;(Vd){(f64)*(c(f32)*)p0,(f64)*(c(f32)*)p1}),c(f32)*p,c(Vq)i,c(i32)s)
-    D(Vd,_mgthd,_(c(u8)*p0=(c(u8)*)p+i[0]*s,*p1=(c(u8)*)p+i[1]*s;(Vd){m[0]?*(c(f64)*)p0:0.0,m[1]?*(c(f64)*)p1:0.0}),c(f64)*p,c(Vq)i,c(M8)m,c(i32)s)
-    D(Vd,_mgthf,_(c(u8)*p0=(c(u8)*)p+i[0]*s,*p1=(c(u8)*)p+i[1]*s;(Vd){m[0]?(f64)*(c(f32)*)p0:0.0,m[1]?(f64)*(c(f32)*)p1:0.0}),c(f32)*p,c(Vq)i,c(M8)m,c(i32)s)
-    D(Vi,_mgthi,_(c(u8)*p0=(c(u8)*)p+i[0]*s,*p1=(c(u8)*)p+i[1]*s;(Vi){m[0]?*(c(i32)*)p0:0,m[1]?*(c(i32)*)p1:0,0,0}),c(i32)*p,c(Vq)i,c(M8)m,c(i32)s)
 #endif
+
+#if M == 3
+#  define _gmgth(vt,t,p,i,m,s) _(c(u8)*_p=(c(u8)*)(p);(vt){(m)[0]?*(c(t)*)(_p+s*(i)[0]):(t)0,(m)[1]?*(c(t)*)(_p+s*(i)[1]):(t)0})
+#endif
+
+D(Vq,Gq,A(I8(i64gather_epi64,i,p,8),O(gatherdiv4di)(Zi,(c(i64)*)(p),i,Zi==Zi,8),_gmgth(Vq,i64,p,i,Zi==Zi,8)),c(u64)*p,c(Vq)i)
+#define _gthd(p,i,s) A(I8(i64gather_pd,i,p,s),O(gatherdiv4df)(Zd,p,i,Zd==Zd,s),_gmgth(Vd,f64,p,i,Zi==Zi,s))
+#define _gthf(p,i,s) A(cvt(I8(i64gather_ps,i,p,s),Vd),cvt(O(gatherdiv4sf256)(Z4f,p,i,Z4f==Z4f,s),Vd),_gmgth(Vd,f32,p,i,Zi==Zi,s))
+#define _mgthd(p,i,m,s) A(I8(mask_i64gather_pd,Zd,m,i,p,s),O(gatherdiv4df)(Zd,p,i,(Vd)(m),s),_gmgth(Vd,f64,p,i,m,s))
+#define _mgthf(p,i,m,s) A(cvt(I8(mask_i64gather_ps,(simde__m256)((V8f){RN(0.0f)}),m,i,p,s),Vd),cvt(O(gatherdiv4sf256)(Z4f,p,i,(V4f)maski64_i32(m),s),Vd),_gmgth(Vd,f32,p,i,m,s))
+#define _mgthi(p,i,m,s) A(I8(mask_i64gather_epi32,(simde__m256i)((V8i){RN(0)}),m,i,p,s),O(gatherdiv4si256)(((V4i){RN(0)}),p,i,(V4i)maski64_i32(m),s),_gmgth(Vi,i32,p,i,m,s))
 
 // type code (i32)
 // 0: f64
@@ -269,7 +256,6 @@ De(Vd,Gmw,_(c(u32)_m=movemask(m); Vd r;VL(u,N,r[u]=((_m>>u)&1)?(f64)p[i[u]]:0.0)
 D(Vq,popcnt,_((Vq){RFN(_F_popcnt)}),c(Vq)x)
 #undef _F_popcnt
 
-
 D(Vz,mulz,Z2(a.re*b.re-a.im*b.im,a.im*b.re+a.re*b.im),c(Vz)a,c(Vz)b)
 D(Vq,m1,A(I8(movm_epi64,I8(test_epi64_mask,x,m)),(x&m)!=Zi,(x&m)!=Zi),c(Vq)x,c(Vq)m)
 D(Vq,m2,m1(x,m_0)^m1(x,m_1),c(Vq)x,c(Vq)m_0,c(Vq)m_1)
@@ -280,6 +266,12 @@ D(Vz,flipsign,_(m=m<<63;Z2((Vd)((Vq)v.re^m),(Vd)((Vq)v.im^m))),c(Vz)v,Vq m)
 // TODO: The loop is ugly, but the compilers vectorize it
 D(void,prefetchq,_(_L(k,N,prefetch(p+idx[k],0,3))),c(u64)*p,c(Vq)idx)
 
-// TODO: Should get rid of these ...
-// static void prefetchd4xN(Vi idx[4],c(u16)*n,c(f64)*x){_L(k,4*N,c(i32)i=((c(i64)*)idx)[k];simde_mm_prefetch(n+i,_MM_HINT_ET0);simde_mm_prefetch(x+i,_MM_HINT_ET0))}
-// static void prefetchz4xN(Vi idx[4],c(u16)*n,c(c128)*x){_L(k,4*N,c(i32)i=((c(i64)*)idx)[k];simde_mm_prefetch(n+i,_MM_HINT_ET0);simde_mm_prefetch(x+i,_MM_HINT_ET0))}
+#define P 4096
+#define K (P/8)
+#if !defined(NULL)
+#  define NULL ((void*)0)
+#endif
+#define min(a,b) _(typeof(a)_a=a;typeof(b)_b=b;(_a<=_b)?_a:_b)
+#define a(t, n) ((t*)aligned_alloc(P, n*sizeof(t)))
+#define r(p, t, n) ((t*)realloc(p, n * sizeof(t)))
+#define f(p) free(p)

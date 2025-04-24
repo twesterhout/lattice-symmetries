@@ -48,6 +48,6 @@ from . import _benes, _parser, _representation, expression, compiler, basis, mat
 from ._benes import BenesNetwork, perm2benes
 from ._representation import generate_representation
 from .expression import Expr, pauli2nbts, heisenberg, ising
-from .compiler import COMPILER, KERNELS, MORE_KERNELS, BasisInfo
+from .compiler import COMPILER, KERNELS, BasisInfo
 from .basis import B, Basis, SpinBasis
 from .matrix import O, Operator

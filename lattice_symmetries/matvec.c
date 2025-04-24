@@ -113,8 +113,8 @@ De(void,odF4xN,_(
 
 De(void,off_diag64,_(
     if(ctx->n_t<=0)return;
-    c(i32)inc=stride(t);c(typeof(&odT8xN))f=bs_ctx!=0?odT8xN:odF4xN;c(i32)step=bs_ctx!=0?8*N:4*N;
-    for(i32 k=0;k<64;k+=step){f(t,alpha0+k,norm0+k,X,(u8*)out+k*inc,ctx,bs_ctx,search_ctx);}
+    c(i32)inc=stride(t);c(typeof(&odT8xN))fn=bs_ctx!=0?odT8xN:odF4xN;c(i32)step=bs_ctx!=0?8*N:4*N;
+    for(i32 k=0;k<64;k+=step){fn(t,alpha0+k,norm0+k,X,(u8*)out+k*inc,ctx,bs_ctx,search_ctx);}
 ),c(i32)t,c(u64)*alpha0,c(u16)*norm0,c(void)*X,void*out,c(oc_t)*ctx,c(bs_ctx_t)*bs_ctx,c(search_ctx_t)*search_ctx)
 
 Di(void,matvec_inner,_(
@@ -189,4 +189,64 @@ static inline Vq norm(Vq x, bs_ctx_t const* ctx) {
 
 void norm64(u64 const *alpha, bs_ctx_t const *ctx, u16 *out) {
     for(i32 k=0;k<64;k+=4*N) { Vq n[4];U4(n[u]=norm(Rq(alpha+k,u),ctx)); Wq2w(out+k,n); }
+}
+
+
+extern void*realloc(void*,unsigned long);
+extern void free(void*);
+extern void*aligned_alloc(unsigned long,unsigned long);
+
+typedef struct chunk_t{u64*xs;u16*ns;i64 cp,sz;;int ec;char padding[28];}chunk_t;
+_Static_assert(sizeof(chunk_t) == 64, "wrong padding");
+
+typedef void (*candidates64_fn)(u64, u64 *);
+De(void,candidates_simple,_(++x0;_L(k,64,out[k]=x0++)),u64 x0, u64*out)
+
+Di(i64,up,((x+n-1)/n)*n,c(i64)x,c(i64)n)
+Di(void,reset,_(f(c->xs);f(c->ns);c->cp=0;c->sz=0;return),chunk_t*c)
+Di(void,expand,_(
+  if(c->cp<=0){c->cp=K;c->xs=a(u64,c->cp);c->ns=a(u16,c->cp);}
+  else{c->cp=up(c->cp+c->cp/4,K);c->xs=r(c->xs,u64,c->cp);c->ns=r(c->ns,u16,c->cp);}
+  if(c->xs==NULL||c->ns==NULL){reset(c);c->ec=-1;}
+),chunk_t*c)
+Di(void,ap,_(
+  if(c->sz>=c->cp){expand(c);}
+  if(c->ec!=0)return;
+  c->xs[c->sz]=alpha;c->ns[c->sz]=norm;++c->sz;return
+),chunk_t*c,c(u64)alpha,c(u64)norm)
+#define ITER(b) \
+    candidates64(x0, xs); norm64(xs, ctx, ns); x0 = xs[(b) - 1]; \
+    for (i64 k = 0; k < (b); ++k) { if (ns[k] != 0) { ap(&c, xs[k], ns[k]); } }
+Di(chunk_t,one,_(
+  chunk_t c=(chunk_t){.xs=NULL,.ns=NULL,.cp=0,.sz=0,.ec=0};u64*xs=a(u64,64);u16*ns=a(u16,64);i64 i=0;
+  for(;i<n-64;i+=64){ITER(64);if(c.ec!=0){break;}}
+  if(c.ec==0&&i<n){ITER(n-i);}
+  if(c.ec!=0){reset(&c);}
+  f(xs);f(ns); c
+),c(i64)n,u64 x0,c(candidates64_fn)candidates64,c(void)*ctx)
+#undef ITER
+
+void* enumerate_states(c(i64)nc,i64*sizes,u64*starts,void*candidates64,c(void)*ctx,i64*total_size){
+  chunk_t*cs=a(chunk_t,nc);if(cs==NULL){return NULL;}
+  int ec = 0; // atomic
+  i64 sz = 0; // atomic
+#pragma omp parallel for schedule(dynamic,1) \
+    default(none) firstprivate(nc,cs,sizes,starts,candidates64,ctx) shared(ec,sz)
+  for(i64 k=0;k<nc;++k){
+    if(__atomic_load_n(&ec,__ATOMIC_RELAXED)!=0){continue;} // skip if error
+    cs[k]=one(sizes[k],starts[k],(candidates64_fn)candidates64,ctx);
+    if(cs[k].ec!=0){__atomic_store_n(&ec,cs[k].ec,__ATOMIC_RELAXED);}
+    else{__atomic_fetch_add(&sz,cs[k].sz,__ATOMIC_RELAXED);}
+  }
+  if(ec!=0){for(i64 k=0;k<nc;++k){reset(cs+k);}f(cs);return NULL;}
+  *total_size=sz;return cs;
+}
+void copy_finalize(c(i64)nc,void*chunks,u64*states,u16 *norms){
+  chunk_t*cs=chunks;
+  for (i64 k=0;k<nc;++k){
+    __builtin_memcpy(states,cs[k].xs,cs[k].sz*sizeof(u64));
+    __builtin_memcpy(norms,cs[k].ns,cs[k].sz*sizeof(u16));
+    states+=cs[k].sz;norms+=cs[k].sz;reset(cs + k);
+  }
+  f(cs);
 }

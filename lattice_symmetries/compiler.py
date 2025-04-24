@@ -19,7 +19,7 @@ class KernelCompiler:
         self.flags += ["-Wall", "-Wextra", "-W", "-Wno-comment", "-Wno-unused-parameter", "-Wno-psabi"]
         self.flags += ["-fno-math-errno", "-ffast-math"]
         if "clang" not in self._version(): self.flags += ["-fschedule-insns", "-fschedule-insns2"]
-        # self.flags += ["-nostdlib", "-ffreestanding"]
+        self.flags += ["-ffreestanding"]
         # Always required
         self.flags += ["-fPIC", "-fopenmp"]
         self.flags += ["-I", os.getenv("LS_SIMDE_PATH", str(FOLDER))]
@@ -46,27 +46,31 @@ class K:
     diag64: any; off_diag64: any; norm64: any;
     state_to_index: any; state_info: any;
     matvec: any; has_float16: any;
+    enumerate_states: any; copy_finalize: any;
+    candidates: any
 
 def build_kernels():
     lib = COMPILER.compile(FOLDER / "matvec.c")
     k = K(
         lib.diag64, lib.off_diag64, lib.norm64,
         lib.state_to_index, lib.state_info,
-        lib.matvec, lib.has_float16
+        lib.matvec, lib.has_float16,
+        lib.enumerate_states, lib.copy_finalize,
+        lib.candidates_simple
     )
     # weakref.finalize(k, lambda: COMPILER.ffi.dlclose(lib))
     return k
 
-def build_enumerate_states():
-    lib = COMPILER.compile(FOLDER / "enumerate_states.c")
-    @dataclass(frozen=True)
-    class K: enumerate_states: any; copy_finalize: any; candidates: any
-    fs = K(lib.enumerate_states, lib.copy_finalize, lib.candidates_simple)
-    # weakref.finalize(fs, lambda: COMPILER.ffi.dlclose(lib))
-    return fs
+# def build_enumerate_states():
+#     lib = COMPILER.compile(FOLDER / "enumerate_states.c")
+#     @dataclass(frozen=True)
+#     class K: enumerate_states: any; copy_finalize: any; candidates: any
+#     fs = K(lib.enumerate_states, lib.copy_finalize, lib.candidates_simple)
+#     # weakref.finalize(fs, lambda: COMPILER.ffi.dlclose(lib))
+#     return fs
 
 KERNELS = build_kernels()
-MORE_KERNELS = build_enumerate_states()
+# MORE_KERNELS = build_enumerate_states()
 
  
 
@@ -268,12 +272,12 @@ def enumerate_states(info, ctx=None):
         starts = starts - 1
         total_size = COMPILER.ffi.new("i64 *")
         with ls.measure_time() as dt1:
-            chunks = MORE_KERNELS.enumerate_states(starts.size, cb_i64(sizes), cb_u64(starts),
-                MORE_KERNELS.candidates, KERNELS.norm64, ctx.p, total_size)
+            chunks = KERNELS.enumerate_states(starts.size, cb_i64(sizes), cb_u64(starts),
+                KERNELS.candidates, ctx.p, total_size)
         if chunks == NULL: raise MemoryError("enumerate_states kernel failed to allocate memory")
         with ls.measure_time() as dt2:
             states, norms = np.empty(total_size[0], dtype=np.uint64), np.empty(total_size[0], dtype=np.uint16)
-            MORE_KERNELS.copy_finalize(starts.size, chunks, b_u64(states), b_u16(norms))
+            KERNELS.copy_finalize(starts.size, chunks, b_u64(states), b_u16(norms))
     else:
         raise NotImplementedError()
     states.flags.writeable, norms.flags.writeable = False, False
