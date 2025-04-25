@@ -17,7 +17,6 @@
 #endif
 
 #if M == 1
-#  include <immintrin.h>
 #  include <simde/x86/avx512.h>
 #elif M == 3
    // We rely on SIMDe to implement WASM intrinsics using SSE or NEON
