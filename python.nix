@@ -9,9 +9,9 @@ final: prev: {
         inherit version;
         src = ./.;
         pyproject = true;
-        dependencies = with python-final; [ loguru numpy scipy sympy igraph more-itertools lark cffi ];
+        dependencies = with python-final; [ stdenv.cc loguru numpy scipy sympy igraph more-itertools lark cffi ];
         nativeBuildInputs = with python-final; [ setuptools ];
-        nativeCheckInputs = with python-final; [ pip pytestCheckHook pythonOutputDistHook hypothesis quspin uniplot ];
+        nativeCheckInputs = with python-final; [ pip pytestCheckHook pythonOutputDistHook hypothesis quspin ];
         # preCheck = "rm -rf lattice_symmetries";
         # checkPhase = ''
         #   runHook preCheck
@@ -31,8 +31,8 @@ final: prev: {
             python -m pip install -e . --prefix $tmp_path --no-deps # --no-build-isolation --config-settings editable_mode=compat
             export NIX_PYTHONPATH="$tmp_path/${python-final.python.sitePackages}:$${NIX_PYTHONPATH-}"
           fi
-          export OCL_ICD_PATH=${final.ocl-icd}
         '';
+          # export OCL_ICD_PATH=${final.ocl-icd}
       };
     })
   ];

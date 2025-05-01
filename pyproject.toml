@@ -36,7 +36,7 @@ Documentation = "https://github.com/twesterhout/lattice-symmetries/README.md"
 Repository = "https://github.com/twesterhout/lattice-symmetries.git"
 
 [tool.setuptools.package-data]
-lattice_symmetries = ["simde", "*.h", "*.c"]
+lattice_symmetries = ["simde/**", "simde/wasm/*.h", "*.h", "*.c"]
 
 [tool.black]
 line-length = 120

@@ -40,12 +40,20 @@
         config = { allowUnfree = true; cudaSupport = true; cudaCapabilities = [ "7.0" ]; cudaForwardCompat = true; };
         overlays = [ overlay ];
       };
+
+      toApptainer = pkgs: drv: pkgs.singularity-tools.buildImage {
+        name = "lattice-symmetries";
+        contents = [ drv ];
+        diskSize = 10240;
+        memSize = 5120;
+      };
     in
     {
       overlays.default = overlay;
       packages = forEachSystem (system: _:
         let pkgs = pkgs-for-cpu system; in {
           inherit (pkgs) python3Packages python311Packages python312Packages;
+          apptainer = toApptainer pkgs (pkgs.python3.withPackages (ps: [ ps.lattice-symmetries ]));
         });
       devShells = forEachSystem (system: _:
         let pkgs = pkgs-for-cpu system;
