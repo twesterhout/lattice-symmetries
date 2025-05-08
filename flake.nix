@@ -40,27 +40,41 @@
         config = { allowUnfree = true; cudaSupport = true; cudaCapabilities = [ "7.0" ]; cudaForwardCompat = true; };
         overlays = [ overlay ];
       };
-
-      toApptainer = pkgs: drv: pkgs.singularity-tools.buildImage {
-        name = "lattice-symmetries";
-        contents = [ drv ];
-        diskSize = 10240;
-        memSize = 5120;
-      };
     in
     {
       overlays.default = overlay;
       packages = forEachSystem (system: _:
         let pkgs = pkgs-for-cpu system; in {
           inherit (pkgs) python3Packages python311Packages python312Packages;
-          apptainer = toApptainer pkgs (pkgs.python3.withPackages (ps: [ ps.lattice-symmetries ]));
+          apptainer = pkgs.singularity-tools.buildImage {
+            name = "lattice-symmetries";
+            contents = [
+              pkgs.coreutils
+              pkgs.python3.stdenv.cc
+              (pkgs.python3.withPackages (ps: [ ps.lattice-symmetries ]))
+            ];
+            diskSize = 10240;
+            memSize = 5120;
+          };
+          docker = pkgs.dockerTools.buildImage {
+            name = "lattice-symmetries";
+            tag = "latest";
+            copyToRoot = pkgs.buildEnv {
+              name = "image-root";
+              paths = [
+                (pkgs.python3.withPackages (ps: [ ps.lattice-symmetries ]))
+                pkgs.zig
+              ];
+              pathsToLink = [ "/bin" ];
+            };
+          };
         });
       devShells = forEachSystem (system: _:
         let pkgs = pkgs-for-cpu system;
         in
         {
           python = pkgs.python3Packages.lattice-symmetries.overridePythonAttrs (attrs: {
-            nativeBuildInputs = with pkgs; (attrs.nativeBuildInputs or []) ++ [ pkgs.python3Packages.ipython ]; # pkgs.nix-gl-host ];
+            nativeBuildInputs = with pkgs; (attrs.nativeBuildInputs or []) ++ [ pkgs.zig pkgs.python3Packages.ipython ]; # pkgs.nix-gl-host ];
           });
           testing = with pkgs; mkShell {
             nativeBuildInputs = [

@@ -20,6 +20,8 @@
 #  include <simde/x86/avx512.h>
 #elif M == 3
    // We rely on SIMDe to implement WASM intrinsics using SSE or NEON
+   #define simde_math_isnan(v) 0
+   #define simde_math_isinf(v) 0
    #include <simde/wasm/simd128.h>
 #endif
 

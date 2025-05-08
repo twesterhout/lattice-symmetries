@@ -11,17 +11,23 @@ class KernelCompiler:
     def __init__(self, temp_dir=None):
         self.temp = temp_dir or tempfile.mkdtemp(prefix="lattice-symmetries-cache")
         logger.trace(f"'{self.temp}' will be used for compiling kernels.")
+        _ = np.zeros(10) # dummy
         self.ffi = cffi.FFI()
         with open(FOLDER / "declarations.h", "r") as f: self.ffi.cdef(f.read())
-        self.cc = os.getenv("CC", default="cc")
-        self.flags = ["-O3", "-ftree-vectorize", "-DNDEBUG"] # ["-O3", "-ftree-vectorize"]
+        self.cc = (os.getenv("CC", default="cc"),)
+        if "zig" in self.cc[0]: self.cc = self.cc[0].split(" ")
+        self.flags = ["-Ofast", "-ftree-vectorize", "-DNDEBUG"] # ["-O3", "-ftree-vectorize"]
         self.flags += ["-march=native", "-mtune=native"]
         self.flags += ["-Wall", "-Wextra", "-W", "-Wno-comment", "-Wno-unused-parameter", "-Wno-psabi"]
         self.flags += ["-fno-math-errno", "-ffast-math"]
-        if "clang" not in self._version(): self.flags += ["-fschedule-insns", "-fschedule-insns2"]
+        is_clang = "clang" in self._version()
+        if not is_clang: self.flags += ["-fschedule-insns", "-fschedule-insns2"]
+        else: self.flags += ["-Wno-nan-infinity-disabled"]
         self.flags += ["-ffreestanding"]
         # Always required
-        self.flags += ["-fPIC", "-fopenmp"]
+        self.flags += ["-fPIC"]
+        if is_clang: self.flags += ["-fopenmp=libgomp"]
+        else: self.flags += ["-fopenmp"]
         self.flags += ["-I", os.getenv("LS_SIMDE_PATH", str(FOLDER))]
         M = os.getenv("LS_M")
         if M is not None:
@@ -31,10 +37,10 @@ class KernelCompiler:
         if F16 is not None:
             assert F16 in ["0", "1"]; logger.trace(f"Setting USE_F16={F16}.")
             self.flags += [f"-DUSE_F16={F16}"]
-    def _version(self): return subprocess.run([self.cc, "--version"], check=True, capture_output=True, text=True).stdout
+    def _version(self): return subprocess.run([*self.cc, "--version"], check=True, capture_output=True, text=True).stdout
     def compile(self, *srcs):
         _, out = tempfile.mkstemp(suffix=".so", dir=self.temp)
-        args = [self.cc, *self.flags, "-shared", "-o", out, *map(str, srcs)]
+        args = [*self.cc, *self.flags, "-shared", "-o", out, *map(str, srcs)]
         tick = time.perf_counter(); subprocess.run(args, check=True); tock = time.perf_counter()
         logger.trace(f"Compiled in {tock - tick} seconds. Command was '{' '.join(args)}'")
         return self.ffi.dlopen(out, self.ffi.RTLD_NOW | self.ffi.RTLD_LOCAL)
