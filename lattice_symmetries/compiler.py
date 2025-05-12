@@ -255,7 +255,8 @@ def state_to_index(states, ctx, out=None):
     if out is None: out = np.empty(states.size, dtype=np.int64)
     else: assert out.ndim == 1 and out.dtype == np.int64 \
             and out.size == states.size and out.flags["C_CONTIGUOUS"]
-    KERNELS.state_to_index(states.size, cb_u64(states), ctx.p, b_i64(out))
+    if ctx.p.range_size > 0: KERNELS.state_to_index(states.size, cb_u64(states), ctx.p, b_i64(out))
+    else: out[...] = -1
     return out
 def state_info(states, ctx, rep=None, idx=None):
     states = np.asarray(states, dtype=np.uint64, order="C")

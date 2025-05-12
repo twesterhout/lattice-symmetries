@@ -82,7 +82,7 @@
         in
         {
           python = pkgs.python3Packages.lattice-symmetries.overridePythonAttrs (attrs: {
-            nativeBuildInputs = with pkgs; (attrs.nativeBuildInputs or []) ++ [ pkgs.zig pkgs.python3Packages.ipython ]; # pkgs.nix-gl-host ];
+            nativeBuildInputs = with pkgs; (attrs.nativeBuildInputs or []) ++ [ pkgs.zig pkgs.nix-tree pkgs.python3Packages.ipython ]; # pkgs.nix-gl-host ];
           });
           testing = with pkgs; mkShell { nativeBuildInputs = [ (python3.withPackages (ps: with ps; [ lattice-symmetries ])) ]; };
         });

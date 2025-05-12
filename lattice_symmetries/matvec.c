@@ -194,7 +194,12 @@ void norm64(u64 const *alpha, bs_ctx_t const *ctx, u16 *out) {
 
 extern void*realloc(void*,unsigned long);
 extern void free(void*);
+#if __APPLE__
+// MacOS doesn't support aligned_alloc until recent SDKs; We use aligned_alloc for performance only
+void*aligned_alloc(unsigned long alignment,unsigned long size){return malloc(size);}
+#else
 extern void*aligned_alloc(unsigned long,unsigned long);
+#endif
 
 typedef struct chunk_t{u64*xs;u16*ns;i64 cp,sz;;int ec;char padding[28];}chunk_t;
 _Static_assert(sizeof(chunk_t) == 64, "wrong padding");
