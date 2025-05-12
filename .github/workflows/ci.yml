@@ -43,7 +43,7 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@main
       - name: Build Apptainer container
         run: |
-          nix build --option max-jobs 1 --option cores 2 --accept-flake-config -L .#apptainer
+          nix build --option max-jobs 1 --option cores 2 --accept-flake-config -L --option system-features '[ kvm ]' .#apptainer
       - name: Build Docker container
         run: |
           nix build --option max-jobs 1 --option cores 2 --accept-flake-config -L .#docker
