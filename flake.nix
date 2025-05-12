@@ -57,9 +57,8 @@
           apptainer = pkgs.singularity-tools.buildImage {
             name = "lattice-symmetries";
             contents = [
-              pkgs.coreutils
-              pkgs.python3.stdenv.cc
               (pkgs.python3.withPackages (ps: [ ps.lattice-symmetries ]))
+              pkgs.python3.stdenv.cc
             ];
             diskSize = 10240;
             memSize = 5120;

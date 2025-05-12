@@ -34,7 +34,7 @@ The lattice-symmetries library provides tools for working with symmetry-adapted 
 If you have Nix installed, you can try out the package without installing or cloning any repositories and without writing any code:
 
 ```sh
-nix develop github:twesterhout/lattice-symmetries#preview --command ipython
+nix develop github:twesterhout/lattice-symmetries/concise#preview --command ipython
 ```
 
 ### Containers

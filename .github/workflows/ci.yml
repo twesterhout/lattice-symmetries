@@ -28,3 +28,22 @@ jobs:
       - name: Build lattice-symmetries (Python 3.11)
         run: |
           nix build --option max-jobs 1 --option cores 2 --accept-flake-config -L .#python311Packages.lattice-symmetries
+  containers:
+    needs: tests
+    name: Build Apptainer and Docker containers on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest # x64
+          - os: ubuntu-24.04-arm # arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - name: Build Apptainer container
+        run: |
+          nix build --option max-jobs 1 --option cores 2 --accept-flake-config -L .#apptainer
+      - name: Build Docker container
+        run: |
+          nix build --option max-jobs 1 --option cores 2 --accept-flake-config -L .#docker
