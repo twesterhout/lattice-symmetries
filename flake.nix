@@ -84,7 +84,10 @@
           python = pkgs.python3Packages.lattice-symmetries.overridePythonAttrs (attrs: {
             nativeBuildInputs = with pkgs; (attrs.nativeBuildInputs or []) ++ [ pkgs.zig pkgs.nix-tree pkgs.python3Packages.ipython ]; # pkgs.nix-gl-host ];
           });
-          testing = with pkgs; mkShell { nativeBuildInputs = [ (python3.withPackages (ps: with ps; [ lattice-symmetries ])) ]; };
+          preview = with pkgs; mkShell {
+            nativeBuildInputs = [ pkgs.zig (python3.withPackages (ps: with ps; [ ipython lattice-symmetries ])) ];
+            shellHook = "export CC='zig cc'";
+          };
         });
       formatter = forEachSystem (system: pkgs: pkgs.nixpkgs-fmt);
     };

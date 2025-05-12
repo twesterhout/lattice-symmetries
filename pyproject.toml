@@ -37,6 +37,7 @@ Repository = "https://github.com/twesterhout/lattice-symmetries.git"
 
 [tool.setuptools]
 packages = ["lattice_symmetries"]
+include-package-data = false
 
 [tool.setuptools.package-data]
 lattice_symmetries = ["simde/**", "simde/wasm/*.h", "*.h", "*.c"]

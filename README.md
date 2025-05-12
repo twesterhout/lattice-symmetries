@@ -10,7 +10,7 @@ We encourage experimenting with it and reporting any issues you run into via
 
 <br />
 
-[**Tutorials**](https://github.com/twesterhout/halide-haskell/tree/master/tutorials) | [**Documentation**](https://hackage.haskell.org/package/halide-haskell-0.0.1.0) | [**Showcases**](https://github.com/twesterhout/halide-haskell-examples)
+<!--- [**Tutorials**](https://github.com/twesterhout/halide-haskell/tree/master/tutorials) | [**Documentation**](https://hackage.haskell.org/package/halide-haskell-0.0.1.0) | [**Showcases**](https://github.com/twesterhout/halide-haskell-examples) --->
 
 [![license](https://img.shields.io/github/license/twesterhout/lattice-symmetries.svg?style=flat-square)](LICENSE)
 [![build](https://img.shields.io/github/actions/workflow/status/twesterhout/lattice-symmetries/ci.yml?style=flat-square)](https://github.com/twesterhout/lattice-symmetries/actions/workflows/ci.yml)
@@ -30,6 +30,12 @@ The lattice-symmetries library provides tools for working with symmetry-adapted 
 ## 💻 Installing
 
 ### Nix
+
+If you have Nix installed, you can try out the package without installing or cloning any repositories and without writing any code:
+
+```sh
+nix develop github:twesterhout/lattice-symmetries#preview --command ipython
+```
 
 ### Containers
 
