@@ -33,6 +33,14 @@
         inputs.nix-gl-host.overlays.default
         inputs.quantum-nix.overlays.default
         (import ./python.nix { inherit version; })
+
+        # igraph's test suite pulls in a ton of dependencies...
+        (final: prev: {
+          pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+            (python-final: python-prev: lib.optionalAttrs (python-prev.python.pythonOlder "3.12") {
+              igraph = python-prev.igraph.overridePythonAttrs (attrs: { doCheck = false; });
+            })];
+        })
       ];
       pkgs-for-cpu = system: import inputs.nixpkgs { inherit system; overlays = [ overlay ]; };
       pkgs-for-cuda = system: import inputs.nixpkgs {
@@ -76,11 +84,7 @@
           python = pkgs.python3Packages.lattice-symmetries.overridePythonAttrs (attrs: {
             nativeBuildInputs = with pkgs; (attrs.nativeBuildInputs or []) ++ [ pkgs.zig pkgs.python3Packages.ipython ]; # pkgs.nix-gl-host ];
           });
-          testing = with pkgs; mkShell {
-            nativeBuildInputs = [
-              (python3.withPackages (ps: with ps; [ lattice-symmetries ]))
-            ];
-          };
+          testing = with pkgs; mkShell { nativeBuildInputs = [ (python3.withPackages (ps: with ps; [ lattice-symmetries ])) ]; };
         });
       formatter = forEachSystem (system: pkgs: pkgs.nixpkgs-fmt);
     };
