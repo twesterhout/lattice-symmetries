@@ -22,6 +22,14 @@ jobs:
       #   with:
       #     name: twesterhout
       #     authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+      - name: Debug
+        run: |
+          echo "${{ runner.os }}"
+      - name: Install OpenMP
+        if: runner.os != 'Linux'
+        run: |
+          brew update
+          brew install llvm libomp
       - name: Build lattice-symmetries (Python 3.12)
         run: |
           nix build --option max-jobs 1 --option cores 2 --accept-flake-config -L .#python312Packages.lattice-symmetries

@@ -7,7 +7,10 @@ final: prev: {
       lattice-symmetries = python-final.buildPythonPackage rec {
         pname = "lattice-symmetries";
         inherit version;
-        src = ./.;
+        src = let lib = final.lib; in lib.fileset.toSource {
+          root = ./.;
+          fileset = lib.fileset.unions [ ./lattice_symmetries ./test ./pyproject.toml ./setup.py ./LICENSE ];
+        };
         pyproject = true;
         dependencies = with python-final; [ loguru numpy scipy sympy igraph more-itertools lark threadpoolctl cffi ];
         nativeBuildInputs = with python-final; [ setuptools ];
