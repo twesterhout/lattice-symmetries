@@ -9,7 +9,7 @@ final: prev: {
         inherit version;
         src = ./.;
         pyproject = true;
-        dependencies = with python-final; [ loguru numpy scipy sympy igraph more-itertools lark cffi ];
+        dependencies = with python-final; [ loguru numpy scipy sympy igraph more-itertools lark threadpoolctl cffi ];
         nativeBuildInputs = with python-final; [ setuptools ];
         nativeCheckInputs = with python-final; [ pip pytestCheckHook pythonOutputDistHook hypothesis quspin ];
         # preCheck = "rm -rf lattice_symmetries";

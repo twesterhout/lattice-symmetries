@@ -1,4 +1,4 @@
-import cffi, numpy as np, os, pathlib, subprocess, sympy, tempfile, time, weakref, lattice_symmetries as ls
+import cffi, numpy as np, os, pathlib, subprocess, sympy, tempfile, time, threadpoolctl, weakref, lattice_symmetries as ls
 from dataclasses import dataclass, field
 from loguru import logger
 from sympy import S, Rational
@@ -14,29 +14,28 @@ class KernelCompiler:
         _ = np.zeros(10) # dummy
         self.ffi = cffi.FFI()
         with open(FOLDER / "declarations.h", "r") as f: self.ffi.cdef(f.read())
+        # C compiler. We want to support specifying CC='zig cc' hence the additional split
         self.cc = (os.getenv("CC", default="cc"),)
         if "zig" in self.cc[0]: self.cc = self.cc[0].split(" ")
-        self.flags = ["-Ofast", "-ftree-vectorize", "-DNDEBUG"] # ["-O3", "-ftree-vectorize"]
-        self.flags += ["-march=native", "-mtune=native"]
-        self.flags += ["-Wall", "-Wextra", "-W", "-Wno-comment", "-Wno-unused-parameter", "-Wno-psabi"]
-        self.flags += ["-fno-math-errno", "-ffast-math"]
         is_clang = "clang" in self._version()
-        if not is_clang: self.flags += ["-fschedule-insns", "-fschedule-insns2"]
-        else: self.flags += ["-Wno-nan-infinity-disabled"]
-        self.flags += ["-ffreestanding"]
-        # Always required
-        self.flags += ["-fPIC"]
-        if is_clang: self.flags += ["-fopenmp=libgomp"]
-        else: self.flags += ["-fopenmp"]
-        self.flags += ["-I", os.getenv("LS_SIMDE_PATH", str(FOLDER))]
+        opt = lambda p, x: x if p else []
+        # Optimization flags
+        self.flags = ["-O3" if is_clang else "-Ofast", "-ftree-vectorize", "-ffast-math", "-DNDEBUG"] \
+                   + opt(not is_clang, ["-fschedule-insns", "-fschedule-insns2"])
+        # Architecture; TODO: optionally add -mcpu=... -msimd128 for WASM
+        self.flags += ["-march=native", "-mtune=native"]
+        # Warnings
+        self.flags += ["-Wall", "-Wextra", "-W", "-Wno-comment", "-Wno-unused-parameter", "-Wno-psabi"] \
+                    + opt(is_clang, ["-Wno-nan-infinity-disabled"])
+        # OpenMP
+        is_gomp = "libgomp" in [i["prefix"] for i in threadpoolctl.threadpool_info() if i["user_api"] == "openmp"]
+        self.flags += ["-fopenmp=libgomp" if is_clang and is_gomp else "-fopenmp"]
+        # Library
+        self.flags += ["-fPIC", "-ffreestanding", "-I", os.getenv("LS_SIMDE_PATH", str(FOLDER))]
         M = os.getenv("LS_M")
         if M is not None:
             assert M in ["1", "2", "3"]; logger.trace(f"Kernels will be compiled for M={M}.")
             self.flags += [f"-DM={M}"]
-        F16 = os.getenv("LS_F16")
-        if F16 is not None:
-            assert F16 in ["0", "1"]; logger.trace(f"Setting USE_F16={F16}.")
-            self.flags += [f"-DUSE_F16={F16}"]
     def _version(self): return subprocess.run([*self.cc, "--version"], check=True, capture_output=True, text=True).stdout
     def compile(self, *srcs):
         _, out = tempfile.mkstemp(suffix=".so", dir=self.temp)
@@ -57,29 +56,17 @@ class K:
 
 def build_kernels():
     lib = COMPILER.compile(FOLDER / "matvec.c")
-    k = K(
+    return K(
         lib.diag64, lib.off_diag64, lib.norm64,
         lib.state_to_index, lib.state_info,
         lib.matvec, lib.has_float16,
         lib.enumerate_states, lib.copy_finalize,
         lib.candidates_simple
     )
-    # weakref.finalize(k, lambda: COMPILER.ffi.dlclose(lib))
-    return k
-
-# def build_enumerate_states():
-#     lib = COMPILER.compile(FOLDER / "enumerate_states.c")
-#     @dataclass(frozen=True)
-#     class K: enumerate_states: any; copy_finalize: any; candidates: any
-#     fs = K(lib.enumerate_states, lib.copy_finalize, lib.candidates_simple)
-#     # weakref.finalize(fs, lambda: COMPILER.ffi.dlclose(lib))
-#     return fs
 
 KERNELS = build_kernels()
-# MORE_KERNELS = build_enumerate_states()
 
  
-
 @dataclass(frozen=True)
 class BasisInfo:
     bits: int; hamming: int | None = None; inversion: int | None = None
@@ -108,24 +95,16 @@ class BasisInfo:
 
 NULL = COMPILER.ffi.NULL
 def b_f64(arr): return COMPILER.ffi.from_buffer("f64*", arr, require_writable=True)
-# def b_c128(arr): return COMPILER.ffi.from_buffer("void*", arr, require_writable=True)
 def b_u16(arr): return COMPILER.ffi.from_buffer("u16*", arr, require_writable=True)
 def b_u64(arr): return COMPILER.ffi.from_buffer("u64*", arr, require_writable=True)
 def b_i64(arr): return COMPILER.ffi.from_buffer("i64*", arr, require_writable=True)
 def cb_f64(arr): return COMPILER.ffi.from_buffer("const f64*", arr, require_writable=False)
-# def cb_c128(arr): return COMPILER.ffi.from_buffer("const void*", arr, require_writable=True)
 def cb_u8(arr): return COMPILER.ffi.from_buffer("const u8*", arr, require_writable=False)
 def cb_u16(arr): return COMPILER.ffi.from_buffer("const u16*", arr, require_writable=False)
 def cb_u32(arr): return COMPILER.ffi.from_buffer("const u32*", arr, require_writable=False)
 def cb_u64(arr): return COMPILER.ffi.from_buffer("const u64*", arr, require_writable=False)
 def cb_i32(arr): return COMPILER.ffi.from_buffer("const i32*", arr, require_writable=False)
 def cb_i64(arr): return COMPILER.ffi.from_buffer("const i64*", arr, require_writable=False)
-# def b_g(arr):
-#     if arr.dtype == np.float64: return b_f64(arr)
-#     if arr.dtype == np.complex128: return b_c128(arr)
-# def cb_g(arr):
-#     if arr.dtype == np.float64: return cb_f64(arr)
-#     if arr.dtype == np.complex128: return cb_c128(arr)
 def b_void(arr): return COMPILER.ffi.from_buffer("void*", arr, require_writable=True)
 def cb_void(arr): return COMPILER.ffi.from_buffer("const void*", arr, require_writable=False)
 
@@ -176,16 +155,6 @@ def _stack_terms(ts, mask):
     p.n_s0, p.n_s1, p.n_s2, p.n_sX = cb_i32(n_s0), cb_i32(n_s1), cb_i32(n_s2), cb_i32(n_sX)
     p.n_t, p.stride = n_t, stride
     return Ctx(p, (n_s0, n_s1, n_s2, n_sX, v_re, v_im, s1, s20, s21, sX, mask))
-# def _reorder(v, s):
-#     cnt = np.bitwise_count(s); i = np.argsort(cnt, stable=True); s, v = s[i], v[i]
-#     n_s0, n_s1, n_s2, n_sX = np.sum(cnt == 0), np.sum(cnt == 1), np.sum(cnt == 2), np.sum(cnt > 2)
-#     k = n_s0; s1 = s[k:k + n_s1]; k += n_s1
-#     _, c = np.unpackbits(s[k:k + n_s2].view(np.uint8).reshape(-1, 8, 1), axis=-1, bitorder="little").reshape(-1, 64).nonzero()
-#     c = c.astype(np.uint64); assert len(c) == 2 * n_s2
-#     s20, s21 = 1 << c[::2], 1 << c[1::2]
-#     sX = s[k + n_s2:]
-#     return (np.int32(n_s0), np.int32(n_s1), np.int32(n_s2), np.int32(n_sX),
-#             np.ascontiguousarray(v.real), np.ascontiguousarray(v.imag), s1, s20, s21, sX)
 def _oc_ctx_t(terms):
     if len(terms) == 0: return Ctx(COMPILER.ffi.new("oc_t *"))
     # terms are sorted by x
@@ -196,15 +165,6 @@ def _oc_ctx_t(terms):
     os = np.pad(np.cumsum(ns), ((1, 0),))
     ts = [Term(v[o:o + n], s[o:o + n]) for o, n in zip(os, ns)]
     return _stack_terms(ts, xs)
-    # ts = [_reorder(v[o:o + n], s[o:o + n]) for o, n in zip(os, ns)]
-
-    # n_s0, n_s1, n_s2, n_sX, v_re, v_im, s1, s20, s21, sX, mask = keep_alive = tuple(map(np.hstack, zip(*ts))) + (xs,)
-    # p = COMPILER.ffi.new("oc_t *")
-    # p.v_re, p.v_im = cb_f64(v_re), cb_f64(v_im)
-    # p.s1, p.s20, p.s21, p.sX, p.mask = cb_u64(s1), cb_u64(s20), cb_u64(s21), cb_u64(sX), cb_u64(mask)
-    # p.n_s0, p.n_s1, p.n_s2, p.n_sX = cb_i32(n_s0), cb_i32(n_s1), cb_i32(n_s2), cb_i32(n_sX)
-    # p.n_t = len(mask)
-    # return Ctx(p, keep_alive)
 def oc_ctx_t(terms):
     nd = sum(int(t.x == 0) for t in terms)
     return _oc_ctx_t(terms[:nd]), _oc_ctx_t(terms[nd:])

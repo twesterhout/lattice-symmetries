@@ -35,6 +35,9 @@ Issues = "https://github.com/twesterhout/lattice-symmetries/issues"
 Documentation = "https://github.com/twesterhout/lattice-symmetries/README.md"
 Repository = "https://github.com/twesterhout/lattice-symmetries.git"
 
+[tool.setuptools]
+packages = ["lattice_symmetries"]
+
 [tool.setuptools.package-data]
 lattice_symmetries = ["simde/**", "simde/wasm/*.h", "*.h", "*.c"]
 
