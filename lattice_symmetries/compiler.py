@@ -1,4 +1,4 @@
-import cffi, numpy as np, os, pathlib, subprocess, sympy, tempfile, time, threadpoolctl, weakref, lattice_symmetries as ls
+import cffi, numpy as np, os, pathlib, subprocess, sympy, tempfile, time, threadpoolctl, lattice_symmetries as ls
 from dataclasses import dataclass, field
 from loguru import logger
 from sympy import S, Rational
@@ -7,7 +7,7 @@ from sympy.combinatorics import Permutation
 FOLDER = pathlib.Path(__file__).parent.resolve()
 
 class KernelCompiler:
-    temp: str; ffi: any; cc: str;
+    temp: str; ffi: any; cc: str
     def __init__(self, temp_dir=None):
         self.temp = temp_dir or tempfile.mkdtemp(prefix="lattice-symmetries-cache")
         logger.trace(f"'{self.temp}' will be used for compiling kernels.")
@@ -48,10 +48,10 @@ COMPILER = KernelCompiler()
 
 @dataclass(frozen=True)
 class K:
-    diag64: any; off_diag64: any; norm64: any;
-    state_to_index: any; state_info: any;
-    matvec: any; has_float16: any;
-    enumerate_states: any; copy_finalize: any;
+    diag64: any; off_diag64: any; norm64: any
+    state_to_index: any; state_info: any
+    matvec: any; has_float16: any
+    enumerate_states: any; copy_finalize: any
     candidates: any
 
 def build_kernels():
@@ -237,13 +237,11 @@ def enumerate_states(info, ctx=None):
         sizes = np.append(np.diff(starts), [r - starts[-1] + 1])
         starts = starts - 1
         total_size = COMPILER.ffi.new("i64 *")
-        with ls.measure_time() as dt1:
-            chunks = KERNELS.enumerate_states(starts.size, cb_i64(sizes), cb_u64(starts),
-                KERNELS.candidates, ctx.p, total_size)
+        chunks = KERNELS.enumerate_states(starts.size, cb_i64(sizes), cb_u64(starts),
+            KERNELS.candidates, ctx.p, total_size)
         if chunks == NULL: raise MemoryError("enumerate_states kernel failed to allocate memory")
-        with ls.measure_time() as dt2:
-            states, norms = np.empty(total_size[0], dtype=np.uint64), np.empty(total_size[0], dtype=np.uint16)
-            KERNELS.copy_finalize(starts.size, chunks, b_u64(states), b_u16(norms))
+        states, norms = np.empty(total_size[0], dtype=np.uint64), np.empty(total_size[0], dtype=np.uint16)
+        KERNELS.copy_finalize(starts.size, chunks, b_u64(states), b_u16(norms))
     else:
         raise NotImplementedError()
     states.flags.writeable, norms.flags.writeable = False, False

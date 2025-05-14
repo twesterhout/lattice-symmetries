@@ -68,12 +68,10 @@
             tag = "latest";
             copyToRoot = pkgs.buildEnv {
               name = "image-root";
-              paths = [
-                (pkgs.python3.withPackages (ps: [ ps.lattice-symmetries ]))
-                pkgs.zig
-              ];
+              paths = [ (pkgs.python3.withPackages (ps: [ ps.lattice-symmetries ])) pkgs.zig ];
               pathsToLink = [ "/bin" ];
             };
+            config = { Cmd = [ "python3" ]; Env = [ "CC='zig cc'" ]; };
           };
         });
       devShells = forEachSystem (system: _:
@@ -81,7 +79,9 @@
         in
         {
           python = pkgs.python3Packages.lattice-symmetries.overridePythonAttrs (attrs: {
-            nativeBuildInputs = with pkgs; (attrs.nativeBuildInputs or []) ++ [ pkgs.zig pkgs.nix-tree pkgs.python3Packages.ipython ]; # pkgs.nix-gl-host ];
+            nativeBuildInputs = with pkgs; (attrs.nativeBuildInputs or [])
+              ++ [ pkgs.bashInteractive pkgs.python3Packages.ruff pkgs.nix-tree pkgs.python3Packages.ipython ];
+	    # pkgs.nix-gl-host ];
           });
           preview = with pkgs; mkShell {
             nativeBuildInputs = [ pkgs.zig (python3.withPackages (ps: with ps; [ ipython lattice-symmetries ])) ];
