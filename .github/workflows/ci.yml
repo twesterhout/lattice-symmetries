@@ -30,7 +30,7 @@ jobs:
           nix build --option max-jobs 1 --option cores 2 --accept-flake-config -L .#python311Packages.lattice-symmetries
   containers:
     needs: tests
-    name: Build Apptainer and Docker containers on ${{ matrix.os }}
+    name: Build Docker container on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -44,3 +44,14 @@ jobs:
       - name: Build Docker container
         run: |
           nix build --option max-jobs 1 --option cores 2 --accept-flake-config -L .#docker
+      - name: Variables
+        id: prepare
+        run: |
+          echo "arch=$(uname -m)" >> $GITHUB_OUTPUT
+          echo "path=$(readlink ./result)" >> $GITHUB_OUTPUT
+      - uses: actions/upload-artifact@v4
+        # if: "contains(github.event.head_commit.message, '[publish]')"
+        with:
+          name: "lattice-symmetries-container-${{ steps.prepare.outputs.arch }}"
+          path: ${{ steps.prepare.outputs.path }}
+
