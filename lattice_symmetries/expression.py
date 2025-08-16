@@ -175,12 +175,12 @@ def _pre_g(g):
     n = 1 + max(itertools.chain.from_iterable(g), default=0)
     return g, ((i,) for i in range(n))
 
-def ising(g, J=1, h=0):
+def ising(g, J=S.One, h=S.Zero):
     g, i = _pre_g(g)
     if (J == 0 and h == 0) or len(g) == 0: return Expr(S.Zero)
     return J * Expr("σᶻ₀ σᶻ₁").on(g) - h * Expr("σˣ₀").on(i)
 
-def heisenberg(g, J=1, h=0):
+def heisenberg(g, J=S.One, h=S.Zero):
     g, i = _pre_g(g)
     if (J == 0 and h == 0) or len(g) == 0: return Expr(S.Zero)
     return Expr("2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁").on(g) - h * Expr("σᶻ₀").on(i)
