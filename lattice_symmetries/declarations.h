@@ -43,5 +43,6 @@ void state_to_index(i64, u64 const *, search_ctx_t const *, i64 *);
 void state_info(i64, u64 const *, bs_ctx_t const *, u64 *, i64 *);
 
 void candidates_simple(u64, u64 *);
+void candidates_hamming(u64, u64 *);
 void* enumerate_states(i64, i64 *, u64 *, void *, void const *, i64 *);
 void copy_finalize(i64, void *, u64 *, u16 *);

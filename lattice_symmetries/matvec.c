@@ -206,6 +206,7 @@ _Static_assert(sizeof(chunk_t) == 64, "wrong padding");
 
 typedef void (*candidates64_fn)(u64, u64 *);
 De(void,candidates_simple,_(++x0;_L(k,64,out[k]=x0++)),u64 x0, u64*out)
+De(void,candidates_hamming,_(_L(k,64,c(u64)t=x0|(x0-1);x0=(t+1)|(((~t&(t+1))-1)>>(__builtin_ctzll(x0)+1));out[k]=x0)),u64 x0, u64*out)
 
 Di(i64,up,((x+n-1)/n)*n,c(i64)x,c(i64)n)
 Di(void,reset,_(f(c->xs);f(c->ns);c->cp=0;c->sz=0;return),chunk_t*c)

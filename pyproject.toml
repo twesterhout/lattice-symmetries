@@ -14,7 +14,7 @@ authors = [{ name = "Tom Westerhout", email = "14264576+twesterhout@users.norepl
 description = "A package to simplify working with symmetry-adapted quantum many-body bases."
 readme = "README.md"
 license = {file = "LICENSE"}
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "cffi",
     "lark",
@@ -23,6 +23,7 @@ dependencies = [
     "numpy",
     "scipy",
     "sympy",
+    "threadpoolctl",
     "igraph",
     # NOTE: Adding Halide here generates a bunch of problems which I don't know how
     # to solve at the moment, so for now one has to do a separate pip install

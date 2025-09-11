@@ -1,13 +1,8 @@
 {
   description = "twesterhout/lattice-symmetries";
   inputs = {
-    # nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     nixpkgs.follows = "quantum-nix/nixpkgs";
-    nix-gl-host.url = "github:numtide/nix-gl-host";
-    nix-gl-host.inputs.nixpkgs.follows = "nixpkgs";
     quantum-nix.url = "github:twesterhout/quantum-nix";
-    # quantum-nix.inputs.nixpkgs.follows = "nixpkgs";
-    quantum-nix.inputs.nix-gl-host.follows = "nix-gl-host";
   };
   nixConfig = {
     extra-substituters = [
@@ -30,24 +25,19 @@
       forEachSystem = f: lib.mapAttrs f inputs.nixpkgs.legacyPackages;
 
       overlay = lib.composeManyExtensions [
-        inputs.nix-gl-host.overlays.default
         inputs.quantum-nix.overlays.default
         (import ./python.nix { inherit version; })
 
         # igraph's test suite pulls in a ton of dependencies...
-        (final: prev: {
-          pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-            (python-final: python-prev: lib.optionalAttrs (python-prev.python.pythonOlder "3.12") {
-              igraph = python-prev.igraph.overridePythonAttrs (attrs: { doCheck = false; });
-            })];
-        })
+        # (final: prev: {
+        #   pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+        #     (python-final: python-prev: lib.optionalAttrs (python-prev.python.pythonOlder "3.12") {
+        #       igraph = python-prev.igraph.overridePythonAttrs (attrs: { doCheck = false; });
+        #     })];
+        # })
       ];
       pkgs-for-cpu = system: import inputs.nixpkgs { inherit system; overlays = [ overlay ]; };
-      pkgs-for-cuda = system: import inputs.nixpkgs {
-        inherit system;
-        config = { allowUnfree = true; cudaSupport = true; cudaCapabilities = [ "7.0" ]; cudaForwardCompat = true; };
-        overlays = [ overlay ];
-      };
+      pkgs-for-cuda = system: import inputs.nixpkgs { inherit system; config = inputs.quantum-nix.cudaConfig; overlays = [ overlay ]; };
     in
     {
       overlays.default = overlay;
@@ -81,7 +71,6 @@
           python = pkgs.python3Packages.lattice-symmetries.overridePythonAttrs (attrs: {
             nativeBuildInputs = with pkgs; (attrs.nativeBuildInputs or [])
               ++ [ pkgs.bashInteractive pkgs.python3Packages.ruff pkgs.nix-tree pkgs.python3Packages.ipython ];
-	    # pkgs.nix-gl-host ];
           });
           preview = with pkgs; mkShell {
             nativeBuildInputs = [ pkgs.zig (python3.withPackages (ps: with ps; [ ipython lattice-symmetries ])) ];

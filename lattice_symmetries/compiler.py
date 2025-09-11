@@ -52,7 +52,7 @@ class K:
     state_to_index: any; state_info: any
     matvec: any; has_float16: any
     enumerate_states: any; copy_finalize: any
-    candidates: any
+    candidates_simple: any; candidates_hamming: any
 
 def build_kernels():
     lib = COMPILER.compile(FOLDER / "matvec.c")
@@ -61,7 +61,7 @@ def build_kernels():
         lib.state_to_index, lib.state_info,
         lib.matvec, lib.has_float16,
         lib.enumerate_states, lib.copy_finalize,
-        lib.candidates_simple
+        lib.candidates_simple, lib.candidates_hamming
     )
 
 KERNELS = build_kernels()
@@ -238,7 +238,7 @@ def enumerate_states(info, ctx=None):
         starts = starts - 1
         total_size = COMPILER.ffi.new("i64 *")
         chunks = KERNELS.enumerate_states(starts.size, cb_i64(sizes), cb_u64(starts),
-            KERNELS.candidates, ctx.p, total_size)
+            KERNELS.candidates_simple, ctx.p, total_size)
         if chunks == NULL: raise MemoryError("enumerate_states kernel failed to allocate memory")
         states, norms = np.empty(total_size[0], dtype=np.uint64), np.empty(total_size[0], dtype=np.uint16)
         KERNELS.copy_finalize(starts.size, chunks, b_u64(states), b_u16(norms))
@@ -310,3 +310,41 @@ class Matvec:
         out = np.zeros(64, dtype=dtype)
         KERNELS.off_diag64(_tc(dtype), cb_u64(alpha0), cb_u16(norm0), cb_void(x), b_void(out), self.off_diag_ctx.p, self.bs_ctx.p, self.search_ctx.p)
         return out[:min(n, 64)]
+
+
+# import jax, jax.numpy as jnp, scipy
+# from functools import partial
+# from jax.experimental import pallas as pl
+# 
+# full = jnp.arange(1024)
+# u1 = full[jax.lax.population_count(full) == 5]
+# 
+# binom = jnp.array([[scipy.special.comb(n, k, exact=True) for k in range(33)] for n in range(33)])
+# binom = binom.transpose((1, 0))
+# 
+# def reverse_bits(v):
+#     v = ((v >> 1) & 0x55555555) | ((v & 0x55555555) << 1)
+#     v = ((v >> 2) & 0x33333333) | ((v & 0x33333333) << 2)
+#     v = ((v >> 4) & 0x0F0F0F0F) | ((v & 0x0F0F0F0F) << 4)
+#     v = ((v >> 8) & 0x00FF00FF) | ((v & 0x00FF00FF) << 8)
+#     v = ( v >> 16             ) | ( v               << 16)
+#     return v
+# 
+# @partial(jax.jit, static_argnums=(1,))
+# def s2i(x, h):
+#     # x = reverse_bits(x)
+#     i = jnp.zeros_like(x)
+#     for k in range(h):
+#         n = jax.lax.clz(x)
+#         i += binom[k + 1, n]
+#         x &= ~(1 << (31 - n))
+#     return i
+# 
+# display("{:010b}".format(u1[10]), 10, u1[10])
+# # print(s2i.trace(u1[jnp.array([146, 10, 39])], 5).lower().as_text())
+# xs = reverse_bits(u1[jax.random.choice(jax.random.PRNGKey(5432), len(u1), shape=(10_000,))])
+# print(s2i(reverse_bits(u1[jnp.array([146, 10, 39])]), 5))
+# 
+# 
+# _ = s2i(xs, h=5)
+# %timeit s2i(xs, h=5).block_until_ready()

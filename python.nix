@@ -12,7 +12,7 @@ final: prev: let lib = final.lib; in {
           fileset = lib.fileset.unions [ ./lattice_symmetries ./test ./pyproject.toml ./setup.py ./LICENSE ];
         };
         pyproject = true;
-        dependencies = with python-final; [ loguru numpy scipy sympy igraph more-itertools lark threadpoolctl cffi ]
+        dependencies = with python-final; [ loguru numpy scipy sympy igraph more-itertools lark threadpoolctl cffi jax jaxlib ]
           ++ lib.optionals python-final.stdenv.isDarwin [ final.llvmPackages.openmp ];
         nativeBuildInputs = with python-final; [ setuptools ];
         nativeCheckInputs = with python-final; [ pip pytestCheckHook pythonOutputDistHook hypothesis quspin ];
